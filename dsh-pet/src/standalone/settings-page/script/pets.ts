@@ -44,6 +44,9 @@ function pickGlobals(main) {
     voiceVolume: typeof source.voiceVolume === 'number' ? source.voiceVolume : 1,
     voiceWhisperEnabled: source.voiceWhisperEnabled !== false,
     voiceTodoEnabled: source.voiceTodoEnabled !== false,
+    // 与 voiceTodo/voiceWhisper 的 !== false 写法不同：本项默认关，字段缺失时不能显示成已勾选，
+    // 否则设置页显示「开」而播放端拿到 undefined 当成「关」，两边打架。
+    voiceNotifyEnabled: source.voiceNotifyEnabled === true,
     physics: Object.assign({}, FALLBACK_PHYSICS, source.physics || {}),
     font: Object.assign({}, FALLBACK_FONT, source.font || {}),
     chatMemory: Object.assign({}, FALLBACK_CHAT_MEMORY, source.chatMemory || {}),
@@ -128,6 +131,7 @@ function petsBody() {
     voiceVolume: state.globals.voiceVolume,
     voiceWhisperEnabled: state.globals.voiceWhisperEnabled,
     voiceTodoEnabled: state.globals.voiceTodoEnabled,
+    voiceNotifyEnabled: state.globals.voiceNotifyEnabled,
     physics: physicsBody(),
     font: state.globals.font,
     chatMemory: state.globals.chatMemory,

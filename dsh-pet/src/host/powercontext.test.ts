@@ -10,6 +10,7 @@ import { createChatMemory, type ChatMemoryInput } from './plugin/chat-memory.ts'
 import { boundedHistory } from './memory-context.ts';
 import { DEFAULT_CHAT_MEMORY, chatMemoryConfigValid } from '../shared/chat-memory-config.ts';
 import { readAllConfig } from './config.ts';
+import { registerChatMemoryProvider } from './chat-memory-provider.ts';
 
 /** Controlled HTTP boundary; generation is deliberately fake and is not a memory-quality benchmark. */
 async function fixture(backend: 'native' | 'powercontext' = 'powercontext') {
@@ -137,6 +138,49 @@ async function fixture(backend: 'native' | 'powercontext' = 'powercontext') {
     },
   };
 }
+
+test('明确选择 PowerContext 时不调用已注册的第三方记忆后端', async () => {
+  const f = await fixture();
+  let recalls = 0;
+  let captures = 0;
+  const unregister = registerChatMemoryProvider({
+    id: 'external-fixture',
+    recall: () => {
+      recalls += 1;
+      return { system: '第三方覆盖的人设', userText: '第三方覆盖的问题' };
+    },
+    capture: () => {
+      captures += 1;
+    },
+  });
+  try {
+    const memory = f.makeMemory();
+    assert.equal((await memory.chatWithPet('main', '我喜欢无糖咖啡')).ok, true);
+    await memory.syncMemory('main');
+    assert.equal(recalls, 0);
+    assert.equal(captures, 0);
+    assert.equal(f.sources.size, 1);
+    assert.match(JSON.stringify(f.requests), /历史证据：喜欢无糖咖啡/);
+    assert.doesNotMatch(JSON.stringify(f.requests), /第三方覆盖/);
+    // 切回原生配置后，上游的第三方扩展点恢复接管。
+    await writeFile(
+      f.configPaths.userFile,
+      JSON.stringify({
+        ...f.config,
+        chatMemory: { ...f.config.chatMemory, backend: 'native' },
+      }),
+    );
+    const previousCalls = f.calls.length;
+    assert.equal((await memory.chatWithPet('main', '你好')).ok, true);
+    await memory.syncMemory('main');
+    assert.equal(recalls, 1);
+    assert.equal(captures, 1);
+    assert.equal(f.calls.length, previousCalls);
+  } finally {
+    unregister();
+    await f.close();
+  }
+});
 
 test('native mode keeps the original prompt and makes no PowerContext requests', async () => {
   const f = await fixture('native');

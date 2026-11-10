@@ -12,23 +12,25 @@ dsh-pet 提供两个 Cordis 服务：页面内的 `petApi7340`（浏览器半侧
 
 ## 一、客户端半侧（DSH web 页面内，只在该页面实例内有效）
 
-| 成员 | 功能 |
-| --- | --- |
-| `pose(petId)` | 读一只宠物此刻的位置与朝向（视口归一化 0–1）；这一页没有它就回 `null` |
-| `progress(petId)` | 读一只宠物此刻的播放进度：动画名、当前时间、总时长、是否暂停 / 缓冲 |
-| `getState()` | 读本页最近一拍的 `/state` 全量快照（与 `GET /state` 同形）；首拍之前回 `null` |
-| `menuEvents(owner)` | 取本页第三方菜单的点击结果（与 `GET /menu/events` 同形，**读取即消费**） |
+| 成员                | 功能                                                                          |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `pose(petId)`       | 读一只宠物此刻的位置与朝向（视口归一化 0–1）；这一页没有它就回 `null`         |
+| `progress(petId)`   | 读一只宠物此刻的播放进度：动画名、当前时间、总时长、是否暂停 / 缓冲           |
+| `getState()`        | 读本页最近一拍的 `/state` 全量快照（与 `GET /state` 同形）；首拍之前回 `null` |
+| `menuEvents(owner)` | 取本页第三方菜单的点击结果（与 `GET /menu/events` 同形，**读取即消费**）      |
 
 ## 二、宿主半侧（宿主插件进程内）
 
-| 成员 | 功能 |
-| --- | --- |
-| `balance.register(def)` | 注册一个自定义余额服务商（`{ id, fetch }`）：`shape` 支持 `windows` / `money` / `points` / `custom`，最后一种是自己画节点树；宿主统一排期、统一渲染气泡 |
-| `balance.list()` | 列出内置与已注册的余额服务商 id，用来确认注册是否生效 |
-| `voice.register(def)` | 注册一个语音合成实现（`{ id, name, synthesize }`）：注册后 `POST /voice/speak` 改走它，`synthesize` 返回 mp3 字节；同一时刻只有一个生效，后注册覆盖先注册 |
-| `voice.list()` | 列出内置与已注册的语音实现 id，用来确认注册是否生效 |
-| `speech.register(def)` | 注册一个语音识别实现（`{ id, name, transcribe }`）：注册后 `POST /voice/hear` 改走它，`transcribe` 收 WAV 字节回文字；同一时刻只有一个生效，后注册覆盖先注册 |
-| `speech.list()` | 列出内置与已注册的识别实现 id，用来确认注册是否生效 |
+| 成员                    | 功能                                                                                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `balance.register(def)` | 注册一个自定义余额服务商（`{ id, fetch }`）：`shape` 支持 `windows` / `money` / `points` / `custom`，最后一种是自己画节点树；宿主统一排期、统一渲染气泡                      |
+| `balance.list()`        | 列出内置与已注册的余额服务商 id，用来确认注册是否生效                                                                                                                        |
+| `voice.register(def)`   | 注册一个语音合成实现（`{ id, name, synthesize }`）：注册后 `POST /voice/speak` 改走它，`synthesize` 返回 mp3 字节；同一时刻只有一个生效，后注册覆盖先注册                    |
+| `voice.list()`          | 列出内置与已注册的语音实现 id，用来确认注册是否生效                                                                                                                          |
+| `speech.register(def)`  | 注册一个语音识别实现（`{ id, name, transcribe }`）：注册后 `POST /voice/hear` 改走它，`transcribe` 收 WAV 字节回文字；同一时刻只有一个生效，后注册覆盖先注册                 |
+| `speech.list()`         | 列出内置与已注册的识别实现 id，用来确认注册是否生效                                                                                                                          |
+| `memory.register(def)`  | 注册一个第三方记忆实现（`{ id, recall?, capture? }`）：`recall` 在生成前改本轮 `system/history/userText`，`capture` 在落盘后收这一轮；同一时刻只有一个生效，后注册覆盖先注册 |
+| `memory.list()`         | 列出原生与已注册的记忆实现 id，用来确认注册状态；当前宠物配置明确选择 PowerContext 时优先使用内置 PowerContext，第三方的召回与采集不会执行                                   |
 
 ---
 

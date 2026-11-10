@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { isIP } from 'node:net';
 
 const UV_VERSION = '0.9.26';
 export type MemoryStage = 'checking_runtime' | 'downloading' | 'installing_python' | 'installing_memory' | 'starting';
@@ -49,6 +50,18 @@ export function memoryProcessEnv(directory: string): NodeJS.ProcessEnv {
     'SSL_CERT_DIR',
   ]) {
     if (process.env[key]) env[key] = process.env[key];
+  }
+  // DSH 添加的 [::1] 会被 HTTPX 当成非法端口；裸 IPv6 同样适用于 curl/uv。
+  for (const key of ['NO_PROXY', 'no_proxy']) {
+    if (env[key])
+      env[key] = env[key]
+        .split(',')
+        .map((entry) => {
+          const host = entry.trim();
+          const address = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : '';
+          return isIP(address) === 6 ? address : host;
+        })
+        .join(',');
   }
   return {
     ...env,

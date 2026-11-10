@@ -3,7 +3,10 @@
  */
 import type { Key } from './zh.ts';
 
+import { memorySetupEn } from './memory-setup.ts';
+
 export const en: Record<Key, string> = {
+  ...memorySetupEn,
   memoryStatusHint: 'Current pet, saved settings. Synced dialogue does not establish extracted memory.',
   memoryPending: 'Pending',
   memoryCaptured: 'Synced',

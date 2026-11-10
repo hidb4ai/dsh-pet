@@ -2,7 +2,10 @@
  * 设置页中文文案；键集是全集的真源。
  */
 
+import { memorySetupZh } from './memory-setup.ts';
+
 export const zh = {
+  ...memorySetupZh,
   memoryStatusHint: '已保存配置的当前宠物状态；已同步不代表已经提炼成长期记忆。',
   memoryPending: '待同步',
   memoryCaptured: '已同步',

@@ -182,6 +182,11 @@ export class ManagedMemory {
       : undefined;
   }
 
+  /** 生成密钥只在原完整地址下复用，由服务端使用，不返回设置页。 */
+  generationKeyForEndpoint(url: string): string | undefined {
+    return this.config?.baseUrl.replace(/\/+$/, '') === url.replace(/\/+$/, '') ? this.config.apiKey : undefined;
+  }
+
   /** Prepare before disturbing a working service; restore its identity and process if activation fails. */
   async replace(
     models: MemoryModels,

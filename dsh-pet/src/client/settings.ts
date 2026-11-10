@@ -22,6 +22,8 @@ import { makeFontCard } from './settings/font-card.ts';
 import { makeGlobalCard, type GlobalFlagKey, type GlobalFlags } from './settings/global-card.ts';
 import { makeLoadStatus } from './settings/load-status.ts';
 import { makeModelCard, type ChatFlagKey, type ChatFlagValues, type ModelFieldKey } from './settings/model-card.ts';
+import { makeMemorySetup } from './settings/memory-setup.ts';
+import type { MemorySetupStatus } from '../shared/memory-setup.ts';
 import { makeMobileCard } from './settings/mobile-card.ts';
 import { makeMotionCard } from './settings/motion-card.ts';
 import { makeModelPicker } from './settings/picker/index.ts';
@@ -80,6 +82,7 @@ export function makePetConfigSection(
   const VoiceCard = makeVoiceCard(rt, VoicePicker);
   const FontCard = makeFontCard(rt);
   const ModelCard = makeModelCard(rt, ModelPicker);
+  const MemorySetup = makeMemorySetup(rt);
   const PhysicsCard = makePhysicsCard(rt);
   const MotionCard = makeMotionCard(rt);
   const ShortcutsCard = makeShortcutsCard(rt, ctx);
@@ -91,6 +94,7 @@ export function makePetConfigSection(
 
   return function PetConfigSection() {
     const [saving, setBusy] = useState(false);
+    const [preparingMemory, setPreparingMemory] = useState(false);
     const [msg, setMsg] = useState<Feedback>({ kind: '', text: '' });
     // 权限申请的反馈，就地显示在按钮旁，与保存反馈分离。
     const [permMsg, setPermMsg] = useState<Feedback>({ kind: '', text: '' });
@@ -216,7 +220,7 @@ export function makePetConfigSection(
 
     // 配置没就绪（加载中 / 失败）时整页只读，避免在占位值上编辑再保存回去。
     const { loadState, retry } = useConfigLoad(rt, applyConfig);
-    const busy = saving || loadState !== 'ready';
+    const busy = saving || preparingMemory || loadState !== 'ready';
 
     // 切换系统通知：只改本地状态（开启时顺带借这次用户手势申请权限），配置在点「保存」时整包写入。
     const toggleNotify = async (v: boolean) => {
@@ -426,6 +430,14 @@ export function makePetConfigSection(
           onChatImageLimitChange: setChatImageLimit,
           values: chatFlags,
           onFlagChange: setChatFlag,
+        }),
+        h(MemorySetup, {
+          disabled: saving || loadState !== 'ready',
+          onBusy: setPreparingMemory,
+          onBinding: (binding: NonNullable<MemorySetupStatus['binding']>) => {
+            setLongTermMemory(binding.chatMemory);
+            setChatMemory(binding.chatMemoryRounds);
+          },
         }),
         h(PhysicsCard, { busy, physics, onChange: patchPhysics }),
         h(MotionCard, { busy, weights, onChange: setWeights }),

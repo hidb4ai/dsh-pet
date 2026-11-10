@@ -1,4 +1,5 @@
 /** Browser-side setup: drafts are separate from persisted state; credentials never round-trip. */
+import { MEMORY_PRESETS } from '../../../shared/memory-presets.ts';
 export function setupScript(): string {
   return `
 let setupTimer = null;
@@ -6,10 +7,7 @@ let setupWasBusy = false;
 let setupData = null;
 let setupDirty = false;
 let setupInitialized = false;
-const setupPresets = {
-  qwen: { model: 'qwen3.7-plus', embedding: 'qwen3.7-text-embedding', dimension: 1024 },
-  openai: { model: 'gpt-4.1-mini', embedding: 'text-embedding-3-small', dimension: 1536 },
-};
+const setupPresets = ${JSON.stringify(MEMORY_PRESETS)};
 function sameSetupEndpoint(a, b) { return !!a && a.replace(/\\/+$/, '') === b.replace(/\\/+$/, ''); }
 async function setupRequest(body) {
   const response = await fetch('/standalone-ai/setup', {

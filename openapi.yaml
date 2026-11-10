@@ -1761,6 +1761,53 @@ paths:
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
 
+  /dsh-pet-7340/powercontext/setup:
+    get:
+      operationId: getPowerContextSetup
+      tags: [Config]
+      summary: 读取 DSH 本机记忆准备状态
+      description: 返回模型公开参数、进度、健康状态及默认条目的记忆绑定，不返回密钥。独立模式返回 available=false。
+      responses:
+        "200":
+          description: 当前状态；轮询不会触发安装或模型调用。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemorySetupStatus"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    post:
+      operationId: configurePowerContextSetup
+      tags: [Config]
+      summary: 准备、暂停、恢复或取消本机记忆
+      description: |
+        仅接受 application/json，跨站浏览器请求拒绝。start 异步检查生成和 Embedding 模型、安装并启动 PowerContext。
+        不修改 DSH 聊天模型；默认条目的记忆绑定在就绪后保存。retry 重试草稿或启动已保存配置；stop 暂停并保留数据；cancel 取消当前准备。
+        已保存密钥只在完整端点地址相同的情况下复用。进程随 DSH 插件启停，同一数据库只允许一个进程管理。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemorySetupRequest"
+      responses:
+        "200":
+          description: 接受操作并返回当前状态，或返回结构化失败；接受不表示准备完成。
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/MemorySetupStatus"
+                  - $ref: "#/components/schemas/FailureResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+        "415":
+          description: 请求不是 JSON 或来自跨站浏览器。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailureResponse"
+
   /dsh-pet-7340/chat/powercontext:
     get:
       tags: [Action]
@@ -1852,7 +1899,13 @@ paths:
                     id: { type: string, minLength: 1, maxLength: 128 }
                     revision: { type: integer, minimum: 1 }
                     stateVersion: { type: integer, minimum: 0 }
-                    text: { type: string, minLength: 1, maxLength: 8192, description: 去掉首尾空白后不得超过 8192 UTF-8 字节 }
+                    text:
+                      {
+                        type: string,
+                        minLength: 1,
+                        maxLength: 8192,
+                        description: 去掉首尾空白后不得超过 8192 UTF-8 字节,
+                      }
                 - type: object
                   additionalProperties: false
                   required: [action, id, revision, stateVersion]
@@ -4372,6 +4425,106 @@ components:
         （同毫秒连写会 +1），宿主重启也不会倒退。
         **就靠它判断"变了没有"**：与上次记录的值相同即跳过渲染。
         `0` 表示从未写过。
+
+    MemorySetupModels:
+      type: object
+      required:
+        [baseUrl, model, embeddingBaseUrl, embeddingModel, embeddingDimension]
+      properties:
+        baseUrl: { type: string, format: uri, maxLength: 2048 }
+        model: { type: string, minLength: 1, maxLength: 200 }
+        embeddingBaseUrl: { type: string, format: uri, maxLength: 2048 }
+        embeddingModel: { type: string, minLength: 1, maxLength: 200 }
+        embeddingDimension: { type: integer, minimum: 1, maximum: 65536 }
+
+    MemorySetupRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            [
+              action,
+              memory,
+              baseUrl,
+              model,
+              embeddingBaseUrl,
+              embeddingModel,
+              embeddingDimension,
+            ]
+          properties:
+            action: { type: string, const: start }
+            memory: { type: boolean, const: true }
+            baseUrl: { type: string, format: uri, maxLength: 2048 }
+            model: { type: string, minLength: 1, maxLength: 200 }
+            apiKey:
+              { type: string, maxLength: 4096, writeOnly: true, default: "" }
+            embeddingBaseUrl: { type: string, format: uri, maxLength: 2048 }
+            embeddingModel: { type: string, minLength: 1, maxLength: 200 }
+            embeddingDimension: { type: integer, minimum: 1, maximum: 65536 }
+            embeddingApiKey:
+              { type: string, maxLength: 4096, writeOnly: true, default: "" }
+        - type: object
+          additionalProperties: false
+          required: [action]
+          properties:
+            action: { type: string, enum: [retry, stop, cancel] }
+
+    MemorySetupStatus:
+      type: object
+      required: [ok, available]
+      properties:
+        ok: { type: boolean, const: true }
+        available: { type: boolean }
+        stage:
+          type: string
+          enum:
+            [
+              idle,
+              checking,
+              checking_embedding,
+              checking_runtime,
+              downloading,
+              installing_python,
+              installing_memory,
+              starting,
+              restoring,
+              saving,
+              ready,
+              error,
+              stopped,
+              cancelling,
+              cancelled,
+            ]
+        message: { type: string }
+        errorCode:
+          {
+            type: string,
+            description: 已知错误码，未知异常统一为 setup_failed。,
+          }
+        busy: { type: boolean }
+        canCancel: { type: boolean }
+        startedAt: { type: integer, description: 本次操作开始时间，Unix 毫秒。 }
+        chatReady:
+          {
+            type: boolean,
+            description: 此 DSH 入口不负责聊天配置，恒为 false。,
+          }
+        memoryReady: { type: boolean }
+        memoryEnabled: { type: boolean }
+        memoryRunning: { type: boolean }
+        configured: { type: boolean }
+        canRetry: { type: boolean }
+        retryDraft: { type: boolean }
+        serverUrl: { type: string, format: uri }
+        models:
+          $ref: "#/components/schemas/MemorySetupModels"
+        binding:
+          type: object
+          required: [chatMemory, chatMemoryRounds]
+          properties:
+            chatMemory:
+              $ref: "#/components/schemas/ChatMemoryConfig"
+            chatMemoryRounds: { type: integer, minimum: 0 }
 
     ChatMemoryConfig:
       type: object

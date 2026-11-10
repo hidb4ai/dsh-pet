@@ -3,7 +3,10 @@
  */
 import type { Key } from './zh.ts';
 
+import { memorySetupEn } from './memory-setup.ts';
+
 export const es: Record<Key, string> = {
+  ...memorySetupEn,
   memoryStatusHint: 'Mascota actual, configuración guardada. Sincronizar no implica haber extraído recuerdos.',
   memoryPending: 'Pendientes',
   memoryCaptured: 'Sincronizados',

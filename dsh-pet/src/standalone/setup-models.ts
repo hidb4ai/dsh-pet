@@ -40,6 +40,48 @@ export function setupErrorMessage(error: unknown): string {
   );
 }
 
+/** 只公开已知错误码，未知异常正文可能包含模型密钥或本机路径。 */
+export function setupErrorCode(error: unknown): string {
+  const code = error instanceof Error ? error.message : '';
+  return code in setupErrors ? code : code === 'setup_busy' ? code : 'setup_failed';
+}
+
+/** DSH 模式只检查记忆抽取模型，不修改宿主聊天模型或凭据。 */
+export async function checkGeneration(models: MemoryModels, signal: AbortSignal): Promise<void> {
+  const timeout = AbortSignal.timeout(30_000);
+  try {
+    const response = await fetch(models.baseUrl.replace(/\/+$/, '') + '/chat/completions', {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.any([signal, timeout]),
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + models.apiKey },
+      body: JSON.stringify({ model: models.model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 16 }),
+    });
+    try {
+      if (!response.ok) {
+        const reason =
+          response.status === 401 || response.status === 403
+            ? 'authentication'
+            : response.status === 429
+              ? 'quota'
+              : response.status === 404
+                ? 'not_found'
+                : 'unknown';
+        throw new Error('chat_' + reason);
+      }
+      const data = (await response.json()) as { choices?: { message?: unknown }[] };
+      if (!data.choices?.[0]?.message) throw new Error('chat_unknown');
+    } finally {
+      if (!response.bodyUsed) await response.body?.cancel();
+    }
+  } catch (error) {
+    signal.throwIfAborted();
+    if (timeout.aborted) throw new Error('chat_timeout', { cause: error });
+    if (error instanceof Error && setupErrors[error.message]) throw error;
+    throw new Error('chat_connection', { cause: error });
+  }
+}
+
 /** Compare the whole endpoint, not just its origin, before reusing a stored credential. */
 export function sameModelEndpoint(left: string, right: string): boolean {
   return !!left && left.replace(/\/+$/, '') === right.replace(/\/+$/, '');

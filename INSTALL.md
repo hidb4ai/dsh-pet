@@ -4,13 +4,15 @@
 
 独立模式的聊天与本机长期记忆可从「开始养鱼」统一配置：填写模型信息，勾选长期记忆，再点击开始。所用版本须包含此入口；源码构建后运行 `pnpm standalone --setup`。安装、重启与停用说明见 [PowerContext 快速开始](POWERCONTEXT.md#快速开始由桌宠管理本机记忆)。
 
+本分支也支持在 DSH「设置 → 桌宠配置 → 本机长期记忆」中安装和管理 PowerContext。须从本分支构建，或安装本分支生成的 `.tgz`；上游 npm 包和 Release 不一定包含此功能。DSH `0.2.2-rc.1` CLI 需要 Node.js 24.9+，桌宠独立模式的下限仍为 22.12。
+
 装法取决于你在用哪个 DSH：**桌面应用**用应用内「插件管理」，**`dsh web`** 用命令行，改用源码安装则先 clone 再构建。几条路最终都是把插件装进 profile 的 `node_modules`，效果一样；区别只是入口。
 
 装完**重开 DSH**（`dsh web` 用户则重启 `dsh web`）才生效——运行中的进程持有内存里的旧插件。宠物出现在界面右上角（默认配置角落，可在设置页修改）。
 
 ## 前置要求
 
-命令行安装需要 Node.js 与 DSH 启动器；桌面应用自带 CLI 与运行时，可跳过本节。
+命令行安装需要 Node.js 24.9+ 与 DSH 启动器；桌面应用自带 CLI 与运行时，可跳过本节。
 
 ```sh
 # ① 前置要求：确认 Node.js 已安装
@@ -65,6 +67,8 @@ dsh plugin --profile web add file:D:/path/to/dsh-pet/dsh-pet
 ```
 
 > 注：`npm run build`（即 `scripts/prepare.js`）才产出**完整可安装**的 lib——除 tsdown 构建外还构建桌面共享核心（`shared-core.js`）、生成类型声明并收敛发布 `files` 清单；裸 `tsdown` 构建会缺桌面运行时与类型。发布与打包（`npm publish` / `npm pack`）时由 `prepack` 自动调用它，克隆仓库后需手动跑一次。
+
+需要可转交的安装包时，在内层包目录执行 `npm pack --pack-destination /仓库外的目录`，再用 `dsh plugin --profile web add /绝对路径/dsh-pet-0.4.7.tgz` 安装。重复构建时使用不同归档文件名，避免本地包缓存。重启 DSH 后，在「本机长期记忆」填写模型配置并启用；聊天仍用原有 DSH 模型，不必重新配置聊天凭据。安装发生在 DSH 宿主机器，远程 DSH 不会在浏览器所在机器安装服务。
 
 ## 独立模式（无需 DSH）
 

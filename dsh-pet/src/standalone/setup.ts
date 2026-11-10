@@ -1,11 +1,17 @@
-/** First-run workflow shared by the CLI and packaged desktop app. */
+/** DSH 与独立应用共用的准备流程；未传聊天服务时仅管理本机记忆。 */
 import { z } from 'zod';
-import { DEFAULT_CHAT_MEMORY } from '../shared/chat-memory-config.ts';
+import { memoryConfigBinding } from '../host/plugin/memory-binding.ts';
 import { ROUTE_SEGMENT } from '../shared/constants.ts';
 import type { StandaloneAiService } from './ai-provider.ts';
 import { ManagedMemory, memoryModelsSchema } from './managed-memory.ts';
 import type { MemoryStage } from './memory-install.ts';
-import { checkEmbedding, sameModelEndpoint, setupErrorMessage } from './setup-models.ts';
+import {
+  checkEmbedding,
+  checkGeneration,
+  sameModelEndpoint,
+  setupErrorCode,
+  setupErrorMessage,
+} from './setup-models.ts';
 
 const optionalKey = memoryModelsSchema.shape.apiKey.or(z.literal('')).default('');
 const inputSchema = z.discriminatedUnion('memory', [
@@ -70,48 +76,25 @@ export function setupMemoryBinding(origin: () => string, token: string) {
     if (!response.ok || data.ok === false || !data.main) throw new Error('pet_settings_failed');
     return data.main as Record<string, unknown>;
   }
-  return {
-    async matches(url: string) {
-      const memory = (await request('GET')).chatMemory as { backend?: string; serverUrl?: string };
-      return memory?.backend === 'powercontext' && memory.serverUrl === url;
-    },
-    async checkpoint() {
-      const before = await request('GET');
-      return async () => {
-        const current = await request('GET');
-        await request('PUT', {
-          pets: current.pets,
-          chatMemoryRounds: before.chatMemoryRounds,
-          chatMemory: before.chatMemory,
-        });
-      };
-    },
-    async save(url: string, enabled: boolean) {
+  return memoryConfigBinding({
+    read: () => request('GET'),
+    async update(change) {
       const main = await request('GET');
-      const memory = main.chatMemory as { backend?: string; serverUrl?: string };
-      const matched = memory?.serverUrl === url;
-      if (!enabled && (memory?.backend !== 'powercontext' || !matched)) return;
-      await request('PUT', {
-        pets: main.pets,
-        chatMemoryRounds: enabled && !matched ? 4 : main.chatMemoryRounds,
-        chatMemory: enabled
-          ? matched
-            ? { ...memory, backend: 'powercontext' }
-            : { ...DEFAULT_CHAT_MEMORY, backend: 'powercontext', serverUrl: url, maxHistoryBytes: 6000 }
-          : { ...memory, backend: 'native' },
-      });
+      const patch = change(main);
+      if (patch) await request('PUT', { ...patch, pets: main.pets });
     },
-  };
+  });
 }
 
 export function createSetup(
   home: string,
-  ai: StandaloneAiService,
+  ai: StandaloneAiService | undefined,
   binding: ReturnType<typeof setupMemoryBinding>,
 ): SetupService {
-  let stage: Stage = ai.isReady() ? 'ready' : 'idle';
+  let stage: Stage = ai?.isReady() ? 'ready' : 'idle';
   let message = messages[stage];
   let memory: ManagedMemory | undefined;
+  let errorCode: string | undefined;
   try {
     memory = new ManagedMemory(home);
     if (memory.settings() && !memory.enabled) {
@@ -120,6 +103,7 @@ export function createSetup(
     }
   } catch {
     stage = 'error';
+    errorCode = 'invalid_memory_settings';
     message = setupErrorMessage(new Error('invalid_memory_settings'));
   }
   let disposed = false;
@@ -131,6 +115,7 @@ export function createSetup(
   let startedAt: number | undefined;
   const progress = (next: Stage): void => {
     stage = next;
+    errorCode = undefined;
     message = messages[next];
   };
   const launch = (work: () => Promise<void>, cancellable = true): void => {
@@ -146,6 +131,7 @@ export function createSetup(
           progress('cancelled');
         else {
           stage = 'error';
+          errorCode = setupErrorCode(error);
           message = setupErrorMessage(error);
         }
       })
@@ -155,10 +141,14 @@ export function createSetup(
       });
   };
   const resolveDraft = (input: Draft): Draft => {
-    const saved = ai.connectionForSetup();
+    if (!ai && !input.memory) throw new Error('invalid_setup');
+    const saved = ai?.connectionForSetup();
     const apiKey =
       input.apiKey ||
-      (saved.protocol === 'openai-compatible' && sameModelEndpoint(saved.baseUrl, input.baseUrl) ? saved.apiKey : '');
+      (saved?.protocol === 'openai-compatible' && sameModelEndpoint(saved.baseUrl, input.baseUrl)
+        ? saved.apiKey
+        : '') ||
+      (!ai ? memory?.generationKeyForEndpoint(input.baseUrl) : '');
     if (!apiKey) throw new Error('chat_key_required');
     if (!input.memory) return { ...input, apiKey };
     if (!memory) throw new Error('invalid_memory_settings');
@@ -181,19 +171,21 @@ export function createSetup(
   const apply = async (draft: Draft): Promise<void> => {
     const models = draft.memory ? memoryModelsSchema.strip().parse(draft) : undefined;
     const chat = { protocol: 'openai-compatible', baseUrl: draft.baseUrl, model: draft.model, apiKey: draft.apiKey };
-    const checked = await ai.testConnection(chat, controller.signal);
-    if (!checked.ok) throw new Error('chat_' + (checked.reason ?? 'unknown'));
+    if (ai) {
+      const checked = await ai.testConnection(chat, controller.signal);
+      if (!checked.ok) throw new Error('chat_' + (checked.reason ?? 'unknown'));
+    } else await checkGeneration(models!, controller.signal);
     controller.signal.throwIfAborted();
     // A first-time user can chat while installing memory; existing working settings stay intact until commit.
-    const previous = ai.connectionForSetup();
-    if (!previous.baseUrl || !previous.model || !previous.apiKey) await ai.saveSettings(chat);
+    const previous = ai?.connectionForSetup();
+    if (ai && (!previous?.baseUrl || !previous.model || !previous.apiKey)) await ai.saveSettings(chat);
     if (draft.memory) {
       progress('checking_embedding');
       await checkEmbedding(models!, controller.signal);
     }
     controller.signal.throwIfAborted();
     const restoreBinding = await binding.checkpoint();
-    const oldChat = ai.connectionForSetup();
+    const oldChat = ai?.connectionForSetup();
     const commit = async (url?: string): Promise<void> => {
       controller.signal.throwIfAborted();
       canCancel = false;
@@ -202,12 +194,13 @@ export function createSetup(
       try {
         if (url) await binding.save(url, true);
         else if (memory?.enabled) await binding.save(memory.url!, false);
-        chatAttempted = true;
-        await ai.saveSettings(chat);
+        chatAttempted = !!ai;
+        await ai?.saveSettings(chat);
       } catch (error) {
         try {
           await restoreBinding();
-          if (chatAttempted) await ai.saveSettings({ ...oldChat, ...(!oldChat.apiKey ? { clearApiKey: true } : {}) });
+          if (chatAttempted && oldChat)
+            await ai!.saveSettings({ ...oldChat, ...(!oldChat.apiKey ? { clearApiKey: true } : {}) });
         } catch {
           throw new Error('recovery_failed');
         }
@@ -229,23 +222,27 @@ export function createSetup(
     status() {
       if (stage === 'ready' && memory?.enabled && !memory.running && !job) {
         stage = 'error';
+        errorCode = 'memory_start_failed';
         message = setupErrorMessage(new Error('memory_start_failed'));
       }
-      const chat = ai.getSettings();
+      const chat = ai?.getSettings();
       return {
         stage,
+        errorCode,
         message,
         busy: !!job,
         canCancel: !!job && canCancel,
         startedAt,
-        chatReady: ai.isReady(),
+        chatReady: ai?.isReady() ?? false,
         memoryReady: memory?.enabled === true && memory.ready,
         memoryEnabled: memory?.enabled === true,
         memoryRunning: memory?.running === true,
         configured: !!memory?.settings(),
         canRetry: !!lastDraft || !!memory?.settings(),
         retryDraft: !!lastDraft,
-        chat: { protocol: chat.protocol, baseUrl: chat.baseUrl, model: chat.model, hasKey: chat.hasKey },
+        chat: chat
+          ? { protocol: chat.protocol, baseUrl: chat.baseUrl, model: chat.model, hasKey: chat.hasKey }
+          : undefined,
         models: memory?.settings(),
         serverUrl: memory?.url,
       };

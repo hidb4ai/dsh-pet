@@ -49,6 +49,8 @@ dsh-pet 的宿主半侧向 DSH 自己的 Web 服务注册了**一条前缀路由
 | `POST /dsh-pet-7340/bubble/clear?pet=` | **清空气泡**（需锁）：提前收起说话气泡（只动气泡，不动动画）                                                                                                                                                                                             |
 | `POST /dsh-pet-7340/chat?pet=`         | 对桌宠说一句话并生成回复，同时写入对话记忆；响应带 `text`（配图时另有 `image`），同时照旧写进气泡。可选 `attachment`（`mediaType` + base64）随本轮送一张图：图片**记进记忆**（存附件引用，不存本体），但只影响这一轮、不进气泡；不传时行为与旧版逐字一致。配置 `chatAnimationEnabled` 时回复可带 `[动作:名称]`，采纳后与 `/anim` 同链路点播 |
 | `DELETE /dsh-pet-7340/chat?pet=`       | **删除对话记忆**：带 `?ts=`（可重复，取自 `GET /chat` 的 `messages[].ts`）只删这些轮——一轮两条共享 `ts`，成对删；不带 `ts` 清空整只。响应 `{ ok: true, removed }`，原生模式删空后不留空对象；PowerContext 模式保留绑定，本地删除不删除远端记忆                                                                      |
+| `GET /dsh-pet-7340/powercontext/setup` | DSH 本机记忆的准备、就绪、模型与绑定状态；独立模式返回 available=false，不回显密钥 |
+| `POST /dsh-pet-7340/powercontext/setup` | JSON start/retry/stop/cancel；仅管理记忆，保留 DSH 聊天模型；接受后轮询 GET 查看结果 |
 | `GET /dsh-pet-7340/chat/powercontext?pet=` | 查看已保存配置下的长期记忆同步与召回状态；不返回对话正文或令牌 |
 | `POST /dsh-pet-7340/chat/powercontext?pet=` | 重试最多两条待同步问答并返回状态；Source 接收不等于 Memory 抽取 |
 | `GET /dsh-pet-7340/chat/powercontext/memories?pet=` | 分页读取实际长期记忆；带 `id` 查看来源 |

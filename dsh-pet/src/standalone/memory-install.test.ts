@@ -4,7 +4,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
-import { runMemoryCommand } from './memory-install.ts';
+import { memoryProcessEnv, runMemoryCommand } from './memory-install.ts';
+
+test('Python runtime accepts DSH IPv6 proxy bypasses without changing the host environment', () => {
+  const previous = { NO_PROXY: process.env.NO_PROXY, no_proxy: process.env.no_proxy };
+  try {
+    process.env.NO_PROXY = 'localhost,127.0.0.1,::1,[::1],.example.com,192.168.0.0/16';
+    process.env.no_proxy = ' [2001:db8::1],internal.example ';
+    const env = memoryProcessEnv('/private/runtime');
+    assert.equal(env.NO_PROXY, 'localhost,127.0.0.1,::1,::1,.example.com,192.168.0.0/16');
+    assert.equal(env.no_proxy, '2001:db8::1,internal.example');
+    assert.ok(process.env.NO_PROXY.endsWith('[::1],.example.com,192.168.0.0/16'));
+    assert.equal(process.env.no_proxy, ' [2001:db8::1],internal.example ');
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
 
 test(
   'cancelling an installation stops descendants even when they ignore SIGTERM',

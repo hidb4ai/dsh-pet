@@ -210,3 +210,31 @@ test('a rejected config operation does not prevent later updates', async () => {
   assert.equal(valid.status, 200);
   assert.equal(read().pets[0].display, 'none');
 });
+
+test('memory setup rejects cross-site forms and returns only safe status fields', async () => {
+  const url = base + 'powercontext/setup';
+  const headers = { 'X-DSH-Pet-Token': token };
+  const status = (await fetch(url, { headers }).then((response) => response.json())) as Record<string, unknown>;
+  assert.equal(status.ok, true);
+  assert.equal(status.available, true);
+  assert.equal(status.chat, undefined);
+  for (const extra of [
+    { 'content-type': 'text/plain', 'sec-fetch-site': 'same-origin' },
+    { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+  ]) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, ...extra },
+      body: '{"action":"start"}',
+    });
+    assert.ok([403, 415].includes(response.status));
+  }
+  const invalid = (await fetch(url, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: '{"action":"start","apiKey":"synthetic-private-key"}',
+  }).then((response) => response.json())) as Record<string, unknown>;
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.message, 'invalid_setup');
+  assert.ok(!JSON.stringify(invalid).includes('synthetic-private-key'));
+});

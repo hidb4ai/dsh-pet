@@ -84,7 +84,10 @@ after(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
 });
 
-async function open(t, { get = customized, put, post, viewport = { width: 900, height: 900 }, lang = 'en' } = {}) {
+async function open(
+  t,
+  { get = customized, put, post, memorySetup, viewport = { width: 900, height: 900 }, lang = 'en' } = {},
+) {
   const context = await browser.newContext({ viewport });
   t.after(() => context.close());
   const page = await context.newPage();
@@ -95,6 +98,9 @@ async function open(t, { get = customized, put, post, viewport = { width: 900, h
   t.after(() => assert.deepEqual(errors, []));
   await page.route('**/dsh-pet-7340/**', async (route) => {
     const request = route.request();
+    if (new URL(request.url()).pathname === '/dsh-pet-7340/powercontext/setup') {
+      return memorySetup ? memorySetup(route) : route.fulfill({ json: { ok: true, available: false } });
+    }
     if (new URL(request.url()).pathname === '/dsh-pet-7340/config') {
       if (request.method() === 'PUT') {
         writes.push(request.postDataJSON());
@@ -327,4 +333,124 @@ test('model picker remains anchored while the responsive settings panel is scrol
   await page.getByRole('menuitemradio', { name: 'Follow current conversation' }).click();
   await save(page);
   assert.deepEqual(writes[0].whisperModel, { provider: '', model: '' });
+});
+
+test('local memory setup preserves unsaved settings and reflects readiness, pause and recovery', async (t) => {
+  const calls = [];
+  const memory = {
+    backend: 'native',
+    serverUrl: 'http://127.0.0.1:8000',
+    maxHistoryBytes: 0,
+    maxRecallBytes: 4096,
+    recallLimit: 3,
+    timeoutMs: 1500,
+  };
+  let snapshot = {
+    ok: true,
+    available: true,
+    stage: 'idle',
+    busy: false,
+    canCancel: false,
+    configured: false,
+    memoryReady: false,
+    memoryEnabled: false,
+    memoryRunning: false,
+    canRetry: false,
+    binding: { chatMemory: memory, chatMemoryRounds: 19 },
+  };
+  const { page, writes } = await open(t, {
+    viewport: { width: 360, height: 900 },
+    memorySetup: (route) => {
+      if (route.request().method() === 'POST') {
+        const body = route.request().postDataJSON();
+        calls.push(body);
+        const enabled = body.action !== 'stop';
+        snapshot = {
+          ...snapshot,
+          stage: enabled ? 'ready' : 'stopped',
+          configured: true,
+          memoryReady: enabled,
+          memoryEnabled: enabled,
+          memoryRunning: enabled,
+          canRetry: true,
+          models: {
+            baseUrl: 'https://api.openai.com/v1',
+            model: 'gpt-4.1-mini',
+            embeddingBaseUrl: 'https://api.openai.com/v1',
+            embeddingModel: 'text-embedding-3-small',
+            embeddingDimension: 1536,
+          },
+          binding: {
+            chatMemory: {
+              ...memory,
+              backend: enabled ? 'powercontext' : 'native',
+              serverUrl: 'http://127.0.0.1:12345',
+              maxHistoryBytes: 6000,
+            },
+            chatMemoryRounds: 4,
+          },
+        };
+      }
+      return route.fulfill({ json: snapshot });
+    },
+  });
+  const card = page.locator('[data-memory-setup]');
+  await card.getByText('Local long-term memory', { exact: true }).waitFor();
+  await card.getByRole('combobox').selectOption('openai');
+  await card.getByLabel('Generation API key', { exact: true }).fill('synthetic-key');
+  const size = page.locator('input[type="number"]').first();
+  await size.fill('320');
+  await size.blur();
+  await card.getByRole('button', { name: 'Check and enable memory' }).click();
+  await card.getByText('Setup completed.', { exact: true }).waitFor();
+  assert.equal(await card.getByLabel('Generation API key', { exact: true }).inputValue(), '');
+  assert.equal(calls[0].memory, true);
+  assert.equal(calls[0].embeddingDimension, 1536);
+  assert.equal(await card.getByLabel('Embedding model', { exact: true }).getAttribute('readonly'), '');
+  await save(page);
+  assert.equal(writes[0].pets[0].size, 320);
+  assert.equal(writes[0].chatMemory.backend, 'powercontext');
+  assert.equal(writes[0].chatMemoryRounds, 4);
+  await card.getByRole('button', { name: 'Pause memory', exact: true }).click();
+  await card.getByText('Memory paused.', { exact: true }).waitFor();
+  await card.getByRole('button', { name: 'Start or resume memory', exact: true }).click();
+  await card.getByText('Setup completed.', { exact: true }).waitFor();
+  assert.deepEqual(calls.slice(1), [{ action: 'stop' }, { action: 'retry' }]);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('local memory setup cancels background preparation and distinguishes failed writes', async (t) => {
+  let snapshot = {
+    ok: true,
+    available: true,
+    stage: 'installing_memory',
+    busy: true,
+    canCancel: true,
+    memoryReady: false,
+    memoryEnabled: false,
+    memoryRunning: false,
+    canRetry: true,
+    startedAt: Date.now(),
+  };
+  let failed = false;
+  const { page } = await open(t, {
+    lang: 'zh',
+    memorySetup: (route) => {
+      if (route.request().method() === 'POST') {
+        if (failed) return route.fulfill({ json: { ok: false, message: 'memory_already_owned' } });
+        assert.equal(route.request().postDataJSON().action, 'cancel');
+        snapshot = { ...snapshot, stage: 'cancelled', busy: false, canCancel: false };
+      }
+      return route.fulfill({ json: snapshot });
+    },
+  });
+  const card = page.locator('[data-memory-setup]');
+  await card.getByText('正在安装 PowerContext 1.5.0…', { exact: true }).waitFor();
+  assert.equal(await card.getByRole('button', { name: '检查并启用记忆' }).isEnabled(), false);
+  await card.getByRole('button', { name: '取消准备', exact: true }).click();
+  await card.getByText('已取消准备，已有数据保留。', { exact: true }).waitFor();
+  failed = true;
+  await card.getByRole('button', { name: '启动或恢复记忆', exact: true }).click();
+  await card.getByText('另一个桌宠进程正在管理此记忆库，请先停止那个进程中的记忆服务。', { exact: true }).waitFor();
+  assert.equal(await card.getByRole('button', { name: '暂停记忆', exact: true }).count(), 0);
 });

@@ -3,7 +3,10 @@
  */
 import type { Key } from './zh.ts';
 
+import { memorySetupEn } from './memory-setup.ts';
+
 export const ru: Record<Key, string> = {
+  ...memorySetupEn,
   memoryStatusHint: 'Текущий питомец, сохранённые настройки. Синхронизация не означает завершение извлечения памяти.',
   memoryPending: 'В очереди',
   memoryCaptured: 'Синхронизировано',

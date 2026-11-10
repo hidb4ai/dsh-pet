@@ -3,7 +3,10 @@
  */
 import type { Key } from './zh.ts';
 
+import { memorySetupEn } from './memory-setup.ts';
+
 export const fr: Record<Key, string> = {
+  ...memorySetupEn,
   memoryStatusHint:
     'Animal actuel, réglages enregistrés. La synchronisation ne garantit pas l’extraction des souvenirs.',
   memoryPending: 'En attente',

@@ -57,7 +57,13 @@ dsh plugin --profile web add "file:$PWD"
 # For the DSH desktop app, use --profile desktop instead.
 ```
 
-Restart DSH after installing or changing host code. The package declares compatibility with DSH `0.2.2-rc.1`; check your host version. In DSH, select PowerContext in the pet’s memory settings and connect an existing service. The managed first-run installer belongs to standalone mode.
+Restart DSH after installing or changing host code. This integration supports DSH `0.2.2-rc.1`, whose CLI requires Node.js **24.9 or later**.
+
+Open **Settings → Pet Config → Local long-term memory**. Choose a memory model preset or enter your generation and embedding settings, then click **Check and enable memory**. The page shows installation progress and service readiness, with controls to cancel, pause, resume and retry. Chat keeps using the model already selected in DSH; memory extraction has its own model configuration.
+
+The managed service runs on the machine hosting DSH and applies to the default pet entry. Custom pet packs retain their independent settings. You can also connect an existing PowerContext server in the pet’s model settings. Only pet dialogue is captured: this does not add memory to DSH’s coding-agent sessions.
+
+To distribute a built package, run `npm pack --pack-destination /path/outside/the/repository` in the inner package directory, then install the resulting `.tgz` with `dsh plugin --profile web add /absolute/path/to/dsh-pet-0.4.7.tgz`. Give each rebuilt archive a distinct filename when testing repeatedly; the installer can cache local archives.
 
 For upstream package installation, Windows bundles and packaging instructions, see [INSTALL.md](INSTALL.md).
 

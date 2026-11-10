@@ -3,7 +3,10 @@
  */
 import type { Key } from './zh.ts';
 
+import { memorySetupEn } from './memory-setup.ts';
+
 export const ja: Record<Key, string> = {
+  ...memorySetupEn,
   memoryStatusHint: '保存済み設定の現在のペット。同期済みでも記憶の抽出完了とは限りません。',
   memoryPending: '未同期',
   memoryCaptured: '同期済み',

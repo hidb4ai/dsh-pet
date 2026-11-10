@@ -12,6 +12,7 @@ import { failureBody } from '../routes/result.ts';
 import { createPetRouter } from '../routes/index.ts';
 import type { PetRouteDeps } from '../routes/types.ts';
 import type { HostContext } from './context.ts';
+import type { MemoryConfigStore } from './memory-binding.ts';
 
 /** 单次业务请求的处理函数：URL 已解析、方法已归一。 */
 export type HttpRouteHandler = (
@@ -26,7 +27,10 @@ export type HttpRouteHandler = (
  * @param deps - 路由层依赖（store、路径、动作函数）。
  * @returns 按前缀分发到领域路由的处理函数。
  */
-export function createHttpRoute(deps: PetRouteDeps): { handlePetRoute: HttpRouteHandler } {
+export function createHttpRoute(deps: PetRouteDeps): {
+  handlePetRoute: HttpRouteHandler;
+  memoryConfig: MemoryConfigStore;
+} {
   // 配置请求覆盖完整读改写：下一次更新必须读取前一次完成后的配置。
   // GET /config 同样排队，避免写入尚未完成时读到空文件而回退内置默认。
   let configQueue: Promise<void> = Promise.resolve();
@@ -61,7 +65,29 @@ export function createHttpRoute(deps: PetRouteDeps): { handlePetRoute: HttpRoute
   // 路由层依赖表：显式传参取代闭包捕获，各领域模块因此可独立演进（见 ./routes/index.ts）
   const dispatchPetRoute = createPetRouter(deps);
 
-  return { handlePetRoute };
+  const configUrl = new URL(ROUTE_SEGMENT + '/config', 'http://localhost');
+  const mainOf = (result: RouteResult): Record<string, unknown> => {
+    if (result.kind !== 'json') throw new Error('pet_settings_failed');
+    const body = result.obj as { ok?: boolean; main?: Record<string, unknown> };
+    if (result.status !== 200 || body.ok === false || !body.main) throw new Error('pet_settings_failed');
+    return body.main;
+  };
+  return {
+    handlePetRoute,
+    memoryConfig: {
+      read: async () => mainOf(await handlePetRoute(configUrl.pathname, 'GET')),
+      update(change) {
+        const pending = configQueue.then(async () => {
+          const main = mainOf(await dispatchPetRoute(configUrl, 'config', 'GET'));
+          const patch = change(main);
+          if (patch)
+            mainOf(await dispatchPetRoute(configUrl, 'config', 'PUT', JSON.stringify({ ...patch, pets: main.pets })));
+        });
+        configQueue = pending.catch(() => {});
+        return pending;
+      },
+    },
+  };
 }
 
 /**
@@ -76,6 +102,19 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
         kind: 'prefix',
         path: ROUTE_SEGMENT,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
+          // 管理入口只接受 JSON；跨站表单不能触发下载、模型调用或进程启停。
+          if (
+            req.method === 'POST' &&
+            new URL(req.url ?? '/', 'http://localhost').pathname === ROUTE_SEGMENT + '/powercontext/setup'
+          ) {
+            if (
+              req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json' ||
+              req.headers['sec-fetch-site'] === 'cross-site'
+            ) {
+              sendJson(res, 415, failureBody('bad-request', 'application/json required'));
+              return;
+            }
+          }
           // 挂起等待（/playback?wait=）期间调用方可能提前断开：据此中止等待，
           // 否则那个等待者要一直留到超时才回收。'close' 在正常应答后也会触发，但那时监听已摘掉。
           const abort = new AbortController();

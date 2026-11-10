@@ -16,13 +16,14 @@ import type { PetImageRef } from '../image-attachment.ts';
 import { limitPool, matchMeme, pickMeme, readMemePool } from '../memes.ts';
 import { generateWhisper } from '../whisper.ts';
 import { createMemoryOrphans } from './memory-orphans.ts';
+import { createPetMemoryLibrary } from './memory-library.ts';
 import { configuredModel } from '../model-selection.ts';
 import { SLEEP_TALK_INSTRUCTION } from '../whisper.ts';
 import { pickVoiceSurface, type VoiceTarget } from '../surface.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 import { DEFAULT_CHAT_MEMORY, chatMemoryConfigValid, type ChatMemoryConfig } from '../../shared/chat-memory-config.ts';
-import { boundedHistory } from '../memory-context.ts';
+import { boundedHistory, memoryRecallQuery } from '../memory-context.ts';
 import {
   PowerContextClient,
   memoryState,
@@ -480,7 +481,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
         // Persist the scope idempotency key before the first external call.
         await writeMemory(mem);
         try {
-          recalledContext = await new PowerContextClient(config).prepare(sync, text);
+          recalledContext = await new PowerContextClient(config).prepare(sync, memoryRecallQuery(list, text));
         } catch (error) {
           sync.lastRecall = 'unavailable';
           sync.lastError = memoryErrorCode(error);
@@ -628,6 +629,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
     activePetId = id;
   };
   return {
+    ...createPetMemoryLibrary({ configPaths, readMemory, withLock: withMemoryLock }),
     syncMemory,
     memoryStatus,
     lastWhisperAt,

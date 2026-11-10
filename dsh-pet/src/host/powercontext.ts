@@ -2,6 +2,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { ChatMemoryConfig } from '../shared/chat-memory-config.ts';
 import { memoryToken } from './powercontext-auth.ts';
+import { listRememberedFacts, inspectRememberedFact, changeRememberedFact } from './powercontext-library.ts';
+import type { MemoryChange, MemoryEvidence, MemoryPage } from '../shared/memory-library.ts';
 
 export interface MemoryTurn {
   id: string;
@@ -92,12 +94,17 @@ export class PowerContextClient {
     this.fetcher = fetcher;
   }
 
-  private async request(path: string, body: unknown, signal: AbortSignal): Promise<Record<string, unknown>> {
-    const headers: Record<string, string> = { 'content-type': 'application/json' };
+  private async request(
+    path: string,
+    body: unknown,
+    signal: AbortSignal,
+    options: { method?: 'GET' | 'POST' | 'PUT'; headers?: Record<string, string> } = {},
+  ): Promise<Record<string, unknown>> {
+    const headers: Record<string, string> = { 'content-type': 'application/json', ...options.headers };
     const token = memoryToken(this.config.serverUrl);
     if (token) headers.authorization = 'Bearer ' + token;
     const response = await this.fetcher(this.config.serverUrl.replace(/\/+$/, '') + path, {
-      method: 'POST',
+      method: options.method ?? 'POST',
       headers,
       body: JSON.stringify(body),
       signal,
@@ -131,6 +138,19 @@ export class PowerContextClient {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
       throw new MemoryServiceError('invalid_response');
     return parsed as Record<string, unknown>;
+  }
+
+  /** 管理操作使用独立超时；不把翻页、编辑等操作的耗时施加给聊天召回。 */
+  async listMemories(scope: string, cursor?: string): Promise<MemoryPage> {
+    return listRememberedFacts(this.request.bind(this), scope, AbortSignal.timeout(10_000), cursor);
+  }
+
+  async inspectMemory(scope: string, id: string): Promise<MemoryEvidence> {
+    return inspectRememberedFact(this.request.bind(this), scope, id, AbortSignal.timeout(10_000));
+  }
+
+  async changeMemory(scope: string, change: MemoryChange): Promise<void> {
+    return changeRememberedFact(this.request.bind(this), scope, change, AbortSignal.timeout(10_000));
   }
 
   async ensureScope(state: MemorySyncState, signal: AbortSignal): Promise<string> {

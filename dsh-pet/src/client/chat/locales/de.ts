@@ -4,6 +4,34 @@
 import type { Key } from './zh.ts';
 
 export const de: Record<Key, string> = {
+  factsSourceNumber: 'Quelle {n}',
+  factsUser: 'Du',
+  factsPet: 'Tier',
+
+  factsTitle: 'Erinnerungen',
+  factsIntro:
+    'Erinnerungen dieses Tiers ansehen. Korrekturen erzeugen eine neue Version; Vergessen schließt sie vom Abruf aus.',
+  factsRefresh: 'Aktualisieren / Anfang',
+  factsLoading: 'Erinnerungen laden…',
+  factsEmpty: 'Noch keine aktiven Erinnerungen. Synchronisierte Gespräche müssen erst verarbeitet werden.',
+  factsNext: 'Nächste Seite',
+  factsSources: 'Quellen ansehen',
+  factsCorrect: 'Korrigieren',
+  factsForget: 'Vergessen',
+  factsSave: 'Korrektur speichern',
+  factsConfirmForget: 'Vergessen bestätigen',
+  factsForgetWarning:
+    'Diese Erinnerung wird nicht mehr abgerufen. Quellen, alte Versionen und lokale Chats bleiben; der jüngste Chat kann sie noch erwähnen.',
+  factsReadError: 'Erinnerungen nicht verfügbar. Verbindung prüfen und aktualisieren.',
+  factsWriteError:
+    'Aktualisierung nicht bestätigt. Verbindung oder Version könnte sich geändert haben. Vor einem neuen Versuch aktualisieren und prüfen.',
+  factsSaved: 'Der Dienst hat die Änderung bestätigt. Die Liste zeigt aktive Erinnerungen.',
+  factsRevision: 'Version {n}',
+  factsEvidenceNote:
+    'Bis zu drei ursprüngliche Quellen. Sie sind historische Belege; Korrekturen stehen in der aktuellen Version.',
+  factsNoExcerpt: 'Quellenauszug nicht verfügbar.',
+  factsNoSource: 'Keine Quelle verknüpft; möglicherweise manuell erfasst.',
+
   tabTitle: 'Maskottchen-Chat',
   tabGuide: 'Chatte mit allen Desktop-Maskottchen; klicke auf einen Tab zum Wechseln',
   loading: 'Wird geladen…',
@@ -12,7 +40,9 @@ export const de: Record<Key, string> = {
   older: 'Frühere laden',
   olderEnd: 'Du hast den Anfang erreicht',
   olderEndCapped: 'Du hast den Anfang erreicht (maximal {n} Runden)',
-  memoryLine: 'Die letzten {n} Runden sind im Gedächtnis des Maskottchens',
+  memoryLine: 'Die nächste Antwort nutzt diese {n} Runden; Erinnerungen werden separat abgerufen',
+  localDeleteOnly:
+    'Nur der lokale Chatverlauf wird gelöscht. Synchronisierte Erinnerungen lassen sich unter „Erinnerungen“ einzeln vergessen.',
   orphansSummary: '{pets} gelöschte(s) Maskottchen haben Verlauf ({messages} Nachrichten)',
   orphansClear: 'Bereinigen',
   toolsPersona: 'Persona',

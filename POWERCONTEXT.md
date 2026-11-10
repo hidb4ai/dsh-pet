@@ -22,7 +22,7 @@ Qwen 预设包含北京、新加坡；地址与 Key 的地域须一致，切换�
 
 再次启动桌宠时，已启用的本机记忆自动启动；退出桌宠时停止其拥有的记忆进程，不删除数据，也不安装开机服务。「暂停记忆」会切回原生近期历史并停止服务，刷新页面后仍显示暂停；点击「恢复记忆」重新启动。仅在高级设置里切换后端，不会立即停止已运行的本机服务。端口被占用或服务失败时显示错误，可按已保存配置重试；不会改端口另建一份记忆，也不会自动清空数据。
 
-首次聊天与 Embedding 检查，以及后续聊天、记忆整理、检索可能产生模型费用。只开启 Atomic Memory 会话抽取与 embedding；不开启 Dream、Topic Memory 或 Profile 定时生成。服务就绪不代表新对话已经整理成记忆，后台检查间隔 30 秒也不是完成时限。自动安装支持 Linux/macOS；Windows 随 PowerContext 保持实验性支持。
+首次聊天与 Embedding 检查，以及后续聊天、记忆整理、检索可能产生模型费用。只开启 Atomic Memory 会话抽取与 embedding；不开启 Dream、Topic Memory 或 Profile 定时生成。服务就绪不代表新对话已经整理成记忆，后台检查间隔 30 秒也不是完成时限。本机后台生成超时为 120 秒，与前台召回的短超时独立；较慢模型可能需要多次生成才能完成整理。自动安装支持 Linux/macOS；Windows 随 PowerContext 保持实验性支持。
 
 无图形桌面的机器不会自动打开浏览器或出现桌面角色；可在本机启动清单 `dsh-pet/standalone-runtime.json` 中找到带凭据的 `settingsUrl`，不要分享该地址。
 
@@ -39,6 +39,8 @@ Qwen 预设包含北京、新加坡；地址与 Key 的地域须一致，切换�
 
 近期历史仍由 `chatMemoryRounds` 控制；另可设置近期正文与召回正文的 UTF-8 字节预算。近期预算为 0 时只按轮数限制，非零时保留预算内连续、完整的问答轮次。默认后端为 `native`，召回正文默认最多 4096 字节，召回及单次同步操作默认超时为 1500 毫秒。
 
+聊天分界线使用宿主返回的 `contextRounds`，表示字节预算内实际选入下一轮的近期轮数。长期召回与这条线独立；检索线索包含预算内最近两轮和当前问题，帮助理解承接式追问。
+
 字节预算不是模型 Token 限额，也不覆盖人设、本轮输入、时间或动作标记、图片和协议包装。减少近期输入不保证总费用下降，后台抽取、维护和检索也可能产生模型费用。本地历史文件和远端存储不会因输入预算而自动缩小。
 
 ## 同步状态与恢复
@@ -52,9 +54,17 @@ Qwen 预设包含北京、新加坡；地址与 Key 的地域须一致，切换�
 
 Scope 幂等键、Source ID 和精确载荷随 `memory.json` 持久化，重启后重试沿用原身份。更换服务地址不会把旧队列转发给新地址；切回旧地址可继续补传。HTTP 409 身份冲突会停止该绑定的补传，需要核对本地与服务端数据。不要通过删除记忆文件修复冲突；文件损坏或无法读取时，程序拒绝覆盖已有记录。
 
+## 查看、更正与遗忘
+
+聊天中打开「记得的事」后按需读取 active 原子记忆，每页十条。可以查看当前版本、最多三个来源及各 2000 字符摘录。来源可能是原始 JSON 对话；它是历史证据，不表示更正后的正文来自旧来源。读取失败会显示不可用，不会伪装成空列表。
+
+更正通过内容版本校验保存新版本；遗忘使用内容版本和状态版本共同校验。若页面已过时，刷新核对后再操作。操作成功提示只在服务确认后出现；连接中断不能当作已成功。
+
+遗忘将该原子记忆标为 `forgotten`，从长期召回中排除，保留原始来源与历史版本；近期上下文和新的对话仍可能出现相同信息。需要同时移出近期上下文时，再删除对应本机聊天。彻底清除远端证据需要另行管理服务端数据保留策略。
+
 ## 删除与停用
 
-删除本地聊天会取消对应的未发送队列，但不会撤回已发送或正在发送的数据，也不会删除远端长期记忆。为继续定位远端记录，清空聊天后仍保留 Scope 绑定。远端遗忘或删除应通过 PowerContext 的管理能力完成，并同时处理可能再次进入抽取流程的旧证据。
+删除本地聊天会取消对应的未发送队列，但不会撤回已发送或正在发送的数据，也不会删除远端长期记忆。为继续定位远端记录，清空聊天后仍保留 Scope 绑定。可以在「记得的事」中逐条遗忘；这不是远端物理删除。删除宠物之前先管理它的长期记忆，避免失去该宠物的界面入口。
 
 切回原生模式并保存后，不再发起新的召回或补传；已经开始的请求可能完成。本地历史、绑定和远端数据保留。
 
@@ -62,6 +72,8 @@ Scope 幂等键、Source ID 和精确载荷随 `memory.json` 持久化，重启�
 
 - `GET /dsh-pet-7340/chat/powercontext?pet=main`：读取已保存配置下的同步及召回状态，不返回对话正文或令牌。
 - `POST /dsh-pet-7340/chat/powercontext?pet=main`：重试一批待同步记录并返回状态。
+- `GET /dsh-pet-7340/chat/powercontext/memories?pet=main`：分页列出 active 记忆，`cursor` 取下一页；带 `id` 返回该条记忆来源。
+- `POST /dsh-pet-7340/chat/powercontext/memories?pet=main`：传 `action`（`correct` / `forget`）、`id`、`revision`、`stateVersion`；更正还需 `text`（去空白后不超过 8192 UTF-8 字节）。
 
 接口字段见 [OpenAPI](openapi.yaml)。原有 `/chat/memory` 仍用于已删除宠物的本地残留记录。
 
@@ -69,7 +81,7 @@ Scope 幂等键、Source ID 和精确载荷随 `memory.json` 持久化，重启�
 
 独立 CLI 与打包应用额外提供 `/standalone-ai/setup`，沿用本机 Host、同源和进程令牌校验。它不属于 DSH 插件 HTTP 契约，不在插件 OpenAPI 的 `/dsh-pet-7340/` 路径中。
 
-- `GET` 返回 `stage`、`message`、`busy`、`canCancel`、`startedAt`（Unix 毫秒）、`chatReady`、`memoryReady`、`memoryEnabled`、`memoryRunning`、`configured`、`canRetry`、`retryDraft`，以及不含密钥的 `chat`、可选的 `serverUrl` 和 `models`。`chat.hasKey` 仅表示已保存密钥；`chatReady` 表示已有完整聊天配置，不是每次读取都请求模型。`memoryReady` 独立于本次操作是否成功，原服务仍可用时不会因新设置失败而变成 false。
+- `GET` 返回 `stage`、`message`、`busy`、`canCancel`、`startedAt`（Unix 毫秒）、`chatReady`、`memoryReady`、`memoryEnabled`、`memoryRunning`、`configured`、`canRetry`、`retryDraft`，以及不含密钥的 `chat`、可选的 `serverUrl` 和 `models`。`chat.hasKey` 仅表示已保存密钥；`chatReady` 表示已有完整聊天配置，不是每次读取都请求模型。`memoryReady` 必须来自健康探测：启动时等待成功，运行中每 10 秒重新探测，结果超过 30 秒失效，进程退出或停止立即失效。它独立于本次操作是否成功，原服务仍可用时不会因新设置失败而变成 false。
 - `stage` 包含 `idle/checking/checking_embedding/checking_runtime/downloading/installing_python/installing_memory/starting/restoring/saving/ready/error/stopped/cancelling/cancelled`。安装步骤对应实际工作，不提供估算百分比。
 - `POST` 使用 JSON。首次设置传 `action: "start"`、`memory` 布尔值、`baseUrl`、`model`、`apiKey`；`memory: true` 时另需 `embeddingBaseUrl`、`embeddingModel`、`embeddingDimension`，以及必要时的 `embeddingApiKey`。未知字段拒绝。密钥留空或省略时，由服务端按完整接口地址匹配已保存密钥；Embedding 也可在与聊天地址相同时复用聊天 Key，不同地址且没有匹配的已保存 Key 时必须填写。
 - `POST {"action":"retry"}` 重试尚未成功的本次设置；没有本次草稿时按已保存配置恢复记忆。草稿只保留在当前进程内，重启后不会自动执行失败的新设置。`POST {"action":"stop"}` 暂停本机记忆并关闭自动启动，保留数据库。`POST {"action":"cancel"}` 取消可取消的准备步骤；进入最终保存后 `canCancel` 为 false，取消请求返回 409。接受操作返回 HTTP 202，通过 GET 轮询；忙时其他写操作返回 409。

@@ -1600,7 +1600,7 @@ paths:
               schema:
                 oneOf:
                   - type: object
-                    required: [ok, messages, rounds]
+                    required: [ok, messages, rounds, contextRounds]
                     properties:
                       ok:
                         type: boolean
@@ -1610,6 +1610,10 @@ paths:
                         description: 按时间正序排列的消息，最多 `rounds * 2` 条
                         items:
                           $ref: "#/components/schemas/ChatMemoryMessage"
+                      contextRounds:
+                        type: integer
+                        minimum: 0
+                        description: 按配置轮数和 UTF-8 正文字节预算实际选入下一轮的近期历史轮数；与长期召回独立。
                       rounds:
                         type: integer
                         description: 本次生效的轮数（传了 `?rounds=` 用传入值，否则来自配置 `chatMemoryRounds`）
@@ -1796,6 +1800,81 @@ paths:
                 oneOf:
                   - $ref: "#/components/schemas/PowerContextStatus"
                   - $ref: "#/components/schemas/FailureResponse"
+
+  /dsh-pet-7340/chat/powercontext/memories:
+    get:
+      tags: [Action]
+      operationId: listPetMemories
+      summary: 查看当前宠物的实际长期记忆或某条记忆的来源
+      description: |
+        不传 id 时，每页列出最多 10 条 active 原子记忆。传 id 时返回当前版本的来源，最多 3 个来源与每个 2000 字符摘录。
+        服务和 Scope 由宿主的宠物绑定解析，客户端不能指定。未建立绑定时返回空页；服务不可用时明确失败。
+      parameters:
+        - $ref: "#/components/parameters/PetIdQuery"
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 4096 }
+        - name: id
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: 记忆页、来源详情或业务失败（通过 ok 区分）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/PetMemoryPage"
+                  - $ref: "#/components/schemas/PetMemoryEvidence"
+                  - $ref: "#/components/schemas/FailureResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+    post:
+      tags: [Action]
+      operationId: changePetMemory
+      summary: 更正或遗忘当前宠物的一条长期记忆
+      description: |
+        更正必须携带用户看到的内容版本与状态版本，冲突时拒绝覆盖。遗忘将原子记忆标记为 forgotten，停止长期召回，
+        不会物理删除原始来源、历史版本或本地聊天。新对话仍可能形成新记忆。成功回执只在远端确认后返回。
+      parameters:
+        - $ref: "#/components/parameters/PetIdQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [action, id, revision, stateVersion, text]
+                  properties:
+                    action: { const: correct }
+                    id: { type: string, minLength: 1, maxLength: 128 }
+                    revision: { type: integer, minimum: 1 }
+                    stateVersion: { type: integer, minimum: 0 }
+                    text: { type: string, minLength: 1, maxLength: 8192, description: 去掉首尾空白后不得超过 8192 UTF-8 字节 }
+                - type: object
+                  additionalProperties: false
+                  required: [action, id, revision, stateVersion]
+                  properties:
+                    action: { const: forget }
+                    id: { type: string, minLength: 1, maxLength: 128 }
+                    revision: { type: integer, minimum: 1 }
+                    stateVersion: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: ok=true 表示远端确认；失败通过 ok=false 与 reason/message 返回
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [ok]
+                    properties:
+                      ok: { const: true }
+                  - $ref: "#/components/schemas/FailureResponse"
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 
   /dsh-pet-7340/chat/memory:
     get:
@@ -3298,6 +3377,46 @@ components:
             $ref: "#/components/schemas/FailureResponse"
 
   schemas:
+    PetMemoryPage:
+      type: object
+      required: [ok, items, nextCursor]
+      properties:
+        ok: { const: true }
+        nextCursor: { type: [string, "null"] }
+        items:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [id, revision, stateVersion, kind, text]
+            properties:
+              id: { type: string }
+              revision: { type: integer, minimum: 1 }
+              stateVersion: { type: integer, minimum: 0 }
+              kind: { type: string }
+              text: { type: string }
+    PetMemoryEvidence:
+      type: object
+      required: [ok, evidence]
+      properties:
+        ok: { const: true }
+        evidence:
+          type: object
+          required: [revision, createdAt, sources]
+          properties:
+            revision: { type: integer, minimum: 1 }
+            createdAt: { type: [string, "null"] }
+            sources:
+              type: array
+              maxItems: 3
+              items:
+                type: object
+                required: [id, type]
+                properties:
+                  id: { type: string }
+                  type: { type: string }
+                  excerpt: { type: string, maxLength: 2000 }
+
     OkResponse:
       type: object
       required: [ok]

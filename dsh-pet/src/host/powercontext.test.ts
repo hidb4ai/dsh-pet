@@ -383,3 +383,20 @@ test('a Source identity conflict stays blocked even if a later recall fails diff
     await f.close();
   }
 });
+
+test('follow-up recall carries recent dialogue, bounded by the configured history selection', async () => {
+  const f = await fixture();
+  try {
+    const memory = f.makeMemory();
+    await memory.chatWithPet('main', '我们来聊聊饮料');
+    await memory.chatWithPet('main', '那我呢？');
+    const queries = f.calls.filter((call) => call.path === '/v1/context/prepare').map((call) => call.body.query);
+    assert.equal(queries[0], '我们来聊聊饮料');
+    assert.match(String(queries[1]), /当前问题：那我呢？/);
+    assert.match(String(queries[1]), /用户：我们来聊聊饮料/);
+    assert.match(String(queries[1]), /桌宠：记住啦/);
+    await memory.syncMemory('main');
+  } finally {
+    await f.close();
+  }
+});

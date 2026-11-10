@@ -13,6 +13,8 @@ export interface PanelData {
   readonly pets: Pet[];
   readonly petId: string;
   readonly messages: ChatMessageView[];
+  /** 宿主按轮数和字节预算实际选入下一次对话的近期历史轮数。 */
+  readonly contextRounds?: number;
   readonly draft: string;
   /** 待发送的图；undefined = 这一条是纯文字。 */
   readonly attachment: EncodedImage | undefined;
@@ -71,7 +73,7 @@ export interface ChatPanelState extends PanelData {
   readonly showOlder: () => void;
   readonly petName: string;
   readonly assetRoot: string;
-  /** 当前条目保留的轮数（`chatMemoryRounds`）；配置里没有时不画记忆边界线。 */
+  /** 宿主实际选入的近期轮数；载入前不画线。长期记忆独立召回。 */
   readonly memoryRounds: number | undefined;
   /** 历史确实多于记忆轮数、画得出那条线；为假时「记忆线」按钮置灰。 */
   readonly hasMemoryLine: boolean;

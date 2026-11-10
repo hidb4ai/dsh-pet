@@ -239,7 +239,7 @@ export function createSetup(
         canCancel: !!job && canCancel,
         startedAt,
         chatReady: ai.isReady(),
-        memoryReady: memory?.enabled === true && memory.running,
+        memoryReady: memory?.enabled === true && memory.ready,
         memoryEnabled: memory?.enabled === true,
         memoryRunning: memory?.running === true,
         configured: !!memory?.settings(),

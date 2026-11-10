@@ -499,3 +499,51 @@ for (const saveFails of [false, true])
       assert.ok(!JSON.stringify(status).includes('separate-embedding-key'));
     },
   );
+
+test(
+  'enabled runtime stays unready during startup and loses readiness after a failed health check',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const home = mkdtempSync(join(tmpdir(), 'pet-ready-health-'));
+    const managed = new ManagedMemory(home);
+    await managed.configure({
+      baseUrl: draft.baseUrl,
+      model: draft.model,
+      apiKey: draft.apiKey,
+      embeddingBaseUrl: draft.baseUrl,
+      embeddingModel: 'vector',
+      embeddingApiKey: draft.apiKey,
+      embeddingDimension: 4,
+    });
+    managed.setEnabled(true);
+    fakeInstalledRuntime(managed.directory);
+    const marker = join(managed.directory, 'health-test');
+    const python = join(managed.directory, 'venv', 'bin', 'python');
+    writeFileSync(marker, 'degraded');
+    writeFileSync(
+      python,
+      readFileSync(python, 'utf8').replace(
+        'res.end(\'{"status":"ready"}\');',
+        `res.end(JSON.stringify({status:require('node:fs').readFileSync(${JSON.stringify(marker)},'utf8')}));`,
+      ),
+    );
+    const signal = AbortSignal.timeout(20_000);
+    const starting = managed.start(signal, () => {});
+    t.after(async () => {
+      await managed.dispose();
+      rmSync(home, { recursive: true, force: true });
+    });
+    for (let i = 0; i < 100 && !managed.running; i++) await delay(20);
+    assert.equal(managed.running, true);
+    assert.equal(managed.ready, false);
+    writeFileSync(marker, 'ready');
+    await starting;
+    assert.equal(managed.ready, true);
+    writeFileSync(marker, 'degraded');
+    assert.equal(await managed.checkReady(), false);
+    assert.equal(managed.running, true);
+    assert.equal(managed.ready, false);
+    await managed.stopProcess();
+    assert.equal(managed.ready, false);
+  },
+);

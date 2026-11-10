@@ -114,6 +114,7 @@ test('runtime configuration enables only conversational extraction and scopes bo
   assert.equal(env.POWERCONTEXT_SERVER_RUNTIME_MEMORY_EXTRACTION_PROFILE, 'conversation');
   assert.equal(env.POWERCONTEXT_SERVER_RUNTIME_ARTIFACT_PROCESSING_FAMILIES, '["memory"]');
   assert.equal(env.POWERCONTEXT_SERVER_RUNTIME_DREAM_ENABLED, 'false');
+  assert.equal(env.POWERCONTEXT_SERVER_INFERENCE_GENERATION_TIMEOUT_SECONDS, '120');
   assert.equal(
     JSON.parse(env.POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_HEADERS!).Authorization,
     'Bearer embedding-test-key',

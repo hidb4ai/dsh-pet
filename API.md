@@ -51,6 +51,8 @@ dsh-pet 的宿主半侧向 DSH 自己的 Web 服务注册了**一条前缀路由
 | `DELETE /dsh-pet-7340/chat?pet=`       | **删除对话记忆**：带 `?ts=`（可重复，取自 `GET /chat` 的 `messages[].ts`）只删这些轮——一轮两条共享 `ts`，成对删；不带 `ts` 清空整只。响应 `{ ok: true, removed }`，原生模式删空后不留空对象；PowerContext 模式保留绑定，本地删除不删除远端记忆                                                                      |
 | `GET /dsh-pet-7340/chat/powercontext?pet=` | 查看已保存配置下的长期记忆同步与召回状态；不返回对话正文或令牌 |
 | `POST /dsh-pet-7340/chat/powercontext?pet=` | 重试最多两条待同步问答并返回状态；Source 接收不等于 Memory 抽取 |
+| `GET /dsh-pet-7340/chat/powercontext/memories?pet=` | 分页读取实际长期记忆；带 `id` 查看来源 |
+| `POST /dsh-pet-7340/chat/powercontext/memories?pet=` | 校验版本后更正或遗忘记忆；遗忘不会物理删除来源 |
 | `GET /dsh-pet-7340/chat/memory`        | 列出**已删宠物**残留的对话历史（宠物删了但历史还在，`GET /chat` 读不到）；只给条数与最后时间                                                                                                                                                             |
 | `DELETE /dsh-pet-7340/chat/memory`     | 一次清空这些残留历史                                                                                                                                                                                                                                     |
 | `POST /dsh-pet-7340/balance`           | 立即刷新一次余额（可见效果同样是弹气泡 + 档位动画）                                                                                                                                                                                                      |

@@ -142,7 +142,7 @@ export function confirmNode(rt: ChatPanelRuntime, state: ChatPanelState): unknow
       : state.pending === 'clear-orphans'
         ? t('confirmCountOrphans', { n: state.orphans.length })
         : '';
-  const description = t(CONFIRM_TEXT[state.pending]) + count + t('confirmIrreversible');
+  const description = t(CONFIRM_TEXT[state.pending]) + count + t('confirmIrreversible') + ' ' + t('localDeleteOnly');
   // 平台原语缺失（旧宿主）时退化为内联确认条，功能不丢、样式差一点
   if (ui === undefined) {
     return h('div', {

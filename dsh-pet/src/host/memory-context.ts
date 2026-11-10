@@ -27,3 +27,15 @@ export function recalledContextText(content: string): string {
     content
   );
 }
+
+/** 用最近两轮消解承接式追问；当前问题优先保留，历史仅是检索线索。 */
+export function memoryRecallQuery(messages: readonly { role: string; content: string }[], text: string): string {
+  const recent = boundedHistory(messages, 2, 6000);
+  if (!recent.length) return text;
+  return (
+    '当前问题：' +
+    text +
+    '\n最近对话（仅供理解指代）：\n' +
+    recent.map((item) => (item.role === 'user' ? '用户：' : '桌宠：') + item.content).join('\n')
+  );
+}

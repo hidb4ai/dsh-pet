@@ -98,7 +98,7 @@ dsh-pet-standalone --port 3100
 ```sh
 npm install
 npm run build          # 完整 lib：tsdown + 桌面共享核心 + 类型声明
-npm run standalone     # Node 形态启动，等同 dsh-pet-standalone
+npm run standalone -- --setup  # 打开聊天与可选长期记忆设置
 ```
 
 ### 打包成 exe
@@ -116,7 +116,8 @@ npm run dist              # electron-builder 打包
 ### 能力边界
 
 - **能用**：动画链、点击/拖拽/甩抛、右键菜单、多开、自定义动画与表情包、pet pack。
-- **不可用**：余额、碎碎念、对话、系统通知——没有 DSH 的凭据与模型连接，接口返回带 `reason` 的结构化失败（见 [API.md](API.md)）。
+- **需配置服务**：聊天与碎碎念使用独立模式保存的模型；余额查询需要选择受支持的服务商。PowerContext 长期记忆可从「开始养鱼」启用。没有相应凭据或服务时返回结构化失败。
+- **宿主边界**：DSH 会话工作状态、回到对应 DSH 会话的通知等依赖宿主，独立模式不会自动具备。
 - **配置**：与 DSH 同一份（`$DSH_HOME/dsh-pet/main-config.jsonc` → 包内默认）。
 - **只显示** `display` 含 `desktop` / `both` 的实例；端口默认 3080（占用则顺延）。
 - **可与 DSH 内运行同时开**，但共用 `%APPDATA%\dsh-pet-electron-helper`，可能互相踩缓存（仅告警）。

@@ -1,6 +1,7 @@
 /** A small read-only memory indicator. Delivery, retrieval and local process state are distinct facts. */
 import { ROUTE_PATH } from '../../shared/constants.ts';
 import type { ChatPanelRuntime } from './runtime.ts';
+import { makeMemoryLibrary } from './memory-library.ts';
 
 interface MemoryStatus {
   backend: string;
@@ -37,6 +38,7 @@ export function describeMemoryStatus(status: MemoryStatus): string {
 }
 
 export function makeMemoryStatus(rt: ChatPanelRuntime): (props: { petId: string; revision: number }) => unknown {
+  const Library = makeMemoryLibrary(rt);
   return function MemoryStatusPanel({ petId, revision }) {
     const [state, setState] = rt.useState({ petId: '', text: '正在读取记忆状态…', local: '' });
     const standalone = typeof document !== 'undefined' && !!document.getElementById('tab-setup');
@@ -95,6 +97,7 @@ export function makeMemoryStatus(rt: ChatPanelRuntime): (props: { petId: string;
     return rt.h('div', {
       className: 'pet-chat-memory-status',
       children: [
+        rt.h(Library, { key: petId, petId }),
         rt.h('p', {
           key: 'status',
           role: 'status',

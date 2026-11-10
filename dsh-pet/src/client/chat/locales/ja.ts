@@ -4,6 +4,32 @@
 import type { Key } from './zh.ts';
 
 export const ja: Record<Key, string> = {
+  factsSourceNumber: '出典 {n}',
+  factsUser: 'あなた',
+  factsPet: 'ペット',
+
+  factsTitle: '覚えていること',
+  factsIntro: 'このペットの長期記憶を確認します。訂正は新しい版として保存し、忘却は検索対象から外します。',
+  factsRefresh: '更新 / 最初のページ',
+  factsLoading: '記憶を読み込み中…',
+  factsEmpty: '有効な記憶はまだありません。同期した会話はバックグラウンドで整理されます。',
+  factsNext: '次のページ',
+  factsSources: '出典を見る',
+  factsCorrect: '訂正',
+  factsForget: '忘れる',
+  factsSave: '訂正を保存',
+  factsConfirmForget: '忘れることを確認',
+  factsForgetWarning:
+    '長期検索の対象から外します。元の出典、過去の版、端末の会話は残るため、直近の会話には出てくる場合があります。',
+  factsReadError: '記憶を読めません。接続を確認して更新してください。',
+  factsWriteError:
+    '更新を確認できません。接続や記憶の版が変わった可能性があります。更新して確認後に再試行してください。',
+  factsSaved: 'サービスが更新を確認しました。現在検索できる記憶を表示しています。',
+  factsRevision: '版 {n}',
+  factsEvidenceNote: '元の出典を最大3件表示します。出典は過去の証拠であり、訂正後の内容は現在の版が基準です。',
+  factsNoExcerpt: '出典の抜粋を取得できません。',
+  factsNoSource: '出典がありません。手動で記録された記憶の可能性があります。',
+
   tabTitle: 'ペット会話',
   tabGuide: 'すべてのデスクトップペットと会話します。タブをクリックして切り替えます',
   loading: '読み込み中…',
@@ -12,7 +38,8 @@ export const ja: Record<Key, string> = {
   older: '以前の会話を読み込む',
   olderEnd: '最初まで表示しました',
   olderEndCapped: '最初まで表示しました（最大 {n} ラウンド）',
-  memoryLine: '以下の {n} ラウンドはペットの記憶に含まれます',
+  memoryLine: '次の返答には直近 {n} 往復を使用します。長期記憶は別途検索します',
+  localDeleteOnly: '端末の会話履歴のみ削除します。同期済みの記憶は「覚えていること」から個別に忘れさせてください。',
   orphansSummary: '削除済みペットの履歴が {pets} 件（{messages} メッセージ）あります',
   orphansClear: 'クリーンアップ',
   toolsPersona: 'ペルソナ',

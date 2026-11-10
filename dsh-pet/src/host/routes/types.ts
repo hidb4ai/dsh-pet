@@ -70,6 +70,18 @@ export interface PetRouteDeps {
   /** Optional for older embedding hosts; the shipped host provides both. */
   readonly memoryStatus?: (petId: string) => Promise<unknown>;
   readonly syncMemory?: (petId: string) => Promise<void>;
+  readonly listMemories?: (
+    petId: string,
+    cursor?: string,
+  ) => Promise<import('../../shared/memory-library.ts').MemoryPage>;
+  readonly inspectMemory?: (
+    petId: string,
+    id: string,
+  ) => Promise<import('../../shared/memory-library.ts').MemoryEvidence>;
+  readonly changeMemory?: (
+    petId: string,
+    change: import('../../shared/memory-library.ts').MemoryChange,
+  ) => Promise<void>;
   /** 配置路径集（内置默认 + 用户主配置 + 文件宠物目录）。 */
   readonly configPaths: ConfigPaths;
   /** 第三方右键菜单注册表（进程内存态）。 */

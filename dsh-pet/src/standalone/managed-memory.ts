@@ -77,6 +77,8 @@ export function managedMemoryEnvironment(directory: string, config: MemoryConfig
     POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL: 'openai-chat:' + config.model,
     POWERCONTEXT_SERVER_INFERENCE_GENERATION_BASE_URL: config.baseUrl,
     POWERCONTEXT_SERVER_INFERENCE_GENERATION_HEADERS: JSON.stringify({ Authorization: 'Bearer ' + config.apiKey }),
+    // 后台抽取可能包含多步生成；与前台召回的 1.5 秒预算分开。
+    POWERCONTEXT_SERVER_INFERENCE_GENERATION_TIMEOUT_SECONDS: '120',
     POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_MODEL: 'openai:' + config.embeddingModel,
     POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_BASE_URL: config.embeddingBaseUrl,
     POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_HEADERS: JSON.stringify({
@@ -108,6 +110,8 @@ export class ManagedMemory {
   readonly directory: string;
   private config?: MemoryConfig;
   private child?: ChildProcess;
+  private readyAt = 0;
+  private healthTimer?: ReturnType<typeof setTimeout>;
   private releaseToken?: () => void;
   private lockOwned = false;
   private readonly file: string;
@@ -129,6 +133,41 @@ export class ManagedMemory {
   }
   get running(): boolean {
     return !!this.child && this.child.exitCode === null && this.child.signalCode === null;
+  }
+  /** 就绪必须来自最近一次健康检查；进程存活本身不代表模型与存储可用。 */
+  get ready(): boolean {
+    return this.running && this.readyAt > 0 && Date.now() - this.readyAt < 30_000;
+  }
+
+  /** 检查当前子进程，旧进程的迟到响应不能改变重启后的状态。 */
+  async checkReady(signal: AbortSignal = AbortSignal.timeout(2000)): Promise<boolean> {
+    const child = this.child;
+    if (!child || !this.running || !this.config) return false;
+    let ready = false;
+    try {
+      const response = await fetch(this.url! + '/health/ready', {
+        headers: { Authorization: 'Bearer ' + this.config.token },
+        signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]),
+        redirect: 'error',
+      });
+      const result = (await response.json()) as { status?: string };
+      ready = response.ok && result.status === 'ready';
+    } catch {
+      /* 健康探测失败要立即撤销就绪状态。 */
+    }
+    if (this.child !== child) return false;
+    this.readyAt = ready && this.running ? Date.now() : 0;
+    return this.ready;
+  }
+
+  private monitorHealth(): void {
+    const child = this.child;
+    this.healthTimer = setTimeout(() => {
+      void this.checkReady().finally(() => {
+        if (this.child === child && this.running) this.monitorHealth();
+      });
+    }, 10_000);
+    this.healthTimer.unref();
   }
   settings(): Omit<MemoryModels, 'apiKey' | 'embeddingApiKey'> | undefined {
     if (!this.config) return undefined;
@@ -242,7 +281,10 @@ export class ManagedMemory {
   async start(signal: AbortSignal, progress: (stage: MemoryStage) => void): Promise<string> {
     this.claim();
     if (!this.config) throw new Error('memory_not_configured');
-    if (this.running) return this.url!;
+    if (this.running) {
+      if (await this.checkReady(signal)) return this.url!;
+      throw new Error('memory_not_ready');
+    }
     const python = await installMemoryRuntime(this.directory, signal, progress);
     signal.throwIfAborted();
     progress('starting');
@@ -260,6 +302,7 @@ export class ManagedMemory {
       windowsHide: true,
     });
     this.child = child;
+    this.readyAt = 0;
     let failed = false;
     child.on('error', () => {
       failed = true;
@@ -273,16 +316,9 @@ export class ManagedMemory {
       while (Date.now() < deadline) {
         signal.throwIfAborted();
         if (failed || !this.running) throw new Error('memory_start_failed');
-        try {
-          const response = await fetch(this.url! + '/health/ready', {
-            headers: { Authorization: 'Bearer ' + this.config.token },
-            signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]),
-            redirect: 'error',
-          });
-          const result = (await response.json()) as { status?: string };
-          if (response.ok && result.status === 'ready' && this.running) return this.url!;
-        } catch {
-          signal.throwIfAborted();
+        if (await this.checkReady(signal)) {
+          this.monitorHealth();
+          return this.url!;
         }
         await delay(500, undefined, { signal });
       }
@@ -296,6 +332,8 @@ export class ManagedMemory {
   async stopProcess(): Promise<void> {
     const child = this.child;
     this.child = undefined;
+    this.readyAt = 0;
+    clearTimeout(this.healthTimer);
     this.releaseToken?.();
     this.releaseToken = undefined;
     if (child && child.exitCode === null && child.signalCode === null) {

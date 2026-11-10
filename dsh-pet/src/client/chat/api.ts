@@ -173,7 +173,7 @@ export function personaText(own: unknown, entry: unknown): string {
  * 拉成品配置：拍平宠物列表，同时把每个条目的对话记忆轮数与每只宠物的人设带出来。
  *
  * 设置页读的是同一份 `/config`（`merged.main.chatMemoryRounds`），这里按条目取，
- * 面板才能知道「最近几轮才算桌宠的记忆」——不额外发请求，也不在客户端抄一份默认值。
+ * 面板取同一份人设与条目配置；实际近期上下文轮数由历史接口返回。
  *
  * @returns 宠物列表、条目轮数表与宠物人设表。
  * @throws 配置请求失败或响应不是成品聚合时。
@@ -200,14 +200,14 @@ export async function fetchChatConfig(): Promise<ChatConfig> {
 }
 
 /**
- * 记忆边界：最后 `memoryRounds` 轮才算桌宠记得的内容，线要画在它们之前。
+ * 近期上下文边界：最后 `memoryRounds` 轮进入下一轮模型输入，长期记忆另外召回。
  *
  * @param totalRounds - 当前展示的轮数。
- * @param memoryRounds - 该条目配置的保留轮数；`undefined` 表示配置里没有这个值。
- * @returns 分界下标（线插在该下标之前）；全部都在记忆里、或没有记忆时返回 `null`（不画线）。
+ * @param memoryRounds - 宿主实际选入的近期轮数；`undefined` 表示尚未获取。
+ * @returns 分界下标（线插在该下标之前）；全部在近期窗口内时不画线；零轮时线在历史末尾。
  */
 export function memoryBoundaryIndex(totalRounds: number, memoryRounds: number | undefined): number | null {
-  if (memoryRounds === undefined || memoryRounds <= 0) return null;
+  if (memoryRounds === undefined || memoryRounds < 0) return null;
   const cut = totalRounds - memoryRounds;
   return cut > 0 ? cut : null;
 }
@@ -221,10 +221,10 @@ export const MEMORY_LINE_ATTR = 'data-pet-chat-memory';
  * 线插在倒数第 `memoryRounds` 轮之前，窗口里至少要有它上面那一轮，线才画得出来。
  *
  * @param memoryRounds - 该条目保留的轮数。
- * @returns 需要的展示轮数；`memoryRounds` 非法（`<= 0`）时返回 0（没有线，无需放轮）。
+ * @returns 需要的展示轮数；`memoryRounds` 为负时返回 0；零轮至少展示一轮以定位末尾边界。
  */
 export function roundsToRevealMemory(memoryRounds: number): number {
-  return memoryRounds > 0 ? memoryRounds + 1 : 0;
+  return memoryRounds >= 0 ? memoryRounds + 1 : 0;
 }
 
 /** 一次取满接口允许的轮数（宿主上限 200）：面板在本地按需展示，不做分页取数。 */
@@ -236,14 +236,18 @@ export const HISTORY_ROUNDS = 200;
  * 一次请求取满 200 轮，展示层自己控制「先显示多少」；不传 `rounds` 只会拿到配置的默认轮数。
  *
  * @param petId - 宠物 id。
- * @returns 按时间正序的消息；没有历史时是空列表。
+ * @returns 按时间正序的展示消息，以及宿主按预算计算的实际近期轮数。
  * @throws 请求失败时。
  */
-export async function fetchHistory(petId: string): Promise<ChatMessageView[]> {
+export async function fetchHistory(petId: string): Promise<{ messages: ChatMessageView[]; contextRounds?: number }> {
   const url = ROUTE_PATH + '/chat?pet=' + encodeURIComponent(petId) + '&rounds=' + HISTORY_ROUNDS;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error('chat HTTP ' + res.status);
-  return toChatMessages(await res.json());
+  const data = (await res.json()) as { contextRounds?: number };
+  return {
+    messages: toChatMessages(data),
+    contextRounds: Number.isInteger(data.contextRounds) && data.contextRounds! >= 0 ? data.contextRounds : undefined,
+  };
 }
 
 /**

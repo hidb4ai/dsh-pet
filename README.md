@@ -1,4 +1,4 @@
-# dsh-pet
+# dsh-pet-powercontext
 
 **An animated desktop companion that can chat, react to your work, and remember what matters to you.**
 
@@ -63,7 +63,7 @@ Open **Settings → Pet Config → Local long-term memory**. Choose a memory mod
 
 The managed service runs on the machine hosting DSH and applies to the default pet entry. Custom pet packs retain their independent settings. You can also connect an existing PowerContext server in the pet’s model settings. Only pet dialogue is captured: this does not add memory to DSH’s coding-agent sessions.
 
-To distribute a built package, run `npm pack --pack-destination /path/outside/the/repository` in the inner package directory, then install the resulting `.tgz` with `dsh plugin --profile web add /absolute/path/to/dsh-pet-0.4.7.tgz`. Give each rebuilt archive a distinct filename when testing repeatedly; the installer can cache local archives.
+To distribute a built package, run `npm pack --pack-destination /path/outside/the/repository` in the inner package directory, then install the resulting `.tgz` with `dsh plugin --profile web add /absolute/path/to/dsh-pet-powercontext-0.1.0-beta.1.tgz`. Give each rebuilt archive a distinct filename when testing repeatedly; the installer can cache local archives.
 
 For upstream package installation, Windows bundles and packaging instructions, see [INSTALL.md](INSTALL.md).
 
@@ -154,6 +154,19 @@ pnpm build
 ```
 
 [CONFIG.md](CONFIG.md) covers configuration; [API.md](API.md) and [openapi.yaml](openapi.yaml) describe HTTP routes. [CORDIS-API.md](CORDIS-API.md) and [CORDIS.md](CORDIS.md) cover plugin integration. Include your commit/version, OS, runtime mode and reproduction steps in bug reports. Remove credentials and private conversation content from logs before sharing them.
+
+### Publishing the npm package
+
+The package name is `dsh-pet-powercontext`; the first version is `0.1.0-beta.1`. After it is published, install it in DSH with `dsh plugin --profile web add dsh-pet-powercontext@beta`, or start standalone setup with `npx dsh-pet-powercontext@beta --setup`. The existing `dsh-pet-standalone` command remains an alias. Disable the upstream `dsh-pet` plugin before enabling this package: they share routes, commands and the existing `$DSH_HOME/dsh-pet/` data directory. Keep that directory to retain configuration and memories.
+
+[Release workflow](.github/workflows/release.yml), based on [memory-powermem](https://github.com/ob-labs/memory-powermem/blob/main/.github/workflows/release.yml):
+
+- Pull requests and **Run workflow** validate, build, test and upload an installable `.tgz` artifact. Manual runs accept a branch, tag or PR ref and never publish, even when selecting a tag.
+- A pushed `v*` tag must exactly match `dsh-pet/package.json` (first tag: `v0.1.0-beta.1`). It creates a GitHub Release containing the tested archive and `SHA256SUMS`, then calls the Windows desktop workflow to attach its ZIP.
+- To publish that archive to npm, set repository Actions variable `NPM_PUBLISH=true` and Actions secret `NPM_TOKEN` to a granular npm token with publish access and bypass 2FA enabled. Otherwise only GitHub Release is created. Never commit the token to `.npmrc`.
+- `alpha.N`, `beta.N` and `rc.N` versions use the matching npm tag and are marked as GitHub prereleases. Stable versions use `latest`. The workflow validates the checked-in version instead of rewriting it during publication.
+
+Merge the workflow to `master`, configure the variable and secret, then push the matching tag from the intended release commit. When npm publishing is enabled, a publishing failure prevents the GitHub Release step. A published npm version cannot be overwritten; use a new version for changed contents. Build archives and temporary test data stay in the runner's temporary directory. On local Linux validation runs, use `/data/codex-tmp/` and set `TMPDIR` there.
 
 ## Credits and licensing
 

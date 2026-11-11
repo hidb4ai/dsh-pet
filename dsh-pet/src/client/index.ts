@@ -15,6 +15,6 @@ declare const window: {
 };
 
 window.__ModuleLoader__.load({
-  id: 'dsh-pet',
+  id: 'dsh-pet-powercontext',
   factory: makeFactory(),
 });

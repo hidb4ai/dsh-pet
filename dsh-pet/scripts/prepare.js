@@ -66,7 +66,9 @@ const keep = [
   'assets/main-character.png',
   'scripts/ensure-electron.mjs',
   'cordis.patch.yml',
+  'README.zh.md',
+  'ASSET-LICENSE.md',
 ];
 writeFileSync(PKG, JSON.stringify({ ...pkg, files: keep }, null, 2) + '\n', 'utf8');
 console.log(`[prepare] ✓ package.json files=[${keep.join(', ')}]`);
-console.log('[prepare] ready to publish: npm publish --tag latest');
+console.log('[prepare] ready to pack; release workflow selects the npm dist-tag from package.json version');

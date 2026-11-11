@@ -281,7 +281,7 @@ export const zh = {
   'motion.turn': '转向',
   'motion.move': '移动',
   'motion.action': '随机动作',
-  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet',
+  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet-powercontext',
 };
 
 /** 文案键；zh 的键集即全集。 */

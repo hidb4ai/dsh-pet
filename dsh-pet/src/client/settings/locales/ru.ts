@@ -310,5 +310,5 @@ export const ru: Record<Key, string> = {
   'motion.turn': 'Поворот',
   'motion.move': 'Движение',
   'motion.action': 'Случайное действие',
-  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet',
+  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet-powercontext',
 };

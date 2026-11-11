@@ -141,7 +141,7 @@ async function run(logger: StandaloneLogger, options: { port: number; setup: boo
   for (const line of [
     '',
     '===== dsh-pet 独立模式（不需要 DSH）=====',
-    `  插件        dsh-pet@${packageVersion(packageRoot)}  ${packageRoot}`,
+    `  插件        dsh-pet-powercontext@${packageVersion(packageRoot)}  ${packageRoot}`,
     `  路由        http://127.0.0.1:${server.port}${ROUTE_SEGMENT}/`,
     `  配置        ${configSource}`,
     `  宠物        ${describePets(pets)}`,

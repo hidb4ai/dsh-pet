@@ -40,6 +40,8 @@ export interface ModelDiscoveryInput {
 export interface DiscoveredModel {
   id: string;
   name: string;
+  /** 省略表示服务未声明且无法识别；不把未知能力当作已验证支持。 */
+  kind?: 'generation' | 'embedding' | 'other';
 }
 
 /** 「拉取模型」的结果：失败时 code 稳定，message 可直接展示。 */

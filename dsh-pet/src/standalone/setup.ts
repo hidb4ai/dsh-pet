@@ -2,6 +2,9 @@
 import { z } from 'zod';
 import { memoryConfigBinding } from '../host/plugin/memory-binding.ts';
 import { ROUTE_SEGMENT } from '../shared/constants.ts';
+import { localModelKey } from '../shared/memory-presets.ts';
+import { discoverSetupModels } from './setup-discovery.ts';
+import type { ModelDiscoveryResult } from './ai-provider/types.ts';
 import type { StandaloneAiService } from './ai-provider.ts';
 import { ManagedMemory, memoryModelsSchema } from './managed-memory.ts';
 import type { MemoryStage } from './memory-install.ts';
@@ -14,9 +17,19 @@ import {
 } from './setup-models.ts';
 
 const optionalKey = memoryModelsSchema.shape.apiKey.or(z.literal('')).default('');
+const generationSchema = memoryModelsSchema
+  .pick({ baseUrl: true, model: true, apiKey: true })
+  .extend({ apiKey: optionalKey })
+  .strict();
 const inputSchema = z.discriminatedUnion('memory', [
   memoryModelsSchema
-    .extend({ action: z.literal('start'), memory: z.literal(true), apiKey: optionalKey, embeddingApiKey: optionalKey })
+    .extend({
+      action: z.literal('start'),
+      memory: z.literal(true),
+      apiKey: optionalKey,
+      embeddingApiKey: optionalKey,
+      generation: generationSchema.optional(),
+    })
     .strict(),
   memoryModelsSchema
     .pick({ baseUrl: true, model: true, apiKey: true })
@@ -60,6 +73,8 @@ export interface SetupService {
   submit(input: unknown): void;
   resume(): void;
   dispose(): Promise<void>;
+  /** 只读发现模型，不回传凭据，也不触发准备流程。 */
+  discover?(input: unknown): Promise<ModelDiscoveryResult>;
 }
 
 /** Use the host configuration boundary for persistence, desktop refresh, and rollback. */
@@ -142,39 +157,57 @@ export function createSetup(
   };
   const resolveDraft = (input: Draft): Draft => {
     if (!ai && !input.memory) throw new Error('invalid_setup');
+    if (!ai && input.memory && input.generation) throw new Error('invalid_setup');
     const saved = ai?.connectionForSetup();
     const apiKey =
       input.apiKey ||
       (saved?.protocol === 'openai-compatible' && sameModelEndpoint(saved.baseUrl, input.baseUrl)
         ? saved.apiKey
         : '') ||
-      (!ai ? memory?.generationKeyForEndpoint(input.baseUrl) : '');
+      (!ai ? memory?.generationKeyForEndpoint(input.baseUrl) : '') ||
+      localModelKey(input.baseUrl);
     if (!apiKey) throw new Error('chat_key_required');
     if (!input.memory) return { ...input, apiKey };
     if (!memory) throw new Error('invalid_memory_settings');
+    const generation = input.generation ?? { baseUrl: input.baseUrl, model: input.model, apiKey };
+    const generationKey =
+      generation.apiKey ||
+      memory.generationKeyForEndpoint(generation.baseUrl) ||
+      (sameModelEndpoint(generation.baseUrl, input.baseUrl) ? apiKey : '') ||
+      localModelKey(generation.baseUrl);
+    if (!generationKey) throw new Error('chat_key_required');
     const embeddingApiKey =
       input.embeddingApiKey ||
       memory.embeddingKeyForEndpoint(input.embeddingBaseUrl) ||
-      (sameModelEndpoint(input.embeddingBaseUrl, input.baseUrl) ? apiKey : '');
+      (sameModelEndpoint(input.embeddingBaseUrl, generation.baseUrl) ? generationKey : '') ||
+      (sameModelEndpoint(input.embeddingBaseUrl, input.baseUrl) ? apiKey : '') ||
+      localModelKey(input.embeddingBaseUrl);
     if (!embeddingApiKey) throw new Error('embedding_key_required');
     const models = memory.validateModels({
-      baseUrl: input.baseUrl,
-      model: input.model,
-      apiKey,
+      ...generation,
+      apiKey: generationKey,
       embeddingBaseUrl: input.embeddingBaseUrl,
       embeddingModel: input.embeddingModel,
       embeddingApiKey,
       embeddingDimension: input.embeddingDimension,
+      embeddingSendDimensions: input.embeddingSendDimensions,
     });
-    return { ...models, memory: true, action: 'start' };
+    return {
+      ...input,
+      apiKey,
+      embeddingApiKey,
+      ...(input.generation ? { generation: { ...generation, apiKey: generationKey } } : {}),
+      embeddingSendDimensions: models.embeddingSendDimensions,
+    };
   };
   const apply = async (draft: Draft): Promise<void> => {
-    const models = draft.memory ? memoryModelsSchema.strip().parse(draft) : undefined;
+    const models = draft.memory ? memoryModelsSchema.strip().parse({ ...draft, ...draft.generation }) : undefined;
     const chat = { protocol: 'openai-compatible', baseUrl: draft.baseUrl, model: draft.model, apiKey: draft.apiKey };
     if (ai) {
       const checked = await ai.testConnection(chat, controller.signal);
       if (!checked.ok) throw new Error('chat_' + (checked.reason ?? 'unknown'));
-    } else await checkGeneration(models!, controller.signal);
+    }
+    if (models && (!ai || (draft.memory && draft.generation))) await checkGeneration(models, controller.signal);
     controller.signal.throwIfAborted();
     // A first-time user can chat while installing memory; existing working settings stay intact until commit.
     const previous = ai?.connectionForSetup();
@@ -219,6 +252,7 @@ export function createSetup(
     progress('ready');
   };
   return {
+    discover: (input) => discoverSetupModels(input, memory, ai),
     status() {
       if (stage === 'ready' && memory?.enabled && !memory.running && !job) {
         stage = 'error';

@@ -17,7 +17,7 @@ An animated desktop companion for DeepSeek Harness and standalone use: chat, con
 
 ## Use this package
 
-Requires Node.js 22.12+ for standalone use, or 24.9+ for the DSH 0.2.2-rc.1 CLI. From this directory, run `pnpm install --frozen-lockfile`, `pnpm build`, then `pnpm standalone --setup`. For a graphical desktop, prepare Electron with `pnpm ensure:electron` and run `pnpm start:app`. In DSH, use **Settings → Pet Config → Local long-term memory** to install, configure, pause or resume PowerContext while retaining your DSH chat model. See the [project guide](../README.md) for installation from source or a `.tgz` archive.
+Requires Node.js 22.12+ for standalone use, or 24.9+ for the DSH 0.2.2-rc.1 CLI. From this directory, run `pnpm install --frozen-lockfile`, `pnpm build`, then `pnpm standalone --setup`. For a graphical desktop, prepare Electron with `pnpm ensure:electron` and run `pnpm start:app`. In DSH, use **Settings → Pet Config → Local long-term memory** to install, configure, pause or resume PowerContext while retaining your DSH chat model. Choose separate chat, extraction and embedding providers, fetch model suggestions or enter IDs manually. DeepSeek, OpenAI, Qwen, SiliconFlow, Ark, Zhipu, Kimi, Ollama and optional LiteLLM gateways are available as presets. See the [project guide](../README.md) for installation from source or a `.tgz` archive.
 
 <a id="implementation"></a>
 

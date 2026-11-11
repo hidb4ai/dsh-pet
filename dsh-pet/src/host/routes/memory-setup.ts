@@ -15,7 +15,9 @@ export const handleMemorySetupRoutes: RouteHandler = async (deps, { rest, method
       : failResult('unsupported', 'memory_setup_unavailable');
   if (method === 'POST') {
     try {
-      setup.submit(JSON.parse(body ?? 'null'));
+      const input = JSON.parse(body ?? 'null');
+      if (input?.action === 'models' && setup.discover) return okResult(await setup.discover(input));
+      setup.submit(input);
     } catch (error) {
       return failResult('bad-request', error instanceof SyntaxError ? 'invalid_setup' : setupErrorCode(error));
     }

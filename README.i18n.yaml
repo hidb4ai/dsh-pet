@@ -18,6 +18,10 @@ headings:
     zh: "在 DSH 中使用"
     en_sha256: 90d1af071aeec22cc0133cfdd7d5ec871d8012d9b8d75a864e3793abc136c08d
     zh_sha256: 20a7fb0a68f57e3c275269ba5608eee63180b938b1c29e9869ceb675da6493ae
+  - en: "Choosing model services"
+    zh: "选择模型服务"
+    en_sha256: 8fffc8067ace4a8b075e30e997d5e3fcf1f1392d8c38eb5faefe83e9bed1b9fe
+    zh_sha256: 891d22ceaf3ae8a27385750f2318a7d685946706997fdb2a63a88a62a8e79179
   - en: "What PowerContext adds"
     zh: "PowerContext 带来了什么"
     en_sha256: 1bcb3e0f8ecae0d5dea32a54475a09379f995b1a02d7cdfd94e61cb938268608

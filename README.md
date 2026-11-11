@@ -67,6 +67,23 @@ To distribute a built package, run `npm pack --pack-destination /path/outside/th
 
 For upstream package installation, Windows bundles and packaging instructions, see [INSTALL.md](INSTALL.md).
 
+### Choosing model services
+
+The DSH plugin and standalone app share presets for DeepSeek, OpenAI, Qwen (Beijing / Singapore), SiliconFlow, Volcengine Ark, Zhipu, Kimi, Ollama, a LiteLLM gateway and a custom OpenAI-compatible endpoint. A preset fills the endpoint and, where available, an initial model. Check availability for your account and region.
+
+- **Chat** uses the DSH host selection, or the standalone Quick Start configuration.
+- **Memory extraction** can use a separate provider, model and key. In standalone mode, uncheck the option to reuse the chat model; DSH configures extraction independently.
+- **Embeddings** have their own provider selector. For example, use DeepSeek for chat, another generation service for extraction and SiliconFlow for embeddings. Providers without an embedding preset are not offered as embedding presets.
+
+Enter the endpoint and key, click **Fetch models**, then choose a suggestion in the model field or type a model / endpoint ID. Discovery excludes clearly incompatible capabilities; unknown capabilities still require a connection check. Manual entry remains available when listing fails or is unsupported. Editing the endpoint clears the draft key. Saved keys are reused only at the same complete endpoint, including its path.
+
+Set the vector dimensions to the model's actual output size. Fixed-dimension models such as BGE-M3 usually do not need the `dimensions` request parameter; their presets omit it while still checking the returned vector length. Custom endpoints must implement the currently supported `/chat/completions` and text `/embeddings` APIs. Multimodal embedding endpoints are not interchangeable with text embeddings.
+
+For Ollama, install and download models first, then specify their names and embedding dimensions. Local services without authentication may leave the key blank. LiteLLM is an optional, separately deployed gateway: supply its URL, gateway key and model aliases. Memory reuses the Pydantic AI integration inside PowerContext 1.5.0; this wizard currently configures the OpenAI-compatible protocol, not every native provider protocol. See the [LiteLLM gateway guide](https://docs.litellm.ai/docs/proxy/quick_start) and [Ollama compatibility reference](https://docs.ollama.com/api/openai-compatibility).
+
+**Changing embeddings for an existing store:** its endpoint, model and dimensions stay locked; keys can be rotated. Different models are not compatible merely because their dimensions match. Keep the original store, prepare a separate PowerContext service with a new data directory, re-ingest retained source conversations and verify recall before switching the pet's memory server URL. There is no automatic vector migration. Switching back to the original URL restores access to the retained store.
+
+
 ## What PowerContext adds
 
 A short conversation window is useful for the current exchange, but older details eventually fall outside it. PowerContext keeps selected facts and preferences available without replaying the entire transcript on every request.

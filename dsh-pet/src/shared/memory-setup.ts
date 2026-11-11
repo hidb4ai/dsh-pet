@@ -8,6 +8,8 @@ export interface MemorySetupModels {
   embeddingBaseUrl: string;
   embeddingModel: string;
   embeddingDimension: number;
+  /** 固定维度模型可以不发送 dimensions，但仍校验实际输出长度。 */
+  embeddingSendDimensions?: boolean;
 }
 
 /** 本机记忆管理界面的轮询快照。 */

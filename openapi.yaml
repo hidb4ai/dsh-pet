@@ -1784,6 +1784,7 @@ paths:
         仅接受 application/json，跨站浏览器请求拒绝。start 异步检查生成和 Embedding 模型、安装并启动 PowerContext。
         不修改 DSH 聊天模型；默认条目的记忆绑定在就绪后保存。retry 重试草稿或启动已保存配置；stop 暂停并保留数据；cancel 取消当前准备。
         已保存密钥只在完整端点地址相同的情况下复用。进程随 DSH 插件启停，同一数据库只允许一个进程管理。
+        models 只读发现生成或向量模型，不保存设置；返回明确匹配及能力未知的候选，实际能力仍需连接检查。
       requestBody:
         required: true
         content:
@@ -1798,6 +1799,7 @@ paths:
               schema:
                 oneOf:
                   - $ref: "#/components/schemas/MemorySetupStatus"
+                  - $ref: "#/components/schemas/MemoryModelDiscovery"
                   - $ref: "#/components/schemas/FailureResponse"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
@@ -4436,6 +4438,7 @@ components:
         embeddingBaseUrl: { type: string, format: uri, maxLength: 2048 }
         embeddingModel: { type: string, minLength: 1, maxLength: 200 }
         embeddingDimension: { type: integer, minimum: 1, maximum: 65536 }
+        embeddingSendDimensions: { type: boolean, default: true }
 
     MemorySetupRequest:
       oneOf:
@@ -4461,6 +4464,7 @@ components:
             embeddingBaseUrl: { type: string, format: uri, maxLength: 2048 }
             embeddingModel: { type: string, minLength: 1, maxLength: 200 }
             embeddingDimension: { type: integer, minimum: 1, maximum: 65536 }
+            embeddingSendDimensions: { type: boolean, default: true }
             embeddingApiKey:
               { type: string, maxLength: 4096, writeOnly: true, default: "" }
         - type: object
@@ -4468,6 +4472,37 @@ components:
           required: [action]
           properties:
             action: { type: string, enum: [retry, stop, cancel] }
+        - type: object
+          additionalProperties: false
+          required: [action, kind, baseUrl]
+          properties:
+            action: { type: string, const: models }
+            kind: { type: string, enum: [generation, embedding, chat] }
+            baseUrl: { type: string, format: uri, maxLength: 2048 }
+            apiKey:
+              { type: string, maxLength: 4096, writeOnly: true, default: "" }
+
+    MemoryModelDiscovery:
+      oneOf:
+        - type: object
+          required: [ok, models]
+          properties:
+            ok: { type: boolean, const: true }
+            models:
+              type: array
+              items:
+                type: object
+                required: [id, name]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  kind: { type: string, enum: [generation, embedding, other] }
+        - type: object
+          required: [ok, code, message]
+          properties:
+            ok: { type: boolean, const: false }
+            code: { type: string }
+            message: { type: string }
 
     MemorySetupStatus:
       type: object

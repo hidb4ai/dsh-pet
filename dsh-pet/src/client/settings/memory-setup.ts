@@ -1,28 +1,17 @@
 /** DSH 本机记忆设置：安装进度与生命周期操作独立于宿主聊天模型。 */
-import type { MemorySetupModels } from '../../shared/memory-setup.ts';
-import { MEMORY_PRESETS } from '../../shared/memory-presets.ts';
+import { EMPTY_MEMORY_DRAFT, makeMemoryModelFields, type MemoryModelDraft } from './memory-model-fields.ts';
 import { useMemorySetup, type MemorySetupCallbacks } from './memory-setup-state.ts';
-import { INPUT_CLASS, makeUiKit } from './ui.ts';
+import { makeUiKit } from './ui.ts';
 import type { SettingsRuntime } from './runtime.ts';
-
-const initial = {
-  baseUrl: '',
-  model: '',
-  apiKey: '',
-  embeddingBaseUrl: '',
-  embeddingModel: '',
-  embeddingApiKey: '',
-  embeddingDimension: '1024',
-};
 
 /** 沿用设置页样式；保留编辑草稿，轮询不会重置用户正在输入的字段。 */
 export function makeMemorySetup(rt: SettingsRuntime) {
   const { h, t, useState, useRef, useEffect } = rt;
-  const { cardHead, field } = makeUiKit(rt);
+  const { cardHead } = makeUiKit(rt);
+  const ModelFields = makeMemoryModelFields(rt);
   return function MemorySetup(props: MemorySetupCallbacks & { disabled: boolean }) {
     const { status, error, pending, send } = useMemorySetup(rt, props);
-    const [draft, setDraft] = useState(initial);
-    const [preset, setPreset] = useState('custom');
+    const [draft, setDraft] = useState(EMPTY_MEMORY_DRAFT);
     const filled = useRef(false);
     const modelSnapshot = useRef('');
     useEffect(() => {
@@ -32,53 +21,15 @@ export function makeMemorySetup(rt: SettingsRuntime) {
       filled.current = true;
       modelSnapshot.current = serialized;
       if (status.models)
-        setDraft({ ...initial, ...status.models, embeddingDimension: String(status.models.embeddingDimension) });
+        setDraft({
+          ...EMPTY_MEMORY_DRAFT,
+          ...status.models,
+          embeddingDimension: String(status.models.embeddingDimension),
+          embeddingSendDimensions: status.models.embeddingSendDimensions !== false,
+        });
     }, [status]);
     if (status?.available === false) return null;
     const blocked = props.disabled || pending || !!status?.busy || !status || !!error;
-    const update = (key: keyof typeof initial, value: string) => setDraft((old) => ({ ...old, [key]: value }));
-    const input = (key: keyof typeof initial, type = 'text', locked = false) =>
-      field(
-        t('memorySetup_' + key),
-        h('input', {
-          className: INPUT_CLASS,
-          type,
-          value: draft[key],
-          readOnly: locked,
-          'aria-label': t('memorySetup_' + key),
-          autoComplete: type === 'password' ? 'new-password' : undefined,
-          min: type === 'number' ? 1 : undefined,
-          max: type === 'number' ? 65536 : undefined,
-          maxLength: type === 'password' ? 4096 : key.endsWith('Url') ? 2048 : 200,
-          required: !['apiKey', 'embeddingApiKey', 'embeddingBaseUrl'].includes(key),
-          onChange: (event: { target: { value: string } }) => update(key, event.target.value),
-        }),
-      );
-    const choose = (value: string) => {
-      setPreset(value);
-      if (value === 'custom') return;
-      const option = value === 'openai' ? MEMORY_PRESETS.openai : MEMORY_PRESETS.qwen;
-      const baseUrl =
-        value === 'openai'
-          ? 'https://api.openai.com/v1'
-          : value === 'qwen-sg'
-            ? 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
-            : 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-      setDraft((old) => ({
-        ...old,
-        baseUrl,
-        model: option.model,
-        apiKey: '',
-        ...(!status?.configured
-          ? {
-              embeddingBaseUrl: baseUrl,
-              embeddingModel: option.embedding,
-              embeddingDimension: String(option.dimension),
-              embeddingApiKey: '',
-            }
-          : {}),
-      }));
-    };
     const run = async (body: unknown) => {
       if (await send(body)) setDraft((old) => ({ ...old, apiKey: '', embeddingApiKey: '' }));
     };
@@ -90,8 +41,6 @@ export function makeMemorySetup(rt: SettingsRuntime) {
         children: t(label),
       });
     const stage = status?.stage ?? 'loading';
-    const saved = (models: MemorySetupModels | undefined) =>
-      !!models && models.baseUrl.replace(/\/+$/, '') === draft.baseUrl.replace(/\/+$/, '');
     const detail = error || status?.errorCode;
     const errorKey = detail ? 'memorySetup_error_' + detail : '';
     const translatedError = detail && t(errorKey) !== errorKey ? t(errorKey) : t('memorySetup_error');
@@ -117,34 +66,19 @@ export function makeMemorySetup(rt: SettingsRuntime) {
               disabled: blocked,
               style: { border: 0, padding: 0, minWidth: 0 },
               children: [
-                field(
-                  t('memorySetupPreset'),
-                  h('select', {
-                    className: INPUT_CLASS,
-                    value: preset,
-                    'aria-label': t('memorySetupPreset'),
-                    onChange: (event: { target: { value: string } }) => choose(event.target.value),
-                    children: ['custom', 'qwen-cn', 'qwen-sg', 'openai'].map((id) =>
-                      h('option', { value: id, children: t('memorySetupPreset_' + id) }, id),
-                    ),
-                  }),
-                ),
-                input('baseUrl', 'url'),
-                input('model'),
-                input('apiKey', 'password'),
-                h('p', {
-                  className: 'dsh-pet-cfg__note',
-                  children: saved(status?.models) ? t('memorySetupSavedKey') : t('memorySetupNewKey'),
+                h(ModelFields, {
+                  draft,
+                  models: status?.models,
+                  embedding: false,
+                  locked: false,
+                  update: (change: Partial<MemoryModelDraft>) => setDraft((old) => ({ ...old, ...change })),
                 }),
-                input('embeddingModel', 'text', !!status?.configured),
-                input('embeddingDimension', 'number', !!status?.configured),
-                h('details', {
-                  children: [
-                    h('summary', { children: t('memorySetupAdvanced') }),
-                    input('embeddingBaseUrl', 'url', !!status?.configured),
-                    input('embeddingApiKey', 'password'),
-                    h('p', { className: 'dsh-pet-cfg__note', children: t('memorySetupEmbeddingHint') }),
-                  ],
+                h(ModelFields, {
+                  draft,
+                  models: status?.models,
+                  embedding: true,
+                  locked: !!status?.configured,
+                  update: (change: Partial<MemoryModelDraft>) => setDraft((old) => ({ ...old, ...change })),
                 }),
                 h('p', { className: 'dsh-pet-cfg__note', children: t('memorySetupConsent') }),
                 h('button', { type: 'submit', children: t('memorySetupStart') }),

@@ -1,5 +1,6 @@
 /** Model checks for guided setup. Provider response bodies never become user-facing errors. */
 import type { MemoryModels } from './managed-memory.ts';
+export { sameModelEndpoint } from '../shared/memory-presets.ts';
 
 export const setupErrors: Record<string, string> = {
   chat_authentication: '聊天密钥验证失败。请检查 Key 是否有效，以及地址和 Key 是否属于同一地域。',
@@ -82,11 +83,6 @@ export async function checkGeneration(models: MemoryModels, signal: AbortSignal)
   }
 }
 
-/** Compare the whole endpoint, not just its origin, before reusing a stored credential. */
-export function sameModelEndpoint(left: string, right: string): boolean {
-  return !!left && left.replace(/\/+$/, '') === right.replace(/\/+$/, '');
-}
-
 export async function checkEmbedding(models: MemoryModels, signal: AbortSignal): Promise<void> {
   const timeout = AbortSignal.timeout(15_000);
   try {
@@ -98,7 +94,7 @@ export async function checkEmbedding(models: MemoryModels, signal: AbortSignal):
       body: JSON.stringify({
         model: models.embeddingModel,
         input: ['memory connection check'],
-        dimensions: models.embeddingDimension,
+        ...(models.embeddingSendDimensions !== false ? { dimensions: models.embeddingDimension } : {}),
         encoding_format: 'float',
       }),
     });

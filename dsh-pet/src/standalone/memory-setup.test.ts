@@ -109,7 +109,10 @@ process.stdin.resume(); process.stdin.on('end', () => server.close());
     assert.equal(failed.memoryReady, true);
     assert.ok(!JSON.stringify(failed).includes('provider-private-error'));
     assert.equal(readFileSync(join(home, 'dsh-pet/powercontext/settings.json'), 'utf8'), saved);
-    assert.throws(() => setup.submit({ ...draft, baseUrl: baseUrl + '/other', apiKey: '' }), /chat_key_required/);
+    assert.throws(
+      () => setup.submit({ ...draft, baseUrl: 'https://another.example/v1', apiKey: '' }),
+      /chat_key_required/,
+    );
     assert.ok(auth.every((value) => value === 'Bearer synthetic-dsh-key'));
     await setup.dispose();
     setup = createSetup(home, undefined, binding);

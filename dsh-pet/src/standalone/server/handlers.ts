@@ -35,7 +35,12 @@ export function setupHandler(
       return;
     }
     try {
-      setup.submit(await readJsonBody(req));
+      const input = await readJsonBody(req);
+      if (input && typeof input === 'object' && 'action' in input && input.action === 'models' && setup.discover) {
+        sendJson(res, 200, await setup.discover(input));
+        return;
+      }
+      setup.submit(input);
       sendJson(res, 202, setup.status());
     } catch (error) {
       const busy = error instanceof Error && error.message === 'setup_busy';

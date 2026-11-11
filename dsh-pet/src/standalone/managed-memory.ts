@@ -37,6 +37,7 @@ export const memoryModelsSchema = z
     embeddingModel: text,
     embeddingApiKey: key,
     embeddingDimension: z.number().int().min(1).max(65536),
+    embeddingSendDimensions: z.boolean().optional(),
   })
   .strict();
 export type MemoryModels = z.infer<typeof memoryModelsSchema>;
@@ -85,6 +86,7 @@ export function managedMemoryEnvironment(directory: string, config: MemoryConfig
       Authorization: 'Bearer ' + config.embeddingApiKey,
     }),
     POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_DIMENSION: String(config.embeddingDimension),
+    POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_SEND_DIMENSIONS: String(config.embeddingSendDimensions !== false),
     POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_PROFILE_ID: 'dsh-pet-' + config.embeddingDimension,
     POWERCONTEXT_SERVER_RUNTIME_ARTIFACT_PROCESSING_FAMILIES: '["memory"]',
     POWERCONTEXT_SERVER_RUNTIME_MEMORY_SCHEDULE_SECONDS: '30',
@@ -171,8 +173,9 @@ export class ManagedMemory {
   }
   settings(): Omit<MemoryModels, 'apiKey' | 'embeddingApiKey'> | undefined {
     if (!this.config) return undefined;
-    const { baseUrl, model, embeddingBaseUrl, embeddingModel, embeddingDimension } = this.config;
-    return { baseUrl, model, embeddingBaseUrl, embeddingModel, embeddingDimension };
+    const { baseUrl, model, embeddingBaseUrl, embeddingModel, embeddingDimension, embeddingSendDimensions } =
+      this.config;
+    return { baseUrl, model, embeddingBaseUrl, embeddingModel, embeddingDimension, embeddingSendDimensions };
   }
 
   /** Private credential reuse is limited to the previously configured embedding endpoint. */

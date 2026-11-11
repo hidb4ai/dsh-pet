@@ -396,7 +396,7 @@ test('local memory setup preserves unsaved settings and reflects readiness, paus
   });
   const card = page.locator('[data-memory-setup]');
   await card.getByText('Local long-term memory', { exact: true }).waitFor();
-  await card.getByRole('combobox').selectOption('openai');
+  await card.getByLabel('Memory model preset', { exact: true }).selectOption('openai');
   await card.getByLabel('Generation API key', { exact: true }).fill('synthetic-key');
   const size = page.locator('input[type="number"]').first();
   await size.fill('320');
@@ -453,4 +453,41 @@ test('local memory setup cancels background preparation and distinguishes failed
   await card.getByRole('button', { name: '启动或恢复记忆', exact: true }).click();
   await card.getByText('另一个桌宠进程正在管理此记忆库，请先停止那个进程中的记忆服务。', { exact: true }).waitFor();
   assert.equal(await card.getByRole('button', { name: '暂停记忆', exact: true }).count(), 0);
+});
+
+test('memory provider discovery supports mixed services and rejects stale results after endpoint edits', async (t) => {
+  let pending;
+  const requests = [];
+  const { page } = await open(t, {
+    memorySetup: (route) => {
+      const body = route.request().postDataJSON();
+      if (body?.action === 'models') {
+        requests.push(body);
+        if (body.kind === 'generation') {
+          pending = route;
+          return;
+        }
+        return route.fulfill({ json: { ok: true, models: [{ id: 'BAAI/bge-m3', name: 'BGE M3' }] } });
+      }
+      return route.fulfill({ json: { ok: true, available: true, stage: 'idle', busy: false, configured: false } });
+    },
+  });
+  const card = page.locator('[data-memory-setup]');
+  await card.getByLabel('Memory model preset', { exact: true }).selectOption('deepseek');
+  await card.getByLabel('Generation API key', { exact: true }).fill('generation-draft');
+  await card.getByRole('button', { name: 'Fetch models', exact: true }).first().click();
+  await card.getByRole('button', { name: 'Fetching models…', exact: true }).waitFor();
+  await card.getByLabel('Generation API URL', { exact: true }).fill('https://new.example/v1');
+  assert.equal(await card.getByLabel('Generation API key', { exact: true }).inputValue(), '');
+  await pending.fulfill({ json: { ok: true, models: [{ id: 'stale', name: 'Stale' }] } });
+  await page.waitForTimeout(100);
+  assert.equal(await card.locator('#memory-model-list-generation option').count(), 0);
+  await card.getByLabel('Embedding provider', { exact: true }).selectOption('siliconflow');
+  await card.getByLabel('Embedding API key', { exact: true }).fill('vector-draft');
+  await card.getByRole('button', { name: 'Fetch models', exact: true }).last().click();
+  await card.locator('#memory-model-list-embedding option').waitFor({ state: 'attached' });
+  assert.equal(await card.getByLabel('Embedding model', { exact: true }).inputValue(), 'BAAI/bge-m3');
+  assert.equal(await card.getByRole('checkbox').isChecked(), false);
+  assert.equal(requests.at(-1).apiKey, 'vector-draft');
+  assert.equal(requests.at(-1).kind, 'embedding');
 });

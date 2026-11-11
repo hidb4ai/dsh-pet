@@ -105,7 +105,11 @@ for (const memory of [false, true])
     assert.equal(submitted.length, 0);
     await page.locator('#setup-url').fill('https://models.example/v1');
     await page.locator('#setup-key').fill('synthetic-form-key');
-    if (memory) await page.locator('#setup-memory').check();
+    if (memory) {
+      await page.locator('#setup-memory').check();
+      await page.locator('#setup-embedding-provider').selectOption('qwen-cn');
+      await page.locator('#setup-embedding-url').fill('https://models.example/v1');
+    }
     await page.locator('#setup-start').click();
     await page.locator('#setup-chat').waitFor({ state: 'visible' });
     assert.equal(submitted.length, 1);
@@ -196,15 +200,16 @@ test('region presets fill endpoints and clear a key from the previous region', a
   state = { stage: 'idle', busy: false, chatReady: false, message: '开始养鱼' };
   const page = await setupPage(t);
   assert.equal(await page.locator('#setup-model-details').getAttribute('open'), null);
+  await page.locator('#setup-provider').selectOption('qwen-cn');
   await page.locator('#setup-key').fill('beijing-only-key');
-  await page.locator('#setup-region').selectOption('singapore');
+  await page.locator('#setup-provider').selectOption('qwen-sg');
   assert.equal(await page.locator('#setup-url').inputValue(), 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1');
   assert.equal(await page.locator('#setup-key').inputValue(), '');
   await page.locator('#setup-provider').selectOption('openai');
   assert.equal(await page.locator('#setup-url').inputValue(), 'https://api.openai.com/v1');
-  assert.equal(await page.locator('#setup-dimension').inputValue(), '1536');
+  assert.equal(await page.locator('#setup-dimension').inputValue(), '');
   await page.locator('#setup-provider').selectOption('custom');
-  assert.equal(await page.locator('#setup-model-details').getAttribute('open'), '');
+  assert.equal(await page.locator('#setup-model').inputValue(), 'gpt-4.1-mini');
   assert.equal(submitted.length, 0);
 });
 
@@ -251,4 +256,67 @@ test('an initial status failure recovers with the saved chat and correct control
   assert.equal(await page.locator('#setup-url').inputValue(), savedChat.baseUrl);
   assert.equal(await page.locator('#setup-retry').isEnabled(), true);
   assert.equal(await page.locator('#setup-memory').isChecked(), false);
+});
+
+test('three providers can be configured independently and discovery failures allow manual entry', async (t) => {
+  submitted = [];
+  state = { stage: 'idle', busy: false, chatReady: false, message: '开始养鱼' };
+  const page = await setupPage(t);
+  await page.route('**/standalone-ai/setup', (route) => {
+    const body = route.request().postDataJSON();
+    if (body?.action === 'models') return route.fulfill({ json: { ok: false, code: 'not-found', message: 'no list' } });
+    return route.continue();
+  });
+  await page.locator('#setup-key').fill('chat-key');
+  await page.locator('#setup-memory').check();
+  await page.locator('#setup-generation-reuse').uncheck();
+  await page.locator('#setup-generation-provider').selectOption('openai');
+  await page.locator('#setup-generation-key').fill('extraction-key');
+  await page.locator('#setup-embedding-provider').selectOption('siliconflow');
+  await page.locator('#setup-embedding-key').fill('vector-key');
+  assert.equal(await page.locator('#setup-send-dimensions').isChecked(), false);
+  assert.equal(await page.locator('#setup-embedding-provider option[value="deepseek"]').count(), 0);
+  await page.locator('#setup-embedding-fetch').click();
+  await page.getByText('获取失败，请检查地址和密钥；也可手动填写模型 ID。', { exact: true }).waitFor();
+  await page.locator('#setup-start').click();
+  await page.locator('#setup-chat').waitFor({ state: 'visible' });
+  assert.equal(submitted[0].model, 'deepseek-flash');
+  assert.deepEqual(submitted[0].generation, {
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4.1-mini',
+    apiKey: 'extraction-key',
+  });
+  assert.equal(submitted[0].embeddingModel, 'BAAI/bge-m3');
+  assert.equal(submitted[0].embeddingSendDimensions, false);
+});
+
+test('changing endpoints clears draft keys and ignores an older discovery response', async (t) => {
+  submitted = [];
+  state = { stage: 'idle', busy: false, chatReady: false, message: '开始养鱼' };
+  const page = await setupPage(t);
+  let pending;
+  await page.route('**/standalone-ai/setup', (route) => {
+    if (route.request().postDataJSON()?.action === 'models') {
+      pending = route;
+      return;
+    }
+    return route.continue();
+  });
+  await page.locator('#setup-key').fill('old-private-key');
+  await page.locator('#setup-fetch').click();
+  await page.waitForFunction(() => document.querySelector('#setup-fetch').textContent.includes('正在获取'));
+  await page.locator('#setup-url').fill('https://other.example/v1');
+  assert.equal(await page.locator('#setup-key').inputValue(), '');
+  await pending.fulfill({ json: { ok: true, models: [{ id: 'stale-model', name: 'Stale' }] } });
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('#setup-models option').count(), 0);
+  await page.locator('#setup-provider').selectOption('ollama');
+  assert.equal(await page.locator('#setup-key').getAttribute('required'), null);
+  assert.equal(await page.locator('#setup-model').inputValue(), '');
+  await page.locator('#setup-fetch').click();
+  await page.waitForFunction(() => document.querySelector('#setup-fetch').textContent.includes('正在获取'));
+  await page.locator('#setup-provider').selectOption('openai');
+  await pending.fulfill({ json: { ok: true, models: [{ id: 'old-local-model', name: 'Old local model' }] } });
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('#setup-models option').count(), 0);
 });

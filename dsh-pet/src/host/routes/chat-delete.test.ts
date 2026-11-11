@@ -127,3 +127,61 @@ describe('/chat/memory —— 已删宠物的残留历史', () => {
     assert.equal((result as { status: number }).status, 405);
   });
 });
+
+test('PowerContext status and sync leave orphan-history routes intact', async () => {
+  const { deps: base } = makeDeps();
+  let synced = false;
+  const deps: PetRouteDeps = {
+    ...base,
+    memoryStatus: async () => ({
+      ok: true,
+      backend: 'powercontext',
+      pending: synced ? 0 : 1,
+      captured: synced ? 1 : 0,
+      skipped: 0,
+      scopeId: 'scope-test',
+      recall: 'empty',
+      error: null,
+      processing: 'Source capture does not establish Memory extraction.',
+    }),
+    syncMemory: async () => {
+      synced = true;
+    },
+  };
+  const input: RouteInput = {
+    rest: 'chat/powercontext',
+    method: 'GET',
+    url: new URL('http://127.0.0.1/dsh-pet-7340/chat/powercontext?pet=main'),
+  };
+  assert.equal(body(await handleChatRoutes(deps, input)).pending, 1);
+  assert.equal(body(await handleChatRoutes(deps, { ...input, method: 'POST' })).pending, 0);
+  assert.equal(((await handleChatRoutes(deps, { ...input, method: 'DELETE' })) as { status: number }).status, 405);
+  assert.ok(Array.isArray(body(await handleChatRoutes(deps, { ...input, rest: 'chat/memory' })).orphans));
+});
+
+test('GET history reports the actual byte-bounded context separately from the display window', async () => {
+  const { deps } = makeDeps();
+  const { DEFAULT_CHAT_MEMORY } = await import('../../shared/chat-memory-config.ts');
+  const messages = [1, 2, 3, 4].flatMap((ts) => [
+    { role: 'user' as const, content: '甲'.repeat(700), ts },
+    { role: 'assistant' as const, content: '乙'.repeat(700), ts },
+  ]);
+  const bounded = {
+    ...deps,
+    requirePet: () => ({
+      ok: true as const,
+      petId: 'main',
+      entry: 'main',
+      pet: {},
+      conf: {
+        chatMemory: { ...DEFAULT_CHAT_MEMORY, backend: 'powercontext', maxHistoryBytes: 6000 },
+      },
+    }),
+    readMemory: async () => ({ main: { main: { messages } } }),
+    memoryRounds: () => 4,
+  };
+  const result = body(await handleChatRoutes(bounded, { ...del('&rounds=200'), method: 'GET' }));
+  assert.equal(result.rounds, 200);
+  assert.equal((result.messages as unknown[]).length, 8);
+  assert.equal(result.contextRounds, 1);
+});

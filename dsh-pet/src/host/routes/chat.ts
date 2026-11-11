@@ -6,6 +6,8 @@
  * @module dsh-pet/src/host/routes/chat
  */
 import { readAllConfig, sliceMemoryRounds } from '../config.ts';
+import { boundedHistory } from '../memory-context.ts';
+import { chatMemoryConfigValid, DEFAULT_CHAT_MEMORY } from '../../shared/chat-memory-config.ts';
 import { parseImageAttachment, type PetImageRef, type PetImageSink } from '../image-attachment.ts';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
@@ -35,6 +37,18 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
   // 对话：GET /chat 读最近记忆窗口（截尾 chatMemoryRounds 轮，一次读、不是轮询），
   // POST /chat 携带历史生成回复并写入记忆，DELETE /chat 删除记忆（按轮或整只）。
   // 记忆唯一读写方是 host（memory.json），浏览器与桌面天然共享同一份。
+  if (rest === 'chat/powercontext' && deps.memoryStatus && deps.syncMemory) {
+    if (method !== 'GET' && method !== 'POST') return methodNotAllowed();
+    const who = requirePet(url.searchParams, () => readAllConfig(configPaths));
+    if (!who.ok) return who.res;
+    try {
+      if (method === 'POST') await deps.syncMemory(who.petId);
+      return okResult(await deps.memoryStatus(who.petId));
+    } catch {
+      return failResult('generate-error', '记忆状态暂不可用');
+    }
+  }
+
   if (rest === 'chat') {
     if (method !== 'GET' && method !== 'POST' && method !== 'DELETE') return methodNotAllowed();
     try {
@@ -78,7 +92,12 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
         const rounds = roundsOverride ?? memoryRounds(who.conf);
         // 与 chatWithPet 同一语义：rounds = 0 → 空历史（slice(-0) 会返回整个数组，见上）
         const messages = sliceMemoryRounds(list, rounds);
-        return okResult({ ok: true, messages, rounds });
+        const memory = chatMemoryConfigValid(who.conf.chatMemory) ? who.conf.chatMemory : DEFAULT_CHAT_MEMORY;
+        const context =
+          memory.maxHistoryBytes > 0
+            ? boundedHistory(list, memoryRounds(who.conf), memory.maxHistoryBytes)
+            : sliceMemoryRounds(list, memoryRounds(who.conf));
+        return okResult({ ok: true, messages, rounds, contextRounds: Math.floor(context.length / 2) });
       }
       if (method === 'DELETE') return okResult(await deps.deleteHistory(petId, tsList));
       return await postChat(deps, petId, body);

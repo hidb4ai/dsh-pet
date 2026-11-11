@@ -52,6 +52,8 @@ export default defineConfig([
   {
     ...shared,
     // 宿主半侧保持 ESM（由 DSH 的 Loader import），绝不能包 IIFE。
+    // Node 下限已高于 ES2022；保留类字段，避免降级时引入未声明的运行辅助包。
+    target: 'es2022',
     entry: {
       index: 'src/host/index.ts',
     },
@@ -62,8 +64,7 @@ export default defineConfig([
     // 独立模式只在 Node ≥ 22.12 上运行（package.json 的 engines 已声明），因此目标可以是 es2022：
     // es2020 目标会把 class field 一类语法降级成 `_defineProperty(...)`，进而把
     // `@oxc-project/runtime` 拖成一条裸 import —— 那个包不在本包依赖里，装好的用户跑起来会
-    // ERR_MODULE_NOT_FOUND。提到 es2022 后这类降级辅助整体消失（与插件本体的 es2020 产物无关，
-    // 两者是不同的入口，DSH 侧仍按 es2020 发布）。
+    // ERR_MODULE_NOT_FOUND。与 DSH 宿主入口一样保留类字段；浏览器入口仍使用 es2020。
     target: 'es2022',
     entry: {
       standalone: 'src/standalone/cli.ts',

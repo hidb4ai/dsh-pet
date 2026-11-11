@@ -28,11 +28,12 @@ async function withService(
   }
 }
 
-/** 轮询直到条件成立；用 setImmediate 推进，不依赖固定睡眠时长。 */
+/** 等待异步文件操作；事件循环次数不能充当 I/O 的时间上限。 */
 async function waitFor(check: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  const deadline = performance.now() + 5000;
+  while (performance.now() < deadline) {
     if (check()) return;
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
   assert.fail('等待条件超时');
 }
@@ -147,7 +148,7 @@ test('排队等到客户端早已放弃：直接丢弃，不再白合成一次',
   let calls = 0;
   const voice = createVoiceService({
     userRoot: root,
-    staleWaitMs: 0,
+    staleWaitMs: 100,
     synthesize: async (input) => {
       calls += 1;
       if (calls === 1) await gate; // 第一句占住串行链，第二句才排得上队
@@ -158,7 +159,7 @@ test('排队等到客户端早已放弃：直接丢弃，不再白合成一次',
     const first = voice.speak({ text: '第一句' }); // 拿着队列不放
     await waitFor(() => calls === 1);
     const second = voice.speak({ text: '第二句' }); // 排在它后面
-    await new Promise((resolve) => setTimeout(resolve, 10)); // 让排队时间真的过去一点
+    await new Promise((resolve) => setTimeout(resolve, 200)); // 越过等待上限，同时给首条请求正常调度的余量
     release();
     const [kept, dropped] = await Promise.all([first, second]);
     assert.equal(kept.ok, true, '排在第一的照常合成');

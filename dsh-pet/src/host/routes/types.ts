@@ -67,6 +67,23 @@ export type RouteHandler = (deps: PetRouteDeps, input: RouteInput) => Promise<Ro
  * 唯一有副作用的是 `nextExternalWorkSeq`：它推进外部写入序号并返回新值。
  */
 export interface PetRouteDeps {
+  /** 由 DSH 插件生命周期管理；独立模式使用自己的准备入口。 */
+  readonly memorySetup?: import('../../standalone/setup.ts').SetupService;
+  /** Optional for older embedding hosts; the shipped host provides both. */
+  readonly memoryStatus?: (petId: string) => Promise<unknown>;
+  readonly syncMemory?: (petId: string) => Promise<void>;
+  readonly listMemories?: (
+    petId: string,
+    cursor?: string,
+  ) => Promise<import('../../shared/memory-library.ts').MemoryPage>;
+  readonly inspectMemory?: (
+    petId: string,
+    id: string,
+  ) => Promise<import('../../shared/memory-library.ts').MemoryEvidence>;
+  readonly changeMemory?: (
+    petId: string,
+    change: import('../../shared/memory-library.ts').MemoryChange,
+  ) => Promise<void>;
   /** 配置路径集（内置默认 + 用户主配置 + 文件宠物目录）。 */
   readonly configPaths: ConfigPaths;
   /** 第三方右键菜单注册表（进程内存态）。 */

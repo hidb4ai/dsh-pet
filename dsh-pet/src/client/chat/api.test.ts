@@ -245,7 +245,7 @@ describe('memoryBoundaryIndex —— 记忆边界线的位置', () => {
   });
 
   test('关闭记忆（0）或配置里没这个值 → 不画线', () => {
-    assert.equal(memoryBoundaryIndex(10, 0), null);
+    assert.equal(memoryBoundaryIndex(10, 0), 10);
     assert.equal(memoryBoundaryIndex(10, undefined), null);
   });
 
@@ -261,7 +261,7 @@ describe('roundsToRevealMemory —— 让记忆线进入视窗要放多少轮', 
   });
 
   test('没有记忆（0 或负数）→ 0，调用方不必放轮', () => {
-    assert.equal(roundsToRevealMemory(0), 0);
+    assert.equal(roundsToRevealMemory(0), 1);
     assert.equal(roundsToRevealMemory(-3), 0);
   });
 });

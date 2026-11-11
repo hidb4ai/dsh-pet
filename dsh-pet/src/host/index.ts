@@ -4,6 +4,7 @@
  * @module dsh-pet/src/host/index
  */
 import { createHostSetup } from './plugin/setup.ts';
+import { registerManagedMemory } from './plugin/managed-memory.ts';
 import { readAllConfig } from './config.ts';
 import { createHttpRoute, registerHttpRoute } from './plugin/http-route.ts';
 import { registerLifecycle } from './plugin/lifecycle.ts';
@@ -96,6 +97,7 @@ export function apply(ctx: any): void {
   const { startHelper, stopHelper, markDisposed } = desktopHelper;
 
   const deps: PetRouteDeps = {
+    memorySetup: registerManagedMemory(ctx, setup, () => httpRoute.memoryConfig),
     ...setup,
     ...petLookup,
     ...workStatusBridge,
@@ -112,6 +114,7 @@ export function apply(ctx: any): void {
   };
   const httpRoute = createHttpRoute(deps);
   registerHttpRoute(ctx, httpRoute.handlePetRoute);
+  deps.memorySetup?.resume();
 
   registerSessionWatch({
     ctx,

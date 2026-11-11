@@ -4,6 +4,33 @@
 import type { Key } from './zh.ts';
 
 export const fr: Record<Key, string> = {
+  factsSourceNumber: 'Source {n}',
+  factsUser: 'Vous',
+  factsPet: 'Animal',
+
+  factsTitle: 'Souvenirs',
+  factsIntro: 'Consultez la mémoire de cet animal. Corriger crée une version ; oublier exclut le souvenir du rappel.',
+  factsRefresh: 'Actualiser / début',
+  factsLoading: 'Chargement des souvenirs…',
+  factsEmpty: 'Aucun souvenir actif. Les dialogues synchronisés doivent encore être traités.',
+  factsNext: 'Page suivante',
+  factsSources: 'Voir les sources',
+  factsCorrect: 'Corriger',
+  factsForget: 'Oublier',
+  factsSave: 'Enregistrer',
+  factsConfirmForget: 'Confirmer l’oubli',
+  factsForgetWarning:
+    'Ce souvenir sera exclu du rappel. Sources, versions et historique local restent ; les échanges récents peuvent encore le mentionner.',
+  factsReadError: 'Souvenirs indisponibles. Vérifiez la connexion et actualisez.',
+  factsWriteError:
+    'Mise à jour non confirmée. La connexion ou la version a pu changer. Actualisez et vérifiez avant de réessayer.',
+  factsSaved: 'Le service a confirmé la mise à jour. La liste affiche les souvenirs actifs.',
+  factsRevision: 'Version {n}',
+  factsEvidenceNote:
+    'Trois sources originales au maximum. Ce sont des preuves historiques ; les corrections figurent dans la version actuelle.',
+  factsNoExcerpt: 'Extrait indisponible.',
+  factsNoSource: 'Aucune source liée ; il peut s’agir d’une note manuelle.',
+
   tabTitle: 'Chat des mascottes',
   tabGuide: 'Discutez avec toutes les mascottes de bureau ; cliquez sur un onglet pour changer',
   loading: 'Chargement…',
@@ -12,7 +39,9 @@ export const fr: Record<Key, string> = {
   older: 'Charger les précédentes',
   olderEnd: 'Vous avez atteint le début',
   olderEndCapped: 'Vous avez atteint le début ({n} tours maximum)',
-  memoryLine: 'Les {n} derniers tours sont dans la mémoire de la mascotte',
+  memoryLine: 'La prochaine réponse utilise ces {n} échanges ; les souvenirs sont rappelés séparément',
+  localDeleteOnly:
+    'Seul l’historique local est supprimé. Les souvenirs synchronisés peuvent être oubliés dans « Souvenirs ». ',
   orphansSummary: '{pets} mascotte(s) supprimée(s) ont un historique ({messages} messages)',
   orphansClear: 'Nettoyer',
   toolsPersona: 'Personnalité',

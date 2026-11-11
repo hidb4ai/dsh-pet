@@ -75,7 +75,8 @@ export function createPetChatState(rt: ChatPanelRuntime): () => ChatPanelState {
     const reload = async (petId: string): Promise<void> => {
       if (petId === '') return;
       try {
-        patch({ messages: await fetchHistory(petId) });
+        const snapshot = await fetchHistory(petId);
+        setData((prev) => (prev.petId === petId ? { ...prev, ...snapshot } : prev));
       } catch (error) {
         fail(error);
       }
@@ -90,7 +91,7 @@ export function createPetChatState(rt: ChatPanelRuntime): () => ChatPanelState {
     const pet = data.pets.find((one) => one.id === data.petId);
     const allRounds = groupRounds(data.messages);
     const rounds = allRounds.slice(-data.visibleRounds);
-    const memoryRounds = data.roundsByEntry[pet?.assetRoot ?? ''];
+    const memoryRounds = data.contextRounds;
 
     /** 分界线元素：只有它落在当前窗口里才存在。 */
     const findMemoryLine = (el: HTMLElement): Element | null => el.querySelector('[' + MEMORY_LINE_ATTR + ']');
@@ -130,6 +131,7 @@ export function createPetChatState(rt: ChatPanelRuntime): () => ChatPanelState {
         patch({
           petId,
           messages: [],
+          contextRounds: undefined,
           selected: [],
           selecting: false,
           pending: null,

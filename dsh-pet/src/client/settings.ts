@@ -11,6 +11,7 @@ import { DEFAULT_FONT } from '../shared/fonts.ts';
 import { DEFAULT_PHYSICS } from '../shared/physics.ts';
 import type { FontConfig, ModelSelection, PhysicsParams, Weights } from '../shared/types.ts';
 import type { FunctionComponent } from 'react';
+import { DEFAULT_CHAT_MEMORY, type ChatMemoryConfig } from '../shared/chat-memory-config.ts';
 import { requestNotificationPermission } from './notify.ts';
 import { injectSettingsCss } from './settings/css.ts';
 import { type Feedback, makeActions } from './settings/actions.ts';
@@ -21,6 +22,8 @@ import { makeFontCard } from './settings/font-card.ts';
 import { makeGlobalCard, type GlobalFlagKey, type GlobalFlags } from './settings/global-card.ts';
 import { makeLoadStatus } from './settings/load-status.ts';
 import { makeModelCard, type ChatFlagKey, type ChatFlagValues, type ModelFieldKey } from './settings/model-card.ts';
+import { makeMemorySetup } from './settings/memory-setup.ts';
+import type { MemorySetupStatus } from '../shared/memory-setup.ts';
 import { makeMobileCard } from './settings/mobile-card.ts';
 import { makeMotionCard } from './settings/motion-card.ts';
 import { makeModelPicker } from './settings/picker/index.ts';
@@ -79,6 +82,7 @@ export function makePetConfigSection(
   const VoiceCard = makeVoiceCard(rt, VoicePicker);
   const FontCard = makeFontCard(rt);
   const ModelCard = makeModelCard(rt, ModelPicker);
+  const MemorySetup = makeMemorySetup(rt);
   const PhysicsCard = makePhysicsCard(rt);
   const MotionCard = makeMotionCard(rt);
   const ShortcutsCard = makeShortcutsCard(rt, ctx);
@@ -90,6 +94,7 @@ export function makePetConfigSection(
 
   return function PetConfigSection() {
     const [saving, setBusy] = useState(false);
+    const [preparingMemory, setPreparingMemory] = useState(false);
     const [msg, setMsg] = useState<Feedback>({ kind: '', text: '' });
     // 权限申请的反馈，就地显示在按钮旁，与保存反馈分离。
     const [permMsg, setPermMsg] = useState<Feedback>({ kind: '', text: '' });
@@ -172,6 +177,7 @@ export function makePetConfigSection(
     const [chatModel, setChatModel] = useState<ModelSelection>({ provider: '', model: '' });
     // 对话历史条数（全局默认）：初值 10 是内置默认，加载效应会用成品 main.chatMemoryRounds 覆盖。
     const [chatMemory, setChatMemory] = useState(10);
+    const [longTermMemory, setLongTermMemory] = useState<ChatMemoryConfig>({ ...DEFAULT_CHAT_MEMORY });
     // 对话配图张数上限（全局默认）：初值 20 是内置默认，加载后由成品值覆盖。
     const [chatImageLimit, setChatImageLimit] = useState(20);
     // 头像预览的破缓存版本号：上传成功后换一个，预览才会重新取图（同一 URL 会被浏览器记住）。
@@ -206,6 +212,7 @@ export function makePetConfigSection(
         if (patch.whisperModel !== undefined) setWhisperModel(patch.whisperModel);
         if (patch.chatModel !== undefined) setChatModel(patch.chatModel);
         if (patch.chatMemoryRounds !== undefined) setChatMemory(patch.chatMemoryRounds);
+        if (patch.chatMemory !== undefined) setLongTermMemory(patch.chatMemory);
         if (patch.chatImageLimit !== undefined) setChatImageLimit(patch.chatImageLimit);
       },
       [replace],
@@ -213,7 +220,7 @@ export function makePetConfigSection(
 
     // 配置没就绪（加载中 / 失败）时整页只读，避免在占位值上编辑再保存回去。
     const { loadState, retry } = useConfigLoad(rt, applyConfig);
-    const busy = saving || loadState !== 'ready';
+    const busy = saving || preparingMemory || loadState !== 'ready';
 
     // 切换系统通知：只改本地状态（开启时顺带借这次用户手势申请权限），配置在点「保存」时整包写入。
     const toggleNotify = async (v: boolean) => {
@@ -317,6 +324,7 @@ export function makePetConfigSection(
         whisperModel,
         chatModel,
         chatMemoryRounds: chatMemory,
+        chatMemory: longTermMemory,
         chatImageLimit,
         font,
         animationWeights: weights,
@@ -407,6 +415,7 @@ export function makePetConfigSection(
         }),
         h(FontCard, { busy, font, onChange: patchFont }),
         h(ModelCard, {
+          petId: selId,
           busy,
           catalog,
           failed: catalogFailed,
@@ -414,11 +423,21 @@ export function makePetConfigSection(
           chatModel,
           onModelChange: setModel,
           chatMemory,
+          longTermMemory,
+          onLongTermMemoryChange: setLongTermMemory,
           chatImageLimit,
           onChatMemoryChange: setChatMemory,
           onChatImageLimitChange: setChatImageLimit,
           values: chatFlags,
           onFlagChange: setChatFlag,
+        }),
+        h(MemorySetup, {
+          disabled: saving || loadState !== 'ready',
+          onBusy: setPreparingMemory,
+          onBinding: (binding: NonNullable<MemorySetupStatus['binding']>) => {
+            setLongTermMemory(binding.chatMemory);
+            setChatMemory(binding.chatMemoryRounds);
+          },
         }),
         h(PhysicsCard, { busy, physics, onChange: patchPhysics }),
         h(MotionCard, { busy, weights, onChange: setWeights }),

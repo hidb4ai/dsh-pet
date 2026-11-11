@@ -4,6 +4,34 @@
 import type { Key } from './zh.ts';
 
 export const en: Record<Key, string> = {
+  factsSourceNumber: 'Source {n}',
+  factsUser: 'You',
+  factsPet: 'Pet',
+
+  factsTitle: 'Remembered facts',
+  factsIntro:
+    'Review this pet’s long-term memories. Corrections create a new revision; forgetting excludes a fact from recall.',
+  factsRefresh: 'Refresh / first page',
+  factsLoading: 'Loading memories…',
+  factsEmpty: 'No active memories yet. New dialogue needs background processing; synced does not mean extracted.',
+  factsNext: 'Next page',
+  factsSources: 'View sources',
+  factsCorrect: 'Correct',
+  factsForget: 'Forget',
+  factsSave: 'Save correction',
+  factsConfirmForget: 'Confirm forgetting',
+  factsForgetWarning:
+    'This fact will stop participating in long-term recall. Original sources, old revisions and local chat remain; recent chat may still mention it.',
+  factsReadError: 'Memories are unavailable. Check the connection and refresh.',
+  factsWriteError:
+    'The update was not confirmed. The connection or memory version may have changed. Refresh and check before retrying.',
+  factsSaved: 'The service confirmed the update. The list shows currently recallable memories.',
+  factsRevision: 'Revision {n}',
+  factsEvidenceNote:
+    'Up to three original sources are shown. Sources are historical evidence; corrections belong to the current memory revision.',
+  factsNoExcerpt: 'Source excerpt unavailable.',
+  factsNoSource: 'No linked source; this may be a manually recorded memory.',
+
   tabTitle: 'Pet chat',
   tabGuide: 'Chat with all desktop pets; click a tab to switch',
   loading: 'Loading…',
@@ -12,7 +40,9 @@ export const en: Record<Key, string> = {
   older: 'Load earlier',
   olderEnd: 'You have reached the beginning',
   olderEndCapped: 'You have reached the beginning (up to {n} rounds)',
-  memoryLine: 'The last {n} rounds are in the pet memory',
+  memoryLine: 'The next reply uses these {n} recent rounds; long-term memories are recalled separately',
+  localDeleteOnly:
+    'This deletes local chat history only. Synced memories remain; forget them individually in “Remembered facts”.',
   orphansSummary: '{pets} deleted pet(s) have history ({messages} messages)',
   orphansClear: 'Clean up',
   toolsPersona: 'Persona',

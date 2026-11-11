@@ -4,6 +4,34 @@
 import type { Key } from './zh.ts';
 
 export const es: Record<Key, string> = {
+  factsSourceNumber: 'Fuente {n}',
+  factsUser: 'Tú',
+  factsPet: 'Mascota',
+
+  factsTitle: 'Recuerdos',
+  factsIntro:
+    'Revisa la memoria de esta mascota. Corregir crea una versión; olvidar excluye el recuerdo de las búsquedas.',
+  factsRefresh: 'Actualizar / inicio',
+  factsLoading: 'Cargando recuerdos…',
+  factsEmpty: 'Aún no hay recuerdos activos. Sincronizar no equivale a extraer; el diálogo necesita procesamiento.',
+  factsNext: 'Página siguiente',
+  factsSources: 'Ver fuentes',
+  factsCorrect: 'Corregir',
+  factsForget: 'Olvidar',
+  factsSave: 'Guardar corrección',
+  factsConfirmForget: 'Confirmar olvido',
+  factsForgetWarning:
+    'Se excluirá de la recuperación. Las fuentes, versiones e historial local permanecen; la charla reciente puede mencionarlo.',
+  factsReadError: 'Recuerdos no disponibles. Comprueba la conexión y actualiza.',
+  factsWriteError:
+    'Actualización sin confirmar. La conexión o versión puede haber cambiado. Actualiza y comprueba antes de reintentar.',
+  factsSaved: 'El servicio confirmó la actualización. Se muestran los recuerdos activos.',
+  factsRevision: 'Versión {n}',
+  factsEvidenceNote:
+    'Hasta tres fuentes originales. Son evidencia histórica; las correcciones pertenecen a la versión actual.',
+  factsNoExcerpt: 'Extracto no disponible.',
+  factsNoSource: 'Sin fuente vinculada; puede ser un registro manual.',
+
   tabTitle: 'Chat de mascotas',
   tabGuide: 'Habla con todas las mascotas de escritorio; haz clic en una pestaña para cambiar',
   loading: 'Cargando…',
@@ -12,7 +40,8 @@ export const es: Record<Key, string> = {
   older: 'Cargar anteriores',
   olderEnd: 'Has llegado al principio',
   olderEndCapped: 'Has llegado al principio (máximo {n} rondas)',
-  memoryLine: 'Las últimas {n} rondas están en la memoria de la mascota',
+  memoryLine: 'La próxima respuesta usa estas {n} rondas; los recuerdos se recuperan por separado',
+  localDeleteOnly: 'Solo se elimina el historial local. Los recuerdos sincronizados se pueden olvidar en «Recuerdos». ',
   orphansSummary: '{pets} mascota(s) eliminada(s) tienen historial ({messages} mensajes)',
   orphansClear: 'Limpiar',
   toolsPersona: 'Personalidad',

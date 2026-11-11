@@ -2,6 +2,7 @@
 import type { StandaloneAiSettings } from '../ai-config.ts';
 import type { AiFetch } from '../ai-transport.ts';
 import type { DiscoveredModel, ModelDiscoveryInput, ModelDiscoveryResult } from './types.ts';
+import { localModelKey, sameModelEndpoint } from '../../shared/memory-presets.ts';
 
 /** 发现请求的封顶时长：比正式通道短，用户在设置页等着看结果。 */
 const DISCOVERY_TIMEOUT_MS = 10_000;
@@ -97,7 +98,13 @@ function normalize(entries: readonly unknown[]): DiscoveredModel[] {
     if (id === '' || seen.has(id)) continue;
     seen.add(id);
     const label = [entry.name, entry.display_name].find((value) => typeof value === 'string' && value.trim() !== '');
-    models.push({ id, name: typeof label === 'string' ? label.trim() : id });
+    const capability = [entry.type, entry.task, entry.domain].filter((value) => typeof value === 'string').join(' ');
+    const marker = (capability || id).toLowerCase();
+    let kind: DiscoveredModel['kind'];
+    if (/embed|\bbge-|\be5-/.test(marker)) kind = 'embedding';
+    else if (/rerank|image|video|audio|tts|whisper|dall-e/.test(marker)) kind = 'other';
+    else if (/chat|llm|vlm|gpt-|claude|deepseek|kimi|glm/.test(marker)) kind = 'generation';
+    models.push({ id, name: typeof label === 'string' ? label.trim() : id, ...(kind ? { kind } : {}) });
   }
   return models;
 }
@@ -116,12 +123,28 @@ async function requestList(
     return failure(controller.signal.aborted ? 'timeout' : 'network');
   }
   if (!response.ok) {
+    await response.body?.cancel();
     const code = response.status === 401 || response.status === 403 ? 'auth' : 'http';
-    return failure(response.status === 404 ? 'not-found' : code);
+    return failure(response.status === 404 ? 'not-found' : response.status === 429 ? 'rate-limit' : code);
   }
   let text: string;
   try {
-    text = await response.text();
+    if (!response.body) return failure('contract');
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > MAX_DISCOVERY_BYTES) return failure('contract');
+        chunks.push(chunk.value);
+      }
+      text = Buffer.concat(chunks).toString('utf8');
+    } finally {
+      await reader.cancel();
+    }
   } catch {
     return failure('contract');
   }
@@ -151,7 +174,11 @@ export async function discoverModels(
   const protocol =
     input.protocol === 'anthropic' || input.protocol === 'openai-compatible' ? input.protocol : current.protocol;
   const rawBase = (input.baseUrl !== undefined ? input.baseUrl : current.baseUrl).trim();
-  const apiKey = (input.apiKey !== undefined && input.apiKey !== '' ? input.apiKey : current.apiKey).trim();
+  const apiKey = (
+    input.apiKey ||
+    (protocol === current.protocol && sameModelEndpoint(rawBase, current.baseUrl) ? current.apiKey : '') ||
+    localModelKey(rawBase)
+  ).trim();
   if (rawBase === '') return failure('input', '请先填写接口地址（Base URL）');
   if (apiKey === '') return failure('input', '请先填写 API 密钥');
   const base = parseEndpoint(rawBase);

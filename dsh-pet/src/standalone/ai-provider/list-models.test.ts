@@ -32,7 +32,7 @@ test('OpenAI 兼容端点：data 数组被归一成 id 与名称 → 保持端�
   assert.deepEqual(result, {
     ok: true,
     models: [
-      { id: 'deepseek-chat', name: 'DeepSeek Chat' },
+      { id: 'deepseek-chat', name: 'DeepSeek Chat', kind: 'generation' },
       { id: 'bare', name: 'bare' },
     ],
   });
@@ -50,10 +50,13 @@ test('兼容网关的 models 映射与 Anthropic 的 display_name → 两种写�
     ],
   });
   const named = recorder(() => json({ data: [{ id: 'claude-x', display_name: 'Claude X' }] }));
-  assert.deepEqual(await discoverModels(named.fetchImpl, settings, { protocol: 'anthropic' }), {
-    ok: true,
-    models: [{ id: 'claude-x', name: 'Claude X' }],
-  });
+  assert.deepEqual(
+    await discoverModels(named.fetchImpl, settings, { protocol: 'anthropic', apiKey: 'anthropic-key' }),
+    {
+      ok: true,
+      models: [{ id: 'claude-x', name: 'Claude X', kind: 'generation' }],
+    },
+  );
 });
 
 test('Anthropic 协议：请求带版本号的清单地址与 x-api-key，不发送 Bearer', async () => {
@@ -73,7 +76,10 @@ test('地址省略 /v1：先按原样请求，404 之后改打带版本号的地
   const { calls, fetchImpl } = recorder((url) =>
     url.endsWith('/v1/models') ? json({ data: [{ id: 'found' }] }) : json({ error: 'nope' }, 404),
   );
-  const result = await discoverModels(fetchImpl, settings, { baseUrl: 'https://api.example.test' });
+  const result = await discoverModels(fetchImpl, settings, {
+    baseUrl: 'https://api.example.test',
+    apiKey: 'explicit-key',
+  });
   assert.deepEqual(result, { ok: true, models: [{ id: 'found', name: 'found' }] });
   assert.deepEqual(
     calls.map((call) => call.url),
@@ -141,4 +147,44 @@ test('草稿缺省：沿用已保存的地址与密钥', async () => {
   await discoverModels(fetchImpl, settings, { protocol: 'openai-compatible' });
   assert.equal(calls[0].url, 'https://api.example.test/v1/models');
   assert.equal(calls[0].headers.authorization, 'Bearer saved-key');
+});
+
+test('换域名、同域路径或协议不复用已保存密钥', async () => {
+  const { calls, fetchImpl } = recorder(() => json({ data: [] }));
+  for (const input of [
+    { baseUrl: 'https://other.example/v1' },
+    { baseUrl: settings.baseUrl + '/other' },
+    { protocol: 'anthropic' },
+  ]) {
+    const result = await discoverModels(fetchImpl, settings, input);
+    assert.equal(result.ok, false);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('流式超大清单提前停止读取，429 保留稳定错误分类', async () => {
+  let cancelled = false;
+  let reads = 0;
+  const { fetchImpl } = recorder(
+    () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            reads++;
+            controller.enqueue(new Uint8Array(600_000));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+      ),
+  );
+  const result = await discoverModels(fetchImpl, settings, {});
+  assert.equal(result.ok, false);
+  assert.equal(cancelled, true);
+  assert.ok(reads <= 4);
+  const limited = recorder(() => json({ secret: 'private' }, 429));
+  const failure = await discoverModels(limited.fetchImpl, settings, {});
+  assert.ok(!failure.ok);
+  assert.equal(failure.code, 'rate-limit');
 });

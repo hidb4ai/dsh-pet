@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -36,6 +36,12 @@ before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'dsh-pet-config-concurrency-'));
   const pkg = join(dir, 'package');
   mkdirSync(join(pkg, 'assets'), { recursive: true });
+  // 临时包与已安装产品一样需要外置运行依赖，不能依赖临时目录的父级恰好有 node_modules。
+  symlinkSync(
+    fileURLToPath(new URL('../../node_modules', import.meta.url)),
+    join(pkg, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   copyFileSync(new URL('../../assets/config.jsonc', import.meta.url), join(pkg, 'assets/config.jsonc'));
   const aliases = Object.fromEntries(
     ['dsh-home-paths', 'dsh-credentials', 'dsh-llm'].map((name) => [
@@ -203,4 +209,32 @@ test('a rejected config operation does not prevent later updates', async () => {
   const valid = await request('pet-display', 'POST', { id: 'alpha', display: 'none' });
   assert.equal(valid.status, 200);
   assert.equal(read().pets[0].display, 'none');
+});
+
+test('memory setup rejects cross-site forms and returns only safe status fields', async () => {
+  const url = base + 'powercontext/setup';
+  const headers = { 'X-DSH-Pet-Token': token };
+  const status = (await fetch(url, { headers }).then((response) => response.json())) as Record<string, unknown>;
+  assert.equal(status.ok, true);
+  assert.equal(status.available, true);
+  assert.equal(status.chat, undefined);
+  for (const extra of [
+    { 'content-type': 'text/plain', 'sec-fetch-site': 'same-origin' },
+    { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+  ]) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, ...extra },
+      body: '{"action":"start"}',
+    });
+    assert.ok([403, 415].includes(response.status));
+  }
+  const invalid = (await fetch(url, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: '{"action":"start","apiKey":"synthetic-private-key"}',
+  }).then((response) => response.json())) as Record<string, unknown>;
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.message, 'invalid_setup');
+  assert.ok(!JSON.stringify(invalid).includes('synthetic-private-key'));
 });

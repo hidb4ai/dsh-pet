@@ -26,6 +26,8 @@ import { petsScript } from './settings-page/script/pets.ts';
 import { widgetsScript } from './settings-page/script/widgets.ts';
 import { settingsPage } from './settings-page/chrome.ts';
 import { settingsStyle } from './settings-page/style.ts';
+import { setupScript } from './settings-page/script/setup.ts';
+import { setupModelsScript } from './settings-page/script/setup-models.ts';
 
 export { settingsPage, settingsStyle };
 
@@ -52,6 +54,8 @@ export const settingsScript = [
   globalsScript(),
   modelPickerScript(),
   aiScript(),
+  setupModelsScript(),
+  setupScript(),
   bootScript(),
   'boot();',
   '})();',

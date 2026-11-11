@@ -4,6 +4,32 @@
 import type { Key } from './zh.ts';
 
 export const pt: Record<Key, string> = {
+  factsSourceNumber: 'Fonte {n}',
+  factsUser: 'Você',
+  factsPet: 'Pet',
+
+  factsTitle: 'Memórias',
+  factsIntro: 'Veja as memórias deste pet. Corrigir cria uma versão; esquecer exclui a memória da recuperação.',
+  factsRefresh: 'Atualizar / início',
+  factsLoading: 'Carregando memórias…',
+  factsEmpty: 'Ainda não há memórias ativas. Diálogos sincronizados precisam ser processados.',
+  factsNext: 'Próxima página',
+  factsSources: 'Ver fontes',
+  factsCorrect: 'Corrigir',
+  factsForget: 'Esquecer',
+  factsSave: 'Salvar correção',
+  factsConfirmForget: 'Confirmar esquecimento',
+  factsForgetWarning:
+    'Esta memória não será recuperada. Fontes, versões e histórico local permanecem; conversas recentes ainda podem mencioná-la.',
+  factsReadError: 'Memórias indisponíveis. Verifique a conexão e atualize.',
+  factsWriteError:
+    'Atualização não confirmada. A conexão ou versão pode ter mudado. Atualize e confira antes de tentar novamente.',
+  factsSaved: 'O serviço confirmou a atualização. A lista mostra as memórias ativas.',
+  factsRevision: 'Versão {n}',
+  factsEvidenceNote: 'Até três fontes originais. São evidências históricas; as correções estão na versão atual.',
+  factsNoExcerpt: 'Trecho da fonte indisponível.',
+  factsNoSource: 'Sem fonte vinculada; pode ser uma memória registrada manualmente.',
+
   tabTitle: 'Conversa dos bichinhos',
   tabGuide: 'Converse com todos os bichinhos de desktop; clique em uma aba para trocar',
   loading: 'Carregando…',
@@ -12,7 +38,8 @@ export const pt: Record<Key, string> = {
   older: 'Carregar anteriores',
   olderEnd: 'Você chegou ao início',
   olderEndCapped: 'Você chegou ao início (máximo {n} rodadas)',
-  memoryLine: 'As últimas {n} rodadas entram na memória do bichinho',
+  memoryLine: 'A próxima resposta usa estas {n} rodadas; as memórias são recuperadas separadamente',
+  localDeleteOnly: 'Só o histórico local será excluído. Esqueça memórias sincronizadas individualmente em «Memórias».',
   orphansSummary: '{pets} bichinho(s) removido(s) têm histórico ({messages} mensagens)',
   orphansClear: 'Limpar',
   toolsPersona: 'Personalidade',

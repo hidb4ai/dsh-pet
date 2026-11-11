@@ -9,6 +9,17 @@ import { px, SIZE } from './metrics.ts';
 
 /** 面板样式（选择器前缀 `pet-chat`，避免与 DSH 或其它插件撞名）。 */
 export const PANEL_CSS = `
+.pet-chat-memory-status { flex: none; padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.pet-chat-memory-status p { margin: 0 0 4px; }
+.pet-chat-memory-status small { font-size: 11px; }
+.pet-chat-memory-library > div { max-height: 35vh; overflow: auto; padding: 8px 0; }
+.pet-chat-memory-library ul { list-style: none; padding: 0; margin: 8px 0; }
+.pet-chat-fact { border-top: 1px solid var(--dsw-alias-border-l2); padding: 10px 0; overflow-wrap: anywhere; }
+.pet-chat-fact-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.pet-chat-fact textarea { box-sizing: border-box; width: 100%; min-height: 80px; font: inherit; }
+.pet-chat-fact-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; }
+.pet-chat-memory-library button:disabled { cursor: default; opacity: .5; }
+.pet-chat-memory-status button { margin-left: 8px; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary); font: inherit; cursor: pointer; }
 .pet-chat {
   display: flex;
   flex-direction: column;

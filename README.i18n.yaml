@@ -1,0 +1,44 @@
+version: 1
+english: README.md
+chinese: README.zh.md
+headings:
+  - en: "dsh-pet"
+    zh: "dsh-pet"
+    en_sha256: 0e940bda8c2f781bafb52ae3f037760999cf965d2fb742c02e60841f986c294b
+    zh_sha256: 0e940bda8c2f781bafb52ae3f037760999cf965d2fb742c02e60841f986c294b
+  - en: "What the pet does"
+    zh: "桌宠能做什么"
+    en_sha256: 0fdb2c8926a5e9f1c5343174b4a4fde804718781be569448345e915aa133d958
+    zh_sha256: 08babe08aae9f55bda5bc520903003943050d1d0041de4bb0946e0ccb3cbbf23
+  - en: "Start from source"
+    zh: "从源码开始使用"
+    en_sha256: f10d307085fe7b545652b4c30c8ed5b0a026de56008ef6c4931ebcb738eba534
+    zh_sha256: c296cef866037954239a4ecb0b10f751f084e87b65e2f759fc1fca6bdcd8b9a3
+  - en: "Use it in DSH"
+    zh: "在 DSH 中使用"
+    en_sha256: 90d1af071aeec22cc0133cfdd7d5ec871d8012d9b8d75a864e3793abc136c08d
+    zh_sha256: 20a7fb0a68f57e3c275269ba5608eee63180b938b1c29e9869ceb675da6493ae
+  - en: "Choosing model services"
+    zh: "选择模型服务"
+    en_sha256: 8fffc8067ace4a8b075e30e997d5e3fcf1f1392d8c38eb5faefe83e9bed1b9fe
+    zh_sha256: 891d22ceaf3ae8a27385750f2318a7d685946706997fdb2a63a88a62a8e79179
+  - en: "What PowerContext adds"
+    zh: "PowerContext 带来了什么"
+    en_sha256: 1bcb3e0f8ecae0d5dea32a54475a09379f995b1a02d7cdfd94e61cb938268608
+    zh_sha256: 99a53dea41dd27627a20bf2d3fc02c6a21671997c62c9f653061725be05d9eb7
+  - en: "Check that memory is working"
+    zh: "怎样确认它真的记住了"
+    en_sha256: 03c85f6e2d47a9f41517a779ae3f83f3b065d754840fec8d59225f0f6d3b3dce
+    zh_sha256: c5736ecf6328066fb02e22795981b2266eecc6ae25a4904fcf076af1be28e71e
+  - en: "Your data and controls"
+    zh: "数据放在哪里，怎样控制"
+    en_sha256: a3965c46b2d99ecd8698a9028ec4db6a084027c6b0e5ca0398efa2af79666243
+    zh_sha256: 56d475d5d6e46e34f916e65961982efdba684f732340c1dbdbd027663ea54bee
+  - en: "Development"
+    zh: "开发与接口"
+    en_sha256: 21b6a798321a49f75b9c3827fa3cfdb7efe2c4e05c3d13aefe1c825b9774a158
+    zh_sha256: 11338efa865f792cb1ffc9beb4c3d3c9789d24283b0f05cf37e054a11d6939cd
+  - en: "Credits and licensing"
+    zh: "致谢与许可"
+    en_sha256: 8f55a700872e648fd1923f1484d0131cbdbb6cda133976dd29a72a9078e92ef2
+    zh_sha256: eb26b7a35f1bab779b9f18e34697a805edc2df50d91a05e06c8aa745347ff35a

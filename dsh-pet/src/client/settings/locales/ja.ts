@@ -306,5 +306,5 @@ export const ja: Record<Key, string> = {
   'motion.turn': '方向転換',
   'motion.move': '移動',
   'motion.action': 'ランダムアクション',
-  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet',
+  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet-powercontext',
 };

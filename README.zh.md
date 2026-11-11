@@ -1,4 +1,4 @@
-# dsh-pet
+# dsh-pet-powercontext
 
 **一只会陪你聊天、跟着工作状态动起来，也能记住你偏好的桌宠。**
 
@@ -63,7 +63,7 @@ dsh plugin --profile web add "file:$PWD"
 
 本机服务安装在运行 DSH 的机器上，应用于默认宠物条目；自定义宠物包保留独立设置。已有 PowerContext 服务也可在宠物的模型设置中连接。当前只采集桌宠对话，尚未给 DSH 的编程 Agent 会话接入记忆。
 
-分发安装包时，在内层包目录运行 `npm pack --pack-destination /仓库外的目录`，再用 `dsh plugin --profile web add /绝对路径/dsh-pet-0.4.7.tgz` 安装。反复验证重新构建的包时，为每个归档使用不同文件名，避免安装器命中本地归档缓存。
+分发安装包时，在内层包目录运行 `npm pack --pack-destination /仓库外的目录`，再用 `dsh plugin --profile web add /绝对路径/dsh-pet-powercontext-0.1.0-beta.1.tgz` 安装。反复验证重新构建的包时，为每个归档使用不同文件名，避免安装器命中本地归档缓存。
 
 上游包安装、Windows 下载版和打包方法见 [INSTALL.md](INSTALL.md)。
 
@@ -154,6 +154,19 @@ pnpm build
 ```
 
 配置参考 [CONFIG.md](CONFIG.md)。HTTP 能力见 [API.md](API.md) 和 [openapi.yaml](openapi.yaml)，插件调用见 [CORDIS-API.md](CORDIS-API.md)、[CORDIS.md](CORDIS.md)。反馈问题时请附提交或版本、操作系统、运行方式及复现步骤；分享日志前去掉密钥和私人聊天内容。
+
+### 发布 npm 包
+
+包名为 `dsh-pet-powercontext`，首个版本为 `0.1.0-beta.1`。发布完成后，DSH 用户运行 `dsh plugin --profile web add dsh-pet-powercontext@beta`，独立模式运行 `npx dsh-pet-powercontext@beta --setup`。保留 `dsh-pet-standalone` 命令作为别名。启用本包前先停用上游 `dsh-pet` 插件：两者共用路由、命令和已有的 `$DSH_HOME/dsh-pet/` 数据目录；保留此目录即可继续使用原配置和记忆。
+
+[发布流程](.github/workflows/release.yml)参考 [memory-powermem](https://github.com/ob-labs/memory-powermem/blob/main/.github/workflows/release.yml)：
+
+- PR 和 **Run workflow** 执行检查、构建、测试并上传可安装的 `.tgz` 产物。手动运行可填写分支、标签或 PR ref，即使选择标签也不会发布。
+- 推送 `v*` 标签时，标签必须与 `dsh-pet/package.json` 完全一致，首发标签是 `v0.1.0-beta.1`。成功后创建 GitHub Release，附上经过测试的安装包和 `SHA256SUMS`，再调用 Windows 桌面打包流程挂载 ZIP。
+- 需要同时发布 npm 时，在仓库 Actions Variables 设置 `NPM_PUBLISH=true`，Actions Secrets 设置 `NPM_TOKEN`，使用有发布权限且启用 bypass 2FA 的 granular token。未开启时只创建 GitHub Release。不要把 Token 提交到 `.npmrc`。
+- `alpha.N`、`beta.N`、`rc.N` 版本分别发布到对应 npm 标签，并标记为 GitHub 预发布；正式版才使用 `latest`。流程校验已提交的版本，不在发布过程中临时改版本。
+
+先将 workflow 合并到 `master`，配置变量和密钥，再从准备发布的提交推送匹配的版本标签。开启 npm 发布后，发布失败会阻止后续 GitHub Release 步骤。已发布的 npm 版本不能覆盖，修改内容后需要升版。安装包和临时测试数据均放在 runner 临时目录；本机 Linux 验证时使用 `/data/codex-tmp/` 并设置 `TMPDIR`。
 
 ## 致谢与许可
 

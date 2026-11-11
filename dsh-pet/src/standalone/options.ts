@@ -22,7 +22,7 @@ export interface CliOptions {
 /** --help 正文。 */
 export const USAGE = `dsh-pet 独立模式（不需要 DSH）
 
-用法：dsh-pet-standalone [选项]
+用法：dsh-pet-powercontext [选项]
 
 选项：
   --port <端口>   监听端口（默认 ${DEFAULT_STANDALONE_PORT}；被占用时自动向后顺延）

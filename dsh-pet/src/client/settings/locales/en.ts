@@ -307,5 +307,5 @@ export const en: Record<Key, string> = {
   'motion.turn': 'Turn',
   'motion.move': 'Move',
   'motion.action': 'Random action',
-  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet',
+  uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet-powercontext',
 };

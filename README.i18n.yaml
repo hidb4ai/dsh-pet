@@ -2,10 +2,10 @@ version: 1
 english: README.md
 chinese: README.zh.md
 headings:
-  - en: "dsh-pet"
-    zh: "dsh-pet"
-    en_sha256: 0e940bda8c2f781bafb52ae3f037760999cf965d2fb742c02e60841f986c294b
-    zh_sha256: 0e940bda8c2f781bafb52ae3f037760999cf965d2fb742c02e60841f986c294b
+  - en: "dsh-pet-powercontext"
+    zh: "dsh-pet-powercontext"
+    en_sha256: 4066d4f82c87fafd64e3e0298d1d086f31c6b82e8092b2b57b3080b272ec9f66
+    zh_sha256: 4066d4f82c87fafd64e3e0298d1d086f31c6b82e8092b2b57b3080b272ec9f66
   - en: "What the pet does"
     zh: "桌宠能做什么"
     en_sha256: 0fdb2c8926a5e9f1c5343174b4a4fde804718781be569448345e915aa133d958
@@ -38,6 +38,10 @@ headings:
     zh: "开发与接口"
     en_sha256: 21b6a798321a49f75b9c3827fa3cfdb7efe2c4e05c3d13aefe1c825b9774a158
     zh_sha256: 11338efa865f792cb1ffc9beb4c3d3c9789d24283b0f05cf37e054a11d6939cd
+  - en: "Publishing the npm package"
+    zh: "发布 npm 包"
+    en_sha256: ecdc25ac08efa3652499fd5dfdd69045bac04cd469dceb51d8d018efb65f2996
+    zh_sha256: 6f7273f77cd734e6035ed1ff9948b2b07985bafeafc7579e9d839c4aa8b5d876
   - en: "Credits and licensing"
     zh: "致谢与许可"
     en_sha256: 8f55a700872e648fd1923f1484d0131cbdbb6cda133976dd29a72a9078e92ef2

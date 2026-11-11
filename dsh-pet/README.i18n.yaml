@@ -2,10 +2,10 @@ version: 1
 english: README.md
 chinese: README.zh.md
 headings:
-  - en: 'dsh-pet'
-    zh: 'dsh-pet'
-    en_sha256: 0e940bda8c2f781bafb52ae3f037760999cf965d2fb742c02e60841f986c294b
-    zh_sha256: 0e940bda8c2f781bafb52ae3f037760999cf965d2fb742c02e60841f986c294b
+  - en: 'dsh-pet-powercontext'
+    zh: 'dsh-pet-powercontext'
+    en_sha256: 4066d4f82c87fafd64e3e0298d1d086f31c6b82e8092b2b57b3080b272ec9f66
+    zh_sha256: 4066d4f82c87fafd64e3e0298d1d086f31c6b82e8092b2b57b3080b272ec9f66
   - en: 'Overview'
     zh: '概述'
     en_sha256: d4b1ea5708dd532930a85188b45aff6f0a3ed458500c7577e0127a538eb0d100

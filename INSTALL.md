@@ -68,7 +68,7 @@ dsh plugin --profile web add file:D:/path/to/dsh-pet/dsh-pet
 
 > 注：`npm run build`（即 `scripts/prepare.js`）才产出**完整可安装**的 lib——除 tsdown 构建外还构建桌面共享核心（`shared-core.js`）、生成类型声明并收敛发布 `files` 清单；裸 `tsdown` 构建会缺桌面运行时与类型。发布与打包（`npm publish` / `npm pack`）时由 `prepack` 自动调用它，克隆仓库后需手动跑一次。
 
-需要可转交的安装包时，在内层包目录执行 `npm pack --pack-destination /仓库外的目录`，再用 `dsh plugin --profile web add /绝对路径/dsh-pet-0.4.7.tgz` 安装。重复构建时使用不同归档文件名，避免本地包缓存。重启 DSH 后，在「本机长期记忆」填写模型配置并启用；聊天仍用原有 DSH 模型，不必重新配置聊天凭据。安装发生在 DSH 宿主机器，远程 DSH 不会在浏览器所在机器安装服务。
+需要可转交的安装包时，在内层包目录执行 `npm pack --pack-destination /仓库外的目录`，再用 `dsh plugin --profile web add /绝对路径/dsh-pet-powercontext-0.1.0-beta.1.tgz` 安装。重复构建时使用不同归档文件名，避免本地包缓存。重启 DSH 后，在「本机长期记忆」填写模型配置并启用；聊天仍用原有 DSH 模型，不必重新配置聊天凭据。安装发生在 DSH 宿主机器，远程 DSH 不会在浏览器所在机器安装服务。
 
 ## 独立模式（无需 DSH）
 

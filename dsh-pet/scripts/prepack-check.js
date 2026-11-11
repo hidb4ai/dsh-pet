@@ -11,6 +11,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createContext, runInContext } from 'node:vm';
+import { load } from 'js-yaml';
 
 // 包根目录（scripts/ 的上一级）
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -57,6 +59,10 @@ const stripJsonc = (s) => {
 const required = [
   'lib/index.js', // 宿主半侧
   'lib/client.js', // 浏览器半侧
+  'lib/standalone.js', // npm 命令入口
+  'lib/chat-panel.js', // 独立模式对话界面
+  'README.zh.md', // 中文使用说明
+  'ASSET-LICENSE.md', // 随素材发布的授权与署名说明
   'lib/types/index.d.ts', // 宿主类型声明
   'lib/types/client/index.d.ts', // 客户端类型声明
   'cordis.patch.yml', // bundle patch（挂载声明）
@@ -118,6 +124,27 @@ exportsPlugin ? ok('client exports apply/inject/name') : fail('client.js missing
 
 // 两项声明缺任一个都装不进宿主：bundle 声明决定挂载声明，client 声明决定浏览器半侧注入。
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const patch = load(readFileSync(join(ROOT, 'cordis.patch.yml'), 'utf8'));
+const entry = patch?.[0]?.insert?.[0];
+entry?.id === pkg.name && entry?.name === pkg.name
+  ? ok('bundle patch resolves the published package')
+  : fail('bundle patch id/name must match package.json name');
+try {
+  const registrations = [];
+  const context = createContext({
+    navigator: { userAgent: 'package-check' },
+    window: { __ModuleLoader__: { load: (registration) => registrations.push(registration) } },
+  });
+  // 宿主会重复加载同一 bundle；两次执行都必须注册到发布包名，不能留下旧模块名。
+  runInContext(client, context, { timeout: 5000 });
+  runInContext(client, context, { timeout: 5000 });
+  registrations.length === 2 &&
+  registrations.every(({ id, factory }) => id === pkg.name && typeof factory === 'function')
+    ? ok('client registers the published package on initial load and reload')
+    : fail('client module registration must match package.json name');
+} catch (error) {
+  fail(`client bundle could not register: ${error.message}`);
+}
 if (pkg.dsh?.bundle?.patch) ok('dsh.bundle.patch declared');
 else fail('package.json missing dsh.bundle.patch');
 if (pkg.dsh?.client?.platform === 'web') ok('dsh.client.web declared');

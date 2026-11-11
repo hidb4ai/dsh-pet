@@ -1,25 +1,27 @@
 /**
- * 完成通知正文来源（src/host/plugin/session-notify.ts）的契约测试。
+ * Completed contract testing of notification text source (src/host/plugin/session-notify.ts).
  *
- * 钉住两件事：回复正文跟着完成帧走；缓存「排定时器即出队」——活动门判定还有活的那一支
- * 会提前 return，若把删除放在定时器里，这里就会留下一条永不清理的会话文本。
+ * Verify two things: the reply text follows the completion frame; the cache "dequeues after the timer" - the activity
+ * gate determines which one is still alive and will advance return. If the deletion is placed in the timer, a session
+ * text will be left here that will never be cleared.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createSessionNotify } from './session-notify.ts';
 
-/** 一条「对话完成」收尾事件。 */
+/** A "conversation completed" cleanup event. */
 const COMPLETED = { type: 'turn/end', data: { reason: { kind: 'completed' } } };
 
-/** 等异步那一拍跑完（定时器是假时钟，microtask 仍是真的）。 */
+/** Wait for the asynchronous beat to finish (the timer is a fake clock, microtask is still true). */
 const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 /**
- * 造一个最小实例。
+ * Create a minimal instance.
  *
- * @param activity - 活动门返回的活跃族；缺省表示「没有在跑的活」（查询失败与无 waterfall 同此）。
- * @returns 实例与已推的通知帧。
+ * @param activity - the active family returned by the activity gate; the default means "no running activity" (query
+ * failure and no waterfall are the same).
+ * @returns instance with pushed notification frame.
  */
 function make(activity?: () => Promise<unknown[]>) {
   const frames: unknown[] = [];
@@ -32,13 +34,17 @@ function make(activity?: () => Promise<unknown[]>) {
   return { notify, frames };
 }
 
-describe('scheduleCompletionNotify —— 回复正文的生命周期', () => {
-  test('完成：帧里带上正文，且排定时器时就已出队', async (t) => {
+describe('scheduleCompletionNotify - lifecycle of reply text', () => {
+  test('Completion: The frame contains text and is dequeued when the timer is scheduled.', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { notify, frames } = make();
     notify.lastReplyText.set('s1', '改完了');
     notify.scheduleCompletionNotify('s1', COMPLETED);
-    assert.equal(notify.lastReplyText.has('s1'), false, '取用即出队，不能等定时器到点再删');
+    assert.equal(
+      notify.lastReplyText.has('s1'),
+      false,
+      'Dequeue as soon as it is retrieved. You cannot wait for the timer to expire before deleting it.',
+    );
 
     t.mock.timers.tick(1500);
     await settle();
@@ -48,7 +54,7 @@ describe('scheduleCompletionNotify —— 回复正文的生命周期', () => {
     assert.equal(data.text, '改完了');
   });
 
-  test('活动门判定还有活：不推帧，但缓存同样不残留', async (t) => {
+  test('The activity gate determines that it is still alive: no frames are pushed, but the cache does not remain either.', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { notify, frames } = make(async () => [{ kind: 'job' }]);
     notify.lastReplyText.set('s2', '这一轮先不用');
@@ -56,11 +62,11 @@ describe('scheduleCompletionNotify —— 回复正文的生命周期', () => {
     t.mock.timers.tick(1500);
     await settle();
 
-    assert.equal(frames.length, 0, '还有活在跑时不弹完成通知');
-    assert.equal(notify.lastReplyText.size, 0, '提前返回的那一支也不能留下残留');
+    assert.equal(frames.length, 0, 'The completion notification does not play while running while still alive.');
+    assert.equal(notify.lastReplyText.size, 0, 'The one returned early cannot leave any residue.');
   });
 
-  test('没有正文：照常推帧，只是不带 text', async (t) => {
+  test('No text: push frames as usual, just without text', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { notify, frames } = make();
     notify.scheduleCompletionNotify('s3', COMPLETED);
@@ -71,7 +77,7 @@ describe('scheduleCompletionNotify —— 回复正文的生命周期', () => {
     assert.equal('text' in data, false);
   });
 
-  test('缓存按会话隔离：另一个会话的正文不会串进来', async (t) => {
+  test('Cache isolation by session: the body of another session will not come through', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { notify, frames } = make();
     notify.lastReplyText.set('a', 'A 的回复');
@@ -82,6 +88,6 @@ describe('scheduleCompletionNotify —— 回复正文的生命周期', () => {
 
     const data = (frames[0] as { event: { data: { text?: string } } }).event.data;
     assert.equal(data.text, 'B 的回复');
-    assert.equal(notify.lastReplyText.get('a'), 'A 的回复', '别的会话那条不该被顺手删掉');
+    assert.equal(notify.lastReplyText.get('a'), 'A 的回复', 'The other conversation should not be deleted easily.');
   });
 });

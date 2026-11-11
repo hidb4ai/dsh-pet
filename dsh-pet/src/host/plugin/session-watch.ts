@@ -1,7 +1,8 @@
 /**
- * 会话事件监听：把 DSH 的 session/event 折叠成工作状态与完成通知。
+ * Session event monitoring: fold session/event of DSH into working status and completion notification.
  *
- * 不决定通知文案与档位（归 notify-events 与 shared/work-status），只做事件到判定的转接。
+ * It does not determine the notification copy and file position (owned by notify-events and shared/work-status), but
+ * only transfers the event to the judgment.
  * @module dsh-pet/src/host/plugin/session-watch
  */
 import { GOAL_UPDATE_TOOL, currentTaskFromTodo, goalUpdateAction, reduceWorkStatus } from '../work-status.ts';
@@ -20,9 +21,9 @@ import type { WorkStatusBridge } from './work-status-bridge.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 
-/** 会话事件监听的输入。 */
+/** Input for session event listening. */
 export type SessionWatchInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<SessionNotify, 'cancelTerminalCleanup'> &
   Pick<SessionNotify, 'lastTodoText'> &
@@ -37,38 +38,39 @@ export type SessionWatchInput = {
   Pick<SessionNotify, 'turnFlags'> &
   Pick<HostSetup, 'workStatus'>;
 
-/** 一次工具事件在记账表里的形态：调用开始（带详情）或结果返回（按标识移除一条）。 */
+/** The form of a tool event in the accounting table: call start (with details) or result return (remove an item according to the identifier). */
 type ToolPhase =
   | { kind: 'call'; detail: string; callId: ToolCallKey | undefined }
   | { kind: 'result'; callId: ToolCallKey | undefined };
 
-/** 记账之后气泡的去向。 */
+/** Where does the bubble go after accounting. */
 type ToolPhaseOutcome = {
-  /** 要写进气泡的文案；`undefined` = 本次不改文案，`null` = 清空回落到档位文案。 */
+  /** The text to be written into the bubble; `undefined` = The text will not be changed this time, `null` = clear fallback to the file copy. */
   task?: string | null;
-  /** 是否还有带描述的操作在跑：为真时把档位压回 working，避免结果档盖住没干完的活。 */
+  /** Is there any operation with description running: When it is true, push the state back to working to prevent the result state from covering the unfinished work. */
   keepWorking: boolean;
 };
 
-/** 记账所需的一次工具事件输入。 */
+/** A tool event entry required for accounting. */
 type TrackInput = {
-  /** 事件类型，只有 `tool/call` 与 `tool/result` 会进记账表。 */
+  /** Event type, only `tool/call` and `tool/result` will be entered into the accounting table. */
   type: string;
-  /** 本次事件的调用标识；缺失时由记账层用临时 Symbol 占位。 */
+  /** The calling identifier of this event; if missing, the accounting layer will use temporary Symbol to occupy the place. */
   callId: ToolCallKey | undefined;
-  /** `tool/call` 的详情文案；`null` 表示这次调用没有可展示的描述。 */
+  /** Detailed copy of `tool/call`; `null` means that there is no displayable description for this call. */
   detail: string | null;
-  /** 该会话最近一条 todo 文案，表清空后回落到它。 */
+  /** The most recent copy of the conversation is todo, which will fallback to it after clearing. */
   lastTodo: string | null;
 };
 
 /**
- * 取本次工具事件的调用标识。
+ * Get the call ID of this tool event.
  *
- * `tool/call` 的标识在 `data.callId`，`tool/result` 在 `data.message.source.callId`
- * （`ToolResultMessage.source` 由 `ToolMessageSource` 保证必带）。
+ * The logo of `tool/call` is in `data.callId` , and `tool/result` is in `data.message.source.callId`
+ * (`ToolResultMessage.source` is guaranteed to be included by `ToolMessageSource` ).
  *
- * @returns 非空字符串标识；缺失或类型不对时 `undefined`，交给记账层用临时 Symbol 占位。
+ * @returns is a non-empty character string identifier; when `undefined` is missing or the type is incorrect, it is
+ * handed over to the accounting layer to use a temporary Symbol placeholder.
  */
 function toolCallIdOf(event: unknown): ToolCallKey | undefined {
   const data = (event as { data?: { callId?: unknown; message?: { source?: { callId?: unknown } } } } | null)?.data;
@@ -77,13 +79,13 @@ function toolCallIdOf(event: unknown): ToolCallKey | undefined {
 }
 
 /**
- * 更新一个会话的在途调用表，算出气泡该显示什么。
+ * Update a session's in-flight call table to figure out what the bubble should display.
  *
- * @param ledger - 每会话在途调用表；本函数原地修改。
- * @param sessionId - 会话标识。
- * @param phase - 本次是调用开始还是结果返回，以及对应的调用标识。
- * @param lastTodo - 表清空后回落到的 todo 文案。
- * @returns 气泡文案与是否仍在工作。
+ * @param ledger - per-session in-flight call table; this function modifies in-place.
+ * @param sessionId - Session ID.
+ * @param phase - This is whether the call starts or the result is returned, and the corresponding call identifier.
+ * @param lastTodo - todo copy that falls back after clearing.
+ * @returns bubble text and whether it is still working.
  */
 function trackToolPhase(
   ledger: ToolCallLedger,
@@ -98,7 +100,7 @@ function trackToolPhase(
     return { task: phase.detail, keepWorking: true };
   }
   const pending = ledger.get(sessionId);
-  // 缺标识的结果只释放一个匿名条目：不猜它是哪个具名调用，宁可少记一条也不删错别人的。
+  // The result of missing identification is that only one anonymous entry is released: do not guess which named call it is, it is better to remember one less than to delete someone else's by mistake.
   const key = phase.callId ?? [...(pending?.keys() ?? [])].find((id) => typeof id === 'symbol');
   if (key !== undefined) pending?.delete(key);
   const remaining = [...(pending?.values() ?? [])];
@@ -109,12 +111,13 @@ function trackToolPhase(
 }
 
 /**
- * 把一次工具事件落进记账表。
+ * Drop a tool event into the accounting table.
  *
- * @param ledger - 每会话在途调用表；本函数原地修改。
- * @param sessionId - 会话标识。
- * @param input - 事件类型、调用标识与详情文案。
- * @returns 记账结果；没有可展示详情且不是结果事件时返回 `undefined`（气泡不因它改文案）。
+ * @param ledger - per-session in-flight call table; this function modifies in-place.
+ * @param sessionId - Session ID.
+ * @param input - event type, call identifier and detail copy.
+ * @returns accounting result; when there is no displayable details and it is not a result event, `undefined` is
+ * returned (bubble does not change the copy because of it).
  */
 function trackToolEvent(ledger: ToolCallLedger, sessionId: string, input: TrackInput): ToolPhaseOutcome | undefined {
   if (input.detail !== null) {
@@ -131,7 +134,7 @@ function trackToolEvent(ledger: ToolCallLedger, sessionId: string, input: TrackI
   return undefined;
 }
 
-/** 注册会话事件监听；返回的清理函数由 ctx.effect 收集。 */
+/** register session event monitoring; the returned cleanup function is collected by ctx.effect. */
 export function registerSessionWatch(deps: SessionWatchInput): void {
   const {
     ctx,
@@ -148,9 +151,10 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
     turnFlags,
     workStatus,
   } = deps;
-  // 工作状态联动：监听 DSH 会话事件 → 聚合当前活动状态（WorkStatusStore → 展示快照）。
-  // 消费 turn/start、user/message（goal 续跑轮判定）、tool/call、tool/result、approval/asked、
-  // turn/end、todo/write（只更新任务详情文案，不切档位）。纯监听不调用模型。
+  // Working status linkage: monitor DSH session event → aggregate current active status (WorkStatusStore → display
+  // snapshot). Consume turn/start, user/message (goal continuation wheel determination), tool/call, tool/result,
+  // approval/asked, turn/end, todo/write (only the task details copy is updated, and the state is not changed). Pure
+  // listening does not call the model.
   ctx.effect(() => {
     const dispose = ctx.on('session/event', (session: unknown, event: unknown) => {
       const type = (event as { type?: string } | null)?.type;
@@ -161,46 +165,48 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
           'unknown',
       );
       if (type === 'todo/write') {
-        // 任务详情文案只写该会话的条目（state/task 同源，不可能串会话）。会话没有活动条目
-        // （已空闲/已清理）→ 不动：不会被展示，写进去只会成为一条幽灵文案。
-        // 清单里再无 in_progress/pending 时返回 null，气泡回落到档位文案。
+        // The task details copy is write-only the entry of this session (state/task has the same origin, it is
+        // impossible to cross the session). The session has no active entries (idle/cleared) → inactive: will not be
+        // displayed, and writing in will only become a ghost copy. When there is no more in_progress/pending in the
+        // list, it returns to null and bubble falls back to the file copy.
         const text = currentTaskFromTodo(event as { data?: { todos?: Array<{ status?: string; content?: string }> } });
-        // 缓存无条件更新：工具跑完要靠它把气泡恢复回来（见下方 tool/call 的接线）
+        // Unconditional cache update: it is required to restore the bubble after the tool runs (see the wiring of tool/call below)
         lastTodoText.set(sessionId, text);
-        // 工具正在执行时不覆盖气泡：「修改 index.ts」比清单里那句更能说明此刻在动什么
+        // The bubble is not covered while the tool is executing: "Modify index.ts" is a better explanation of what is happening at the moment than the sentence in the list
         if ((toolsInFlight.get(sessionId)?.size ?? 0) > 0) return;
         if (workStatus.has(sessionId)) {
           workStatus.setTask(sessionId, text);
-          publishWorkStatus(); // 任务文案变化也要写 S（气泡内容靠它更新）
+          publishWorkStatus(); // Changes in the task copy must also be written as S (the bubble content is updated based on this)
         }
         return;
       }
       if (type === 'user/message') {
-        // 目标续跑轮判定：自动轮的消息带 source.kind==='goal'（round>0），该轮属自动续跑，
-        // 其 turn/end completed 只是「本轮完成」，不是整个任务完成
+        // Target continuation wheel determination: The message of the automatic wheel contains source.kind ===' goal '
+        // (round >0). This round is an automatic continuation wheel. Its turn/end completed is only "this round is
+        // completed", not the entire task is completed.
         const source = (event as { data?: { source?: { kind?: string } } })?.data?.source;
         if (source?.kind === 'goal') {
           const flags = turnFlags.get(sessionId) ?? { goalRound: false, closing: null };
           flags.goalRound = true;
           turnFlags.set(sessionId, flags);
         }
-        return; // user/message 不驱动档位动画
+        return; // user/message does not drive state animation
       }
       if (type === 'turn/start') {
-        turnFlags.set(sessionId, { goalRound: false, closing: null }); // 新一轮：清 turn 级标志
-        // 新一轮也开始新的任务上下文：清掉上一轮留下的任务详情文案（issue #59），否则它会一直挂着。
-        // 代价：goal 续跑这类多轮任务，每轮开头会回落一瞬档位文案，直到本轮（通常在开头几步内）
-        // 再写一次 todo 清单。
+        turnFlags.set(sessionId, { goalRound: false, closing: null }); // New round: clear turn level mark. A new round also starts a new task context: clear the task details copy (issue
+        // #59) left in the previous round, otherwise it will always hang. Cost: goal continues to run this type of multiple
+        // rounds of tasks. At the beginning of each round, the state copy will fallback for a moment until the todo list is
+        // written again in this round (usually within the first few steps).
         workStatus.setTask(sessionId, null);
-        lastTodoText.delete(sessionId); // 上一轮的清单文案，不该被下一轮的工具跑完时「恢复」回来
-        toolsInFlight.delete(sessionId); // 上一轮若有工具没等到 tool/result（被打断），别拖累这一轮
-        publishWorkStatus(); // 清掉上一轮任务文案也要写 S
+        lastTodoText.delete(sessionId); // The previous round of list text should not be "restored" when the next round of tools is finished.
+        toolsInFlight.delete(sessionId); // If there were tools in the last round that did not wait until tool/result (interrupted), don’t delay this round.
+        publishWorkStatus(); // Even if you clear the last round of task copy, you still need to write S
       }
       if (
         type === 'tool/call' &&
         String((event as { data?: { name?: unknown } })?.data?.name ?? '') === GOAL_UPDATE_TOOL
       ) {
-        // update_goal complete/blocked = 本轮是该目标的收尾轮，其 completed 才是真完成
+        // update_goal complete/blocked = This round is the cleanup round of the target, and completed is the true completion
         const action = goalUpdateAction(String((event as { data?: { arguments?: unknown } })?.data?.arguments ?? ''));
         if (action) {
           const flags = turnFlags.get(sessionId) ?? { goalRound: false, closing: null };
@@ -213,23 +219,24 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
         turnFlags.get(sessionId),
       );
       if (!next) {
-        // turn/end 的 null（aborted / 未知 kind）＝该会话回合已结束：清掉会话状态，让展示回到空闲或
-        // 落到其他活跃会话，防止回合被打断后永久卡在上一档；其他事件的 null 是「不关心」，忽略。
+        // null of turn/end (aborted / unknown kind) = The session round has ended: clear the session status, let the
+        // display return to idle or fall to other active sessions, to prevent the round from being permanently stuck
+        // in the previous state after being interrupted; null of other events are "don't care" and ignored.
         if (type === 'turn/end') {
           turnFlags.delete(sessionId);
-          cancelTerminalCleanup(sessionId); // 条目都要清了，别留一个到点后无事可做的定时器
-          lastTodoText.delete(sessionId); // 按会话记的两份缓存跟着会话一起消失（防泄漏）
+          cancelTerminalCleanup(sessionId); // All entries must be cleared. Don’t leave a timer with nothing to do after the timer expires.
+          lastTodoText.delete(sessionId); // The two caches recorded by session disappear together with the session (prevention of leakage)
           toolsInFlight.delete(sessionId);
-          workStatus.clear(sessionId); // 条目连同任务详情文案一起消失（clear 内部会重算展示）
-          publishWorkStatus(); // 回合被打断 → 回到空闲：前端据此收起常驻气泡
+          workStatus.clear(sessionId); // The entry disappears together with the task details copy (clear will be recalculated internally for display)
+          publishWorkStatus(); // The round is interrupted → returns to idle: the front end closes the resident bubble accordingly
         }
         return;
       }
       const seq = Number((event as { seq?: unknown }).seq ?? 0);
-      // 工具详情（「修改 index.ts」这类具体描述）：比通用档位文案有用得多，workStatusEnabled
-      // 的宠物直接把它当气泡文本。
-      // 必须在 setState 之后写：setTask 要求会话条目已存在，而条目正是 setState 建出来的——
-      // 顺序反了这一句会被静默丢弃（不报错，最难查的那种）。
+      // Tool details (specific descriptions such as "Modify index.ts"): much more useful than general file copy,
+      // workStatusEnabled's pet directly uses it as bubble text. It must be written after setState: setTask requires
+      // that the session entry already exists, and the entry is created by setState - if the order is reversed, this
+      // sentence will be silently discarded (no error is reported, the most difficult to check).
       const detail =
         type === 'tool/call' ? toolDetailFromEvent(event as { data?: { name?: unknown; arguments?: unknown } }) : null;
       const outcome = trackToolEvent(toolsInFlight, sessionId, {
@@ -238,16 +245,19 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
         detail,
         lastTodo: lastTodoText.get(sessionId) ?? null,
       });
-      // 还有操作没完就把档位压回 working：结果档与「仍在执行」的文案同时出现会自相矛盾。
+      // Press the file back to working before the operation is completed: the result file and the "still executing" copy will be contradictory if they appear at the same time.
       if (outcome?.keepWorking) next = 'working';
       const changed = workStatus.setState(sessionId, next, seq);
       if (outcome?.task !== undefined) workStatus.setTask(sessionId, outcome.task);
-      publishWorkStatus(); // 档位或文案变了 → 写 S（内容没变时它自己会短路，不产生多余写入）
-      // 同会话同状态不重复更新（防刷屏）：写已经落定，这里只负责跳过终态清理的重排
+      publishWorkStatus(); // The state or copy has changed → write S (it will short-circuit itself when the content has not changed, and no
+      // redundant writing will occur) No repeated updates in the same session and the same state (anti-swipe): The writing
+      // has been settled, and this is only responsible for skipping the rearrangement of the final state cleanup
       if (!changed) return;
-      // 终态只展示短暂窗口后自动清理：陈旧完成态不再浮上来（Bug 3 的一环，顺带缓解 Bug 2 残留）。
-      // 回到非终态则取消那次待执行的清理——否则它到点时会话已非终态，既不清也不重排，
-      // 条目（连同旧任务文案）就永久留下了。
+      // The final state is only displayed for a short window and then automatically cleaned up: the stale completion
+      // state no longer floats (part of Bug 3, incidentally alleviating the residue of Bug 2). Returning to a
+      // non-final state cancels the pending cleanup - otherwise the session will be in a non-final state by the time
+      // it reaches the point where it is neither cleared nor rearranged, and the entries (together with the old task
+      // copy) will remain permanently.
       if (next === 'success' || next === 'error') scheduleTerminalCleanup(sessionId);
       else cancelTerminalCleanup(sessionId);
     });
@@ -258,51 +268,57 @@ export function registerSessionWatch(deps: SessionWatchInput): void {
     };
   }, 'dsh-pet: work-status session events');
 
-  // 系统通知：监听 DSH 宿主事件生成通知帧入队，浏览器轮询 /state 读到后弹 toast（帧契约与
-  // shared/notify.ts 一致）。事件源：turn/end、approval/asked、tool/call（ask_user_question）、
-  // agent/error。两道门：会话门（子代理/委派不发）+ 活动门（只拦「对话完成」，延迟确认没活了再弹）。
-  // 纯监听不调用模型；通知是网页端能力，桌面模式不消费。
+  // System notification: Monitoring the DSH host event generates a notification frame and enqueues it. The browser
+  // polling / state reads and then pops up toast (the frame contract is consistent with shared/notify.ts). Event
+  // source: turn/end, approval/asked, tool/call (ask_user_question), agent/error. Two gates: conversation gate
+  // (subagent/delegation is not issued) + activity gate (only blocks "conversation completion", delays confirmation
+  // and then restarts). Pure monitoring does not call the model; notification is a web-side capability and is not
+  // consumed in desktop mode.
   ctx.effect(() => {
     const sessionDispose = ctx.on(
       'session/event',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- session/event 载荷无公开类型，any 只用于接收，函数内立刻交给 shouldNotifySession / reduceNotifyFrame 推导
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- session/event has no public payload type; immediately narrow it with shouldNotifySession / reduceNotifyFrame.
       (session: any, event: any) => {
-        // 会话门（issue #82）：子代理 / 委派会话不发通知——你等的是父对话，不是某一路子代理跑完。
-        // 判据用 header.origin（不是 parentSession，那会把普通 fork 的主对话一起静音），
-        // 判据不可用时放行，绝不把通知整体打哑。详见 notify-events.ts 的 shouldNotifySession。
+        // Session gate (issue #82): Subagent/delegated session does not send notification - you are waiting for the
+        // parent conversation, not for a certain subagent to finish running. The criterion is header.origin (not
+        // parentSession, which will mute the main dialogue of ordinary fork). When the criterion is unavailable, it
+        // will be released and the notification will never be muted as a whole. See shouldNotifySession of
+        // notify-events.ts for details.
         if (!shouldNotifySession(session)) return;
-        // 回复正文来源：只记最近一段 assistant 文本，供完成通知的正文使用。取不到就不记，
-        // 下游回落空正文（宁可少一行字，也不能让通知整体失效）。
+        // Retain only the latest assistant text for the completion notification. Missing text leaves the body empty
+        // without preventing the notification.
         if (event?.type === 'assistant/message') {
           const text = lastAssistantText(event as { type?: string; data?: Record<string, unknown> });
           if (text) lastReplyText.set(sessionIdOf(session), text);
         }
-        // 活动门（issue #114）：「对话完成」延迟确认这条会话确实没活了再弹——团队会话里 Lead 的
-        // 这一轮结束 ≠ 团队收工，成员还在跑时弹「对话完成」是误报。生成失败/输出截断、权限申请、
-        // 用户选择不过这道门，直接放行（理由见 notify-events.ts 的 isCompletionTurnEnd）。
+        // Activity gate (issue #114): delay completion notifications until the session has no remaining activity. A
+        // lead's turn ending does not mean the team has finished while members are still running.
+        // Generation failures, truncated output, permission requests and user choices bypass this gate; see
+        // isCompletionTurnEnd in notify-events.ts.
         if (isCompletionTurnEnd(event)) {
           scheduleCompletionNotify(sessionIdOf(session), event);
           return;
         }
-        // 非完成收尾（出错 / 输出截断 / 中止）用不到这段正文，一并清掉，免得留到下一次完成。
+        // The non-completed cleanup (error/output truncation/abortion) does not need this text, so it should be cleared together so as not to leave it until the next completion.
         if (event?.type === 'turn/end') lastReplyText.delete(sessionIdOf(session));
         const frame = reduceNotifyFrame(event as Parameters<typeof reduceNotifyFrame>[0]);
-        // 帧带上「这条通知是哪条会话发出的」：点击时网页据此跳到那条会话（见 withSessionId）
+        // "Which session this notification was sent from" is included in the frame: when clicked, the webpage jumps to that session accordingly (see withSessionId)
         if (frame) pushNotifyFrame(withSessionId(frame, sessionIdOf(session)));
       },
     );
-    // agent/error（agent-loop dispatch.emit）：无回合位置的生成失败；0.1.5 新增，
-    // 低版本 DSH 无此事件 = 少一条通知（turn/end error 分支已覆盖大部分失败场景），不报错。
-    // 两道门都管不到它：载荷只有 { turn, step, error }，不带会话标识，无从判定来源。
+    // agent/error (agent-loop dispatch.emit): Generation without round position failed; new in 0.1.5, low version DSH
+    // does not have this event = one less notification (turn/end error branch has covered most failure scenarios), no
+    // error is reported. Neither door can control it: the payload is only { turn , step , error }, without a session
+    // identifier, and there is no way to determine the source.
     const errorDispose = ctx.on(
       'agent/error',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- agent/error 载荷无公开类型，且低版本 DSH 可能不带 error 字段，只能 any 后按可选链取 payload?.error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- agent/error has no public payload type and older DSH versions may omit error; read payload?.error defensively.
       (payload: any) => {
         pushNotifyFrame(agentErrorFrame(payload?.error));
       },
     );
     return () => {
-      // 卸载时清掉待查的定时器：否则插件已卸载，到点还去写一次 S
+      // Clear the timer to be checked when unmounting: otherwise the plugin has been unmounted, and S will be written again when the time comes.
       for (const t of notifyActivityTimers.values()) clearTimeout(t);
       notifyActivityTimers.clear();
       sessionDispose();

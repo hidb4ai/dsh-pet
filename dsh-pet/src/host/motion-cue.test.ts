@@ -1,78 +1,84 @@
 /**
- * 位置 / 抛掷指令的纯决策层单元测试 —— 钉住契约里最容易走样的几处：
+ * Pure decision-level unit testing of position/throw instructions - the most easily deformed areas in the verify
+ * contract:
  *
- *   - 坐标夹取：越界夹到 `0~1`，调用方拿响应里的实际值即可，不必自己算边界；
- *   - 模式必填：只认 `instant` / `spring` / `line` 三个字面量，缺了、拼错、大小写不对一律拒；
- *   - duration 只在 line 模式要：line 必填（非负有限数，`0` 合法），另两个模式给了也不看；
- *   - 宠物解析口径：`?pet=` 必填且必须真实存在（没给 → `pet-required`，
- *     不存在 → `unknown-pet`——绝不猜、绝不退到列表第一只）；
- *   - 不设死区：`power` 再小也受理（死区是拖拽语义，接口是明确命令）；
- *   - 参数形状校验：字符串 / `NaN` / `Infinity` 一律拒，且先于宠物解析报错。
+ * - Coordinate clamping: If it crosses the boundary and clamps to `0~1` , the caller can just get the actual value in
+ * the response, and there is no need to calculate the boundary by yourself;
+ * - The pattern is required: only the three literals `instant` / `spring` / `line` are recognized. If they are
+ * missing, misspelled, or have incorrect capitalization, they will be rejected;
+ * - duration is only required in line mode: line is required (non-negative finite number, `0` is valid), and the other
+ * two modes will not be viewed;
+ * - Pet parsing conventions: `?pet=` is required and must actually exist (not given → `pet-required` , does not exist
+ * → `unknown-pet` - never guess, never return to the first one in the list);
+ * - No dead zone: No matter how small `power` is, it will be accepted (the dead zone is drag and drop semantics, and
+ * the interface is a clear command);
+ * - Parameter shape verification: character string / `NaN` / `Infinity` are always rejected, and an error is reported
+ * before pet parsing.
  *
- * 跑法：node --experimental-strip-types --test src/host/motion-cue.test.ts
+ * Running method: node --experimental-strip-types --test src/host/motion-cue.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { decidePosition, decideThrow, positionLeafData } from './motion-cue.ts';
 
-/** 最小可用成品配置：两个条目各一只宠物（与 ./anim.test.ts 同一形状） */
+/** Minimum available resolved configuration: two entries with one pet each (same shape as ./anim.test.ts) */
 const cfg = {
   main: { pets: [{ id: 'main', name: 'A' }] },
   pack1: { pets: [{ id: 'pack1', name: 'B' }] },
 };
 
-/** 决策结论 → 失败原因（通过时给 null，方便断言） */
+/** Decision conclusion → Reason for failure (give null when passing, to facilitate assertion) */
 const reasonOf = (d: { ok: boolean } & Record<string, unknown>): unknown => (d.ok ? null : d.reason);
 
-describe('decidePosition —— 参数校验、模式与夹取', () => {
-  test('合法坐标与模式原样通过（非 line 模式的 duration 回 null）', () => {
+describe('decidePosition - Parameter verification, mode and clamping', () => {
+  test('Valid coordinates and modes are passed as they are (duration in non-line mode returns to null)', () => {
     const d = decidePosition({ cfg, requested: 'main', x: 0.5, y: 0.35, mode: 'spring' });
     assert.deepEqual(d, { ok: true, petId: 'main', x: 0.5, y: 0.35, mode: 'spring', duration: null });
   });
 
-  test('越界夹到 0~1（夹取而不是拒绝）', () => {
+  test('Out of bounds clamping to 0~1 (clamping instead of rejecting)', () => {
     const hi = decidePosition({ cfg, requested: 'main', x: 1.8, y: 99, mode: 'instant' });
     assert.deepEqual(hi, { ok: true, petId: 'main', x: 1, y: 1, mode: 'instant', duration: null });
     const lo = decidePosition({ cfg, requested: 'main', x: -3, y: -0.01, mode: 'instant' });
     assert.deepEqual(lo, { ok: true, petId: 'main', x: 0, y: 0, mode: 'instant', duration: null });
   });
 
-  test('边界值 0 与 1 原样保留（中心可到屏幕边缘，允许半个身体出屏）', () => {
+  test('Boundary values 0 and 1 are retained as they are (the center can reach the edge of the screen, allowing half of the body to appear on the screen)', () => {
     const d = decidePosition({ cfg, requested: 'main', x: 0, y: 1, mode: 'spring' });
     assert.equal(d.ok && d.x, 0);
     assert.equal(d.ok && d.y, 1);
   });
 
-  test('mode 必填，且只认三个字面量（大小写不对也算错）', () => {
+  test('mode is required, and only three literals are recognized (incorrect case will be counted as an error)', () => {
     for (const bad of [undefined, null, '', 'SPRING', 'LINE', 'smooth', 'ease', 'linear', 1, true, {}]) {
       const d = decidePosition({ cfg, requested: 'main', x: 0.5, y: 0.5, mode: bad });
       assert.equal(reasonOf(d), 'bad-request', `mode=${String(bad)}`);
     }
   });
 
-  test('line 模式 duration 必填：非负有限数才受理，`0` 合法（= 立即到位）', () => {
+  test('line mode duration required: only non-negative finite numbers will be accepted, `0` is valid (= available immediately)', () => {
     const ok = decidePosition({ cfg, requested: 'main', x: 0.5, y: 0.5, mode: 'line', duration: 1200 });
     assert.deepEqual(ok, { ok: true, petId: 'main', x: 0.5, y: 0.5, mode: 'line', duration: 1200 });
     const zero = decidePosition({ cfg, requested: 'main', x: 0.5, y: 0.5, mode: 'line', duration: 0 });
-    assert.equal(zero.ok && zero.duration, 0, '0 = 立即到位，是合法值而不是"没给"');
+    assert.equal(zero.ok && zero.duration, 0, '0 = Immediately, it is a legal value rather than "not given"');
     for (const bad of [undefined, null, -1, -0.5, NaN, Infinity, -Infinity, '1200', true, {}]) {
       const d = decidePosition({ cfg, requested: 'main', x: 0.5, y: 0.5, mode: 'line', duration: bad });
       assert.equal(reasonOf(d), 'bad-request', `duration=${String(bad)}`);
     }
   });
 
-  test('instant / spring 给了 duration 也**不看**（调用方复用 body 模板时不必删字段）', () => {
+  test('instant / spring will not be read even if it is given to duration (there is no need to delete the field when caller reuses the body template)', () => {
     for (const mode of ['instant', 'spring'] as const) {
       const d = decidePosition({ cfg, requested: 'main', x: 0.5, y: 0.5, mode, duration: 9999 });
       assert.deepEqual(d, { ok: true, petId: 'main', x: 0.5, y: 0.5, mode, duration: null });
     }
-    // 连非法值都不看：这两个模式压根不用时间
+    // Don’t even look at invalid values: these two modes take no time at all
     const junk = decidePosition({ cfg, requested: 'main', x: 0.5, y: 0.5, mode: 'spring', duration: -1 });
     assert.equal(junk.ok, true);
   });
 
-  test('非有限数字 → bad-request（字符串 / NaN / Infinity / 缺失都拒）', () => {
+  test('Non-finite number → bad-request (character string / NaN / Infinity / missing are rejected)', () => {
     for (const bad of ['0.5', NaN, Infinity, -Infinity, null, undefined, {}]) {
       const d = decidePosition({ cfg, requested: 'main', x: bad, y: 0.5, mode: 'spring' });
       assert.equal(reasonOf(d), 'bad-request', `x=${String(bad)}`);
@@ -82,8 +88,8 @@ describe('decidePosition —— 参数校验、模式与夹取', () => {
   });
 });
 
-describe('positionLeafData —— 写进 S 叶子的载荷形状', () => {
-  test('line 带 duration，其余模式不带（叶子形状本身就是语义）', () => {
+describe('positionLeafData - write the load shape of the S leaf', () => {
+  test('line carries duration, and the other modes do not (the leaf shape itself is semantic)', () => {
     assert.deepEqual(positionLeafData({ x: 0.5, y: 0.35, mode: 'line', duration: 1200 }), {
       x: 0.5,
       y: 0.35,
@@ -102,33 +108,37 @@ describe('positionLeafData —— 写进 S 叶子的载荷形状', () => {
     });
   });
 
-  test('非 line 模式**没有** duration 键（不是写了个 undefined）', () => {
+  test('Non-line mode **no** duration key (not written as undefined)', () => {
     assert.equal('duration' in positionLeafData({ x: 0, y: 0, mode: 'instant', duration: null }), false);
     assert.equal('duration' in positionLeafData({ x: 0, y: 0, mode: 'spring', duration: null }), false);
   });
 });
 
-describe('decideThrow —— 参数校验', () => {
-  test('合法角度与力度原样通过（角度不做归一化）', () => {
+describe('decideThrow —— Parameter verification', () => {
+  test('Valid angles and strengths pass as they are (angles are not normalized)', () => {
     const d = decideThrow({ cfg, requested: 'main', angle: 135, power: 3 });
     assert.deepEqual(d, { ok: true, petId: 'main', angle: 135, power: 3 });
     const neg = decideThrow({ cfg, requested: 'main', angle: -90, power: 0.5 });
-    assert.equal(neg.ok && neg.angle, -90, '负角度是"正下"，必须原样保留（sin/cos 天然按 360 周期）');
+    assert.equal(
+      neg.ok && neg.angle,
+      -90,
+      'Negative angles are "positive down" and must be retained as they are (sin/cos naturally follows a 360 cycle)',
+    );
   });
 
-  test('power 必须 > 0 且有限（0 / 负数 / NaN / Infinity / 字符串一律拒）', () => {
+  test('power must be > 0 and limited (0 / negative number / NaN / Infinity / character strings are all rejected)', () => {
     for (const bad of [0, -1, NaN, Infinity, -Infinity, '1', null, undefined]) {
       const d = decideThrow({ cfg, requested: 'main', angle: 45, power: bad });
       assert.equal(reasonOf(d), 'bad-request', `power=${String(bad)}`);
     }
   });
 
-  test('**不设死区**：极小的 power 也照样受理（死区是拖拽语义，接口是明确命令）', () => {
+  test('**No dead zone**: extremely small power is still accepted (the dead zone is drag and drop semantics, the interface is an explicit command)', () => {
     const d = decideThrow({ cfg, requested: 'main', angle: 45, power: 0.001 });
     assert.equal(d.ok, true);
   });
 
-  test('角度非法 → bad-request', () => {
+  test('Invalid angle → bad-request', () => {
     for (const bad of ['45', NaN, Infinity, null, undefined]) {
       const d = decideThrow({ cfg, requested: 'main', angle: bad, power: 1 });
       assert.equal(reasonOf(d), 'bad-request', `angle=${String(bad)}`);
@@ -136,8 +146,8 @@ describe('decideThrow —— 参数校验', () => {
   });
 });
 
-describe('宠物解析口径（两条接口共用）', () => {
-  test('?pet= 必须显式指定：缺省 → pet-required（绝不退到"当前桌宠"/列表第一只）', () => {
+describe('Pet parsing conventions (shared by both interfaces)', () => {
+  test('? pet = must be specified explicitly: default → pet-required (never fall back to the "current desktop pet"/the first one in the list)', () => {
     const explicit = decidePosition({ cfg, requested: 'pack1', x: 0, y: 0, mode: 'spring' });
     assert.equal(explicit.ok && explicit.petId, 'pack1');
     for (const empty of ['', '   ']) {
@@ -148,18 +158,18 @@ describe('宠物解析口径（两条接口共用）', () => {
     }
   });
 
-  test('id 不存在 → unknown-pet（绝不猜、绝不退到列表第一只）', () => {
+  test('id does not exist → unknown-pet (never guess, never return to the first one in the list)', () => {
     const d = decidePosition({ cfg, requested: 'nope', x: 0, y: 0, mode: 'spring' });
     assert.equal(reasonOf(d), 'unknown-pet');
     const t = decideThrow({ cfg, requested: 'nope', angle: 0, power: 1 });
     assert.equal(reasonOf(t), 'unknown-pet');
   });
 
-  test('参数非法**优先**于宠物解析报错（参数是调用方的错，先纠它）', () => {
+  test("Invalid parameters **take precedence** over pet parsing errors (the parameters are the caller's fault, correct it first)", () => {
     const d = decidePosition({ cfg, requested: 'nope', x: 'bad', y: 0, mode: 'spring' });
     assert.equal(reasonOf(d), 'bad-request');
     const m = decidePosition({ cfg, requested: 'nope', x: 0, y: 0, mode: 'nope' });
-    assert.equal(reasonOf(m), 'bad-request', 'mode 非法同样先于宠物解析报错');
+    assert.equal(reasonOf(m), 'bad-request', 'mode illegal also reports error before pet parsing');
     const t = decideThrow({ cfg, requested: 'nope', angle: 0, power: -1 });
     assert.equal(reasonOf(t), 'bad-request');
   });

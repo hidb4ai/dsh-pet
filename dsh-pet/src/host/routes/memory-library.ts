@@ -1,4 +1,4 @@
-/** 可管理的长期记忆；入参不接受 scope、URL 或自由请求路径。 */
+/** Manageable long-term memory; input parameter does not accept scope, URL or free request path. */
 import { z } from 'zod';
 import { readAllConfig } from '../config.ts';
 import { memoryErrorCode } from '../powercontext.ts';
@@ -55,7 +55,7 @@ export const handleMemoryLibraryRoutes: RouteHandler = async (deps, { rest, meth
     if (cursor && cursor.length > 4096) return failResult('bad-request', 'invalid_memory_cursor');
     return okResult({ ok: true, ...(await deps.listMemories(who.petId, cursor)) });
   } catch (error) {
-    // 错误码供客户端翻译；不回传模型正文、服务凭据或底层异常。
+    // The error code is for client translation; no model text, service credentials or underlying exceptions are returned.
     return failResult('generate-error', memoryErrorCode(error));
   }
 };

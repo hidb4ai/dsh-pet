@@ -1,8 +1,9 @@
 /**
- * 桌宠对话窗口的数据访问：宠物清单、历史窗口、发一句话、删轮。
+ * Data access in desktop pet dialog window: pet list, history window, send a sentence, delete wheel.
  *
- * 只做 HTTP 与响应整形，不碰 DOM、不持状态；失败抛错或回判别联合，
- * 由调用方决定怎么展示——不把异常静默兜底成空列表。
+ * Only HTTP and response shaping are performed, DOM is not touched, and the state is not maintained; if it fails, an
+ * error is thrown or the judgment is combined, and the caller decides how to display it - do not silently fallback the
+ * exception into an empty list.
  * @module dsh-pet/src/client/chat/api
  */
 import { sendChat, type ChatAttachment } from '../../shared/chat/send.ts';
@@ -11,7 +12,7 @@ import { ROUTE_PATH } from '../../shared/constants.ts';
 import { postAction } from '../../shared/state.ts';
 import type { Pet } from '../../shared/types.ts';
 
-/** 消息里带的图片引用（与宿主 `PetImageRef` 同形，只取显示用到的字段）。 */
+/** The picture reference in the message (same shape as host `PetImageRef`, only the fields used for display are taken). */
 export interface ChatImageRef {
   readonly attachmentId: string;
   readonly mediaType: string;
@@ -20,30 +21,30 @@ export interface ChatImageRef {
   readonly height: number;
 }
 
-/** 历史里的一条消息（窗口只显示这几项）。 */
+/** A message in the history (only these items are displayed in the window). */
 export interface ChatMessageView {
   readonly role: 'user' | 'assistant';
   readonly text: string;
   readonly ts: number;
-  /** 该轮用户上传的图（`/attachment` 取回）；缺省 = 纯文字。 */
+  /** Pictures uploaded by users in this round (retrieved by `/attachment`); default = plain text. */
   readonly image?: ChatImageRef;
-  /** 该轮 AI 配的表情包名（`/pic/memes` 取回）；缺省 = 没配图。 */
+  /** The name of the meme matched by AI in this round (retrieved by `/pic/memes`); default = no picture. */
   readonly meme?: string;
-  /** 该轮 AI 表演的动作名（重播按钮的入参）；缺省 = 没演动作。 */
+  /** The name of the action performed by AI in this round (input parameter of the replay button); default = no action performed. */
   readonly action?: string;
 }
 
-/** 一轮对话：一问一答共享同一个 ts，缺一侧（例如删过）也只占一轮。 */
+/** One round of dialogue: one question and one answer share the same ts. Even if one side is missing (for example, deleted), it only occupies one round. */
 export interface ChatRound {
   readonly ts: number;
   readonly user?: ChatMessageView;
   readonly assistant?: ChatMessageView;
 }
 
-/** 删除回执。 */
+/** Delete receipt. */
 export type DeleteResult = { ok: true; removed: number } | { ok: false; message: string };
 
-/** 校验并收窄一条图片引用；形状不对返回 undefined（旧记录没有这个字段）。 */
+/** Verify and narrow an image reference; if the shape is incorrect, undefined is returned (old records do not have this field). */
 function imageRefOf(raw: unknown): ChatImageRef | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const ref = raw as Record<string, unknown>;
@@ -59,10 +60,11 @@ function imageRefOf(raw: unknown): ChatImageRef | undefined {
 }
 
 /**
- * `GET /chat` 的响应体 → 消息列表。
+ * Response body of `GET /chat` → message list.
  *
- * @param body - 响应 JSON（未校验）。
- * @returns 角色与正文都合法的消息；坏条目直接丢弃，一条坏数据不该让整段历史报错。
+ * @param body - response to JSON (unchecked).
+ * @returns is a message where both the character and the text are valid; bad entries are discarded directly, and one
+ * piece of bad data should not cause the entire history to report an error.
  */
 export function toChatMessages(body: unknown): ChatMessageView[] {
   const raw = (body as { messages?: unknown } | null)?.messages;
@@ -89,12 +91,13 @@ export function toChatMessages(body: unknown): ChatMessageView[] {
 }
 
 /**
- * 按轮分组：同一 `ts` 的问与答合成一轮——显示按轮、删除也按轮。
+ * Group by round: Questions and Answers for the same `ts` synthesis round - display by round, delete also by round.
  *
- * `ts` 为 0（历史里没有时间戳）时每条各自成轮：否则所有无时间戳的消息会被并进一轮。
+ * When `ts` is 0 (there is no timestamp in the history), each message forms its own round: otherwise, all messages
+ * without timestamps will be merged into one round.
  *
- * @param messages - 按时间正序的消息。
- * @returns 按出现顺序排列的轮。
+ * @param messages - chronological messages.
+ * @returns Wheels in order of appearance.
  */
 export function groupRounds(messages: readonly ChatMessageView[]): ChatRound[] {
   const rounds: ChatRound[] = [];
@@ -110,34 +113,37 @@ export function groupRounds(messages: readonly ChatMessageView[]): ChatRound[] {
   return rounds;
 }
 
-/** 插件 logo 地址与按宠物的头像地址：拼装规则在 shared/avatar.ts，面板只做再导出。 */
+/** Plugin logo address and pet avatar address: The assemble rule is in shared/avatar.ts, and the panel only does re-export. */
 export { avatarUrl, LOGO_URL } from '../../shared/avatar.ts';
 
 /**
- * 让宠物重演一次记忆里记下的动作（聊天窗口「播放动作」按钮）。
+ * Let the pet replay an action recorded in the memory ("Play Action" button in the chat window).
  *
- * 走 `/anim` 而不是直接改 state：白名单校验、占用锁与显示端门禁、播放回执都由宿主那一条链路负责。
+ * Use `/anim` instead of directly changing to state: the host link is responsible for whitelist verification,
+ * occupation lock, renderer validation check, and playback receipt.
  *
- * @param petId - 宠物 id。
- * @param name - 记忆里记下的动作名（来自 `animations.categories`）。
- * @returns 是否受理成功；失败只留日志，不弹错误条——它只是重播，不影响对话主流程。
+ * @param petId - pet id.
+ * @param name - Action name recorded in memory (from `animations.categories` ).
+ * @returns Whether the acceptance is successful; if it fails, only the log will be left, and no error bar will pop up
+ * - it is just a replay and does not affect the main flow of the conversation.
  */
 export async function playAction(petId: string, name: string): Promise<boolean> {
-  // surface=any：与对话同口径——重播不要求特定一端，宠物在哪端渲染就哪端播。
-  // /anim 的 surface 是必填项（缺省直接 400），这里不能省。
+  // surface = any: Same conventions as dialogue - replay does not require a specific end, and the pet will be played
+  // on whichever end it is rendered. / surface of anim is required (default is 400) and cannot be omitted here.
   return postAction(ROUTE_PATH + '/anim?pet=' + encodeURIComponent(petId) + '&surface=any', { name });
 }
 
-/** 附件引用 → 取图地址（宿主按内容哈希回字节）。 */
+/** Attachment reference → Image retrieval address (host hashes back bytes by content). */
 export function attachmentUrl(ref: ChatImageRef): string {
   return ROUTE_PATH + '/attachment?id=' + encodeURIComponent(ref.attachmentId);
 }
 
 /**
- * 表情包名 → 图片地址。
+ * Meme name → image address.
  *
- * @param name - 记忆里记下的名称。
- * @param assetRoot - 宠物所属条目（素材根）；空串时退回两段形式（取不到 pet 包独占的图）。
+ * @param name - the name written down in memory.
+ * @param assetRoot - The entry to which the pet belongs (asset root); when the string is empty, the two-segment form
+ * is returned (the image exclusive to the pet package cannot be obtained).
  */
 export function memeUrl(name: string, assetRoot: string): string {
   const root = assetRoot.trim();
@@ -145,24 +151,27 @@ export function memeUrl(name: string, assetRoot: string): string {
   return ROUTE_PATH + '/pic/memes/' + prefix + encodeURIComponent(name) + '.png';
 }
 
-/** 面板需要的配置：宠物列表 + 每个条目保留的对话轮数 + 每只宠物的人设正文。 */
+/** The configuration required for the panel: pet list + number of dialogue turns reserved for each entry + persona text for each pet. */
 export interface ChatConfig {
   readonly pets: Pet[];
-  /** 条目（素材根）→ 该条目配置的 `chatMemoryRounds`；缺失的条目不出现在表里。 */
+  /** Entry (asset root) → `chatMemoryRounds` configured for this entry; missing entries do not appear in the table. */
   readonly roundsByEntry: Readonly<Record<string, number>>;
-  /** 宠物 id → 实际在用的人设正文；取值口径见 {@link personaText}。 */
+  /** Pet id → The actual persona text in use; see {@link personaText} for value conventions. */
   readonly personaByPet: Readonly<Record<string, string>>;
 }
 
 /**
- * 一只宠物实际在用的人设正文。
+ * The actual persona text used by a pet.
  *
- * 两级：实例级非空白优先（**替换**所属条目那份，不是拼接），否则用条目顶层那份
- * ——main 条目的条目顶层就是内置默认那句，所以正常配置下不会是空串。
+ * Two levels: instance-level non-blank priority (**replace** the copy of the entry it belongs to, not concatenate),
+ * otherwise use the top-level copy of the entry - the top-level entry of the main entry is the built-in default
+ * sentence, so it will not be an empty string under normal configuration.
  *
- * @param own - `pets[].whisperPrompt`；缺省或纯空白视为没写。
- * @param entry - 所属条目顶层 `whisperPrompt`；非字符串按没写处理。
- * @returns 实例级原文（保留排版，不 trim）或条目那份；两处都没有时是空串。
+ * @param own - `pets[].whisperPrompt` ; Default or pure blank is regarded as not written.
+ * @param entry - The top level of the entry to which it belongs is `whisperPrompt` ; non-character strings are treated
+ * as unwritten.
+ * @returns instance-level original text (preserve typesetting, not trim) or entry copy; when neither is included, it
+ * is an empty string.
  */
 export function personaText(own: unknown, entry: unknown): string {
   if (typeof own === 'string' && own.trim() !== '') return own;
@@ -170,19 +179,21 @@ export function personaText(own: unknown, entry: unknown): string {
 }
 
 /**
- * 拉成品配置：拍平宠物列表，同时把每个条目的对话记忆轮数与每只宠物的人设带出来。
+ * Pull the resolved configuration: Flatten the pet list, and bring out the dialogue memory rounds of each
+ * entry and the persona of each pet.
  *
- * 设置页读的是同一份 `/config`（`merged.main.chatMemoryRounds`），这里按条目取，
- * 面板取同一份人设与条目配置；实际近期上下文轮数由历史接口返回。
+ * The settings page reads the same `/config` (`merged.main.chatMemoryRounds`), here it is taken by entry, and the
+ * panel takes the same persona and entry configuration; the actual number of recent context rounds is returned by the
+ * history interface.
  *
- * @returns 宠物列表、条目轮数表与宠物人设表。
- * @throws 配置请求失败或响应不是成品聚合时。
+ * @returns Pet list, entry round table and pet persona table.
+ * @throws When a configuration request fails or the response is not a finished aggregate.
  */
 export async function fetchChatConfig(): Promise<ChatConfig> {
   const res = await fetch(ROUTE_PATH + '/config', { cache: 'no-store' });
   if (!res.ok) throw new Error('config HTTP ' + res.status);
   const body = (await res.json()) as Record<string, unknown>;
-  // 业务失败也是 200：ok:false 的体不是成品配置，拿它拍平会静默退化成默认宠物
+  // Business failure is also 200: The body of ok:false is not a resolved value. If you flatten it, it will silently degenerate into the default pet.
   if (body.ok === false) throw new Error('config: ' + String(body.reason ?? 'failed'));
   const merged = body as Record<string, Record<string, unknown>>;
   const roundsByEntry: Record<string, number> = {};
@@ -200,11 +211,14 @@ export async function fetchChatConfig(): Promise<ChatConfig> {
 }
 
 /**
- * 近期上下文边界：最后 `memoryRounds` 轮进入下一轮模型输入，长期记忆另外召回。
+ * Recent context boundary: The last `memoryRounds` round enters the next round of model input, and the long-term
+ * memory is also recalled.
  *
- * @param totalRounds - 当前展示的轮数。
- * @param memoryRounds - 宿主实际选入的近期轮数；`undefined` 表示尚未获取。
- * @returns 分界下标（线插在该下标之前）；全部在近期窗口内时不画线；零轮时线在历史末尾。
+ * @param totalRounds - The number of rounds currently displayed.
+ * @param memoryRounds - host is the number of recent rounds actually selected; `undefined` means it has not been
+ * obtained yet.
+ * @returns dividing subscript (the line is inserted before the subscript); no line is drawn when all are within the
+ * recent window; the zero round time line is at the end of history.
  */
 export function memoryBoundaryIndex(totalRounds: number, memoryRounds: number | undefined): number | null {
   if (memoryRounds === undefined || memoryRounds < 0) return null;
@@ -212,32 +226,36 @@ export function memoryBoundaryIndex(totalRounds: number, memoryRounds: number | 
   return cut > 0 ? cut : null;
 }
 
-/** 分界线节点的定位标记：工具栏的「记忆线」按它找元素，不依赖 class 名。 */
+/** The positioning mark of the dividing line node: click on the "memory line" of the toolbar to find the element, without relying on the class name. */
 export const MEMORY_LINE_ATTR = 'data-pet-chat-memory';
 
 /**
- * 让记忆分界线进入可视窗口所需的最少展示轮数。
+ * Minimum number of presentation rounds required for the memory boundary to enter the visible window.
  *
- * 线插在倒数第 `memoryRounds` 轮之前，窗口里至少要有它上面那一轮，线才画得出来。
+ * The line is inserted before the penultimate round `memoryRounds` . There must be at least one round above it in the
+ * window before the line can be drawn.
  *
- * @param memoryRounds - 该条目保留的轮数。
- * @returns 需要的展示轮数；`memoryRounds` 为负时返回 0；零轮至少展示一轮以定位末尾边界。
+ * @param memoryRounds - The number of rounds this entry is retained for.
+ * @returns The number of display rounds required; `memoryRounds` returns 0 when negative; zero rounds display at least
+ * one round to locate the end boundary.
  */
 export function roundsToRevealMemory(memoryRounds: number): number {
   return memoryRounds >= 0 ? memoryRounds + 1 : 0;
 }
 
-/** 一次取满接口允许的轮数（宿主上限 200）：面板在本地按需展示，不做分页取数。 */
+/** The number of rounds allowed by the interface is full at one time (the upper limit of the host is 200): the panel is displayed locally on demand, and the number is not paged. */
 export const HISTORY_ROUNDS = 200;
 
 /**
- * 读某只宠物的对话历史。
+ * Read the conversation history of a certain pet.
  *
- * 一次请求取满 200 轮，展示层自己控制「先显示多少」；不传 `rounds` 只会拿到配置的默认轮数。
+ * If 200 rounds are obtained in one request, the display layer will control "how many to display first"; if `rounds`
+ * is not passed, it will only get the configured default number of rounds.
  *
- * @param petId - 宠物 id。
- * @returns 按时间正序的展示消息，以及宿主按预算计算的实际近期轮数。
- * @throws 请求失败时。
+ * @param petId - Pet id.
+ * @returns displays messages in chronological order, as well as the actual number of recent rounds calculated by the
+ * host's budget.
+ * @throws when the request fails.
  */
 export async function fetchHistory(petId: string): Promise<{ messages: ChatMessageView[]; contextRounds?: number }> {
   const url = ROUTE_PATH + '/chat?pet=' + encodeURIComponent(petId) + '&rounds=' + HISTORY_ROUNDS;
@@ -251,26 +269,26 @@ export async function fetchHistory(petId: string): Promise<{ messages: ChatMessa
 }
 
 /**
- * 发一句给某只宠物。
+ * Send a sentence to a pet.
  *
- * @param petId - 宠物 id。
- * @param text - 用户输入（宿主 trim 并校验 2000 字上限）。
- * @param attachment - 可选的一张图（已压缩的规范 base64）。
- * @returns 成功回执，或可直接展示的失败文案。
- * @throws 网络中断或响应不是 JSON 时。
+ * @param petId - Pet id.
+ * @param text - User input (host trim and verify 2000 word limit).
+ * @param attachment - optional one image (compressed specification base64).
+ * @returns success receipt, or failure copy that can be displayed directly.
+ * @throws When the network is interrupted or the response is not JSON.
  */
 export async function sendMessage(
   petId: string,
   text: string,
   attachment?: ChatAttachment,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  // surface=any：对话窗口不看渲染结果，隐藏（display: none）的宠物也应当能对话
+  // surface = any: The dialogue window does not look at the rendering results, and pets hidden (display: none) should also be able to dialogue.
   const url = ROUTE_PATH + '/chat?pet=' + encodeURIComponent(petId) + '&surface=any';
   const result = await sendChat(url, text, attachment);
   return result.ok ? { ok: true } : { ok: false, message: result.message ?? result.reason };
 }
 
-/** 把删除响应收窄成回执；`ts` 为空 = 清空整只。 */
+/** Narrow the deletion response to a receipt; `ts` is empty = clear the entire one. */
 async function deleteChat(petId: string, ts: readonly number[]): Promise<DeleteResult> {
   const query = ts.map((value) => '&ts=' + encodeURIComponent(String(value))).join('');
   const res = await fetch(ROUTE_PATH + '/chat?pet=' + encodeURIComponent(petId) + query, { method: 'DELETE' });
@@ -281,12 +299,12 @@ async function deleteChat(petId: string, ts: readonly number[]): Promise<DeleteR
 }
 
 /**
- * 删除若干轮（按 `ts`，一问一答一起走）。
+ * Delete several rounds (press `ts` , ask and answer together).
  *
- * @param petId - 宠物 id。
- * @param ts - 要删除的轮；空数组表示没有选中。
- * @returns 实际删除的条数，或失败文案。
- * @throws 网络中断时。
+ * @param petId - Pet id.
+ * @param ts - The wheel to delete; an empty array means none are selected.
+ * @returns The actual number of deleted items, or the failed copy.
+ * @throws When the network is interrupted.
  */
 export async function deleteRounds(petId: string, ts: readonly number[]): Promise<DeleteResult> {
   if (ts.length === 0) return { ok: true, removed: 0 };
@@ -294,17 +312,17 @@ export async function deleteRounds(petId: string, ts: readonly number[]): Promis
 }
 
 /**
- * 清空某只宠物的全部历史。
+ * clear the entire history of a pet.
  *
- * @param petId - 宠物 id。
- * @returns 实际删除的条数，或失败文案。
- * @throws 网络中断时。
+ * @param petId - Pet id.
+ * @returns The actual number of deleted items, or the failed copy.
+ * @throws When the network is interrupted.
  */
 export async function clearHistory(petId: string): Promise<DeleteResult> {
   return deleteChat(petId, []);
 }
 
-/** 已删宠物残留的一段历史（只给条数与最后时间，不含正文）。 */
+/** A piece of history of a deleted pet (only the number and last time are given, not the text). */
 export interface OrphanHistory {
   readonly entry: string;
   readonly petId: string;
@@ -313,12 +331,13 @@ export interface OrphanHistory {
 }
 
 /**
- * 读出已删宠物的残留历史。
+ * Read the remaining history of deleted pets.
  *
- * 这些宠物已不在配置里，`GET /chat` 一律 `unknown-pet`——不靠这个接口就既看不到也清不掉。
+ * These pets are no longer in the configuration, `GET /chat` is always `unknown-pet` - they can neither be seen nor
+ * cleared without relying on this interface.
  *
- * @returns 每个残留分桶一条；没有残留时是空列表。
- * @throws 请求失败时。
+ * @returns Each residue is divided into one bucket; when there are no residues, it is an empty list.
+ * @throws when the request fails.
  */
 export async function fetchOrphans(): Promise<OrphanHistory[]> {
   const res = await fetch(ROUTE_PATH + '/chat/memory', { cache: 'no-store' });
@@ -341,10 +360,10 @@ export async function fetchOrphans(): Promise<OrphanHistory[]> {
 }
 
 /**
- * 清掉所有已删宠物的历史。
+ * Clear the history of all deleted pets.
  *
- * @returns 删掉的宠物数与消息条数，或失败文案。
- * @throws 网络中断时。
+ * @returns The number of deleted pets and messages, or failed text.
+ * @throws When the network is interrupted.
  */
 export async function clearOrphans(): Promise<
   { ok: true; pets: number; messages: number } | { ok: false; message: string }

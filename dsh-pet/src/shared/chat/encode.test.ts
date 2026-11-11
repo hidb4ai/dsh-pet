@@ -1,10 +1,11 @@
 /**
- * 图片预算换算的单测：字节反推、长边缩放与质量阶梯。
+ * Single test of image budget conversion: bytes inversion, long-edge scaling and quality ladder.
  *
- * 为什么值得钉：这三个数字决定"截图能不能发出去"。换算写错不会报错，
- * 只会表现为宿主回 413 或图片被压成马赛克。
+ * Why it's worth pinning: These three numbers determine "whether the screenshot can be sent out." If the conversion is
+ * written incorrectly, no error will be reported. It will only appear as a 413 response from the host or the image
+ * being compressed into a mosaic.
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ import assert from 'node:assert/strict';
 import { IMAGE_MAX_BYTES, IMAGE_MAX_SIDE, IMAGE_QUALITIES, attachmentBytes, targetSize } from './encode.ts';
 
 describe('attachmentBytes', () => {
-  test('与 Buffer 的 base64 换算一致（含填充边界）', () => {
+  test('Consistent with base64 conversion of Buffer (including padding boundary)', () => {
     for (const n of [1, 2, 3, 4, 1000]) {
       const base64 = Buffer.alloc(n, 7).toString('base64');
       assert.equal(attachmentBytes(base64), n, String(n));
@@ -21,30 +22,30 @@ describe('attachmentBytes', () => {
 });
 
 describe('targetSize', () => {
-  test('长边超限时等比缩到上限', () => {
+  test('When the long side exceeds the limit, the proportion is reduced to the upper limit.', () => {
     assert.deepEqual(targetSize(4000, 3000), { width: 2048, height: 1536 });
   });
 
-  test('不超过上限就不放大', () => {
+  test('No enlargement will occur until the upper limit is exceeded.', () => {
     assert.deepEqual(targetSize(800, 600), { width: 800, height: 600 });
   });
 
-  test('极端长条图至少留 1px', () => {
+  test('Leave at least 1 px for extreme bar charts', () => {
     const size = targetSize(1, 4000);
     assert.equal(size.height, IMAGE_MAX_SIDE);
     assert.equal(size.width, 1);
   });
 });
 
-describe('预算不变量', () => {
-  test('质量阶梯从高到低且不重复', () => {
+describe('Budget invariant', () => {
+  test('The quality ladder is from high to low without repetition.', () => {
     for (let i = 1; i < IMAGE_QUALITIES.length; i += 1) {
-      assert.ok(IMAGE_QUALITIES[i] < IMAGE_QUALITIES[i - 1], `第 ${i} 档应更低`);
+      assert.ok(IMAGE_QUALITIES[i] < IMAGE_QUALITIES[i - 1], `The ${i} gear should be lower`);
     }
   });
 
-  test('640 KiB 换成 base64 后仍在宿主 900000 字符上限内', () => {
-    // 宿主侧 MAX_BASE64_CHARS = 900_000，这里用 4/3 膨胀后比较，留出 JSON 结构余量
+  test('640 KiB is still within the upper limit of host 900000 character after changing to base64', () => {
+    // Host side MAX_BASE64_CHARS = 900 _000. Here, 4/3 is used for comparison after expansion, leaving a JSON structural margin.
     const base64Chars = Math.ceil(IMAGE_MAX_BYTES / 3) * 4;
     assert.ok(base64Chars < 900_000, String(base64Chars));
   });

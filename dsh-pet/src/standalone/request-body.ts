@@ -1,22 +1,24 @@
 /**
- * 本机 HTTP 请求正文的读取边界：限制大小、时限与读取次数。
+ * The read boundary of the local HTTP request body: limit size, time limit and number of reads.
  *
- * 负责把正文一次读进内存，再以有界回放流交给插件路由；不解析 JSON，也不做鉴权。
- * 必须始终成立：超限、超时或连接异常时不调用插件，并直接回结构化错误。
+ * Responsible for reading the text into the memory at once, and then handing it to the plugin route as a bounded
+ * playback stream; JSON is not parsed, and authentication is not performed. This must always be true: the plugin will
+ * not be called when the limit is exceeded, timeout or connection exception occurs, and a structured error will be
+ * returned directly.
  * @module dsh-pet/src/standalone/request-body
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { rejectRequest } from './request-security.ts';
 
-/** 普通请求的字节上限。 */
+/** The upper limit of bytes for normal requests. */
 export const MAX_REQUEST_BYTES = 1024 * 1024;
-/** 设置提交的字节上限，比普通请求更紧。 */
+/** Set the upper limit of submitted bytes, which is tighter than ordinary requests. */
 export const MAX_SETTINGS_BYTES = 16 * 1024;
-/** 单次读取的默认时限。 */
+/** Default time limit for a single read. */
 export const BODY_TIMEOUT_MS = 5000;
 
-/** 先整体读入再调用插件：插件内部的 readBody 只会消费一段有界回放流。 */
+/** Read the whole file first and then call the plugin: readBody inside the plugin will only consume a bounded playback stream. */
 export async function boundedRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -25,7 +27,7 @@ export async function boundedRequest(
 ): Promise<IncomingMessage | undefined> {
   const length = req.headers['content-length'];
   if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > limit)) {
-    rejectRequest(res, 413, '请求正文过大');
+    rejectRequest(res, 413, 'Request body too large');
     return undefined;
   }
   const chunks: Buffer[] = [];
@@ -38,10 +40,14 @@ export async function boundedRequest(
       req.off('error', onError);
       req.off('aborted', onError);
       if (status !== undefined) {
-        // 先暂停原请求再回错误，避免继续读取对端仍在发送的正文。
+        // Pause the original request first and then return an error to avoid continuing to read the text that the peer is still sending.
         req.pause();
         if (!res.writableEnded && !res.destroyed)
-          rejectRequest(res, status, status === 408 ? '读取请求超时' : '请求正文无效或过大');
+          rejectRequest(
+            res,
+            status,
+            status === 408 ? 'Request body read timed out' : 'Invalid or oversized request body',
+          );
         resolve(undefined);
       } else resolve(Buffer.concat(chunks));
     };

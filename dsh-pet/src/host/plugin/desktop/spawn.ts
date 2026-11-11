@@ -1,8 +1,9 @@
 /**
- * Helper 进程的拉起与停止：定位 Electron、注入环境、退避重试与熔断。
+ * Starting and stopping the Helper process: locating Electron, injecting the environment, backing off retry and fuse.
  *
- * 不算宠物列表（归 ./pets），不决定何时重启（归 ./sync 的调用方）。
- * 依赖显式传入（见输入类型），模块内只读两个进程级环境事实：`DSH_PET_IN_PROCESS` 与 `process.versions.electron`。
+ * It does not count the pet list (owned by ./pets) and does not determine when to restart (owned by ./sync's caller).
+ * Dependent on the two process-level environment facts passed explicitly (see Input Types), the module is read-only:
+ * `DSH_PET_IN_PROCESS` and `process.versions.electron` .
  * @module dsh-pet/src/host/plugin/desktop/spawn
  */
 import { join } from 'node:path';
@@ -20,27 +21,29 @@ import {
   resolveElectronPath,
 } from '../../helper-process.ts';
 
-/** DesktopSpawn的输入。 */
+/** Input of DesktopSpawn. */
 export type DesktopSpawnInput = Pick<
   DesktopHelperDeps,
   'ctx' | 'getHandlePetRoute' | 'log' | 'reportDownload' | 'thumbUserRoot'
 > &
   Pick<DesktopPets, 'getHasDesktopPet' | 'desktopPetList' | 'getTrayOn'>;
 
-/** 宿主是不是 DSH 桌面应用（Electron 宿主）。 */
+/** Is host the DSH desktop application (Electron host). */
 const isDesktopHost = (): boolean => Boolean(process.versions.electron);
 
-/** 菜单首项去向：desktop 唤起桌面应用，standalone 打开本机 AI 设置页，web 打开 DSH 站点。 */
+/** The destination of the first menu item: desktop launches the desktop application, standalone opens the local AI settings page, web opens the DSH site. */
 export type OpenTarget = 'desktop' | 'standalone' | 'web';
 
 /**
- * 由宿主形态与已鉴权地址判定菜单首项去向。
+ * Determine the destination of the first item in the menu based on the host form and authenticated address.
  *
- * 独立模式与 web 宿主都不在 Electron 里，只能靠地址形状区分：独立模式的已鉴权地址固定落在本机
- * 设置页，web 宿主指向站点根。判错会让菜单文案与实际打开的目标对不上。
- * @param siteUrl - 交给浏览器的已鉴权地址（独立模式含本机设置页路径）。
- * @param desktopHost - 宿主是否为 DSH 桌面应用。
- * @returns 注入给 Helper 的形态值。
+ * The standalone mode and web host are not in Electron and can only be distinguished by the address shape: the
+ * authenticated address of the standalone mode is fixed on the local machine settings page, and the web host points
+ * to the site root. Misjudgment will cause the menu copy to mismatch the actual opened target.
+ * @param siteUrl - The authenticated address given to the browser (standalone mode includes the path to the local
+ * settings page).
+ * @param desktopHost - host is the DSH desktop application.
+ * @returns is the shape value injected into Helper.
  */
 export function resolveOpenTarget(siteUrl: string, desktopHost: boolean): OpenTarget {
   if (desktopHost) return 'desktop';
@@ -48,7 +51,8 @@ export function resolveOpenTarget(siteUrl: string, desktopHost: boolean): OpenTa
 }
 
 /**
- * 创建 Helper 进程的拉起与停止句柄：进程内宿主直接跳过，其余按需下载 Electron 后 spawn 并退避重试。
+ * Create a handle to start and stop the Helper process: the host in the process is skipped directly, and the rest
+ * downloads Electron on demand and then spawn and backs off to try again.
  */
 export function createDesktopSpawn(deps: DesktopSpawnInput) {
   const { ctx, getHandlePetRoute, log, reportDownload, thumbUserRoot, getHasDesktopPet, desktopPetList, getTrayOn } =
@@ -73,22 +77,25 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
   const inProcessHost = process.env.DSH_PET_IN_PROCESS === '1';
 
   const launchHelper = (electronPath: string | undefined): void => {
-    if (inProcessHost) return; // 应用模式：窗口由本进程建，绝不 spawn
+    if (inProcessHost) return; // Application mode: The window is created by this process and never spawn
     if (helper || disposed) return;
-    // 无桌面宠物时：只有「桌面模式曾启用过且托盘还开着」才值得为托盘常驻，否则不启动
+    // When there is no desktop pet: Only if "desktop mode has been enabled and the system tray is still open" is it worthwhile to persist the system tray, otherwise it will not start
     if (!getHasDesktopPet() && !(desktopModeEverActive && getTrayOn())) return;
     const port = typeof ctx.webServer?.port === 'number' ? ctx.webServer.port : 0;
     if (!port || port <= 0) {
-      // webServer 可能尚未完成监听（OS 分配端口时 port 短暂为 0）：延迟重试。
-      // 诊断日志（issue #168）：这条重试以前完全静默——端口长期不就绪时，桌面宠物
-      // 「连尝试都没有」且没有任何线索。这里只加可见性，重试节奏与次数保持原样。
+      // webServer may not have finished listening (port is briefly 0 when OS allocates a port): delay retry.
+      // Diagnostic log (issue #168): This retry was previously completely silent - the desktop pet "didn't even try"
+      // and had no clue when the port was chronically unready. Only visibility is added here, and the retry rhythm and
+      // number remain unchanged.
       portWaitAttempts += 1;
       if (portWaitAttempts === 1) {
-        log.info(`[dsh-pet] webServer 端口尚未就绪（port=${String(port)}），每 500ms 重试拉起桌面 Helper`);
+        log.info(
+          `[dsh-pet] webServer port not ready (port=${String(port)}); retrying desktop helper launch every 500ms`,
+        );
       } else if (portWaitAttempts % 20 === 0) {
         log.warn(
-          `[dsh-pet] 已等待 webServer 端口 ${(portWaitAttempts * 500) / 1000}s 仍未就绪` +
-            `（port=${String(port)}），桌面 Helper 尚未拉起`,
+          `[dsh-pet] webServer port still unavailable after ${(portWaitAttempts * 500) / 1000}s` +
+            `(port=${String(port)}); desktop helper has not started`,
         );
       }
       if (!startRetryTimer) {
@@ -101,42 +108,48 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
       return;
     }
     portWaitAttempts = 0;
-    // 用宿主自报的监听地址，不写死 loopback：DSH 拒绝通配地址，host 永远是某块具体网卡——只绑 LAN IP
-    // 时 127.0.0.1 并不监听，写死会让右键「打开网站」打开一个连不上的页面。getOrigin() 在绑定地址
-    // 无法表达成 URL（带 zone 的 IPv6）时抛，此时退回 loopback：菜单打不开，但不拖垮 Helper 拉起。
+    // Use the listening address self-reported by the host, do not hardcode loopback: DSH rejects the wildcard address,
+    // host is always a specific network card - only bind LAN IP to 127.0.0.1 and does not listen. Hardcoding will
+    // cause the right-click "Open Website" to open a page that cannot be connected. getOrigin() is thrown when the
+    // binding address cannot be expressed as URL (IPv6 with zone), and returns loopback at this time: the menu cannot
+    // be opened, but it does not drag down Helper to pull up.
     let origin = `http://127.0.0.1:${port}`;
     try {
       origin = ctx.webServer.getOrigin();
     } catch {
-      /* 见上：保留 loopback 兜底 */
+      /* See above: Reserved loopback fallback */
     }
-    // 右键「打开网站」交出去的是裸 origin：DSH 只在 `GET /` 接受本进程的启动令牌，换发绑定该 authority
-    // 的签名 Cookie，其余请求一律 401，故传 origin 而不是另拼地址。令牌等价登录态：只经子进程环境变量
-    // 递到 helper 内存，不落盘、不进日志。
+    // Right-click "Open Website" to hand over naked origin: DSH only accepts the startup token of this process in
+    // `GET /` , and replaces the signature Cookie bound to authority. All other requests are 401, so origin is passed
+    // instead of another address. Token-equivalent login state: only passed to the helper memory via the child process
+    // environment variable, without persisting to disk or logging.
     const siteUrl = ctx.connection.authenticatedUrl(origin);
-    // 桌面渲染端也从同一份 handlePetRoute 拿成品配置（每只宠物一个局部小窗口；经管道，不走 HTTP——
-    // DSH Desktop 2.0.3+ 会拦插件自拉进程的裸 HTTP 请求，浏览器访问闸门只放行带令牌的请求）
+    // The desktop renderer also gets the finished configuration from the same handlePetRoute (each pet has a small
+    // local window; through the pipeline, HTTP - DSH Desktop 2.0.3+ will block the bare HTTP request of the plugin
+    // self-pull process, and the browser access gate will only allow requests with tokens)
     const configUrl = `${origin}${ROUTE_SEGMENT}/config`;
     helper = new HelperProcess(
       {
         electronPath,
         env: {
           DSH_PET_CONFIG_URL: configUrl,
-          // 已鉴权站点 URL（含本进程启动令牌）：只供 helper 的「打开」首项使用，任何日志都不许出现它
+          // Authenticated site URL (including this process startup token): only for the first item of "Open" of helper, it is not allowed to appear in any logs
           DSH_PET_SITE_URL: siteUrl,
-          // 宿主形态决定菜单首项的去向与文案（同名「打开」项，三种形态三种语义）：
-          //   desktop    = DSH 桌面应用 → 唤起应用主窗口（helper 走 dsh://open）
-          //   standalone = 独立模式 → 本机 AI 设置页
-          //   web        = dsh web → DSH 站点
+          // The host form determines the direction and copy of the first item in the menu (the "open" item with the
+          // same name, three forms and three semantics):
+          // desktop = DSH desktop application → evoke the application main window ( helper go to dsh :// open )
+          // standalone = Standalone mode → Local AI settings page
+          // web = dsh web → DSH site
           DSH_PET_OPEN_TARGET: resolveOpenTarget(siteUrl, isDesktopHost()),
           DSH_PET_SCALE: '1',
-          // 打开 bridge 协议：main.js 注册 dsh-pet-bridge scheme，把渲染端请求经管道转给宿主
+          // Open the bridge protocol: main.js register dsh-pet-bridge scheme, and transfer the renderer request to the host through the pipeline
           DSH_PET_BRIDGE: '1',
-          // 每只桌面宠物一个局部小窗口：透传宠物列表（[{id,size}]）
+          // Each desktop pet has a small local window: transparent transmission of the pet list ([{ id, size }])
           DSH_PET_PETS: JSON.stringify(desktopPetList()),
         },
-        // bridge 协议处理器 = HTTP 路由同一份 handlePetRoute（业务逻辑唯一，两端天然一致）；
-        // 形状转换在 ./bridge-response，本模块只管把请求转进去。
+        // bridge protocol processor = HTTP route is the same as handlePetRoute (the business logic is unique, and both
+        // ends are naturally consistent); the form conversion is in ./bridge-response, and this module only transfers
+        // the request.
         bridgeHandler: async (req) => {
           const result = await getHandlePetRoute()(req.url ?? '/', req.method ?? 'GET', req.body);
           return toBridgeResponse(req.id, result);
@@ -146,7 +159,7 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
     );
     try {
       helper.start();
-      desktopModeEverActive = true; // 此后即使桌面宠物清零也保留 Helper：托盘常驻，可随时切回来
+      desktopModeEverActive = true; // Helper will be retained even if the desktop pet is cleared thereafter: the system tray is permanent and can be switched back at any time
       log.info(`dsh-pet desktop helper started (config: ${configUrl})`);
     } catch (e) {
       log.warn(`dsh-pet desktop helper start failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -155,28 +168,30 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
   };
 
   const startHelper = (): void => {
-    if (inProcessHost) return; // 应用模式：不探测、不下载 Electron
+    if (inProcessHost) return; // Application mode: no detection, no download Electron
     if (helper || electronEnsure || disposed) return;
     if (!getHasDesktopPet() && !(desktopModeEverActive && getTrayOn())) {
-      // 诊断日志（issue #168）：这条短路不打日志，就是「桌面模式凭空消失：无进程、无目录、无提示」
-      // 的直接成因。用 info 而非 warn——纯网页用户这是正常状态；只打一次避免刷屏。
-      // 托盘关掉后这里也会命中：没人需要那个图标，空常驻没有意义。
+      // Diagnostic log (issue #168): This short-circuit does not log, which is the direct cause of "desktop mode
+      // disappearing out of thin air: no process, no directory, no prompt". Use info instead of warn - this is normal
+      // for pure web users; only type once to avoid screen swiping. It will also hit here after the system tray is
+      // closed: no one needs that icon, and there is no point in leaving it empty.
       if (!noDesktopSkipped) {
         noDesktopSkipped = true;
         log.info(
-          `[dsh-pet] 无桌面宠物（display 均为 web/none）且无需保留托盘（tray=${getTrayOn()}），已跳过桌面 Helper 启动`,
+          `[dsh-pet] No desktop pets (all display=web/none) and no tray required (tray=${getTrayOn()}); skipping the desktop helper`,
         );
       }
       return;
     }
-    // 无图形显示环境（Linux 服务器 / 容器）：直接放弃，不探测、不下载、不拉起。
-    // 否则 Electron 会「拉起即崩」，被守护循环反复重启并刷满 core dump。
+    // No graphical display environment (Linux server/container): give up directly, no detection, no downloading, no
+    // pulling up. Otherwise, Electron will "collapse when pulled up", and will be repeatedly restarted by the guard
+    // loop and full of core dump.
     if (!hasGraphicalDisplay()) {
       if (!displayWarned) {
         displayWarned = true;
         log.warn(
-          '[dsh-pet] 未检测到图形显示环境（DISPLAY/WAYLAND_DISPLAY 均为空），已跳过桌面宠物。' +
-            '浏览器内宠物不受影响；如需在服务器上启用桌面模式，请配置 Xvfb 后设置 DSH_PET_DESKTOP_FORCE=1。',
+          '[dsh-pet] No graphical display detected (DISPLAY/WAYLAND_DISPLAY empty); skipping desktop pets.' +
+            'Browser pets remain available. For desktop mode on a server, configure Xvfb and set DSH_PET_DESKTOP_FORCE=1.',
         );
       }
       return;
@@ -186,18 +201,19 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
       launchHelper(found);
       return;
     }
-    // 诊断日志（issue #168）：只报「没找到」不够用——最常见的情形是「文件明明存在」，
-    // 但不在实际查询的路径上（DSH_HOME 不一致）。把真正查的路径一起打出来。
+    // Diagnostic log (issue #168): Just reporting "not found" is not enough - the most common situation is that "the
+    // file clearly exists", but it is not on the actual query path (DSH_HOME is inconsistent). Type out the actual
+    // search path together.
     log.warn(
-      `[dsh-pet] 未找到 Electron 可执行文件：DSH_HOME=${dshHomeDir()}，查找路径=${defaultElectronExe()}` +
-        `，DSH_PET_ELECTRON_PATH=${process.env.DSH_PET_ELECTRON_PATH ?? '(未设置)'}`,
+      `[dsh-pet] Electron executable not found: DSH_HOME=${dshHomeDir()}, searched=${defaultElectronExe()}` +
+        `, DSH_PET_ELECTRON_PATH=${process.env.DSH_PET_ELECTRON_PATH ?? '(not set)'}`,
     );
-    log.warn(`[dsh-pet] 开始下载 Electron 到 ${defaultElectronExe()} ...`);
+    log.warn(`[dsh-pet] Downloading Electron to ${defaultElectronExe()} ...`);
     electronEnsure = ensureElectronDownload({
-      // 下载全过程写进工作状态气泡（用户没有控制台，只能靠它看进度与失败原因）
+      // The entire download process is written into the working status bubble (the user does not have a console and can only rely on it to see the progress and failure reasons)
       onLog: ({ text, level, done }) =>
         reportDownload(text, level === 'warn' ? 'error' : done ? 'success' : 'working', done),
-      // 同一份进度也落盘：气泡只在有宠物显示时可见，桌面版 Helper 起不来时它就没有载体
+      // The same progress also persists to disk: the bubble is only visible when there is a pet displayed. When the desktop version Helper cannot get up, it has no carrier.
       logger: log,
     })
       .then((path) => {
@@ -246,5 +262,5 @@ export function createDesktopSpawn(deps: DesktopSpawnInput) {
   return { startHelper, stopHelper, stopHelperAndWait, markDisposed, assetRootFor, userRootFor };
 }
 
-/** DesktopSpawn的产出。 */
+/** Output of DesktopSpawn. */
 export type DesktopSpawn = ReturnType<typeof createDesktopSpawn>;

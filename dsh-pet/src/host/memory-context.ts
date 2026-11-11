@@ -28,7 +28,7 @@ export function recalledContextText(content: string): string {
   );
 }
 
-/** 用最近两轮消解承接式追问；当前问题优先保留，历史仅是检索线索。 */
+/** Use the last two rounds of digestion and follow-up questioning; the current question is retained first, and the history is only a retrieval clue. */
 export function memoryRecallQuery(messages: readonly { role: string; content: string }[], text: string): string {
   const recent = boundedHistory(messages, 2, 6000);
   if (!recent.length) return text;

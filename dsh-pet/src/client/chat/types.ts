@@ -1,124 +1,125 @@
 /**
- * 对话面板的本地状态形状与对外状态契约。
+ * The local state shape and external state contract of the dialog panel.
  *
- * 只声明类型：取值流程归 ./state，动作实现归 ./actions。
+ * Only declare the type: the value acquisition process belongs to ./state, and the action implementation belongs to
+ * ./actions.
  * @module dsh-pet/src/client/chat/types
  */
 import type { EncodedImage } from '../../shared/chat/encode.ts';
 import type { Pet } from '../../shared/types.ts';
 import type { ChatMessageView, ChatRound, OrphanHistory } from './api.ts';
 
-/** 面板的全部可渲染字段；一次性替换，避免多个 useState 各提交一半。 */
+/** All renderable fields of the panel; replaced at one time to avoid submitting half of multiple useState. */
 export interface PanelData {
   readonly pets: Pet[];
   readonly petId: string;
   readonly messages: ChatMessageView[];
-  /** 宿主按轮数和字节预算实际选入下一次对话的近期历史轮数。 */
+  /** Host actually selects the number of recent historical rounds for the next conversation by rounds and bytes budget. */
   readonly contextRounds?: number;
   readonly draft: string;
-  /** 待发送的图；undefined = 这一条是纯文字。 */
+  /** Picture to be sent; undefined = This item is pure text. */
   readonly attachment: EncodedImage | undefined;
   readonly busy: boolean;
   readonly loading: boolean;
   readonly error: string;
-  /** 勾选的轮（`ts`），删除按这个集合走。 */
+  /** Checked wheel (`ts`), delete according to this set. */
   readonly selected: number[];
-  /** 多选模式：默认关闭，勾选框只在开启后出现。 */
+  /** Multi-select mode: off by default, the check box only appears after it is turned on. */
   readonly selecting: boolean;
-  /** 已删宠物残留的历史（配置里已没有的宠物），用于顶部提示与一键清理。 */
+  /** The remaining history of deleted pets (pets that are no longer in the configuration) is used for top prompts and one-click cleanup. */
   readonly orphans: OrphanHistory[];
-  /** 正在等待确认的破坏性操作；null = 没有。 */
+  /** Destructive operation awaiting confirmation; null = None. */
   readonly pending: ConfirmKind | null;
-  /** 当前展示多少轮（默认 10）：更早的留在内存里，点「加载更早」再放出来。 */
+  /** How many rounds are currently displayed (default 10): The earlier ones are left in the memory, click "Load Earlier" and then release them. */
   readonly visibleRounds: number;
-  /** 正在放大的图片地址；undefined = 没有预览。 */
+  /** The image address being enlarged; undefined = No preview. */
   readonly previewUrl: string | undefined;
-  /** 条目（素材根）→ 该条目保留的对话轮数；来自同一份 `/config`。 */
+  /** entry (asset root) → the number of dialogue turns retained by this entry; from the same `/config`. */
   readonly roundsByEntry: Readonly<Record<string, number>>;
-  /** 宠物 id → 实际在用的人设正文；与轮数出自同一份 `/config`。 */
+  /** Pet id → The actual persona text in use; comes from the same `/config` as the round number. */
   readonly personas: Readonly<Record<string, string>>;
-  /** 「人设」卷帘是否展开：收起时内容留在 DOM 里、高度归零，展开过渡才播得起来。 */
+  /** Whether the "persona" roller blind is expanded: When it is retracted, the content remains in DOM and the height is returned to zero. Only after the expansion transition can it be played. */
   readonly personaOpen: boolean;
-  /** 正在点播的那一轮与阶段；null = 没有在播。同一时刻只播一条。 */
+  /** The round and stage of the playback request; null = Not playing. Only one message is broadcast at the same time. */
   readonly speaking: { readonly ts: number; readonly phase: 'loading' | 'playing' | 'failed' } | null;
-  /** 头像地址的破缓存版本号：打开面板与刷新时换一个，浏览器才会重新取图（换过头像后尤其需要）。 */
+  /** The cache-breaking version number of the avatar address: change it when opening the panel and refreshing it, and the browser will re-fetch the image (especially necessary after changing the avatar). */
   readonly avatarVersion: number;
 }
 
-/** 需要二次确认的破坏性操作：用面板内的确认条，不用浏览器原生 `confirm`。 */
+/** Destructive operations that require secondary confirmation: use the confirmation bar in the panel instead of the browser's native `confirm`. */
 export type ConfirmKind = 'delete-selected' | 'clear-all' | 'clear-orphans';
 
-/** 输入框按键的最小形状：原生 KeyboardEvent 与 React 合成事件都能直接传。 */
+/** The minimum shape of the input box button: both native KeyboardEvent and React synthesis events can be transmitted directly. */
 export interface DraftKeyEvent {
   readonly key: string;
   readonly shiftKey: boolean;
-  /** 输入法吞键时的老标志（React 合成事件也保留了它）。 */
+  /** The old flag when the input method swallows keys (the React synthesis event also retains it). */
   readonly keyCode?: number;
-  /** 自动重复：长按时由系统补发。 */
+  /** Automatic repeat: reissued by the system when long pressed. */
   readonly repeat?: boolean;
-  /** 原生事件直接带；React 合成事件只挂在 {@link DraftKeyEvent.nativeEvent} 上。 */
+  /** Native events are directly attached; React synthesis events are only attached to {@link DraftKeyEvent.nativeEvent}. */
   readonly isComposing?: boolean;
-  /** React 合成事件的原始事件。 */
+  /** The original event of the React synthesis event. */
   readonly nativeEvent?: { readonly isComposing?: boolean };
   readonly preventDefault: () => void;
 }
 
-/** hook 返回：状态、派生值、动作与列表引用。 */
+/** hook Returns: status, derived values, actions, and list references. */
 export interface ChatPanelState extends PanelData {
-  /** 当前要渲染的轮（已经按 {@link PanelData.visibleRounds} 截过）。 */
+  /** The current round to be rendered (has been intercepted by {@link PanelData.visibleRounds}). */
   readonly rounds: readonly ChatRound[];
-  /** 内存里还有更早的轮没展示。 */
+  /** There are earlier rounds in the memory that are not displayed. */
   readonly hasOlder: boolean;
-  /** 多放一批更早的轮出来。 */
+  /** Put in an extra batch to come out earlier. */
   readonly showOlder: () => void;
   readonly petName: string;
   readonly assetRoot: string;
-  /** 宿主实际选入的近期轮数；载入前不画线。长期记忆独立召回。 */
+  /** The number of recent rounds actually selected by host; no line is drawn before loading. Long-term memory independent recall. */
   readonly memoryRounds: number | undefined;
-  /** 历史确实多于记忆轮数、画得出那条线；为假时「记忆线」按钮置灰。 */
+  /** The history is indeed more than the number of memory rounds, which line can be drawn; when it is false, the "Memory Line" button will be grayed out. */
   readonly hasMemoryLine: boolean;
-  /** 滚到记忆分界线；线还在未放出的更早分页里时先把它放出来。 */
+  /** Scroll to the memory dividing line; release it first while the line is still in the earlier page that has not been released. */
   readonly jumpToMemory: () => void;
-  /** 重读配置与历史（改完对话配置不必刷新整个页面）。 */
+  /** Reread the configuration and history (there is no need to refresh the entire page after changing the dialog configuration). */
   readonly refresh: () => void;
-  /** 当前这只宠物实际在用的人设正文；空串 = 实例与条目都没写。 */
+  /** The persona text currently used by this pet; empty string = neither instance nor entry is written. */
   readonly persona: string;
-  /** 展开 / 收起人设卷帘。 */
+  /** Expand/collapse persona roller blind. */
   readonly togglePersona: () => void;
-  /** 收起人设卷帘（Esc）。 */
+  /** Close the persona roller blind (Esc). */
   readonly closePersona: () => void;
-  /** 消息列表容器：滚动到底部要用。 */
+  /** Message list container: Used when scrolling to the bottom. */
   readonly listRef: { current: HTMLDivElement | null };
-  /** 输入框：内容变高时要直接改它的 height。 */
+  /** Input box: When the content becomes high, change it directly to height. */
   readonly draftRef: { current: HTMLTextAreaElement | null };
   readonly pickPet: (petId: string) => void;
   readonly toggleRound: (ts: number) => void;
-  /** 进入 / 退出多选模式；退出时清空已勾选。 */
+  /** Enter/exit multi-select mode; clear is checked when exiting. */
   readonly toggleSelecting: () => void;
   readonly deleteSelected: () => void;
   readonly clearAll: () => void;
-  /** 清掉已删宠物残留的历史（顶部提示条上的「清理」）。 */
+  /** Clear the remaining history of deleted pets ("Clear" on the top prompt bar). */
   readonly clearOrphans: () => void;
-  /** 请求确认某个破坏性操作（只弹出确认条，不执行）。 */
+  /** Requesting confirmation of a destructive operation (only the confirmation bar pops up and is not executed). */
   readonly ask: (kind: ConfirmKind) => void;
-  /** 取消确认条。 */
+  /** Cancel confirmation bar. */
   readonly cancelAsk: () => void;
-  /** 确认并执行；没有待确认项时什么都不做。 */
+  /** Confirm and execute; do nothing if there are no items to confirm. */
   readonly confirmAsk: () => void;
-  /** 放大一张对话图片。 */
+  /** Enlarge a conversation picture. */
   readonly showImage: (url: string) => void;
-  /** 关闭图片放大。 */
+  /** Turn off image enlargement. */
   readonly closeImage: () => void;
   readonly setDraft: (text: string) => void;
-  /** 输入框按键：真回车且输入法没在组合时发送，其余原样交给输入框。 */
+  /** Input box button: press Enter and the input method is not sent during combination, and the rest is left to the input box as it is. */
   readonly onDraftKeyDown: (event: DraftKeyEvent) => void;
-  /** 输入法开始组合（对应 textarea 的 compositionstart）。 */
+  /** Input method starts combining (compositionstart corresponding to textarea). */
   readonly onDraftCompositionStart: () => void;
-  /** 输入法结束组合（对应 textarea 的 compositionend）。 */
+  /** Input method end combination (corresponding to compositionend of textarea). */
   readonly onDraftCompositionEnd: () => void;
-  /** 点播某一轮的回答：请求合成 → 播放 → 归位，阶段写进 {@link PanelData.speaking}。 */
+  /** playback request The answer for a certain round: request synthesis → play → return, and the stage is written into {@link PanelData.speaking}. */
   readonly speakRound: (ts: number, text: string) => void;
-  /** 让宠物重演某一轮回答里演过的动作（名称来自记忆里的 `action`）。 */
+  /** Let the pet replay the action performed in a certain round of answering (the name comes from `action` in memory). */
   readonly playAction: (name: string) => void;
   readonly pickFile: (file: File) => void;
   readonly clearAttachment: () => void;

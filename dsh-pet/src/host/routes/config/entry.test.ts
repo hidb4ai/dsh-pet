@@ -1,13 +1,17 @@
 /**
- * POST /pet-config（整条目写回）的契约测试。
+ * Contract test for POST /pet-config (whole entry writeback).
  *
- * 四条契约：
- *   1. 只写该种类自己的文件，`main-config.jsonc` 一个字节都不动；
- *   2. 条目级字段（人设、动画池、自定义键）原样保留，不被白名单重建抹掉；
- *   3. 业务失败一律 200 + 失败实体，且 reason 能区分「参数写错」与「种类没装」；
- *   4. 与其它种类重名的实例 id 在写盘前就被拦住——否则读取时会被静默跳过。
+ * Four contracts:
+ * 1. Write-only files of this type, none of the bytes of `main-config.jsonc` will be touched;
+ * 2. Entry-level fields (persona, animation pool, custom keys) are retained as they are and will not be erased by
+ * whitelist reconstruction;
+ * 3. Business failure always has 200 + failed entities, and reason can distinguish between "wrong parameter writing"
+ * and "type not installed";
+ * 4. The instance id with the same name as other types is blocked before writing to disk - otherwise it will be
+ * silently skipped when reading.
  *
- * 用显式 ConfigPaths + 最小依赖桩：被测的只是 handler，不必起服务（那是端到端脚本的事）。
+ * Use explicit ConfigPaths + minimal dependency stub: only handler is tested, and there is no need to start the
+ * service (that is a matter of end-to-end scripting).
  */
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,10 +24,10 @@ import { savePetLayer } from './entry.ts';
 import type { PetRouteDeps, RouteInput } from '../types.ts';
 import type { RouteResult } from '../../http.ts';
 
-/** 包内内置默认配置：真实文件，`readAllConfig` 的必填基座。 */
+/** The default configuration built into the package: real file, required base for `readAllConfig`. */
 const DEFAULT_FILE = fileURLToPath(new URL('../../../../assets/config.jsonc', import.meta.url));
 
-/** 一只合法实例：字段齐全，测试只改需要的那个。 */
+/** A valid instance: the fields are complete, and the test only changes the required ones. */
 const pet = (id: string) => ({
   id,
   name: id,
@@ -47,7 +51,7 @@ interface Harness {
 let root = '';
 let savedHome: string | undefined;
 
-/** 造一套临时配置目录与最小依赖桩。 */
+/** Create a set of temporary configuration directories and minimal dependency stubs. */
 function makeHarness(): Harness {
   const userFile = join(root, 'main-config.jsonc');
   const petDir = join(root, 'pet');
@@ -80,7 +84,7 @@ function makeHarness(): Harness {
   };
 }
 
-/** 造一次请求；`body` 传字符串时原样发送（用于坏 JSON）。 */
+/** Make a request; `body` sends the character string as it is (used for bad JSON). */
 const input = (body: unknown, method = 'POST'): RouteInput => ({
   url: new URL('http://localhost/dsh-pet-7340/pet-config'),
   rest: 'pet-config',
@@ -88,13 +92,13 @@ const input = (body: unknown, method = 'POST'): RouteInput => ({
   body: typeof body === 'string' ? body : JSON.stringify(body),
 });
 
-/** 取出 JSON 应答的状态码与实体。 */
+/** Get the status code and entity of the JSON response. */
 function jsonOf(res: RouteResult): { status: number; obj: Record<string, unknown> } {
   if (res.kind !== 'json') throw new Error('期望 JSON 应答，实际是 ' + res.kind);
   return { status: res.status, obj: res.obj as Record<string, unknown> };
 }
 
-/** 写一个带自定义字段的种类文件。 */
+/** Write a category file with custom fields. */
 function writePack(file: string): void {
   mkdirSync(join(root, 'pet'), { recursive: true });
   writeFileSync(
@@ -111,7 +115,7 @@ function writePack(file: string): void {
 before(() => {
   root = mkdtempSync(join(tmpdir(), 'dsh-pet-config-entry-'));
   savedHome = process.env.DSH_HOME;
-  // 告警日志落在这个临时 home 下，别污染真实用户目录。
+  // The warning log falls under this temporary home. Do not pollute the real user directory.
   process.env.DSH_HOME = join(root, 'home');
 });
 
@@ -121,8 +125,8 @@ after(() => {
   if (root) rmSync(root, { recursive: true, force: true });
 });
 
-describe('savePetLayer —— 整条目写回', () => {
-  test('写回成功：只改该种类文件，人设与自定义键保留，main 不动', async () => {
+describe('savePetLayer ——Write back the entire entry', () => {
+  test('Write back successfully: only this type of file is modified, persona and custom keys are retained, main is unchanged', async () => {
     const h = makeHarness();
     writeFileSync(h.userFile, JSON.stringify({ pets: [pet('main1')] }), 'utf8');
     writePack(h.packFile);
@@ -131,37 +135,45 @@ describe('savePetLayer —— 整条目写回', () => {
     );
     assert.equal(res.status, 200);
     const saved = JSON.parse(readFileSync(h.packFile, 'utf8')) as Record<string, unknown>;
-    assert.equal((saved.pets as Array<{ size: number }>)[0].size, 360, '实例字段应写回');
-    assert.equal(saved.whisperPrompt, 'GLM 的人设', '条目人设不得被白名单重建抹掉');
-    assert.equal(saved.note, '手写的自定义键', '非白名单顶层字段应透传保留');
+    assert.equal((saved.pets as Array<{ size: number }>)[0].size, 360, 'Instance fields should be written back');
+    assert.equal(saved.whisperPrompt, 'GLM 的人设', 'Entry persona must not be erased by whitelist rebuild');
+    assert.equal(
+      saved.note,
+      '手写的自定义键',
+      'Non-whitelist top-level fields should be retained through transparent transmission',
+    );
     const main = JSON.parse(readFileSync(h.userFile, 'utf8')) as { pets: Array<{ id: string }> };
     assert.deepEqual(
       main.pets.map((p) => p.id),
       ['main1'],
-      'main 层不应被这个端点碰过',
+      'Layer main should not be touched by this endpoint',
     );
   });
 
-  test('响应体是成品聚合：main 与改动后的种类都在里面', async () => {
+  test('The response body is the resolved configuration: main and the modified types are all in it', async () => {
     const h = makeHarness();
     writeFileSync(h.userFile, JSON.stringify({ pets: [pet('main1')] }), 'utf8');
     writePack(h.packFile);
     const res = jsonOf(await savePetLayer(h.deps, input({ entry: 'glm', pets: [{ ...pet('glm1'), size: 420 }] })));
     const merged = res.obj as { main?: { pets: unknown[] }; glm?: { pets: Array<{ size: number }> } };
-    assert.ok(merged.main?.pets.length, '响应必须带 main 条目');
-    assert.equal(merged.glm?.pets[0].size, 420, '响应必须反映刚写回的值');
+    assert.ok(merged.main?.pets.length, 'Response must have main entry');
+    assert.equal(merged.glm?.pets[0].size, 420, 'The response must reflect the value just written back');
   });
 
-  test('种类没装：unknown-entry；main 条目：bad-request', async () => {
+  test('Type not installed: unknown-entry; main entry: bad-request', async () => {
     const h = makeHarness();
     writeFileSync(h.userFile, JSON.stringify({ pets: [pet('main1')] }), 'utf8');
     const missing = jsonOf(await savePetLayer(h.deps, input({ entry: 'nope', pets: [pet('x1')] })));
     assert.equal(missing.obj.reason, 'unknown-entry');
     const main = jsonOf(await savePetLayer(h.deps, input({ entry: 'main', pets: [pet('main1')] })));
-    assert.equal(main.obj.reason, 'bad-request', 'main 层要带全局字段，必须走 PUT /config');
+    assert.equal(
+      main.obj.reason,
+      'bad-request',
+      'If the main layer needs to have global fields, it must go to PUT / config',
+    );
   });
 
-  test('参数非法：缺 entry / 空 pets / 非法 entry 都是 bad-request', async () => {
+  test('Invalid parameters: missing entry / empty pets / invalid entry are all bad-request', async () => {
     const h = makeHarness();
     writeFileSync(h.userFile, JSON.stringify({ pets: [pet('main1')] }), 'utf8');
     for (const body of [{}, { entry: 'glm' }, { entry: 'glm', pets: [] }, { entry: '../x', pets: [pet('a1')] }]) {
@@ -170,18 +182,18 @@ describe('savePetLayer —— 整条目写回', () => {
     }
   });
 
-  test('跨条目 id 冲突：写盘前就拦住，文件保持原样', async () => {
+  test('Cross-entry id conflict: Block before writing to disk, the file remains intact', async () => {
     const h = makeHarness();
     writeFileSync(h.userFile, JSON.stringify({ pets: [pet('main1')] }), 'utf8');
     writePack(h.packFile);
     const before = readFileSync(h.packFile, 'utf8');
     const res = jsonOf(await savePetLayer(h.deps, input({ entry: 'glm', pets: [pet('main1')] })));
     assert.equal(res.obj.reason, 'bad-request');
-    assert.match(String(res.obj.message), /main1/, '文案要指出冲突的 id');
-    assert.equal(readFileSync(h.packFile, 'utf8'), before, '冲突时不得写盘');
+    assert.match(String(res.obj.message), /main1/, 'The copywriter should point out the conflict id');
+    assert.equal(readFileSync(h.packFile, 'utf8'), before, 'Disk writing is not allowed in case of conflict');
   });
 
-  test('协议层失败保留真实状态码：非 POST 405、坏 JSON 400', async () => {
+  test('The protocol layer fails to retain the true status code: non-POST 405, bad JSON 400', async () => {
     const h = makeHarness();
     writeFileSync(h.userFile, JSON.stringify({ pets: [pet('main1')] }), 'utf8');
     const wrongMethod = jsonOf(await savePetLayer(h.deps, input({}, 'GET')));
@@ -191,7 +203,7 @@ describe('savePetLayer —— 整条目写回', () => {
     assert.equal(badJson.obj.reason, 'invalid-json');
   });
 
-  test('改成 none 的实例会撤销占用锁（与 /pet-display 同口径）', async () => {
+  test('Changing the instance to none will cancel the occupied lock (same conventions as / pet-display)', async () => {
     const h = makeHarness();
     writeFileSync(h.userFile, JSON.stringify({ pets: [pet('main1')] }), 'utf8');
     writePack(h.packFile);

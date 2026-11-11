@@ -1,28 +1,30 @@
 /**
- * dsh-pet 桌面 Helper 的宠物本体（PetSprite 类）：播放、拖拽抛掷、跨窗碰撞、点击穿透、
- * 右键菜单、聊天弹窗与气泡渲染。
- * 事件联动（余额/碎碎念/广播/工作状态）不在此文件，见 events.js；纯逻辑与常量来自 shared-core.js。
- * 依赖 constants.js 的全局，须后加载。始终成立：所有位移都经 sendBounds 落到窗口，跨进程交换一律
- * 在 toScreen/toLocal 收口。
+ * dsh-pet desktop Helper's pet body (PetSprite class): playback, drag and drop, cross-window collision, click-through,
+ * right-click menu, chat pop-up window and bubble rendering. Event linkage (balance/whisper/broadcast/working status)
+ * is not in this file, see events.js; pure logic and constants come from shared-core.js. The global dependencies of
+ * constants.js must be loaded later. It is always true: all displacements fall to the window via sendBounds, and
+ * cross-process exchanges always centralize at toScreen/toLocal.
  * @module dsh-pet/runtime/electron-helper/sprite
  */
 'use strict';
 
-// 左键 + 修饰键 = 「呼出 DSH」的快捷键。Windows / Linux 用 Ctrl；macOS 上 Ctrl+左键是系统右键
-// （先触发 contextmenu、拿不到 click），所以改用 Cmd。快捷键文案按平台取，判定统一走 isOpenShortcut。
+// Left click + modifier key = shortcut key for "Call out DSH". Windows / Linux use Ctrl; on macOS, Ctrl + left button
+// is the system right button (contextmenu is triggered first and click cannot be obtained), so Cmd is used instead.
+// The shortcut key text is selected according to the platform, and the judgment is uniformly isOpenShortcut.
 const OPEN_SHORTCUT_HINT = /Mac/i.test(navigator.platform || navigator.userAgent) ? 'Cmd+左键' : 'Ctrl+左键';
-/** 本次点击是否按住了「呼出 DSH」的修饰键（Ctrl / Cmd） */
+/** Did you hold down the modifier key of "Call out DSH" (Ctrl / Cmd) during this click? */
 const isOpenShortcut = (e) => !!(e && (e.ctrlKey || e.metaKey));
 
-// 点击音效：与浏览器端同一套参数（单例 audio、音量 0.5、100ms 节流、失败静默）。
-// 复用素材通道：bridge 模式由主进程取回音频，普通模式仍走 HTTP。
+// Click sound effect: the same set of parameters as the browser (single instance audio, volume 0.5, 100 ms throttling,
+// failure silence). Reuse asset channel: In bridge mode, the main process retrieves the audio, and in normal mode,
+// HTTP is still used.
 const CLICK_SOUND_URL = BASE + '/sound/click-duck.wav';
 const CLICK_SOUND_VOLUME = 0.5;
 const CLICK_SOUND_THROTTLE_MS = 100;
 let clickAudio = null;
 let lastClickSoundAt = 0;
 const playClickSound = () => {
-  // 开关来自成品配置 main.clickSoundEnabled（renderer.js 的 loadConfig 带入）；缺失一律静音
+  // The switch comes from the resolved configuration main.clickSoundEnabled (loadConfig of renderer.js is brought in); if it is missing, it will be muted.
   if (!config || config.clickSoundEnabled !== true) return;
   const now = Date.now();
   if (now - lastClickSoundAt < CLICK_SOUND_THROTTLE_MS) return;
@@ -34,26 +36,28 @@ const playClickSound = () => {
     const p = clickAudio.play();
     if (p && typeof p.catch === 'function') p.catch(() => {});
   } catch {
-    /* 音频不可用：静默忽略 */
+    /* Audio not available: silently ignored */
   }
 };
 
-// 单只宠物：行为与浏览器 PetCard 一致，纯逻辑来自 src/shared
+// Single pet: The behavior is consistent with the browser PetCard, and the pure logic comes from src/shared
 class PetSprite {
   constructor(pet) {
-    this.pet = pet; // 这只宠物的配置段（拍平后的成品实例，条目级字段已吹入）
-    // 页面级缩放（主进程对窗口 setZoomFactor）统一放大整窗：pet.size 即 CSS 像素基准，
-    // 不再手工乘 CONFIG.scale；跨进程交换由 constants.js 的 toScreen/toLocal 收口。
+    this.pet = pet; // The configuration section of this pet (finished instance after flattening, entry-level fields have been blown in)
+    // Page-level zoom (main process to window setZoomFactor) uniformly enlarges the entire window: pet.size is the CSS
+    // pixel reference, no longer manually multiplied by CONFIG.scale; cross-process exchange is performed by
+    // toScreen/toLocal centralize of constants.js.
     this.size = pet.size;
     this.height = (this.size * 9) / 16;
     this.halfW = this.size / 2;
     this.halfH = this.height / 2;
     this.bottomPad = (this.size * (9 / 16) * (S.CANVAS_H - S.FEET_Y)) / S.CANVAS_H;
-    // 窗口高 = 舞台高 + 脚底垫高（stage 被 translateY(bottomPad) 下移的余量，防底部被窗口裁剪）
+    // Window height = stage height + foot pad height (the margin left by stage being moved downward by translateY ( bottomPad ) to prevent the bottom from being clipped by the window)
     this.winH = this.height + this.bottomPad;
-    // 可交互区域 = 身体命中区（像素，窗口坐标）。浏览器只有 .dsh-pet-hit 可交互，桌面严格对齐：
-    // 命中区外（含透明像素）一律穿透到下层应用。HIT_BOX 是 640×360 舞台坐标：x 按窗口宽缩放，
-    // y 除舞台高外还要加 bottomPad（舞台被下移）。
+    // Interactive area = body hit area (pixels, window coordinates). The browser can only interact with . dsh-pet-hit,
+    // and the desktop is strictly aligned: everything outside the hit area (including transparent pixels) will be
+    // click-through to the underlying application. HIT_BOX is a 640×360 stage coordinate: x scales according to the
+    // window width, y adds bottomPad in addition to the stage height (the stage is moved down).
     this.hitRect = {
       x: (S.HIT_BOX.x0 / 640) * this.size,
       y: this.bottomPad + (S.HIT_BOX.y0 / 360) * this.height,
@@ -61,12 +65,15 @@ class PetSprite {
       h: ((S.HIT_BOX.y1 - S.HIT_BOX.y0) / 360) * this.height,
     };
     window.__dshPetDebug.hitRect = this.hitRect;
-    // 左右透明边余量（视频盒内宠物身体居中）：让边界按身体贴边——宠物能走到屏幕边缘，但身体永不越界。
+    // Left and right transparent edge margin (the pet's body is centered in the video box): let the border press the body to the edge - the pet can go to the edge of the screen, but the body will never cross the border.
     this.sideAllow = (S.HIT_BOX.x0 / 640) * this.size;
     window.__dshPetDebug.sideAllow = this.sideAllow;
-    // 窗口四周外扩：左右下 = WINDOW_MARGIN_RATIO×宠物尺寸；上边距按气泡与待办面板的最大高度算——
-    // 两者都锚字号、窗口余量锚宠物，宠物变小或字号固定时半只宠物的余量装不下，顶端会被窗口上沿切掉。
-    // 余量透明且点击穿透，加高没有副作用；但它自此不再四边相等，所以命中区要由主进程按上报值算。
+    // Expansion around the window: left and right bottom = WINDOW_MARGIN_RATIO × pet size; the top margin is
+    // calculated according to the maximum height of the bubble and the to-do panel - both anchor the font size, and
+    // the window margin anchors the pet. When the pet becomes smaller or the font size is fixed, half of the pet
+    // cannot fit in the margin, and the top will be cut off by the upper edge of the window. The margin is transparent
+    // and click-through has no side effect; however, it is no longer equal on all four sides, so the hit area must be
+    // calculated by the main process according to the reported value.
     const m = this.size * WINDOW_MARGIN_RATIO;
     const fontConf = pet.font || config.font || S.DEFAULT_FONT;
     this.margin = {
@@ -75,21 +82,22 @@ class PetSprite {
       b: m,
       l: m,
     };
-    // 本体在窗口内的偏移：不钳制时等于上面的余量，窗口被系统钳回工作区时变大（见 fitWindow）。
-    // 所有「窗口原点 = 本体位置 − 偏移」的推导都必须用它，不能再直接减 margin。
+    // The offset of the body within the window: equal to the above margin when not clamped, and becomes larger when
+    // the window is clamped back to the work area by the system (see fitWindow). All derivation of "window origin =
+    // body position − offset" must use it, and margin cannot be directly subtracted.
     this.winOffset = { x: this.margin.l, y: this.margin.t };
     window.__dshPetDebug.winOffset = { x: this.margin.l, y: this.margin.t };
-    // 宠物包围盒左上角在【工作区】坐标系里的位置（本窗口的位置 = 宠物的位置）
+    // The position of the upper left corner of the pet bounding box in the [Workspace] coordinate system (the position of this window = the position of the pet)
     this.pos = { x: 0, y: 0 };
 
-    // 配置派生字段：拍平的实例优先，其次全局，最后内置默认。
-    // 拖拽抛掷物理参数
+    // Configure derived fields: flattened instances are given priority, followed by globals, and finally built-in
+    // defaults. Drag and throw physics parameters
     this.physics = pet.physics || config.physics || S.DEFAULT_PHYSICS;
-    // 字体：字号按本宠物尺寸算；字体族由 renderer.js 注入 documentElement（fontConf 见上，上边距用的是同一份）
+    // Font: The font size is calculated according to the size of this pet; the font family is injected from renderer.js into documentElement (see above for fontConf, the same one is used for the top margin)
     this.font = fontConf;
-    // 抛掷锁定在当前屏幕：true = 只在松手时所在那块屏内弹（屏缝当墙），false = 照常跨屏飞行
+    // The throw is locked on the current screen: true = only bounces within the screen where it was when you let go (the gap in the screen acts as a wall), false = flies across the screen as usual
     this.confineToScreen = pet.confineToScreen === true || config.confineToScreen === true;
-    // 素材根按 assetRoot（文件宠物 = 配置文件前缀，多实例共享同一素材目录）或宠物 id 回落
+    // The asset root is assetRoot (file pet = configuration file prefix, multiple instances share the same asset directory) or pet id fallback
     this.assetRoot = pet.assetRoot || pet.id;
     this.assetBase = BASE + '/thumb/' + encodeURIComponent(this.assetRoot) + '/';
 
@@ -131,7 +139,7 @@ class PetSprite {
     this.markPoseDirty();
   }
 
-  /** 实况变了 → 交给节流器（连续变化被合并成一次冲刷） */
+  /** Live changes → handed over to throttling device (continuous changes are merged into one flush) */
   markPoseDirty() {
     if (this.poseTimer !== null) return;
     this.poseTimer = window.setTimeout(() => {
@@ -141,41 +149,48 @@ class PetSprite {
   }
 
   /**
-   * 把当前实况推给宿主（`POST /pose/report`）。读的是当前值，所以节流窗口内的连续变化只留最后一帧。
+   * Push the current live broadcast to the host (`POST /pose/report`). What is read is the current value, so
+   * continuous changes within the throttling window only leave the last frame.
    *
-   * 坐标与 POST /position 同一口径：宠物中心的归一化 0~1，基准是所有屏并集的外接矩形（VIEW）；
-   * 不这样读回来的值就喂不回 /position。
+   * The coordinates are the same as POST /position: the normalization of the pet center is 0~1, and the reference is
+   * the enclosing rectangle of the union of all screens (VIEW); otherwise, the value read back cannot be fed back to /
+   * position.
    */
   reportPose() {
-    if (!this.pos) return; // 还没摆过位（position() 首次调用前）：不报，免得推 0,0
+    if (!this.pos) return; // Not yet placed (before position() is called for the first time): do not report, so as not to push 0,0
     const body = {
       x: (this.pos.x + this.halfW) / VIEW.w,
       y: (this.pos.y + this.halfH) / VIEW.h,
       facing: this._facing,
     };
     void S.postAction(POSE_REPORT_URL + '?pet=' + encodeURIComponent(this.pet.id), body).then((ok) => {
-      if (!ok) console.warn('[dsh-pet] 实况上报未送达 pet=' + this.pet.id);
+      if (!ok) console.warn('[dsh-pet] Pose report not delivered pet=' + this.pet.id);
     });
   }
 
   sendBounds(px, py) {
     this.pos = { x: Math.round(px), y: Math.round(py) };
-    // 窗口落位与上报：系统把窗口钳回工作区时，钳掉的量转成本体在窗口内的偏移（见 fitWindow）
+    // Window placement and reporting: When the system clamps the window back to the work area, the clamped amount is converted into the offset of the body within the window (see fitWindow)
     const fit = this.fitWindow();
-    // 偏移有上限：想要的位置超出可达范围时，本体只能停在实际能到的位置。这里把 pos 拉回现实，
-    // 否则「想要」与「渲染」越差越远——往回拖要先走完这段虚位，宠物才会动，看着像拖不回来。
+    // There is an upper limit for offset: when the desired position exceeds the reachable range, the body can only
+    // stop at the actual reachable position. Here, pos is brought back to reality, otherwise the difference between
+    // "wanting" and "rendering" will become further and further away - when dragging back, you have to complete this
+    // empty space first before the pet will move. It looks like it cannot be dragged back.
     this.pos = { x: Math.round(fit.x + fit.offsetX), y: Math.round(fit.y + fit.offsetY) };
     window.__dshPetDebug.dragPos = { x: this.pos.x, y: this.pos.y };
     this.reportWindow(fit);
-    // 位置变了：提示跟的是光标，而光标存视口坐标，窗口一移就必须重摆，否则提示会跟着窗口漂走。
-    // 只在显示时重摆（漫游逐帧调本函数，没显示提示时不做无谓的 DOM 写入）。
+    // The position has changed: the prompt follows the cursor, and the cursor stores the viewport coordinates. Once
+    // the window is moved, it must be repositioned, otherwise the prompt will drift away with the window. Only reset
+    // when displaying (this function is adjusted frame by frame when roaming, and unnecessary DOM writing is not done
+    // when the prompt is not displayed).
     if (this.tipOn) this.renderTip();
-    // 实况标脏（节流上报，见 markPoseDirty）：所有位移都收口在本函数，所以这里一处就够
+    // Live standard dirty (reported by throttling, see markPoseDirty): All displacements are centralize in this function, so one place here is enough
     this.markPoseDirty();
   }
 
-  // 角落/边距 → 本体位置；拖拽后按会话内位置（比例）还原。
-  // 边界只由 sendBounds 的窗口落位负责，且与网页端同一条规则：命中区至少留 24px 在屏幕内，其余可挂出去。
+  // Corner/margin → body position; restore according to the intra-session position (proportion) after dragging. The
+  // boundary is only responsible for the window placement of sendBounds, and the same rule as the web page: leave at
+  // least 24 px in the hit area on the screen, and the rest can be hung out.
   position() {
     const W = VIEW.w;
     const H = VIEW.h;
@@ -185,13 +200,14 @@ class PetSprite {
       x = this.customPos.rx * W - this.halfW;
       y = this.customPos.ry * H - this.halfH;
     } else {
-      // 角落取主屏而不是外接矩形：不规则多屏布局下外接矩形的角落可能不属于任何显示器，
-      // 配了该角落的宠物会开机即隐身。
+      // The corners are taken from the main screen instead of the external rectangle: In an irregular multi-screen
+      // layout, the corners of the external rectangle may not belong to any display, and pets equipped with this
+      // corner will become invisible when powered on.
       const anchor = S.anchorPixel({
         corner: this.pet.position.corner,
-        // marginX/marginY 是配置里的绝对像素：页面级缩放已统一放大整窗，配置值不再乘 scale
+        // marginX/marginY is the absolute pixel in the configuration: page-level scaling has been unified to enlarge the entire window, and the configuration value is no longer multiplied by scale
         marginX: this.pet.position.marginX,
-        // macOS 顶部边距对齐身体命中盒，扣掉动画画布头顶留白。
+        // macOS The top margin is aligned with the body hit box, and the top margin of the animation canvas is deducted.
         marginY:
           this.pet.position.marginY -
           (this.pet.position.corner.startsWith('top-') ? this.size * CONFIG.topInsetRatio : 0),
@@ -206,7 +222,7 @@ class PetSprite {
     this.sendBounds(x, y);
   }
 
-  /** 抛掷空间（逐屏 AABB）。AREAS/PANELS 变化时由 relayout() 置空重建——飞行中每帧重算太浪费 */
+  /** Throwing space (AABB screen by screen). When AREAS/PANELS changes, it is reset by relayout() - recalculating every frame on the fly is too wasteful */
   throwSpaceOf() {
     if (!this.space || this.space.areas !== AREAS || this.space.panels !== PANELS) {
       this.space = S.throwSpace({ areas: AREAS, panels: PANELS, size: this.size, sideAllow: this.sideAllow });
@@ -216,19 +232,22 @@ class PetSprite {
   }
 
   /**
-   * 显示器几何变化后就地重挂：抛掷空间作废，并把宠物从可能变成空洞的位置拉回可见区。
-   * 拖拽中不动它（用户正握着），飞行中也不动（下一帧物理会按新边界夹取）。
+   * Rehang in place after display geometry changes: Throwing space is invalid and the pet is pulled back to the
+   * visible area from a position that may become a hole. It does not move while dragging (the user is holding it), nor
+   * does it move while flying (the next frame of physics will clamp it according to the new boundary).
    *
-   * 角落模式的位置是声明式的：每次都按新主屏工作区、配置角落与边距重算，夹取结果绝不写成位置——
-   * 远程桌面接入会先给一块临时大屏再收窄，写下去就把「跟角落」变成「锁在右边缘」。
-   * 自定义位置才按视口比例重算，保住世界坐标。
+   * The position of the corner mode is declarative: every time you press the new home screen workspace, configure the
+   * corners and margins and recalculate it, the clamping result will never be written as the position - remote desktop
+   * access will first give a temporary large screen and then narrow it down. After writing, "following the corner"
+   * will become "locked on the right edge". Customized positions are recalculated according to the viewport proportion
+   * to preserve world coordinates.
    */
   relayout(prevView) {
     this.space = null;
     if (this.dragState.active || this.throwRef !== null) return;
     this.stopMove();
     if (!this.pos) {
-      // 还没摆过位（position() 首次调用前）：没有旧位置可守恒，直接按新几何定位
+      // The position has not been set yet (before position() is called for the first time): there is no old position to conserve, so position directly according to the new geometry
       this.position();
       return;
     }
@@ -251,23 +270,29 @@ class PetSprite {
   }
 
   /**
-   * 播放回执上报：把这一段点播的真实状态告诉宿主。
+   * Playback receipt reporting: Tell the host the true status of this playback request.
    *
-   * 只对第三方点播（带 playbackId）上报，自播动画不报——宿主只知道「受理了」，动画在这里播，
-   * 只有这里知道播没播完。postAction 从不抛异常，这里加一层 then 只为留排障日志。
+   * Only third-party playback requests (with playbackId) are reported, and self-played animations are not reported -
+   * the host only knows "accepted", the animation is played here, and only here knows whether it has finished playing.
+   * postAction never throws an exception. Add a layer of then here just to keep troubleshooting logs.
    */
   reportPlayback(playbackId, status, reason) {
     if (!playbackId) return;
     const body = reason ? { status, reason } : { status };
     void S.postAction(BASE + '/playback/' + encodeURIComponent(playbackId) + '/report', body).then((ok) => {
-      if (!ok) console.warn('[dsh-pet] 播放回执未送达 pet=' + this.pet.id + ' id=' + playbackId + ' status=' + status);
+      if (!ok)
+        console.warn(
+          '[dsh-pet] Playback report not delivered pet=' + this.pet.id + ' id=' + playbackId + ' status=' + status,
+        );
     });
   }
 
-  // 可见夹取矩形：以宠物所在那块屏为界，返回窗口局部坐标；可见区太小则返回 null
+  // Visible clamping rectangle: Taking the screen where the pet is as the boundary, the local coordinates of the window are returned; if the visible area is too small, null is returned
   visibleClampRect() {
-    // 比较双方都用屏幕坐标，返回的夹取矩形是窗口局部坐标。夹取用宠物所在的那块屏而不是外接矩形：
-    // 后者含空洞，按它夹菜单会伸进不属于任何显示器的区域。
+    // Both sides of the comparison use screen coordinates, and the returned clamping rectangle is the local
+    // coordinates of the window. Use the screen where the pet is located instead of the surrounding rectangle: the
+    // latter contains a hole, and pressing it to clip the menu will extend into an area that does not belong to any
+    // display.
     const area = S.resolveRect(WORK_AREAS, this.pos.x + this.halfW, this.pos.y + this.halfH);
     if (!area) return null;
     const winX = this.pos.x + VIEW.x - this.winOffset.x;

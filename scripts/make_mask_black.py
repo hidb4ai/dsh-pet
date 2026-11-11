@@ -1,7 +1,6 @@
-"""从纯黑视频生成精确水印 mask：亮度>阈值 = 水印像素（黑背景无干扰）
+"""Generate accurate watermark mask from pure black video: brightness > threshold = watermark pixels (black background without interference)
 
-用法: python make_mask_black.py [输出.mkv] [阈值]
-"""
+Usage: python make_mask_black.py [output. mkv ] [threshold]"""
 from __future__ import annotations
 
 import subprocess
@@ -40,7 +39,7 @@ def make_mask(dst: Path, lum_thresh: int = DEFAULT_LUM_THRESH) -> None:
             frames += 1
     proc.stdout.close()
     proc.wait()
-    print(f"分析帧数: {frames}")
+    print(f"Frames analyzed: {frames}")
 
     enc = [FFMPEG, "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{W}x{H}", "-r", str(FPS),
@@ -48,13 +47,13 @@ def make_mask(dst: Path, lum_thresh: int = DEFAULT_LUM_THRESH) -> None:
            "-c:v", "ffv1", "-pix_fmt", "gray", str(dst)]
     r = subprocess.run(enc)
     if r.returncode != 0:
-        raise RuntimeError("mask 编码失败")
+        raise RuntimeError("Mask encoding failed")
     dst.with_suffix(".raw").unlink()
-    print(f"mask 已生成: {dst} ({dst.stat().st_size / 1024:.0f}KB)")
+    print(f"Mask generated: {dst} ({dst.stat().st_size / 1024:.0f}KB)")
 
 
 if __name__ == "__main__":
     dst = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "watermark_mask_precise.mkv"
     thresh = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_LUM_THRESH
-    print(f"阈值: {thresh}")
+    print(f"Threshold: {thresh}")
     make_mask(dst, thresh)

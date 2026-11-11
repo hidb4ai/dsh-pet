@@ -1,9 +1,11 @@
 /**
- * 整条目写回（POST /pet-config）：把一个「种类」的全部实例写回它自己的配置文件。
+ * Write back the entire entry (POST /pet-config): Write all instances of a "kind" back to its own configuration file.
  *
- * 补的是两个既有写端点之间的空档：PUT /config 只写用户主配置，POST /pet-display 只改单只的
- * display。写入语义与这两条一致——白名单重建 + 磁盘原值透传 + 写后广播并重启 Helper。
- * 不碰全局字段（只归 main 层），也不改条目级的动画池与人设。
+ * What is filled is the gap between the two existing write endpoints: PUT /config write-only user main configuration,
+ * POST /pet-display only changes the single display. The write semantics are consistent with these two items -
+ * whitelist reconstruction + disk original value transparent transmission + post-write broadcast and restart Helper.
+ * Do not touch the global fields (only belong to the main layer), nor change the item-level animation pool and
+ * persona.
  * @module dsh-pet/src/host/routes/config/entry
  */
 import { isValidPetId, readAllConfig, saveUserConfig } from '../../config.ts';
@@ -13,23 +15,23 @@ import type { PetRouteDeps, RouteInput } from '../types.ts';
 import { resolveConfigLayer } from './layer.ts';
 import { failResult, invalidJson, methodNotAllowed, okResult } from '../result.ts';
 
-/** main 条目连同全局字段走 PUT /config，本端点只收「种类」层。 */
+/** The main entry together with the global field goes to PUT /config. This endpoint only accepts the "type" layer. */
 const MAIN_ENTRY = 'main';
 
-/** 实例数组非法时的统一文案：saveUserConfig 只回 null，细节必须在这里讲清。 */
+/** Unified copy when the instance array is invalid: saveUserConfig only returns null, the details must be explained clearly here. */
 const INVALID_PETS =
   'pets 非法：必须是该种类的全部实例（至少 1 只），每只 id 唯一，size / balanceEnabled / display / position 齐全合法';
 
 /**
- * 找出与其它条目冲突的实例 id。
+ * Find instance id that conflicts with other entries.
  *
- * 合并后 id 跨条目全局唯一，重复的实例会被静默跳过（只告警一次）；不在写盘前拦住，
- * 用户看到的是「保存成功、宠物消失」。
+ * After merging, id will be globally unique across entries. Duplicate instances will be silently skipped (with only
+ * one warning). If not blocked before writing to disk, the user will see "save successfully, pet disappears".
  *
- * @param deps - 路由层依赖（路径集）。
- * @param entry - 本次要写的条目；它自己的旧 id 不算冲突。
- * @param pets - 已过白名单的实例数组。
- * @returns 冲突描述列表；空数组表示没有冲突。
+ * @param deps - route layer dependency (route set).
+ * @param entry - The entry to be written this time; its own old id does not count as a conflict.
+ * @param pets - Array of whitelisted instances.
+ * @returns conflict description list; an empty array indicates no conflict.
  */
 function conflictingIds(deps: PetRouteDeps, entry: string, pets: readonly Record<string, unknown>[]): string[] {
   const merged = readAllConfig(deps.configPaths);
@@ -49,14 +51,15 @@ function conflictingIds(deps: PetRouteDeps, entry: string, pets: readonly Record
 }
 
 /**
- * 写回一个种类层的全部实例，并返回写后的成品聚合。
+ * Write back all instances of a category layer and return the finished aggregate after writing.
  *
- * 失败一律 200 + 失败实体：缺 entry / main 条目 / 实例非法 / id 冲突 / 种类不存在都是业务结论；
- * 方法不对与 JSON 坏了发生在业务之前，由协议构造器给真实状态码。
+ * Failure is always 200 + failed entity: missing entry / main entry / invalid instance / id conflict / non-existent
+ * type are all business conclusions; the method is incorrect and JSON is broken. It occurs before the business, and
+ * the real status code is given by the protocol constructor.
  *
- * @param deps - 路由层依赖（路径、轮询快照、重启意图、占用锁）。
- * @param input - 已解析的请求（方法、请求体）。
- * @returns 写后的成品聚合（与 GET /config 同一份），或失败实体。
+ * @param deps - route layer dependencies (path, polling snapshot, restart intention, occupied lock).
+ * @param input - Parsed request (method, request body).
+ * The finished aggregate after @returns is written (the same as GET /config), or the failed entity.
  */
 export async function savePetLayer(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult> {
   if (input.method !== 'POST') return methodNotAllowed();
@@ -68,7 +71,7 @@ export async function savePetLayer(deps: PetRouteDeps, input: RouteInput): Promi
   }
   const entry = typeof payload.entry === 'string' ? payload.entry.trim() : '';
   if (!entry) return failResult('bad-request', 'entry 必填：要写哪个种类（pet/<名>-config.json 的文件名前缀）');
-  // 先挡非法字符再查文件：entry 会被拼成路径片段，不能让配置值逃出 pet/ 目录。
+  // Block invalid characters first and then check files: entry will be spelled into path fragments, and the configuration value cannot escape from the pet/ directory.
   if (!isValidPetId(entry)) return failResult('bad-request', `entry 不能当路径片段用：${entry}`);
   if (entry === MAIN_ENTRY) return failResult('bad-request', 'main 条目请用 PUT /config：它还要带全局字段');
   const pets = payload.pets;
@@ -76,7 +79,7 @@ export async function savePetLayer(deps: PetRouteDeps, input: RouteInput): Promi
   const resolved = resolveConfigLayer(deps, entry);
   if (!resolved.ok) return failResult('unknown-entry', `没有这个种类：${entry}`);
   const layer = resolved.layer;
-  // 整段替换语义：白名单重建的是整个 pets 数组，漏传一只就等于把它删掉。
+  // Entire paragraph replacement semantics: The whitelist reconstructs the entire pets array, and missing one is equivalent to deleting it.
   const clean = saveUserConfig({ pets }, layer.existing);
   if (!clean) return failResult('bad-request', INVALID_PETS);
   const instances = clean.pets as Record<string, unknown>[];
@@ -93,13 +96,13 @@ export async function savePetLayer(deps: PetRouteDeps, input: RouteInput): Promi
   } catch (e) {
     return failResult('generate-error', e instanceof Error ? e.message : String(e));
   }
-  // 配置变更信号：只在写盘成功之后，否则失败时浏览器会白重拉一次 /config。
+  // Configuration change signal: only after disk writing is successful, otherwise the browser will pull it again in vain / config if it fails.
   deps.state.writeSection('config', {});
-  // 隐藏即用户接管：与 POST /pet-display 同口径撤销占用，避免宠物被锁到 TTL 到点（issue #122）。
+  // Hiding means user takeover: same conventions as POST /pet-display to cancel the occupation to avoid pets being locked to the TTL point (issue #122).
   for (const pet of instances) {
     if (pet.display === 'none') deps.lock.release({ petId: String(pet.id), force: true });
   }
-  // 不 await：发起者可能就是即将被这次重载换掉的桌面 Helper。
+  // No await: The initiator may be the desktop Helper that will be replaced by this reload.
   void deps.requestRestart();
   return okResult(readAllConfig(deps.configPaths));
 }

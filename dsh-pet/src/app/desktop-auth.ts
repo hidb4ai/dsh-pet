@@ -1,23 +1,25 @@
 /**
- * 桌面应用出站请求的访问凭证注入。
+ * Access credential injection for desktop application outbound requests.
  *
- * 只负责给「本机渲染端发起、目标为插件路由」的请求附加令牌；不生成、不校验令牌（校验在宿主路由侧）。
- * 依赖 Electron 的 session 请求拦截与 file:// 渲染页。始终成立：令牌只进请求头，且只对顶层渲染端
- * 指向本机 origin 的插件路由生效，重定向目标不携带。
+ * It is only responsible for attaching tokens to requests "initiated by the local renderer and targeting the plugin
+ * route"; it does not generate or verify tokens (verification is done on the host route side). Rely on Electron's
+ * session request interception and file:// rendering page. Always true: the token only enters the request header, and
+ * is only effective for the plugin route whose top-level renderer points to the local origin. The redirect target is
+ * not carried.
  * @module dsh-pet/src/app/desktop-auth
  */
 
 import { pathToFileURL } from 'node:url';
 import { ROUTE_SEGMENT } from '../shared/constants.ts';
 
-/** 一次出站请求的最小形态：只声明注入凭证需要读的字段。 */
+/** The minimum form of an outbound request: only declare the fields that need to be read to inject credentials. */
 interface RequestDetails {
   url: string;
   requestHeaders: Record<string, string>;
   frame?: { url: string; parent: unknown } | null;
 }
 
-/** 主进程默认 session 的最小形态（只用到请求头拦截）。 */
+/** main process defaults to the smallest form of session (only request header interception is used). */
 export interface DesktopSession {
   webRequest: {
     onBeforeSendHeaders(
@@ -30,21 +32,22 @@ export interface DesktopSession {
 }
 
 /**
- * 为本机顶层 file 渲染端访问插件路由的请求附加访问令牌。
+ * Attach an access token to requests for native top-level file renderer access plugin route.
  *
- * 目标 origin、插件路由段、顶层 frame 与渲染页地址必须同时匹配，任一不满足都不加令牌；
- * 先删同名请求头再按需写入，避免调用方自带的伪令牌被带到别的目标。
+ * The target origin, the plugin route section, the top-level frame and the rendering page address must match at the
+ * same time. If any of them is not satisfied, no token will be added; first delete the request header with the same
+ * name and then write it as needed to prevent the caller's own pseudo-token from being taken to other targets.
  *
- * @param session - 主进程默认 session（出站请求拦截）。
- * @param origin - 本机服务 origin。
- * @param rendererPath - 桌面 Helper 渲染页绝对路径。
- * @param token - 访问令牌。
+ * @param session - main process Default session (outbound request interception).
+ * @param origin - native service origin.
+ * @param rendererPath - Desktop Helper Absolute path to the rendering page.
+ * @param token - Access token.
  */
 export function installDesktopAuth(session: DesktopSession, origin: string, rendererPath: string, token: string): void {
   const renderer = pathToFileURL(rendererPath).href;
   session.webRequest.onBeforeSendHeaders((details, callback) => {
     const headers = { ...details.requestHeaders };
-    // 重定向后的请求不得把凭证带去别的目标。
+    // Redirected requests must not take credentials to other targets.
     for (const name of Object.keys(headers)) {
       if (name.toLowerCase() === 'x-dsh-pet-token') delete headers[name];
     }
@@ -63,7 +66,7 @@ export function installDesktopAuth(session: DesktopSession, origin: string, rend
         headers['X-DSH-Pet-Token'] = token;
       }
     } catch {
-      // frame 缺失/已销毁或地址非法时，一律不授予凭证。
+      // When frame is missing/destroyed or the address is invalid, the voucher will not be granted.
     }
     callback({ requestHeaders: headers });
   });

@@ -1,8 +1,11 @@
 /**
- * 独立应用的 HTTP 入口：插件路由、AI 配置页与状态页共用同一个本机服务。
+ * HTTP entry point for independent applications: plugin route, AI configuration page and status page share the same
+ * local service.
  *
- * 只做路由与请求边界（去重、限长、CORS、错误兜底），不实现各路由的业务逻辑；对 Electron 无依赖，
- * 便于直接测非法与不可信请求。依赖 standalone 的页面与安全模块，安全判定一律先于分发。
+ * Only route and request boundaries (deduplicate, length limit, CORS, error fallback) are implemented, and the
+ * business logic of each route is not implemented; it has no dependence on Electron, making it easy to directly test
+ * invalid and untrusted requests. For pages and security modules that rely on standalone, security decisions are
+ * always made before distribution.
  *
  * @module dsh-pet/src/app/router
  */
@@ -26,7 +29,7 @@ import { readChatPanelScript } from '../standalone/chat-panel-asset.ts';
 import { readSettingsIcon } from '../standalone/icon.ts';
 import { settingsPage, settingsScript, settingsStyle } from '../standalone/settings-page.ts';
 
-/** 路由依赖：安全校验、AI 处理器与两个页面的数据源，全部注入以脱离 Electron 测试。 */
+/** route dependencies: security check, AI processor and data source of two pages, all injected to break away from Electron test. */
 interface RouterDeps {
   security: RequestSecurity;
   ai?: StandaloneServerOptions['ai'];
@@ -34,14 +37,15 @@ interface RouterDeps {
   log(message: string): void;
   status(port: number): unknown;
   landingPage(port: number): string;
-  /** 对话面板脚本来源；缺省读包内 `lib/chat-panel.js`，测试可注入。 */
+  /** Dialog panel script source; `lib/chat-panel.js` is read in the package by default and can be injected into the test. */
   chatPanelScript?: () => string | undefined;
 }
 
 /**
- * 启动本机服务并返回实际端口与关闭函数。
+ * Start the local service and return the actual port and shutdown function.
  *
- * 只监听 127.0.0.1 的随机端口；请求体在进入处理器前先按路由限长读取。
+ * Only listen to the random port 127.0.0.1; the request body is read according to the route limit before entering the
+ * processor.
  */
 export function startRouter(
   routes: RegisteredRoute[],
@@ -52,7 +56,7 @@ export function startRouter(
   const tester = testHandler(deps.ai);
   const models = modelsHandler(deps.ai);
   const balance = balanceHandler(deps.ai);
-  /** 独立模式自带的 AI 路由：路径即处理器的查表，条目再多也不会把分支嵌套加深。 */
+  /** The AI route that comes with the standalone mode: the path is the lookup table of the processor. No matter how many entries there are, the branch nesting will not be deepened. */
   const aiRoutes: Record<string, typeof settings> = {
     '/standalone-ai/setup': setupHandler(deps.setup),
     '/standalone-ai/settings': settings,
@@ -67,7 +71,7 @@ export function startRouter(
     try {
       url = new URL(req.url ?? '/', 'http://127.0.0.1');
     } catch {
-      rejectRequest(res, 400, '请求地址无效');
+      rejectRequest(res, 400, 'Invalid request URL');
       return;
     }
     const route = routes.find((candidate) =>
@@ -75,7 +79,7 @@ export function startRouter(
         ? url.pathname === candidate.path
         : url.pathname === candidate.path || url.pathname.startsWith(`${candidate.path}/`),
     );
-    // 只有插件路由接受来自 file 渲染端的请求，且仍需它自己的凭证。
+    // Only the plugin route accepts requests from the file renderer, and it still requires its own credentials.
     if (!deps.security.authorize(req, res, !!route)) return;
     const method = req.method ?? 'GET';
     if (method === 'OPTIONS') {
@@ -92,12 +96,12 @@ export function startRouter(
       };
       if (url.pathname === '/standalone-ai/icon.png') {
         if (method !== 'GET' && method !== 'HEAD') {
-          rejectRequest(res, 405, '仅支持 GET');
+          rejectRequest(res, 405, 'GET required');
           return;
         }
         const icon = readSettingsIcon();
         if (!icon) {
-          rejectRequest(res, 404, '图标缺失');
+          rejectRequest(res, 404, 'Icon not found');
           return;
         }
         sendIcon(res, icon);
@@ -105,13 +109,13 @@ export function startRouter(
       }
       if (url.pathname === '/standalone-ai/chat-panel.js') {
         if (method !== 'GET' && method !== 'HEAD') {
-          rejectRequest(res, 405, '仅支持 GET');
+          rejectRequest(res, 405, 'GET required');
           return;
         }
-        // 与 CLI 侧共用同一份产物：设置页固定引用它，打包应用里缺这条路由会让对话区空白。
+        // It shares the same product with the CLI side: the settings page refers to it fixedly, and the absence of this route in the packaged application will leave the dialog area blank.
         const chatPanel = chatPanelScript();
         if (chatPanel === undefined) {
-          rejectRequest(res, 404, '对话面板脚本缺失，请重新构建（npm run bundle）');
+          rejectRequest(res, 404, 'Chat panel bundle missing; rebuild with npm run bundle');
           return;
         }
         sendText(res, 200, 'text/javascript', chatPanel);
@@ -120,7 +124,7 @@ export function startRouter(
       const asset = assets[url.pathname];
       if (asset || url.pathname === '/health' || url.pathname === '/') {
         if (method !== 'GET' && method !== 'HEAD') {
-          rejectRequest(res, 405, '仅支持 GET');
+          rejectRequest(res, 405, 'GET required');
           return;
         }
         if (asset) sendText(res, 200, asset[1], asset[0]);
@@ -139,7 +143,7 @@ export function startRouter(
         res.end('not found');
         return;
       }
-      // CORS 只让已鉴权的 file 渲染端可用，它本身不授予任何能力。
+      // CORS only makes the authenticated file renderer available and does not grant any capabilities by itself.
       res.setHeader('access-control-allow-origin', '*');
       await route.handler(request, res);
     };
@@ -155,9 +159,9 @@ export function startRouter(
         if (bounded) await dispatch(bounded);
       } else await dispatch(req);
     })().catch(() => {
-      // 请求体、地址与抛出的值都可能带凭证：日志保持笼统。
+      // The request body, address, and thrown value may all have credentials: logs remain general.
       deps.log('本机接口处理失败');
-      if (!res.headersSent) rejectRequest(res, 500, '接口暂时无法处理请求');
+      if (!res.headersSent) rejectRequest(res, 500, 'The endpoint cannot process this request right now');
       else res.end();
     });
   });
@@ -180,7 +184,7 @@ export function startRouter(
   });
 }
 
-/** 写一段纯文本响应：固定关缓存与嗅探，避免页面内联脚本被当资源加载。 */
+/** Write a plain text response: Fixed turning off caching and sniffing to prevent page inline scripts from being loaded as resources. */
 function sendText(res: ServerResponse, status: number, type: string, body: string): void {
   res.writeHead(status, {
     'content-type': `${type}; charset=utf-8`,

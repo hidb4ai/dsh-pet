@@ -1,7 +1,9 @@
 /**
- * 待办面板的内容与生命周期：取数、提交、删除、忙碌态，以及「点面板外收起」的意图转发。
- * 不负责定位与显隐：面板是气泡槽的一个槽位，位置与谁显示都由槽位决定。
- * 依赖 ./api 的 HTTP、./render 的骨架与 ./styles 的样式；清理只摘自己的节点与监听，不碰容器。
+ * The content and lifecycle of the to-do panel: retrieval, submission, deletion, busy status, and intention forwarding
+ * of "click outside the panel to collapse". It is not responsible for positioning and display: the panel is a slot of
+ * the bubble slot, and the position and who is displayed are determined by the slot. Depends on the HTTP of ./api,
+ * the skeleton of ./render and the style of ./styles; cleaning only picks its own nodes and monitors, without
+ * touching the container.
  * @module dsh-pet/src/shared/todo/panel
  */
 import { TODOS_PATH, addTodo, loadTodos, patchTodo, removeTodo, type TodoResult } from './api.ts';
@@ -10,29 +12,29 @@ import { createTodoPanelParts, renderTodoList, setTodoBusy, setTodoError, type T
 import { injectTodoCss } from './styles.ts';
 import type { TodoItem } from './types.ts';
 
-/** 面板挂载参数。 */
+/** Panel mounting parameters. */
 export interface TodoPanelOptions {
-  /** 接口基址；桌面端可传绝对地址，缺省走同源前缀。 */
+  /** Interface base address; the desktop can transmit the absolute address, and the default is the same-origin prefix. */
   baseUrl?: string;
-  /** 点面板外面时调用；显隐由槽位决定，面板不自己收。 */
+  /** Called when clicking outside the panel; visibility is determined by the slot, and the panel does not close itself. */
   onClose?: () => void;
-  /** 这次按下的落点是否该让面板留着；两端各判各的命中层，面板不认识它们的类名。 */
+  /** Should the panel keep the impact point of this press? Each end determines its own hit layer, and the panel does not recognize their class names. */
   keepOpenOn?: (target: EventTarget | null) => boolean;
 }
 
-/** 面板句柄。 */
+/** Panel handle. */
 export interface TodoPanel {
-  /** 面板根元素；调用方负责塞进自己的容器。 */
+  /** Panel root element; caller is responsible for stuffing it into its own container. */
   el: HTMLElement;
-  /** 关闭并清理（幂等）。 */
+  /** Close and clean up (idempotent). */
   dispose: () => void;
 }
 
 /**
- * 建一个待办面板并开始取数。
+ * Create a to-do panel and start fetching data.
  *
- * @param options - 接口基址与关闭回调。
- * @returns 面板根元素与清理函数。
+ * @param options - interface base address and shutdown callback.
+ * @returns panel root element and cleanup function.
  */
 export function createTodoPanel(options: TodoPanelOptions = {}): TodoPanel {
   injectTodoCss();
@@ -42,20 +44,21 @@ export function createTodoPanel(options: TodoPanelOptions = {}): TodoPanel {
   let busy = false;
   let todos: TodoItem[] = [];
 
-  // 三个函数互相引用（列表回调 → 修改 → 重拉 → 渲染）：mutate / reload 用函数声明提升，
-  // 回调里引用它们不会在构造期求值，也就不存在初始化顺序问题。
+  // Three functions refer to each other (list callback → modify → redraw → render): mutate / reload are promoted with
+  // function declarations. They are referenced in callback and will not be evaluated during construction, so there is
+  // no initialization order problem.
   const handlers: TodoListHandlers = {
     onToggle: (todo, done) => void mutate(() => patchTodo(todo.id, { done }, baseUrl)),
     onDelete: (todo) => void mutate(() => removeTodo(todo.id, baseUrl)),
   };
 
-  /** 重新拉整张清单：修改一律以宿主返回为准，不在本地猜结果。 */
+  /** Pull the entire list again: modifications will always be based on the host's return, and the results will not be guessed locally. */
   async function reload(): Promise<void> {
     const result = await loadTodos(baseUrl);
     if (disposed) return;
     if (!result.ok) {
       setTodoError(parts, result.message);
-      // 加载失败时别让空态一直停在「加载中…」。
+      // Don't let the empty state stay at "Loading..." when loading fails.
       parts.empty.textContent = '清单加载失败，关掉面板再开一次试试';
       parts.empty.hidden = false;
       return;
@@ -65,7 +68,7 @@ export function createTodoPanel(options: TodoPanelOptions = {}): TodoPanel {
     renderTodoList(parts, todos, handlers, Date.now());
   }
 
-  /** 串行执行一次修改：请求在途时禁止再次提交，成功后统一重拉。 */
+  /** Execute a modification serially: resubmission is prohibited while the request is in progress, and will be repulsed after success. */
   async function mutate(task: () => Promise<TodoResult<unknown>>): Promise<void> {
     if (disposed || busy) return;
     busy = true;
@@ -82,19 +85,19 @@ export function createTodoPanel(options: TodoPanelOptions = {}): TodoPanel {
     await reload();
   }
 
-  /** 提交新增：空正文直接回到输入框。 */
+  /** Submit new: empty text returns directly to the input box. */
   const submitAdd = (): void => {
     const text = parts.input.value.trim();
     if (text === '') {
       parts.input.focus();
       return;
     }
-    // 选择器只会给出 `YYYY-MM-DDTHH:mm` 或空串，解析不出来按无期限处理，不拦提交。
+    // The selector will only give `YYYY-MM-DDTHH:mm` or an empty string. If it cannot be parsed, it will be processed indefinitely and submission will not be blocked.
     const dueText = parts.duePicker.value();
     const dueAt = dueText === '' ? null : parseDateTimeLocal(dueText);
-    // 先收起日历：错误行在清单那一侧，日历开着时会被折叠区藏起来，报错就看不见了。
+    // Collapse the calendar first: the error line is on the list side. When the calendar is open, it will be hidden by the folding area, and the error will not be visible.
     parts.duePicker.close();
-    // 过去的时刻建出来就是逾期，提醒一上线就会喊，等于让用户先错一次再改。
+    // When the time is created in the past, it is overdue, and the reminder will be shouted as soon as it is online, which is equivalent to letting the user make a mistake first and then correct it.
     if (dueAt !== null && dueAt < Date.now()) {
       setTodoError(parts, '这个时间已经过去了，换一个吧');
       return;
@@ -113,15 +116,16 @@ export function createTodoPanel(options: TodoPanelOptions = {}): TodoPanel {
     event.preventDefault();
     submitAdd();
   });
-  // 点面板外面就收起：面板没有标题栏也没有关闭按钮，收起意图只能靠「点别处」表达。
-  // 用 mousedown 而不是 click，并走捕获阶段：拖拽宠物时 pointerdown 会先截走事件，
-  // 监听 click 会漏掉「按住拖走」的那一下；捕获阶段保证在页面任何处理之前先判一次。
-  // 不写 instanceof Node：shared-core 会被桌面端 lint 当成无 DOM 全局的脚本检查。
+  // Click outside the panel to collapse: The panel has no title bar and no close button. The intention to collapse can
+  // only be expressed by "clicking elsewhere". Use mousedown instead of click, and go through the capture phase: when
+  // dragging the pet, pointerdown will intercept the event first, and monitoring click will miss the "press and drag"
+  // moment; the capture phase is guaranteed to be judged before any processing on the page. Do not write instanceof
+  // Node: shared-core will be checked by lint on the desktop as a global script without DOM.
   const onDocMouseDown = (event: MouseEvent): void => {
     if (disposed) return;
     const target = event.target as Node | null;
     if (target !== null && parts.root.contains(target)) return;
-    // 点宠物本体不算「点别处」：拖它走是常见需求，而拖拽的起点就是这一下。
+    // Clicking on the pet body does not count as "clicking elsewhere": dragging it away is a common requirement, and the starting point of dragging is this click.
     if (options.keepOpenOn?.(event.target) === true) return;
     options.onClose?.();
   };
@@ -129,7 +133,7 @@ export function createTodoPanel(options: TodoPanelOptions = {}): TodoPanel {
   parts.closeButton.addEventListener('click', () => options.onClose?.());
   parts.empty.textContent = '加载中…';
   parts.empty.hidden = false;
-  // 不自动聚焦输入框：面板挂在宠物头顶，抢走 DSH 输入框的焦点比少一次点击更烦。
+  // The input box does not automatically focus: the panel hangs above the pet's head, taking away the focus of the DSH input box is more annoying than missing one click.
   void reload();
 
   return {
@@ -137,7 +141,7 @@ export function createTodoPanel(options: TodoPanelOptions = {}): TodoPanel {
     dispose: () => {
       if (disposed) return;
       disposed = true;
-      // 监听必须摘：不摘的话面板关掉后它还会在每次点击时被判一次，等于永久挂着一个死回调。
+      // Monitoring must be removed: If you do not remove it, it will be judged once every time you click it after the panel is closed, which is equivalent to a dead callback hanging permanently.
       document.removeEventListener('mousedown', onDocMouseDown, true);
       parts.duePicker.dispose();
       parts.root.remove();

@@ -1,6 +1,7 @@
 /**
- * 松手结算（src/client/pet/motion/drag-release.ts）的契约测试：弹弓按拉距给力度、方向与拉向相反；
- * 非弹弓时轨迹够快就甩抛、轨迹为空或太慢就原地放下。
+ * Contract test for release settlement (src/client/pet/motion/drag-release.ts): the slingshot is given strength
+ * according to the pulling distance, and the direction is opposite to the pulling direction; when it is not a
+ * slingshot, throw it if the trajectory is fast enough, and put it down when the trajectory is empty or too slow.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +9,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_PHYSICS } from '../../../shared/physics/constants.ts';
 import { decideRelease, type ReleaseInput } from './drag-release.ts';
 
-/** 基准输入：盒 200×112.5，按在中心，没拉也没动。 */
+/** Reference input: box 200×112.5, pressed in the center, neither pulled nor moved. */
 function input(overrides: Partial<ReleaseInput> = {}): ReleaseInput {
   return {
     box: { x: 400, y: 300 },
@@ -23,12 +24,12 @@ function input(overrides: Partial<ReleaseInput> = {}): ReleaseInput {
   };
 }
 
-describe('decideRelease —— 原地放下', () => {
-  test('没有轨迹也不弹弓：原地放下', () => {
+describe('decideRelease——Put it down in place', () => {
+  test('No trajectory or slingshot: put it down in place', () => {
     assert.deepEqual(decideRelease(input()), { kind: 'place' });
   });
 
-  test('轨迹太慢：原地放下', () => {
+  test('The trajectory is too slow: put it down in place', () => {
     const trail = [
       { t: 800, x: 500, y: 356 },
       { t: 900, x: 502, y: 356 },
@@ -36,7 +37,7 @@ describe('decideRelease —— 原地放下', () => {
     assert.deepEqual(decideRelease(input({ trail })), { kind: 'place' });
   });
 
-  test('轨迹太旧：当作停下，原地放下', () => {
+  test('The trajectory is too old: treat it as a stop and put it down where it is.', () => {
     const trail = [
       { t: 500, x: 500, y: 356 },
       { t: 520, x: 700, y: 356 },
@@ -45,8 +46,8 @@ describe('decideRelease —— 原地放下', () => {
   });
 });
 
-describe('decideRelease —— 甩抛', () => {
-  test('向右快速划动：按位移方向起飞', () => {
+describe('decideRelease —— Throw Throw', () => {
+  test('Swipe quickly to the right: Take off in the direction of displacement', () => {
     const trail = [
       { t: 950, x: 500, y: 356 },
       { t: 970, x: 600, y: 356 },
@@ -55,25 +56,25 @@ describe('decideRelease —— 甩抛', () => {
     const decision = decideRelease(input({ trail }));
     assert.equal(decision.kind, 'throw');
     if (decision.kind !== 'throw') return;
-    assert.ok(decision.velocity.vx > 0, `应向右飞：${decision.velocity.vx}`);
+    assert.ok(decision.velocity.vx > 0, `Should fly right: ${decision.velocity.vx}`);
     assert.equal(Math.round(decision.velocity.vy), 0);
   });
 });
 
-describe('decideRelease —— 弹弓', () => {
-  test('拉得越远力度越大，方向与拉向相反', () => {
+describe('decideRelease——Slingshot', () => {
+  test('The farther you pull, the greater the force, and the direction is opposite to the pulling direction.', () => {
     const near = decideRelease(input({ sling: true, box: { x: 480, y: 340 } }));
     const far = decideRelease(input({ sling: true, box: { x: 300, y: 250 } }));
     assert.equal(near.kind, 'sling');
     assert.equal(far.kind, 'sling');
     if (near.kind !== 'sling' || far.kind !== 'sling') return;
-    assert.ok(far.power > near.power, `拉得远力度应更大：${far.power} vs ${near.power}`);
-    // 拉到左上方 → 往右下飞。
-    assert.ok(far.velocity.vx > 0, `应向右飞：${far.velocity.vx}`);
-    assert.ok(far.velocity.vy > 0, `应向下飞：${far.velocity.vy}`);
+    assert.ok(far.power > near.power, `The force should be greater to pull farther: ${far.power} vs ${near.power}`);
+    // Pull to the upper left → fly down to the right.
+    assert.ok(far.velocity.vx > 0, `Should fly right: ${far.velocity.vx}`);
+    assert.ok(far.velocity.vy > 0, `Should fly downward: ${far.velocity.vy}`);
   });
 
-  test('没拉开就松手：力度为 0，速度也是 0', () => {
+  test('Let go without pulling away: the strength is 0 and the speed is also 0', () => {
     const decision = decideRelease(input({ sling: true, box: { x: 400, y: 300 } }));
     assert.equal(decision.kind, 'sling');
     if (decision.kind !== 'sling') return;
@@ -82,7 +83,7 @@ describe('decideRelease —— 弹弓', () => {
     assert.deepEqual(decision.velocity, { vx: 0, vy: 0 });
   });
 
-  test('弹弓不看手速：慢慢拉到位再松手一样有速度', () => {
+  test('The slingshot does not depend on hand speed: slowly pull it into place and then let go, the speed is still the same', () => {
     const decision = decideRelease(
       input({
         sling: true,
@@ -95,6 +96,6 @@ describe('decideRelease —— 弹弓', () => {
     );
     assert.equal(decision.kind, 'sling');
     if (decision.kind !== 'sling') return;
-    assert.ok(Math.hypot(decision.velocity.vx, decision.velocity.vy) > 0, '弹弓应产生速度');
+    assert.ok(Math.hypot(decision.velocity.vx, decision.velocity.vy) > 0, 'Slingshot should generate speed');
   });
 });

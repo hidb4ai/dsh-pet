@@ -1,10 +1,12 @@
 /**
- * 独立模式「对话」分区的浏览器入口：把 DSH 右侧栏那套面板挂到设置页上。
+ * Browser entry point for the "Conversation" partition in standalone mode: Hang the set of panels in the right column
+ * of DSH to the settings page.
  *
- * 组件、状态与渲染树全部来自 client/chat，这里只补宿主那一侧：react 运行时由本包自己
- * 打包（独立环境没有 DSH 注入），文案走包内 zh 字典（无 locale 服务），样式走外链
- * CSS（页面 CSP 是 style-src 'self'，内联 style 会被拦掉）。平台 UI 原语在独立模式
- * 没有，面板按既有分支自行降级。
+ * Components, states and rendering trees all come from client/chat. Only the host side is added here: react runtime is
+ * packaged by this package itself (the independent environment does not have DSH injection), the text is from
+ * the zh dictionary in the package (no locale service), and the style is from the external link CSS (the page CSP is
+ * style-src' self ', inline style will be blocked). The platform UI primitive is in standalone mode. The panel
+ * downgrades itself according to the existing branch.
  * @module dsh-pet/src/standalone/settings-page/chat-mount
  */
 import { createElement, useEffect, useRef, useState, type FC } from 'react';
@@ -15,14 +17,16 @@ import { makePetChatPanel } from '../../client/chat/panel.ts';
 import type { ChatPanelRuntime } from '../../client/chat/runtime.ts';
 import { createTranslator } from './translate.ts';
 
-/** 设置页里对话面板的挂载点 id，与 chrome.ts 的容器一致。 */
+/** The mount point id of the dialog panel in the settings page is consistent with the container of chrome.ts. */
 const HOST_ID = 'pet-chat-root';
 
 /**
- * 注入给面板的 react 能力与文案；独立模式没有宿主可注入，用本包打进来的那份 react。
+ * The react capability and copy injected into the panel; in standalone mode, there is no host to inject, so use the
+ * react imported from this package.
  *
- * 只对 `h` 做断言：jsx 的参数类型是 `ElementType`，与运行时契约的 `unknown` 不兼容，
- * 但两者在运行时是同一个函数。其余字段保持类型检查，缺字段会在编译期直接报错。
+ * Only make assertions for `h` : The parameter type of jsx is `ElementType` , which is incompatible with `unknown` of
+ * the runtime contract, but the two are the same function at runtime. The remaining fields remain type-checked, and
+ * missing fields will directly report an error during compilation.
  */
 const runtime: ChatPanelRuntime = {
   h: jsx as ChatPanelRuntime['h'],

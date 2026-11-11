@@ -1,12 +1,14 @@
 /**
- * 「AI 服务商」面板：独立模式自己的模型接入配置（协议、地址、模型、密钥、测试连接与删除密钥）。
+ * "AI Service Provider" panel: standalone mode's own model access configuration (protocol, address, model, key, test
+ * connection and deletion key).
  *
- * 读写独立模式专属的 /standalone-ai/settings，与插件配置那份文件互不相干；
- * 密钥只写不回显，请求一律带本次运行的访问令牌。AI 是否可用只看地址、模型与密钥是否齐全。
+ * / standalone-ai/settings is exclusive to the read-write standalone mode and has nothing to do with the plugin
+ * configuration file; the key write-only is not echoed, and the request always carries the access token of this run.
+ * Whether AI is available only depends on whether the address, model and key are complete.
  * @module dsh-pet/src/standalone/settings-page/script/ai
  */
 
-/** 生成 AI 面板片段。 */
+/** Generate AI panel fragment. */
 export function aiScript(): string {
   return `
 const AI_SETTINGS_URL = '/standalone-ai/settings';
@@ -45,7 +47,10 @@ function populateAi(data) {
   byId('apiKey').disabled = false;
 }
 
-/** 把余额结果翻成一行可读文案；失败一律说明原因，不显示伪造数字。 */
+/**
+ * Translate the balance result into a line of readable copy; explain the reason for failure and do not
+ * display forged numbers.
+ */
 function describeBalance(data) {
   if (!data || data.ok !== true) {
     if (data && data.reason === 'credential-missing') return '缺少密钥：请先保存所选服务商的 API 密钥。';

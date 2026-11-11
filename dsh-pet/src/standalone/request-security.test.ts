@@ -182,7 +182,7 @@ test('only minimal health, settings shell and known media GET are public; public
   }
 });
 
-test('首次头部认证后换取会话 cookie，刷新时凭 cookie 继续，且不重复下发', () => {
+test('Exchange the session cookie after the first header authentication, and continue with cookie when refreshing, and will not be issued repeatedly.', () => {
   const security = createRequestSecurity();
 
   const first = response();
@@ -193,9 +193,9 @@ test('首次头部认证后换取会话 cookie，刷新时凭 cookie 继续，�
   const cookie = first.headers['set-cookie'] ?? '';
   assert.match(cookie, /^dsh_pet_token=[^;]+; HttpOnly; SameSite=Strict; Path=\/$/);
   assert.equal(cookie.includes(security.token), true);
-  assert.equal(cookie.includes('Max-Age'), false, '会话 cookie 不该带 Max-Age');
+  assert.equal(cookie.includes('Max-Age'), false, 'Session cookie should not bring Max-Age');
 
-  // 刷新：地址栏里的令牌已被清掉，只剩 cookie，且它可能夹在别的 cookie 中间。
+  // Refresh: The token in the address bar has been cleared, leaving only cookie, and it may be sandwiched between other cookie.
   const refreshed = response();
   assert.equal(
     security.authorize(
@@ -204,10 +204,10 @@ test('首次头部认证后换取会话 cookie，刷新时凭 cookie 继续，�
     ),
     true,
   );
-  assert.equal(refreshed.headers['set-cookie'], undefined, '已有 cookie 时不该再下发');
+  assert.equal(refreshed.headers['set-cookie'], undefined, 'It should not be issued when cookie already exists');
 });
 
-test('cookie 必须是本进程令牌：别的进程的值、错形状与空值一律拒绝', () => {
+test('cookie must be the token of this process: values from other processes, incorrect shapes and empty values will be rejected.', () => {
   const security = createRequestSecurity();
   const foreign = createRequestSecurity();
   for (const cookie of [`dsh_pet_token=${foreign.token}`, 'dsh_pet_token=short', 'dsh_pet_token=', 'dsh_pet_token']) {

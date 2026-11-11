@@ -1,8 +1,8 @@
 /**
- * 独立服务的端口与选项形状：默认端口、扫描上限与对外能力。
+ * The port and option shapes of independent services: default port, scanning upper limit and external capabilities.
  *
- * 纯类型与常量，不含实现。
- * 必须始终成立：默认端口变化要同步 CLI 帮助文案与 CONFIG.md。
+ * Pure types and constants, no implementation. Must always hold: Default port changes synchronize the CLI help text
+ * with CONFIG.md.
  * @module dsh-pet/src/standalone/server/options
  */
 import { type RegisteredRoute, type StandaloneLogger } from '../context.ts';
@@ -10,40 +10,40 @@ import { type RequestSecurity } from '../request-security.ts';
 import { type StandaloneSettingsService } from '../settings.ts';
 import type { SetupService } from '../setup.ts';
 
-/** 默认监听端口。 */
+/** Default listening port. */
 export const DEFAULT_STANDALONE_PORT = 3080;
 
-/** 端口被占用时最多向后顺延的次数。 */
+/** The maximum number of backward delays when the port is occupied. */
 export const PORT_SCAN_LIMIT = 25;
 
-/** 启动选项。 */
+/** Startup options. */
 export interface StandaloneServerOptions {
-  /** 插件注册的路由。 */
+  /** Plugin register route. */
   routes: RegisteredRoute[];
-  /** 日志出口。 */
+  /** Log export. */
   logger: StandaloneLogger;
-  /** 首选端口。 */
+  /** Preferred port. */
   port?: number;
-  /** 健康检查返回的状态。 */
+  /** Status returned by health check. */
   status?: () => unknown;
-  /** 停机回调。 */
+  /** Shutdown callback. */
   onShutdown?: () => void;
-  /** 访问校验门面。 */
+  /** Access the verification facade. */
   security?: RequestSecurity;
-  /** 设置服务。 */
+  /** Set up services. */
   ai?: StandaloneSettingsService;
   /** First-run installation and managed local memory. */
   setup?: SetupService;
-  /** 正文读取时限，仅供超时测试覆盖。 */
+  /** The text reading time limit is only covered by the timeout test. */
   bodyTimeoutMs?: number;
 }
 
-/** 已启动的服务。 */
+/** Service started. */
 export interface StandaloneServer {
-  /** 实际监听端口。 */
+  /** Actual listening port. */
   port: number;
-  /** 本次运行的访问校验门面。 */
+  /** Access verification facade for this run. */
   security: RequestSecurity;
-  /** 关闭监听并断开在途连接。 */
+  /** Turn off listening and disconnect in-flight connections. */
   close(): Promise<void>;
 }

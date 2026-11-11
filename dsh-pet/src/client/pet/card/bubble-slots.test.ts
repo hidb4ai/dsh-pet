@@ -1,7 +1,9 @@
 /**
- * 气泡单槽的纯函数契约（src/client/pet/card/bubble-slots.ts）：优先级判定与余额页数。
+ * Pure function contract of bubble single slot (src/client/pet/card/bubble-slots.ts): priority determination and
+ * balance page number.
  *
- * 只覆盖无状态部分；显隐与停留计时需要真实渲染，由手动验收。
+ * Only the stateless part is covered; visibility and dwell timing require real rendering and are subject to manual
+ * acceptance.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +11,7 @@ import assert from 'node:assert/strict';
 import type { BalanceState } from '../../../shared/balance/index.ts';
 import { balancePageCount, decideBubbleSlot, type BubbleSlotInput } from './bubble-slots.ts';
 
-/** 一份全部关闭的输入，逐项覆盖出目标场景。 */
+/** A completely closed input covers the target scene item by item. */
 function input(overrides: Partial<BubbleSlotInput> = {}): BubbleSlotInput {
   return {
     workTerminal: false,
@@ -36,12 +38,12 @@ const customState = (pages: number): BalanceState => ({
 });
 const failedState: BalanceState = { provider: 'test', ok: false, reason: 'fetch-error' };
 
-describe('decideBubbleSlot —— 同一时刻只挂一个气泡', () => {
-  test('都没有点亮：返回 none', () => {
+describe('decideBubbleSlot ——Only one bubble is hung at the same time', () => {
+  test('None are lit: return none', () => {
     assert.equal(decideBubbleSlot(input()), 'none');
   });
 
-  test('终态任务压过说话与余额：只活 10s，不让位', () => {
+  test('The final task overwhelms the conversation and balance: only 10 s can survive, without giving up the position.', () => {
     const slot = decideBubbleSlot(
       input({
         workTerminal: true,
@@ -55,36 +57,36 @@ describe('decideBubbleSlot —— 同一时刻只挂一个气泡', () => {
     assert.equal(slot, 'work-terminal');
   });
 
-  test('说话压过余额与非终态任务：优先级第二', () => {
+  test('Talking over balance and non-final tasks: second priority', () => {
     const slot = decideBubbleSlot(
       input({ whisperOn: true, whisperText: '在', balanceOn: true, workOn: true, workText: '干活中' }),
     );
     assert.equal(slot, 'whisper');
   });
 
-  test('余额压过非终态任务：常驻任务让位 10s 没有损失', () => {
+  test('The balance exceeds the non-terminal task: the resident task gives way 10 s without loss', () => {
     const slot = decideBubbleSlot(input({ balanceOn: true, workOn: true, workText: '干活中' }));
     assert.equal(slot, 'balance');
   });
 
-  test('只剩非终态任务：常驻显示', () => {
+  test('Only non-final tasks remain: permanent display', () => {
     assert.equal(decideBubbleSlot(input({ workOn: true, workText: '干活中' })), 'work');
   });
 
-  test('关闭工作状态联动：任务气泡不占槽位', () => {
+  test('Turn off work status linkage: task bubble does not occupy slots', () => {
     assert.equal(decideBubbleSlot(input({ workOn: true, workText: '干活中', workStatusEnabled: false })), 'none');
   });
 
-  test('余额数据未拉到：不挂余额气泡', () => {
+  test('The balance data has not been retrieved: no balance bubble is attached.', () => {
     assert.equal(decideBubbleSlot(input({ balanceOn: true, balanceAvailable: false })), 'none');
   });
 
-  test('关闭余额且非手动请求：不挂余额气泡；手动请求照常挂', () => {
+  test('Close balance and non-manual request: balance bubble will not be hung; manual request will be hung as usual', () => {
     assert.equal(decideBubbleSlot(input({ balanceOn: true, balanceEnabled: false })), 'none');
     assert.equal(decideBubbleSlot(input({ balanceOn: true, balanceEnabled: false, balanceManual: true })), 'balance');
   });
 
-  test('待办面板压过一切：用户主动打开的窗口不让位', () => {
+  test('The to-do panel overwhelms everything else: the window actively opened by the user does not give way.', () => {
     const slot = decideBubbleSlot(
       input({
         todoOn: true,
@@ -100,17 +102,17 @@ describe('decideBubbleSlot —— 同一时刻只挂一个气泡', () => {
   });
 });
 
-describe('balancePageCount —— 余额气泡可翻页数', () => {
-  test('没有数据或拉取失败：一页', () => {
+describe('balancePageCount ——The number of pages that the balance bubble can turn', () => {
+  test('No data or pull failed: one page', () => {
     assert.equal(balancePageCount(null), 1);
     assert.equal(balancePageCount(failedState), 1);
   });
 
-  test('windows：收起与展开两页', () => {
+  test('windows: Collapse and expand two pages', () => {
     assert.equal(balancePageCount(windowsState), 2);
   });
 
-  test('windows 带区间用量：多一页（收起 / 窗口明细 / 用量）', () => {
+  test('windows with interval usage: one more page (Collapse / Window Details / Usage)', () => {
     assert.equal(
       balancePageCount({
         ...windowsState,
@@ -120,15 +122,15 @@ describe('balancePageCount —— 余额气泡可翻页数', () => {
     );
   });
 
-  test('custom：页数取第三方视图数', () => {
+  test('custom: The number of pages is taken as the number of third-party views', () => {
     assert.equal(balancePageCount(customState(3)), 3);
   });
 
-  test('custom 只有一页：仍按一页算，不出现空翻页', () => {
+  test('custom has only one page: it is still counted as one page and no empty pages will appear.', () => {
     assert.equal(balancePageCount(customState(1)), 1);
   });
 
-  test('内置单页形态：一页', () => {
+  test('Built-in single page format: one page', () => {
     assert.equal(balancePageCount({ provider: 'test', shape: 'money', ok: true }), 1);
   });
 });

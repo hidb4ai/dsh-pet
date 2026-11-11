@@ -1,12 +1,13 @@
 /**
- * 悬停快捷键的通用判据：哪一次按键该被宠物截走。
+ * General criterion for hovering shortcut keys: which key press should be intercepted by the pet.
  *
- * 纯函数，两端共用；各功能只声明自己那一个键（见 chat/hotkey 与 todo/hotkey）。
- * 桌面端只在窗口已聚焦时收得到按键——透明穿透窗默认不抢焦点。
+ * Pure function, shared by both ends; each function only declares its own key (see chat/hotkey and todo/hotkey). The
+ * desktop only receives keystrokes when the window is focused - transparent click-through windows do not grab focus by
+ * default.
  * @module dsh-pet/src/shared/hotkey
  */
 
-/** 判据只读这几个字段，测试可以用普通对象代替 KeyboardEvent。 */
+/** For these fields, the test can use ordinary objects instead of KeyboardEvent. */
 export interface HotkeyEvent {
   readonly key: string;
   readonly ctrlKey: boolean;
@@ -15,7 +16,7 @@ export interface HotkeyEvent {
   readonly target: EventTarget | null;
 }
 
-/** 这些地方按键属于打字，不能抢：输入框、文本域、下拉、contenteditable。 */
+/** The keys in these places belong to typing and cannot be grabbed: input box, text field, drop-down, contenteditable. */
 export function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el || typeof el.tagName !== 'string') return false;
@@ -25,11 +26,12 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * 是不是一次「裸按某键」。
+ * Is it a "naked pressing of a certain key"?
  *
- * @param e - 键盘事件（只读 key 与修饰键、target）。
- * @param key - 目标键的小写形式，如 `'t'`。
- * @returns 键名匹配（大小写不敏感）、不带 Ctrl/Meta/Alt，且焦点不在可编辑元素上时为 true。
+ * @param e - Keyboard events (read-only key with modifier keys, target).
+ * @param key - The lowercase form of the target key, such as `'t'` .
+ * @returns key name matches (case insensitive), without Ctrl/Meta/Alt, and when the focus is not on the editable
+ * element, it is true.
  */
 export function isBareKey(e: HotkeyEvent, key: string): boolean {
   if (e.ctrlKey || e.metaKey || e.altKey) return false;

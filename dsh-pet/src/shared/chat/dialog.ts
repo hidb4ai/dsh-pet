@@ -1,8 +1,9 @@
 /**
- * 对话输入弹窗的挂载与生命周期：定位、关闭、发送。
- * 两端共用同一份实现；它只经注入的 baseUrl/surface 说话，不读配置、不读写记忆。
- * 回复不经响应回传展示：POST 的响应里也有正文，但本组件不用它——回复统一从 /state 的
- * pets.<id>.say 走气泡展示，onSent 只用来催促调用方取一拍。
+ * Mount and manage the chat input dialog: positioning, closing and sending.
+ * Both renderers share this implementation, using injected baseUrl/surface without reading configuration or chat
+ * storage.
+ * Display replies through /state at pets.<id>.say, ignoring the duplicated text in POST responses. onSent only prompts
+ * the caller to poll.
  * @module dsh-pet/src/shared/chat/dialog
  */
 import { ROUTE_PATH } from '../constants.ts';
@@ -12,44 +13,44 @@ import type { EncodedImage } from './encode.ts';
 import { sendChat, type ChatAttachment } from './send.ts';
 import { injectChatCss } from './styles.ts';
 
-/** 对话弹窗挂载句柄。 */
+/** The dialog pop-up window mounts handle. */
 export interface ChatDialogMount {
-  /** 根元素（document.body 下） */
+  /** Root element (under document.body) */
   el: HTMLElement;
-  /** 关闭并清理（幂等） */
+  /** Close and clean up (idempotent) */
   close: () => void;
-  /** 开录：快捷键「按住说话」按下时用（麦克风已在录、环境不支持时无动作）。 */
+  /** Start recording: The shortcut key "Press and hold to speak" is used when pressed (the microphone is already recording and there is no action when the environment does not support it). */
   startHear: () => void;
-  /** 收尾：快捷键松开时用（没在录时无动作）。 */
+  /** cleanup: used when the shortcut key is released (no action when not recording). */
   stopHear: () => void;
-  /** 此刻是否真的在采集。 */
+  /** Is it really collecting at this moment? */
   isHearing: () => boolean;
-  /** 放进一张已编码的图（截图快捷键在弹窗已开时走这条）；返回是否收下。 */
+  /** Insert an encoded image (use this screenshot shortcut key when the pop-up window is open); return whether to accept it. */
   setEncoded: (encoded: EncodedImage) => boolean;
-  /** 放进一张图片文件（粘贴、拖拽在弹窗已开时走这条）；类型不接受或编码失败时返回 false。 */
+  /** Put in a picture file (paste, drag and drop when the pop-up window is open); return false when the type is not accepted or the encoding fails. */
   setImageFile: (file: File) => Promise<boolean>;
-  /** 在弹窗里显示一条临时提示（截图失败这类原因，超时自动收起）。 */
+  /** Display a temporary prompt in the pop-up window (for reasons such as screenshot failure, it will be automatically closed after timeout). */
   flash: (text: string) => void;
 }
 
-/** 发送接线需要的元素与回调。 */
+/** Send elements required for wiring with callback. */
 interface SendBinding {
   readonly input: HTMLTextAreaElement;
   readonly err: HTMLElement;
-  /** 已含 `?pet=&surface=` 的对话地址。 */
+  /** Contains the conversation address of `?pet=&surface=`. */
   readonly url: string;
   readonly isClosed: () => boolean;
-  /** 发送成功（弹窗尚未关闭）。 */
+  /** Sent successfully (pop-up window has not been closed). */
   readonly onOk: () => void;
-  /** 待发送的图片；没有就发纯文本。 */
+  /** Picture to be sent; if not, send plain text. */
   readonly attachment: () => ChatAttachment | undefined;
-  /** 是否还在压缩图片：是的话先提示，别发出去把图丢掉。 */
+  /** Is the image still being compressed? If yes, please prompt first. Do not send the image and throw it away. */
   readonly isEncoding: () => boolean;
-  /** 非错误提示（"图片还在处理"这类）。 */
+  /** Non-error prompt ("Picture is still being processed" type). */
   readonly notify: (text: string) => void;
 }
 
-/** 点弹窗外或按 Esc 关闭；返回解绑函数。 */
+/** Click the pop-up window or press Esc to close; return to the unbinding function. */
 function bindDismiss(root: HTMLElement, isClosed: () => boolean, onDismiss: () => void): () => void {
   const onPointerDown = (e: MouseEvent): void => {
     if (isClosed() || root.contains(e.target as Node)) return;
@@ -66,7 +67,7 @@ function bindDismiss(root: HTMLElement, isClosed: () => boolean, onDismiss: () =
   };
 }
 
-/** 回车发送：成功后回调、失败把原因写进 err 行，不伪造回复。 */
+/** Enter to send: callback after success, write the reason into err line after failure, no forged reply. */
 function bindSend(binding: SendBinding): void {
   let sending = false;
   const doSend = (): void => {
@@ -97,7 +98,7 @@ function bindSend(binding: SendBinding): void {
         if (!binding.isClosed()) binding.input.focus();
       });
   };
-  // 回车要让开输入法：组合中的回车是上屏键，长按重复的回车只该被吞掉、不该插换行
+  // Enter must get out of the way of the input method: the enter in the combination is the screen up key, long pressing the repeated enter should only be swallowed, and a new line should not be inserted.
   const ime = createCompositionWatch();
   binding.input.addEventListener('compositionstart', ime.start);
   binding.input.addEventListener('compositionend', () => ime.end(performance.now()));
@@ -110,51 +111,58 @@ function bindSend(binding: SendBinding): void {
 }
 
 /**
- * 由对话地址推导识别地址：两端传进来的都是 `.../chat`，去掉尾段换成 `/voice/hear`。
+ * The identification address is deduced from the conversation address: `.../chat` is passed in from both ends, remove
+ * the tail segment and replace it with `/voice/hear` .
  *
- * @param baseUrl - 已含挂载前缀的对话地址。
- * @returns 同前缀下的识别地址。
+ * @param baseUrl - Conversation address with mount prefix.
+ * @returns Identification address under the same prefix.
  */
 function hearUrlOf(baseUrl: string): string {
   return baseUrl.replace(/\/chat$/, '') + '/voice/hear';
 }
 
-/** 挂载对话弹窗的入参。 */
+/** Input parameters of the mounting dialog pop-up window. */
 export interface ChatDialogOptions {
   petId: string;
-  /** 端点基址：浏览器默认相对路径，桌面传绝对 URL（file:// 页面需要绝对）。 */
+  /** Endpoint base address: The default relative path of the browser, the desktop transmission is absolute URL (file:// page needs to be absolute). */
   baseUrl?: string;
-  /** 这个弹窗开在哪一端：POST /chat 的 ?surface= 是必填的，宿主据此提前拒掉不可能的组合。 */
+  /** Which end does this pop-up window open on: POST /chat? surface = is required, and the host rejects impossible combinations in advance accordingly. */
   surface: 'web' | 'desktop';
   x: number;
   y: number;
-  /** 发送成功后调用（弹窗此时已关闭）：回复本身不从这里回传，数据只有 /state 一个出口。 */
+  /** Called after successful sending (the pop-up window has been closed at this time): the reply itself is not sent back from here, and the data only has one outlet / state. */
   onSent?: () => void;
   onClose?: () => void;
-  /** 弹窗允许占用的矩形（视口局部坐标）；缺省 = 整个视口。 */
+  /** The rectangle that the pop-up window is allowed to occupy (local coordinates of the viewport); default = the entire viewport. */
   clamp?: { x: number; y: number; w: number; h: number };
-  /** 打开时就带着的图片（拖拽落到宠物身上走的这条）；缺省 = 空弹窗。 */
+  /** The picture that is carried when opening (drag and drop on the pet to walk); default = empty pop-up window. */
   initialImage?: File;
-  /** 打开时就带着的已编码图片（截图快捷键走的这条：截屏没有 File，只有 base64）。 */
+  /** The encoded image is taken when opening (this is the screenshot shortcut key: there is no File in the screenshot, only base64). */
   initialEncoded?: EncodedImage;
-  /** 截屏实现：浏览器传 getDisplayMedia 抓帧，桌面传 preload 的 IPC 调用；缺省 = 不支持。 */
+  /** Screen capture implementation: The browser transmits getDisplayMedia frame capture, and the desktop transmits IPC call of preload; default = not supported. */
   capture?: () => Promise<EncodedImage>;
   /**
-   * 识别地址；缺省按 `baseUrl` 去掉尾部 `/chat` 推导（两端传进来的都是 `.../chat`）。
-   * 给了也用不上时（环境不能录音）按钮不出现，见 createChatDom。
+   * Identification address; the default is `baseUrl` with the tail `/chat` derivation removed (`.../chat` is passed in
+   * from both ends). The button does not appear when it is not used (the environment cannot record), see
+   * createChatDom.
    */
   hearUrl?: string;
 }
 
-/** 挂载一个对话输入弹窗（两端共用；位置为视口坐标，超出 clamp 矩形自动夹回）。
- *  输入框 + 上传/截屏两枚图标按钮 + 图片预览（本轮只有界面与本地预览，编码与发送待接入）。
- *  回车即发送：发送成功后弹窗关闭并调 onSent。Esc 或点弹窗外关闭；生成失败留在弹窗内显式提示。
- *  clamp 由调用方给：桌面传「窗口 ∩ 工作区」，宠物贴边时弹窗照样完整显示、窗口零移动。 */
+/**
+ * Mount a dialog input pop-up window (shared at both ends; the position is the viewport coordinates, and it will
+ * automatically clip back when it exceeds the clamp rectangle). Input box + two icon buttons for upload/screenshot +
+ * image preview (this round only has interface and local preview, encoding and sending are to be accessed). Press
+ * Enter to send: After successful sending, the pop-up window is closed and onSent is called. Esc or click the pop-up
+ * window to close; if the generation fails, an explicit prompt will be left in the pop-up window. clamp is sent from
+ * the caller: "Window ∩ Workspace" is passed to the desktop. When the pet is next to the pet, the pop-up window is
+ * still fully displayed and the window moves zero.
+ */
 export function mountChatDialog(opts: ChatDialogOptions): ChatDialogMount {
   injectChatCss();
   const { petId, surface, x, y, onSent, onClose, clamp } = opts;
   const baseUrl = opts.baseUrl ?? ROUTE_PATH + '/chat';
-  // `surface` 必填（宿主校验）；这个 URL 只用于 POST 发送——GET 读记忆那条路不需要它
+  // `surface` is required (host verification); this URL is only used for POST sending - GET does not need it for the memory reading path
   const withPet = baseUrl + '?pet=' + encodeURIComponent(petId) + '&surface=' + surface;
   const c =
     clamp && Number.isFinite(clamp.x + clamp.y + clamp.w + clamp.h)
@@ -164,7 +172,7 @@ export function mountChatDialog(opts: ChatDialogOptions): ChatDialogMount {
   const dom = createChatDom({ capture: opts.capture, hearUrl: opts.hearUrl ?? hearUrlOf(baseUrl) });
   const { root, input, err } = dom;
 
-  /** 以 (x,y) 落点，超出 clamp 矩形夹回。 */
+  /** With the landing point (x, y), it is pinched back beyond the clamp rectangle. */
   const place = (): void => {
     const r = root.getBoundingClientRect();
     root.style.left = Math.max(c.x + 4, Math.min(x, c.x + c.w - r.width - 4)) + 'px';
@@ -196,9 +204,9 @@ export function mountChatDialog(opts: ChatDialogOptions): ChatDialogMount {
     isEncoding: () => dom.isEncoding(),
     notify: (text) => dom.flash(text),
   });
-  // 截屏按钮的接线在 dom 里（依赖注入的 capture），这里只负责发送与关闭
+  // The wiring of the screenshot button is in dom (dependency injection capture), which is only responsible for sending and closing.
 
-  dom.resizeInput(); // append 后再量一次（此时样式已生效）
+  dom.resizeInput(); // Measure again after append (the style is now in effect)
   place();
   if (opts.initialImage) void dom.setImageFile(opts.initialImage);
   if (opts.initialEncoded) dom.setEncoded(opts.initialEncoded);

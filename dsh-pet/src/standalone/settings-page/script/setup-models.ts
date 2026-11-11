@@ -1,7 +1,7 @@
-/** 快速开始的模型编辑与发现行为；与生命周期轮询分开，迟到结果不能改写新连接。 */
+/** Quick-start model editing and discovery behavior; separate from lifecycle polling, late results cannot be overwritten for new connections. */
 import { MODEL_PRESETS } from '../../../shared/memory-presets.ts';
 
-/** 输出无需构建运行时依赖的本机表单脚本。 */
+/** Output native form scripts without building runtime dependencies. */
 export function setupModelsScript(): string {
   return `
 const setupPresets = ${JSON.stringify(MODEL_PRESETS)};

@@ -1,51 +1,54 @@
 /**
- * 待办的落盘形状与字段校验：宿主侧读写待办时唯一的一份口径。
+ * To-do persist to disk shape and field verification: The only conventions when reading and writing to-do on the host
+ * side.
  *
- * 不做 IO、不读时钟：解析失败的条目一律整条丢弃（不让脏数据进内存），由 ./store 决定何时落盘。
- * 与 shared/todo/types 的 wire 字段同名；宿主不 import 共享层（DSH 单文件加载约束）。
+ * Do not do IO, do not read the clock: Entries that fail to parse will be discarded entirely (dirty data will not be
+ * allowed to enter the memory), and ./store will decide when to persist to disk. Same name as the shared/todo/types
+ * field of wire; host is not a import shared layer (DSH single file load constraint).
  * @module dsh-pet/src/host/todo/types
  */
 
-/** 单条待办：磁盘与 HTTP 响应共用。 */
+/** Single to-do: disk shared with HTTP response. */
 export interface TodoRecord {
-  /** 实例内唯一；只含 `[A-Za-z0-9_-]`，会出现在 URL 路径里。 */
+  /** Unique within the instance; it only contains `[A-Za-z0-9_-]` and will appear in the URL path. */
   id: string;
-  /** 正文：已 trim，1–200 个码点。 */
+  /** Text: trim, 1–200 code points. */
   text: string;
-  /** 到期时刻（epoch ms）；null = 无期限，永不提醒。 */
+  /** Expiration time (epoch ms); null = No expiration date, never remind. */
   dueAt: number | null;
   done: boolean;
   createdAt: number;
   updatedAt: number;
-  /** 完成时刻；未完成为 null。 */
+  /** Completion time; unfinished is null. */
   completedAt: number | null;
-  /** 上次提醒时刻；null = 尚未提醒。改期限或重新打开会清空它，让提醒重新排期。 */
+  /** Last reminder time; null = Not reminded yet. Changing the deadline or reopening will clear it, allowing the reminder to be rescheduled. */
   lastRemindedAt: number | null;
 }
 
-/** 待办文件版本：形状变更时递增，读取侧据此决定要不要迁移。 */
+/** To-do file version: incremented when the shape changes, and the reading side decides whether to migrate based on this. */
 export const TODO_FILE_VERSION = 1;
 
-/** 正文上限（码点数）：够写清一件事，又不至于把气泡与面板撑爆。 */
+/** The upper limit of text (number of code points): enough to write one thing clearly without bursting the bubble and panel. */
 export const TODO_TEXT_MAX = 200;
 
-/** 请求体上限（字节）：待办读写只接受短正文，防止一次塞进整本书。 */
+/** Upper limit of request body (bytes): To-do reading and writing only accepts short text to prevent the entire book from being crammed into it at once. */
 export const TODO_BODY_MAX_BYTES = 16 * 1024;
 
-/** 落盘文件的根。 */
+/** persist to disk root of file. */
 export interface TodoFile {
   version: number;
   todos: TodoRecord[];
 }
 
-/** 到期时刻的校验结论：ok=false 表示显式给了非法值，调用方回 bad-request。 */
+/** Verification conclusion at expiration time: ok = false means an invalid value is explicitly given, and the caller returns bad-request. */
 export type DueAtParse = { ok: true; value: number | null } | { ok: false };
 
 /**
- * 校验并归一化正文。
+ * Verify and normalize text.
  *
- * @param raw - 请求体里的原文。
- * @returns trim 后的正文；非字符串、空白或超过 {@link TODO_TEXT_MAX} 个码点时返回 null。
+ * @param raw - the original text in the request body.
+ * The text after @returns trim; null is returned when it is a non-character string, blank or exceeds
+ * {@link TODO_TEXT_MAX} code points.
  */
 export function normalizeTodoText(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
@@ -56,31 +59,33 @@ export function normalizeTodoText(raw: unknown): string | null {
 }
 
 /**
- * 校验到期时刻。
+ * Verification expiration time.
  *
- * `null` / 缺省都表示「没有期限」；数字必须是有限的 epoch 毫秒，且落在 Date 能表示的范围内。
+ * `null` / Default all means "no deadline"; the number must be limited to epoch milliseconds and fall within the range
+ * that Date can represent.
  *
- * @param raw - 请求体或磁盘里的原值。
- * @returns 归一化后的值，或 `ok: false`。
+ * @param raw - The original value in the request body or disk.
+ * @returns normalized value, or `ok: false` .
  */
 export function normalizeTodoDueAt(raw: unknown): DueAtParse {
   if (raw === null || raw === undefined) return { ok: true, value: null };
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return { ok: false };
-  // 8.64e15 = Date 的最大时间戳；再大就不是一个真实存在的时刻了。
+  // 8.64 e15 = the maximum timestamp of Date; no matter how large it is, it is not a real moment.
   if (Math.abs(raw) > 8.64e15) return { ok: false };
   return { ok: true, value: raw };
 }
 
-/** 读一个有限数字，非法时回落。 */
+/** Read a limited number, fallback when invalid. */
 function finiteOr(raw: unknown, fallback: number): number {
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : fallback;
 }
 
 /**
- * 读一条记录：任一字段不合格都返回 null（整条丢弃，不修补也不猜）。
+ * Reading a record: If any field is unqualified, null will be returned (the entire record will be discarded, no repair
+ * or guessing).
  *
- * @param raw - 磁盘或请求体里的单条原值。
- * @returns 已校验的记录，或 null。
+ * @param raw - A single raw value on disk or in the request body.
+ * @returns verified record, or null.
  */
 export function parseTodoRecord(raw: unknown): TodoRecord | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -100,10 +105,11 @@ export function parseTodoRecord(raw: unknown): TodoRecord | null {
 }
 
 /**
- * 读整个文件：根不是对象、`todos` 不是数组都按空清单处理；重复 id 只留第一条。
+ * Read the entire file: if the root is not an object and `todos` is not an array, it will be treated as an empty list;
+ * if id is repeated, only the first one will be left.
  *
- * @param raw - `JSON.parse` 的结果。
- * @returns 已校验的记录列表（保持文件顺序，排序交给调用方）。
+ * Results for @param raw - `JSON.parse` .
+ * @returns Verified record list (maintaining file order, sorting is handed over to caller).
  */
 export function parseTodoFile(raw: unknown): TodoRecord[] {
   const root = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -119,16 +125,17 @@ export function parseTodoFile(raw: unknown): TodoRecord[] {
   return out;
 }
 
-/** 复制一条记录：消费端拿到的是副本，改它不会污染缓存。 */
+/** Copying a record: The consumer gets a copy, and changing it will not pollute the cache. */
 export function cloneTodo(todo: TodoRecord): TodoRecord {
   return { ...todo };
 }
 
 /**
- * 展示顺序：未完成在前（到期越近越靠前，无期限垫底），已完成在后（最近完成的在上）。
+ * Display order: unfinished first (the closer the due date is to the front, unlimited time at the bottom), completed
+ * last (the most recently completed one is at the top).
  *
- * @param list - 任意顺序的记录。
- * @returns 排好序的新数组，不改原数组。
+ * @param list - Records in any order.
+ * @returns is a sorted new array without changing the original array.
  */
 export function sortTodos(list: readonly TodoRecord[]): TodoRecord[] {
   return [...list].sort((a, b) => {

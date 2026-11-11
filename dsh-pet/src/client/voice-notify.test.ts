@@ -1,9 +1,11 @@
 /**
- * 工作状态播报的判定测试：钉住「哪些档位出声、念哪一句、同一档位不重念」。
+ * Judgment test for working status broadcast: verify "Which states make the sound, which sentence is read, and the same
+ * state is not repeated."
  *
- * 只测纯判定；真正发声由 shared/voice.ts 的 speakNotice 负责，不在本文件覆盖范围。
+ * Only pure judgment is tested; the real voice is the responsibility of speakNotice of shared/voice.ts and is not
+ * covered by this document.
  *
- * 跑法：node --experimental-strip-types --test src/client/voice-notify.test.ts
+ * Running method: node --experimental-strip-types --test src/client/voice-notify.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,57 +16,57 @@ import { setSurface, setVoiceConfig, setVoiceNotifyEnabled } from '../shared/voi
 import type { WorkStatusSnapshot } from '../shared/work-status.ts';
 import type { Pet } from '../shared/types.ts';
 
-/** 六档台词组，顺序与 WORK_STATUS_INDEX 一致。 */
+/** Six lines of lines, the order is consistent with WORK_STATUS_INDEX. */
 const TEXTS = [['思考中'], ['忙碌中'], ['整理中'], ['等你确认'], ['完成啦'], ['出错了']];
 
-/** 造一只只填了本模块用到的字段的宠物。 */
+/** Create a pet with only the fields used in this module filled in. */
 function mkPet(texts?: string[][]): Pet {
   return { id: 'main', workStatusTexts: texts } as unknown as Pet;
 }
 
-/** 造一个工作状态快照。 */
+/** Create a working status snapshot. */
 function mkSnap(state: WorkStatusSnapshot['state'], task: string | null = null): WorkStatusSnapshot {
   return { state, task };
 }
 
-describe('decideWorkStatusLine —— 工作状态播报的判定', () => {
-  test('档位没变 → 不念', () => {
+describe('decideWorkStatusLine - Determination of working status broadcast', () => {
+  test('The state has not changed → Don’t read', () => {
     assert.equal(decideWorkStatusLine(mkSnap('success'), [mkPet(TEXTS)], 'success'), undefined);
   });
 
-  test('非通知档位（thinking / working / result）→ 不念', () => {
+  test('Non-notification state (thinking / working / result) → Don’t read', () => {
     for (const state of ['thinking', 'working', 'result'] as const) {
       assert.equal(decideWorkStatusLine(mkSnap(state), [mkPet(TEXTS)], null), undefined, state);
     }
   });
 
-  test('通知档位（waiting / success / error）→ 念该档位的台词', () => {
+  test('Notify the state (waiting / success / error) → read the lines of the state', () => {
     assert.equal(decideWorkStatusLine(mkSnap('waiting'), [mkPet(TEXTS)], null), '等你确认');
     assert.equal(decideWorkStatusLine(mkSnap('success'), [mkPet(TEXTS)], null), '完成啦');
     assert.equal(decideWorkStatusLine(mkSnap('error'), [mkPet(TEXTS)], null), '出错了');
   });
 
-  test('任务详情不参与播报：只念配置台词', () => {
+  test('Mission details are not included in the broadcast: only the configuration lines are read', () => {
     assert.equal(decideWorkStatusLine(mkSnap('success', 'voice.ts 这里要修一下'), [mkPet(TEXTS)], null), '完成啦');
   });
 
-  test('该档位没配台词 → 不念（哪怕有任务详情）', () => {
+  test('There are no lines for this state → Don’t read it (even if there are mission details)', () => {
     assert.equal(decideWorkStatusLine(mkSnap('success', '改文件'), [mkPet()], null), undefined);
     assert.equal(decideWorkStatusLine(mkSnap('success'), [], null), undefined);
   });
 
-  test('空闲（state 为 null）→ 不念', () => {
+  test('idle (state is null) → do not read', () => {
     assert.equal(decideWorkStatusLine(mkSnap(null), [mkPet(TEXTS)], 'success'), undefined);
   });
 });
 
-/** 等异步链跑完。 */
+/** Wait for the asynchronous chain to finish running. */
 async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-/** 极简浏览器替身：只让发声链路能走完，并记录合成了几次。 */
+/** Minimalist browser stand-in: only allows the sound link to complete, and records the synthesis several times. */
 function stubSpeakEnv(): { count: () => number; restore: () => void } {
   let count = 0;
   const previousFetch = globalThis.fetch;
@@ -105,8 +107,8 @@ function stubSpeakEnv(): { count: () => number; restore: () => void } {
   };
 }
 
-describe('speakWorkStatus —— 播报开关', () => {
-  test('开关关闭 → 不发声', async () => {
+describe('speakWorkStatus——Broadcast switch', () => {
+  test('Switch off → no sound', async () => {
     const env = stubSpeakEnv();
     try {
       setSurface('web');
@@ -116,13 +118,13 @@ describe('speakWorkStatus —— 播报开关', () => {
       petBridge.current = [mkPet(TEXTS)];
       speakWorkStatus(mkSnap('success'));
       await flush();
-      assert.equal(env.count(), 0, '开关关着不该发合成请求');
+      assert.equal(env.count(), 0, 'Synthesis requests should not be sent when the switch is turned off.');
     } finally {
       env.restore();
     }
   });
 
-  test('开关打开 → 念一句配置台词', async () => {
+  test('Switch on → read a configuration line', async () => {
     const env = stubSpeakEnv();
     try {
       setSurface('web');
@@ -132,7 +134,7 @@ describe('speakWorkStatus —— 播报开关', () => {
       petBridge.current = [mkPet(TEXTS)];
       speakWorkStatus(mkSnap('success'));
       await flush();
-      assert.equal(env.count(), 1, '开关打开应发一次合成请求');
+      assert.equal(env.count(), 1, 'A synthesis request should be sent when the switch is turned on');
     } finally {
       env.restore();
     }

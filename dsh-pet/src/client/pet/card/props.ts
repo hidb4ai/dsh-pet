@@ -1,7 +1,8 @@
 /**
- * 单只宠物的渲染输入：容器把 /state 叶子分发成这些字段，卡片只读不写。
- * 字段全部来自容器（轮询、配置、碰撞站场），卡片内部不订阅事件——它只负责渲染与响应，
- * 需要改 React 状态时走自己的 setter，不向上要回调。
+ * Rendering input for a single pet: The container distributes / state leaves into these fields, and the card read-only
+ * does not write. The fields all come from the container (polling, configuration, collision site), and there is no
+ * subscribe event inside the card - it is only responsible for rendering and responding. When the React state needs to
+ * be changed, go to its own setter, and callback is not required.
  * @module dsh-pet/src/client/pet/card/props
  */
 import type * as ReactNS from 'react';
@@ -12,50 +13,50 @@ import type { MenuMoreItem } from '../../../shared/menu.ts';
 import type { WorkStatusSnapshot } from '../../../shared/work-status.ts';
 import type { RuntimePet } from '../types.ts';
 
-/** 一张宠物卡的渲染输入。 */
+/** Rendering input for a pet card. */
 export interface PetCardProps {
-  /** 成品配置。 */
+  /** Finished product configuration. */
   cfg: RuntimePet;
-  /** 最近一次余额结果。 */
+  /** The latest balance result. */
   balance: BalanceState | null;
-  /** 余额成功拉取次数，变化时播档位动画。 */
+  /** The number of times the balance is successfully pulled, and the state animation is played when it changes. */
   balanceTick: number;
-  /** 余额不可用提示次数。 */
+  /** Number of reminders for unavailable balance. */
   balanceNoticeTick: number;
-  /** 本次余额是否由用户手动请求；手动请求即使关闭 balanceEnabled 也答复。 */
+  /** Is this balance requested manually by the user? The manual request will be answered even if balanceEnabled is closed. */
   balanceManual: boolean;
-  /** 工作状态快照。 */
+  /** Working status snapshot. */
   workStatus: WorkStatusSnapshot | null;
-  /** 工作状态变化次数。 */
+  /** Number of working status changes. */
   workStatusTick: number;
-  /** 点工作气泡时跳到它所属会话；缺省即气泡不可点（桌面端由容器转发）。 */
+  /** When clicking a work bubble, it jumps to the session to which it belongs; by default, the bubble cannot be clicked (the desktop is forwarded by the container). */
   onFocusSession?: (sessionId: string) => void;
-  /** 本宠物的说话指令；kind 为 clear 时收起气泡，其余弹气泡。 */
+  /** The speaking command of this pet; when kind is clear, put away the bubble, and pop the bubble otherwise. */
   say?: SayCue & { seq: number };
-  /** 说话指令变化次数。 */
+  /** Number of speaking command changes. */
   sayTick: number;
-  /** 本宠物的点播指令：name 与 url 恰好一个；facing 未指定时保持当前朝向。 */
+  /** The playback request command of this pet: name and url are exactly one; facing maintains the current orientation when not specified. */
   animCue?: { name?: string; url?: string; seq: number; playbackId?: string; facing?: PetFacing };
-  /** 点播指令变化次数。 */
+  /** The number of playback request command changes. */
   animCueTick: number;
-  /** 本宠物的位置指令：x/y 是宠物中心的归一化坐标，duration 仅 line 模式有效。 */
+  /** The position command of this pet: x/y is the normalized coordinate of the pet center, duration is only valid in line mode. */
   posCue?: { x: number; y: number; mode: PositionMode; duration: number; seq: number };
-  /** 位置指令变化次数。 */
+  /** Number of position command changes. */
   posCueTick: number;
-  /** 本宠物的抛掷指令：angle 单位为度，0 为正右、逆时针为正。 */
+  /** The throwing command of this pet: angle The unit is degrees, 0 is right and counterclockwise is positive. */
   throwCue?: { angle: number; power: number; seq: number };
-  /** 抛掷指令变化次数。 */
+  /** Number of changes in throwing instructions. */
   throwCueTick: number;
-  /** 本宠物的占用锁；expiresAt 是唯一过期真相，宿主不会推「锁没了」。 */
+  /** The lock occupied by this pet; expiresAt is the only expired truth, and the host will not push "Lock is gone". */
   lock?: LockState;
-  /** 锁叶子变化次数。 */
+  /** Number of lock leaf changes. */
   lockTick: number;
-  /** 本宠物的睡觉状态：三段名字由宿主挑定；睡着时随机链停住、自动来源闭嘴。 */
+  /** The sleeping state of this pet: the three-part name is selected by the host; when sleeping, the random chain stops and the source automatically shuts up. */
   sleep?: SleepState;
-  /** 睡觉叶子变化次数。 */
+  /** Number of sleeping leaf changes. */
   sleepTick: number;
-  /** 第三方菜单项快照；传 ref 是因为只在右键那一刻读。 */
+  /** Third-party menu item snapshot; ref is passed because it is only read at the moment of right-clicking. */
   menuItemsRef: ReactNS.MutableRefObject<MenuMoreItem[]>;
-  /** 宠物间碰撞站场。 */
+  /** Collision between pets. */
   arena: ReactNS.MutableRefObject<{ slots: Record<string, PetCollisionSlot> }>;
 }

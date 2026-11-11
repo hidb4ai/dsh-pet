@@ -1,8 +1,10 @@
 /**
- * 物理卡（全局）：重力、弹性、地面摩擦、抛掷力度，以及顶部反弹 / 宠物互撞两个开关。
- * 只改本地状态，随「保存」整包写入；浏览器保存后即时生效，桌面端由保存触发的 Helper 重启重读——
- * physics 在 sprite 构造时只读一次，所以这里不做即时写入。
- * 碰撞震动与两个体感开关依赖手机硬件，放在「移动端效果」卡里。
+ * Physics card (global): gravity, elasticity, ground friction, throwing force, and two switches for top rebound/pet
+ * collision. Only the local state is changed, and the entire package is written with "save"; it takes effect
+ * immediately after saving in the browser, and the Helper restart and reread triggered by the save on the desktop side
+ * - physics is read-only once during the construction of sprite, so no immediate writing is done here. The collision
+ * vibration and two somatosensory switches rely on the mobile phone hardware and are placed in the "Mobile Effects"
+ * card.
  * @module dsh-pet/src/client/settings/physics-card
  */
 import type { FunctionComponent } from 'react';
@@ -10,21 +12,21 @@ import type { PhysicsParams } from '../../shared/types.ts';
 import type { SettingsRuntime } from './runtime.ts';
 import { makeUiKit, numberInputProps } from './ui.ts';
 
-/** 物理卡的输入。 */
+/** Input of physical card. */
 export interface PhysicsCardProps {
-  /** 保存中或配置未就绪时禁用全部控件。 */
+  /** All controls are disabled while saving or configuration is not ready. */
   busy: boolean;
-  /** 当前物理参数。 */
+  /** Current physical parameters. */
   physics: PhysicsParams;
-  /** 改物理参数的若干字段。 */
+  /** Change some fields of physical parameters. */
   onChange: (patch: Partial<PhysicsParams>) => void;
 }
 
 /**
- * 造物理卡。
+ * Create a physical card.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns card assembly.
  */
 export function makePhysicsCard(rt: SettingsRuntime): FunctionComponent<PhysicsCardProps> {
   const { h, t } = rt;
@@ -33,7 +35,7 @@ export function makePhysicsCard(rt: SettingsRuntime): FunctionComponent<PhysicsC
   return function PhysicsCard(props: PhysicsCardProps) {
     const { busy, physics } = props;
 
-    /** 物理参数的一格：标签与问号在上、数字输入在下。 */
+    /** One grid for physical parameters: label and question mark at the top, numerical input at the bottom. */
     const physField = (key: 'gravity' | 'restitution' | 'groundFriction' | 'throwPower', step: string, min: string) =>
       field(
         t('physics.' + key),

@@ -1,4 +1,4 @@
-/** 发现接口的真实 HTTP 契约：按角色过滤、凭据隔离、无写入与无认证本机服务。 */
+/** Found the true HTTP contract for the interface: filtering by role, credential isolation, no writes and no authentication native service. */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';

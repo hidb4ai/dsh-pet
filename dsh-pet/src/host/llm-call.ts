@@ -1,22 +1,26 @@
 /**
- * 本插件所有 LLM 调用的调用身份，以及「没有正文」时的原因解析。
+ * The calling identity of all LLM calls of this plugin, and the reason for "no text".
  *
- * 不负责发请求、选模型与拼消息——那是生成侧各模块自己的事；这里只给所有调用两样共享的东西：
- * 一个稳定的调用身份，和一句把流终止原因翻成人话的文案。
- * 必须始终成立：身份字符串不变，适配器靠它生成服务商载体，对端可能据此拒绝请求。
+ * It is not responsible for sending requests, selecting models, and assembling messages—that is the business of each
+ * module on the generation side; here only two shared things are given to all calls: a stable calling identity, and a
+ * text that translates the reason for stream termination into human language. Must always be true: the identity
+ * character string does not change, the adapter relies on it to generate the provider vector, and the peer may reject
+ * the request based on it.
  * @module dsh-pet/src/host/llm-call
  */
 
 /**
- * 调用身份：适配器据此生成服务商需要的载体（opencode-go 会翻成 `x-opencode-session`
- * 请求头，缺这个头该路由回 400）。值只需稳定，不要求是真实会话 id。
+ * Calling identity: The adapter generates the carrier required by the service provider based on this (opencode-go will
+ * be translated into `x-opencode-session` request header, if this header is missing, the route will return 400). The
+ * value only needs to be stable and does not need to be a real session id.
  */
 export const PET_CALL_IDENTITY = 'dsh-pet';
 
 /**
- * 没有正文时，按流终止原因给出要展示的原因。
- * @param finish - 流终止块（`BlockAssembler.finish`；dsh-llm 把适配器抛错折进这里，不在流里抛出）。
- * @returns 上层拼在「对话失败：」之后的文案。
+ * When there is no text, the reason to be displayed is given according to the flow termination reason.
+ * @param finish - stream termination block (`BlockAssembler.finish`; dsh-llm. The adapter throw error is folded here
+ * and is not thrown in the stream).
+ * @returns The upper-level copy after "Dialogue failed:".
  */
 export function noTextReason(finish: unknown): string {
   const { kind, failure } = (finish ?? {}) as { kind?: unknown; failure?: unknown };

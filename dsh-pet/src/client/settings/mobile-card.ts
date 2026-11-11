@@ -1,9 +1,10 @@
 /**
- * 移动端效果卡（全局）：碰撞震动、倾斜控制重力、摇一摇抛出。
+ * Mobile effect card (global): collision and vibration, tilt to control gravity, shake to throw.
  *
- * 与物理卡分开：这三项都依赖手机才有的东西——振动马达、姿态 / 加速度传感器——而且在桌面浏览器上
- * 只会静默不生效；和「拖拽手感」那些数值放同一张卡里，会让人以为它们也能在桌面上调出效果。
- * 只改本地状态，随「保存」整包写入。
+ * Separate from the physical card: These three items all rely on things that are only available on mobile phones -
+ * vibration motors, posture/acceleration sensors - and will only be silent and not effective on desktop browsers;
+ * putting them in the same card as the values of "drag feel" will make people think that they can also bring out
+ * effects on the desktop. Only the local status is changed, and the entire package is written with "Save".
  * @module dsh-pet/src/client/settings/mobile-card
  */
 import type { FunctionComponent } from 'react';
@@ -12,21 +13,21 @@ import { requestMotionPermission } from '../pet/device-tilt.ts';
 import type { SettingsRuntime } from './runtime.ts';
 import { makeUiKit } from './ui.ts';
 
-/** 移动端效果卡的输入。 */
+/** Input of mobile effect cards. */
 export interface MobileCardProps {
-  /** 保存中或配置未就绪时禁用全部控件。 */
+  /** All controls are disabled while saving or configuration is not ready. */
   busy: boolean;
-  /** 当前物理参数：三个开关都住在这段的可选键里。 */
+  /** Current physical parameters: The three switches all live in the optional keys in this section. */
   physics: PhysicsParams;
-  /** 改物理参数的若干字段。 */
+  /** Change some fields of physical parameters. */
   onChange: (patch: Partial<PhysicsParams>) => void;
 }
 
 /**
- * 造移动端效果卡。
+ * Create mobile effect cards.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns card assembly.
  */
 export function makeMobileCard(rt: SettingsRuntime): FunctionComponent<MobileCardProps> {
   const { h, t } = rt;
@@ -45,8 +46,9 @@ export function makeMobileCard(rt: SettingsRuntime): FunctionComponent<MobileCar
               props.onChange({ hapticEnabled: v }),
             ),
             toggleCell('physicsTilt', physics.tiltGravity === true, busy, (v) => {
-              // iOS 13+ 要求传感器权限必须在用户手势里申请；开关点击正好是那次手势。
-              // 只申请这个开关要用的种类，不顺手把摇一摇的权限也问了。
+              // iOS 13+ requires that sensor permissions must be applied for in the user gesture; the switch click
+              // happens to be that gesture. Only apply for the type of switch you want to use. If you don't want to
+              // shake it, you can also ask for permission.
               if (v) void requestMotionPermission({ tilt: true, shake: false });
               props.onChange({ tiltGravity: v });
             }),

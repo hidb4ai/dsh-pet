@@ -1,8 +1,9 @@
 /**
- * 宠物页面：单只宠物实例 PetCard 与多开容器 PetMulti。
- * 不负责配置解析与几何、物理计算：成品配置由 host 提供，纯逻辑来自 shared。
- * 依赖运行时注入的 react，以及 shared 的 state、pickers、motion、physics 等模块。
- * 必须始终成立：/state 是唯一数据源，动画与气泡都由叶子里的序号变化驱动。
+ * Pet page: single pet instance PetCard and multiple containers PetMulti. Not responsible for configuration analysis,
+ * geometry, and physical calculations: the finished configuration is provided by host, and the pure logic comes from
+ * shared. Modules such as react that depend on runtime injection, and shared's state, pickers, motion, physics and
+ * other modules. Must always be true: / state is the only data source, and animation and bubbles are driven by changes
+ * in the serial numbers in the leaves.
  * @module dsh-pet/src/client/pet
  */
 import { injectPetCss } from './pet/css.ts';
@@ -11,14 +12,14 @@ import { createPetMulti } from './pet/multi.ts';
 import type { PetRuntime } from './pet/types.ts';
 import type { ReactNode } from 'react';
 
-// 成品宠物的形状由容器与卡片共用，归属地是 pet/types.ts，这里只做再导出。
+// The shape of the finished pet is shared by the container and the card, and its location is pet/types.ts. Only re-export is done here.
 export type { RuntimePet } from './pet/types.ts';
 
 /**
- * 制造宠物页面组件（工厂），返回多开容器 PetMulti。
+ * Create pet page component (factory), return multi-open container PetMulti.
  *
- * @param rt - 注入的 react 能力。
- * @returns 多开容器组件；容器内部渲染多个 PetCard。
+ * @param rt - Injected react capabilities.
+ * @returns multi-open container component; multiple PetCard are rendered inside the container.
  */
 export function makePetUI(rt: PetRuntime): () => ReactNode {
   injectPetCss();

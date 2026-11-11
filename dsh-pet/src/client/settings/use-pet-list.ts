@@ -1,9 +1,11 @@
 /**
- * 设置页的宠物列表状态：种类标签、当前种类的实例列表与选中项。
+ * Pet list status on the settings page: category label, instance list of the current category, and selected items.
  *
- * 两级视图：种类条决定「看哪个种类」，宠物条只渲染该种类的实例。每只实例靠 `assetRoot`
- * 记住自己属于哪个种类，保存时据此决定写回哪个文件。
- * 列表初值来自容器拍平的成品，加载完成前先显示它；删除要确认，所以只发「请求删除」。
+ * Two-level view: the type bar determines "which type to look at", and the pet bar only renders instances of that
+ * type. Each instance relies on `assetRoot` to remember which category it belongs to, and decides which file to write
+ * back based on this when saving. The initial value of the list comes from the flattened resolved value of the
+ * container, which is displayed before loading is completed; deletion requires confirmation, so only "request
+ * deletion" is sent.
  * @module dsh-pet/src/client/settings/use-pet-list
  */
 import type { Pet } from '../../shared/types.ts';
@@ -15,21 +17,22 @@ import { draftPet, nextPetId } from './pet-draft.ts';
 import type { PetPatch } from './pet-card-parts.ts';
 import type { SettingsRuntime } from './runtime.ts';
 
-/** 种类条的一项。 */
+/** An item in the category bar. */
 export interface PetKind {
-  /** 条目名：`main` 或 pet/<前缀>-config.json 的前缀。 */
+  /** Entry name: `main` or pet /<prefix>- the prefix of config.json. */
   readonly entry: string;
-  /** `main` 显示为「内置」，其余直接显示前缀。 */
+  /** `main` is displayed as "built-in", and the rest display prefixes directly. */
   readonly kind: 'main' | 'pack';
-  /** 该种类的实例数（标签上括注）。 */
+  /** Number of instances of this kind (in parentheses on the label). */
   readonly count: number;
 }
 
 /**
- * 把拍平的实例列表按 `assetRoot` 归纳成种类列表（顺序即首次出现顺序）。
+ * Summarize the flattened instance list into a category list according to `assetRoot` (the order is the order of first
+ * appearance).
  *
- * @param pets - 全条目的实例列表。
- * @returns 种类列表；没有 `assetRoot` 的实例归到 main。
+ * @param pets - List of instances of the full entry.
+ * @returns category list; no instances of `assetRoot` are assigned to main.
  */
 export function petKinds(pets: readonly Pet[]): PetKind[] {
   const order: string[] = [];
@@ -47,76 +50,77 @@ export function petKinds(pets: readonly Pet[]): PetKind[] {
 }
 
 /**
- * 只属于 main 层的实例。
+ * Instances belonging only to layer main.
  *
- * `PUT /config` 写的是用户主配置（`main-config.jsonc`），只能收 main 层的实例：带上其它种类
- * 会把它们复制进 main 层，读回时与该种类自己的文件撞 id，合并器随后跳过种类实例并回落默认宠物。
+ * `PUT /config` is written as the user's main configuration (`main-config.jsonc`) and can only receive instances of
+ * the main layer: bringing other types will copy them into the main layer, and when read back, they will collide with
+ * the type's own file id, and the merger will then skip the type instances and fallback the default pet.
  *
- * @param pets - 全条目的实例列表。
- * @returns main 层的实例（没有 `assetRoot` 的也算 main）。
+ * @param pets - List of instances of the full entry.
+ * @returns Instances of the main layer (those without `assetRoot` are also considered main).
  */
 export function mainPetsOf(pets: readonly Pet[]): Pet[] {
   return pets.filter((pet) => (pet.assetRoot ?? 'main') === 'main');
 }
 
-/** 宠物列表状态与操作。 */
+/** Pet list status and operation. */
 export interface PetList {
-  /** 可编辑的宠物列表（全条目，保存时按条目分组）。 */
+  /** Editable pet list (full entries, grouped by entries when saving). */
   pets: Pet[];
-  /** 只属于 main 层的实例：`PUT /config` 的提交内容。 */
+  /** Instances belonging only to layer main: Submission content of `PUT /config`. */
   mainPets: Pet[];
-  /** 种类条的数据源。 */
+  /** Data source of category bar. */
   kinds: PetKind[];
-  /** 当前选中的种类（条目名）。 */
+  /** The currently selected category (item name). */
   kind: string;
-  /** 当前种类的实例（宠物标签条的数据源）。 */
+  /** Instance of the current kind (data source of pet tag strip). */
   visiblePets: Pet[];
-  /** 当前选中的宠物 id。 */
+  /** The currently selected pet is id. */
   selId: string;
-  /** 当前宠物所属条目的人设正文，作为实例人设「留空时跟随什么」的预览。 */
+  /** The persona text of the entry to which the current pet belongs is used as a preview of the persona instance "what to follow when left blank". */
   entryPrompt: string;
-  /** 切到另一只宠物。 */
+  /** Cut to another pet. */
   select: (id: string) => void;
-  /** 切到另一个种类，并选中它的第一只。 */
+  /** Switch to another type and select its first one. */
   selectKind: (entry: string) => void;
-  /** 改选中宠物的字段。 */
+  /** Change the selected pet field. */
   update: (patch: PetPatch) => void;
-  /** 往当前种类加一只并选中它。 */
+  /** Add one to the current type and select it. */
   add: () => void;
-  /** 请求删除当前宠物（交给弹窗确认）。 */
+  /** Request to delete the current pet (please submit to pop-up window for confirmation). */
   requestRemove: () => void;
-  /** 确认后真的删除；该种类只剩一只时由调用方拦住。 */
+  /** Really deleted after confirmation; stopped by caller when there is only one of this type left. */
   remove: () => void;
-  /** 用成品里的条目列表整体替换（加载 / 同步后），尽量保持当前种类与选中项。 */
+  /** Replace the entire list of items with the resolved value (after loading/synchronizing), trying to keep the current category and selected items. */
   replace: (entries: readonly ConfigEntry[]) => void;
-  /** 与加载快照比较，算出本次要写回的种类层（main 不在其中）。 */
+  /** Compare with the loading snapshot to calculate the type layer to be written back this time (main is not among them). */
   packWrites: () => PackWrite[];
 }
 
 /**
- * 管理宠物列表状态。
+ * Manage pet list status.
  *
- * @param rt - 只用到 `useState`、`useCallback` 与 `useRef`。
- * @param requestDialog - 打开确认弹窗（`lastOne` / `lastOfKind` / `remove`）。
- * @returns 列表状态与全部操作。
+ * @param rt - Only `useState` , `useCallback` and `useRef` are used.
+ * @param requestDialog - Open the confirmation pop-up window (`lastOne` / `lastOfKind` / `remove` ).
+ * @returns list status and all operations.
  */
 export function usePetList(
   rt: Pick<SettingsRuntime, 'useState' | 'useCallback' | 'useRef'>,
   requestDialog: (dialog: DialogState) => void,
 ): PetList {
   const { useState, useCallback, useRef } = rt;
-  // 初值取容器拍平的成品：加载完成前先显示这份，避免整页闪空白。加载期间整页只读，不会被提交。
+  // The initial value is the resolved value that is taken from the container and flattened: display this before loading is completed to avoid the entire page being blank. The entire page is read-only during loading and will not be submitted.
   const initial = petBridge.current;
   const [pets, setPets] = useState<Pet[]>(initial.map((pet) => ({ ...pet, position: { ...pet.position } })));
   const [kind, setKind] = useState<string>(initial[0]?.assetRoot ?? 'main');
   const [selId, setSelId] = useState<string>(initial[0]?.id ?? '');
-  // 加载快照：写回计划要拿它做比较，放在 ref 里避免多一次渲染。
+  // Load snapshot: The writeback plan needs to be compared with it and placed in ref to avoid one more rendering.
   const loadedRef = useRef<readonly ConfigEntry[]>([]);
-  // 当前种类也要能在 replace 的稳定回调里读到最新值（回调不能依赖 kind 状态）。
+  // The current type must also be able to read the latest value in the stable callback of replace (the callback cannot rely on the kind state).
   const kindRef = useRef(kind);
   kindRef.current = kind;
 
-  // 更新选中的宠物：size 走顶层；position 子字段整体替换
+  // Update the selected pet: size goes to the top level; position replaces the entire subfield
   const update = (patch: PetPatch): void =>
     setPets((list) =>
       list.map((pet) => {
@@ -131,11 +135,11 @@ export function usePetList(
     const template = group[0];
     if (!template) return;
     const id = nextPetId(pets, kind);
-    // 新实例跟着模板走（大小 / 位置 / 显示方式 / 开关），只把身份换成新 id 并挂上种类。
+    // The new instance follows the template (size/position/display mode/switch), just change the identity to the new id and attach the type.
     const draft: Pet = { ...draftPet(template, id), assetRoot: kind };
     setPets((list) => {
       const next = [...list];
-      // 插在该种类末尾：宠物条按种类过滤渲染，插到别处会把顺序打散。
+      // Insert at the end of the category: Pet strips are filtered and rendered by category. Inserting them elsewhere will break up the order.
       let at = -1;
       for (let i = 0; i < next.length; i += 1) if ((next[i].assetRoot ?? 'main') === kind) at = i;
       next.splice(at + 1, 0, draft);
@@ -150,11 +154,11 @@ export function usePetList(
     setSelId(list[0]?.id ?? '');
   };
 
-  // 只有 setState，跨渲染稳定：放进 applyConfig 的依赖里不会反复重拉配置。
+  // Only setState is cross-rendering stable: putting it in the dependency of applyConfig will not repeatedly pull the configuration.
   const replace = useCallback((entries: readonly ConfigEntry[]): void => {
     loadedRef.current = entries;
     const loaded = entries.flatMap((entry) => entry.pets);
-    // 种类可能被删掉（同步回默认）：当前种类不在了就退回第一个。
+    // Category may be deleted (synchronized back to default): If the current category is no longer available, return to the first one.
     const nextKind = entries.some((entry) => entry.key === kindRef.current)
       ? kindRef.current
       : (entries[0]?.key ?? 'main');
@@ -173,13 +177,13 @@ export function usePetList(
   };
 
   const current = pets.find((pet) => pet.id === selId);
-  // 人设回落是「跟随所属条目」：main 用 main 那份，文件宠物用各自种类那份，不能串。
+  // persona fallback is "follow the belonging entry": main uses the main share, and the file pet uses the share of its respective type, which cannot be strung together.
   const entryPrompt = loadedRef.current.find((item) => item.key === kind)?.entryPrompt ?? '';
   const requestRemove = (): void => {
     if (!current) return;
     const entry = current.assetRoot ?? 'main';
     const groupSize = pets.filter((pet) => (pet.assetRoot ?? 'main') === entry).length;
-    // 每种至少留一只：删到 0 会被宿主按非法拒绝，也会让该种类退回默认宠物列表。
+    // Leave at least one pet of each type: deleting it to 0 will be rejected by the host as invalid, and this type will also be returned to the default pet list.
     if (groupSize <= 1) requestDialog(entry === 'main' ? { kind: 'lastOne' } : { kind: 'lastOfKind', entry });
     else requestDialog({ kind: 'remove' });
   };

@@ -1,4 +1,4 @@
-/** DSH 与独立应用共用的准备流程；未传聊天服务时仅管理本机记忆。 */
+/** DSH Preparation process shared with independent applications; only local memory is managed when the chat service is not transmitted. */
 import { z } from 'zod';
 import { memoryConfigBinding } from '../host/plugin/memory-binding.ts';
 import { ROUTE_SEGMENT } from '../shared/constants.ts';
@@ -73,7 +73,7 @@ export interface SetupService {
   submit(input: unknown): void;
   resume(): void;
   dispose(): Promise<void>;
-  /** 只读发现模型，不回传凭据，也不触发准备流程。 */
+  /** The read-only discovery model does not return credentials and does not trigger the preparation process. */
   discover?(input: unknown): Promise<ModelDiscoveryResult>;
 }
 

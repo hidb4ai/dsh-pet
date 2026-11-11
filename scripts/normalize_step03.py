@@ -1,11 +1,10 @@
 """Unify character size across step02 videos into step03.
 
-整帧等比缩放 + overlay 平移到 2160x1215（16:9）透明画布：
-- 站立高度 900（按首尾站立帧的平均高度计算缩放比例）
-- 水平居中，脚底对齐（按全帧内容最低点对齐，保证动画不裁剪）
-- 不裁剪人物/动作内容，底部超出的透明空白直接裁掉
-- 画布 2160x1215 与原始视频同为 16:9，宽度容纳最宽动作（2015px）
-"""
+Whole frame proportional scaling + overlay pan to 2160 x1215 (16:9) transparent canvas:
+- Standing height 900 (scaling calculated based on the average height of the first and last standing frames)
+- Horizontally centered and aligned with the soles of the feet (aligned according to the lowest point of the full frame content to ensure that the animation is not cropped)
+- The character/action content is not cropped, and the transparent blank beyond the bottom is directly cropped.
+- Canvas 2160 x1215 Same 16:9 as original video, width to accommodate widest motion (2015 px)"""
 
 from __future__ import annotations
 
@@ -20,27 +19,27 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "step02"
 OUT = ROOT / "step03"
-# 统一使用工作区自带的 ffmpeg（素材处理链零第三方依赖）
+# Uniformly use ffmpeg that comes with the workspace (the asset processing chain has zero third-party dependencies)
 FFMPEG = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffmpeg.exe")
 FFPROBE = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffprobe.exe")
 
 PARALLEL = 4
-CANVAS_W = 2160  # 16:9：2160 = 1215 * 16/9，与原始视频同比例
+CANVAS_W = 2160  # 16:9: 2160 = 1215 * 16/9, the same ratio as the original video
 CANVAS_H = 1215
 TARGET_HEIGHT = 900
-FEET_Y = CANVAS_H - 100  # 距底 100
+FEET_Y = CANVAS_H - 100  # 100 from bottom
 
 SRC_W = 1280
 SRC_H = 720
 FPS = 24
 HEAD_FRAMES = 5
-TAIL_SEEK = -0.2  # 从末尾取帧，避免取到收尾动作
+TAIL_SEEK = -0.2  # Get the frame from the end to avoid getting the cleanup action
 
 _BBOX_RE = re.compile(r"x1:(\d+) x2:(\d+) y1:(\d+) y2:(\d+)")
 
 
 def scan_bbox(video: Path, seek: float | None = None, frames: int | None = None) -> list[tuple[int, int, int, int]]:
-    """用 alphaextract,bbox 滤镜扫描帧内容边界，返回 [(x1, x2, y1, y2)] 列表。"""
+    """Use alphaextract, bbox filters to scan frame content boundaries and return [( x1, x2, y1, y2)] list."""
     cmd = [FFMPEG, "-hide_banner", "-loglevel", "info", "-c:v", "libvpx-vp9"]
     if seek is not None:
         cmd += ["-sseof", str(seek)]
@@ -48,7 +47,7 @@ def scan_bbox(video: Path, seek: float | None = None, frames: int | None = None)
     if frames is not None:
         cmd += ["-frames:v", str(frames)]
     cmd += ["-vf", "alphaextract,bbox", "-f", "null", "-"]
-    # text=True 时显式指定 UTF-8 解码（Windows 默认 GBK 会解不了 ffmpeg 的 UTF-8 输出）
+    # Explicitly specify UTF-8 decoding when text = True (Windows defaults to GBK, which will not be able to decode the UTF-8 output of ffmpeg)
     result = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())
@@ -56,7 +55,7 @@ def scan_bbox(video: Path, seek: float | None = None, frames: int | None = None)
 
 
 def read_alpha_frames(video: Path, seek: float | None = None, frames: int | None = None) -> list[np.ndarray]:
-    """解码指定帧的 alpha 通道（每帧 H×W uint8 数组）。"""
+    """Decode the alpha channel of the specified frame (H × W uint8 array per frame)."""
     cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-c:v", "libvpx-vp9"]
     if seek is not None:
         cmd += ["-sseof", str(seek)]
@@ -83,11 +82,10 @@ def read_alpha_frames(video: Path, seek: float | None = None, frames: int | None
 
 
 def measure_standing(video: Path) -> dict:
-    """首尾各 HEAD_FRAMES 帧站立姿态。
+    """The first and last HEAD_FRAMES frames are standing postures.
 
-    水平中心用非透明像素 x 的中位数（防手/零食等扩展物把 bbox 中心拉偏），
-    垂直基准用 bbox（y 方向扩展物干扰小，bbox 本身可靠）。
-    """
+    The horizontal center uses the median of non-transparent pixels x (to prevent hand/snack extensions from pulling the center of bbox off),
+    Use bbox for vertical reference (y direction extension has little interference, bbox itself is reliable)."""
     alphas = read_alpha_frames(video, frames=HEAD_FRAMES) + read_alpha_frames(video, seek=TAIL_SEEK, frames=HEAD_FRAMES)
     med_xs, heights, max_ys = [], [], []
     for a in alphas:
@@ -107,7 +105,7 @@ def measure_standing(video: Path) -> dict:
 
 
 def measure_content_union(video: Path) -> tuple[int, int, int, int]:
-    """全帧扫描内容范围并集 (x1, y1, x2, y2)，用于校验动画内容是否被裁。"""
+    """The union of the full frame scan content range (x1, y1, x2, y2) is used to verify whether the animation content has been cropped."""
     boxes = scan_bbox(video)
     if not boxes:
         raise RuntimeError(f"No opaque pixels found in {video.name}")
@@ -120,7 +118,7 @@ def measure_content_union(video: Path) -> tuple[int, int, int, int]:
 
 
 def build_filter(scale: float, standing: dict) -> str:
-    """整帧缩放 + overlay 平移到透明画布，站立水平居中、脚底对齐 FEET_Y。"""
+    """Full frame zoom + overlay pan to transparent canvas, standing horizontally centered, feet aligned FEET_Y."""
     scaled_w = int(SRC_W * scale) // 2 * 2
     scaled_h = int(SRC_H * scale) // 2 * 2
     overlay_x = CANVAS_W / 2 - standing["center_x"] * scale
@@ -140,7 +138,7 @@ def convert_video(src: Path, dst: Path, filter_complex: str) -> None:
         "-loglevel",
         "error",
         "-c:v",
-        "libvpx-vp9",  # 关键：libvpx 解码才能保留 VP9 alpha
+        "libvpx-vp9",  # Key: libvpx must be decoded to retain VP9 alpha
         "-i",
         str(src),
         "-filter_complex",
@@ -173,7 +171,7 @@ def convert_video(src: Path, dst: Path, filter_complex: str) -> None:
 
 
 def _is_valid(dst: Path, src: Path, min_size: int = 50_000) -> bool:
-    """断点续跑完整性检查：存在、够大、不比源旧、且能被 ffprobe 读到视频流。"""
+    """Breakpoint resume integrity check: exists, is large enough, is not older than the source, and can be read by ffprobe into the video stream."""
     if not dst.exists() or dst.stat().st_size <= min_size:
         return False
     if dst.stat().st_mtime < src.stat().st_mtime:
@@ -184,12 +182,11 @@ def _is_valid(dst: Path, src: Path, min_size: int = 50_000) -> bool:
 
 
 def _process_one(video: Path) -> tuple[dict, bool]:
-    """处理单个视频（worker 函数）：测量 + 转码（或跳过转码），返回 entry。
+    """Processing a single video (worker function): measure + transcode (or skip transcode), return entry.
 
-    注意：entry 必须可 JSON 序列化（params.json 由主进程汇总写入）。
-    """
+    Note: entry must be JSON serializable (params.json is summarized and written by the main process)."""
     dst = OUT / (video.stem + ".webm")
-    # 断点续跑：完整输出已存在 → 跳过转码（但仍测量，保证 params.json 完整）
+    # Resume running from breakpoint: complete output already exists → skip transcoding (but still measure to ensure params.json is complete)
     skip = _is_valid(dst, video)
     standing = measure_standing(video)
     union = measure_content_union(video)

@@ -1,62 +1,63 @@
 /**
- * 「吃白饭」的米饭层：掉落、落体循环、飞向嘴边、空碗与分数气泡。
+ * The rice layer of "eating white rice": falling, falling loop, flying to the mouth, empty bowl and score bubble.
  *
- * 自持 DOM 与 rAF（落体只在有东西还在天上时才跑），不碰接口也不判演出相位——
- * 相位归 show，这里只回答「场上有什么、离最近的是哪份」。
+ * Self-sustaining DOM and rAF (the falling object only runs when something is still in the sky), does not touch the
+ * interface and does not judge the performance phase - the phase belongs to show, here only answers "what is on the
+ * field, which one is closest".
  * @module dsh-pet/src/client/baifan/scene
  */
 import { CFG, PIC } from './constants.ts';
 import { groundLine, type Geometry } from './geometry.ts';
-/** 场上的一份饭。 */
+/** A meal on the field. */
 export interface RiceItem {
-  /** 元素。 */
+  /** Element. */
   el: HTMLImageElement;
-  /** 视口中心 x。 */
+  /** Viewport center x. */
   x: number;
-  /** 底边 y。 */
+  /** Bottom edge y. */
   y: number;
-  /** 渲染宽。 */
+  /** Render wide. */
   w: number;
-  /** 渲染高。 */
+  /** Rendering high. */
   h: number;
-  /** 碗饭还是饭团。 */
+  /** A bowl of rice or a rice ball. */
   type: 'bowl' | 'ball';
-  /** 下落速度（像素/秒）。 */
+  /** Falling speed (pixels/second). */
   vy: number;
-  /** 当前旋转角（度）。 */
+  /** Current rotation angle (degrees). */
   rot: number;
-  /** 旋转速度（度/秒）。 */
+  /** Rotation speed (degrees/second). */
   spin: number;
-  /** 状态：还在落 / 已落地。 */
+  /** Status: Still landing / Landed. */
   state: 'falling' | 'ground';
 }
 
-/** 建一个元素。 */
+/** Create an element. */
 function el<K extends keyof HTMLElementTagNameMap>(tag: K): HTMLElementTagNameMap[K] {
   return document.createElement(tag);
 }
 
 /**
- * 造米饭层。
+ * Make rice layer.
  *
- * @param layer - 覆盖层根节点（本层所有元素都挂它下面）。
- * @param toastEl - 提示条节点；`toast()` 直接写它。
- * @returns 生成、落体、飞行、计分与清理的方法。
+ * @param layer - The root node of the overlay layer (all elements of this layer are hung below it).
+ * @param toastEl - prompt bar node; `toast()` write it directly.
+ * @returns How to spawn, fall, fly, score and clear.
  */
 export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
-  /** 场上的饭。 */
+  /** Meals on the field. */
   let items: RiceItem[] = [];
-  /** 落体循环的 rAF 句柄；0 = 没在跑。 */
+  /** rAF handle of fall cycle; 0 = not running. */
   let frame = 0;
-  /** 上一帧时间戳（秒）。 */
+  /** Last frame timestamp (seconds). */
   let lastMs = 0;
-  /** 提示条的淡出定时器。 */
+  /** Fade out timer of prompt bar. */
   let toastTimer = 0;
 
   /**
-   * 底部居中提示条，1.8 秒后自己淡掉。
+   * The prompt bar is centered at the bottom and fades out after 1.8 seconds.
    *
-   * @param text - 文案。
+   * @param text - Copywriter.
    */
   function toast(text: string): void {
     toastEl.textContent = text;
@@ -65,7 +66,7 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
     toastTimer = window.setTimeout(() => toastEl.classList.remove('show'), 1800);
   }
 
-  /** 按当前坐标写样式。 */
+  /** Write style according to current coordinates. */
   function layout(item: RiceItem): void {
     item.el.style.left = item.x - item.w / 2 + 'px';
     item.el.style.top = item.y - item.h + 'px';
@@ -73,10 +74,11 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
   }
 
   /**
-   * 从天上掉一份饭。位置在视口里随机（左右各留 70px），尺寸按精灵缩放。
+   * A meal falls from the sky. The position is random in the viewport (leave 70 px on the left and right), and the
+   * size is scaled according to the sprite.
    *
-   * @param scale - 精灵相对基准宽的缩放。
-   * @returns 新的一份；场上已满时返回 null。
+   * @param scale - Scale of the sprite relative to the base width.
+   * @returns A new copy; returns null when the field is full.
    */
   function spawn(scale: number): RiceItem | null {
     if (items.length >= CFG.maxRice) return null;
@@ -108,9 +110,9 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
   }
 
   /**
-   * 落体循环：只在还有东西在天上时才跑 rAF，落地后自然停下来。
+   * Fall cycle: run rAF only when there is something in the sky, and stop naturally after landing.
    *
-   * @param ts - rAF 时间戳（毫秒）。
+   * @param ts - rAF Timestamp (milliseconds).
    */
   function fallTick(ts: number): void {
     frame = 0;
@@ -144,20 +146,21 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
     if (falling && frame === 0) frame = window.requestAnimationFrame(fallTick);
   }
 
-  /** 按需拉起落体循环。 */
+  /** Pull up and down cycle on demand. */
   function kick(): void {
     if (frame === 0) frame = window.requestAnimationFrame(fallTick);
   }
 
   /**
-   * 场上离得最近的、已经落地的饭。
+   * The closest meal on the field that has landed.
    *
-   * 「最近」带一点朝向偏好：身后那份要打折才算数——换朝向就要重开一段跑步动画（新视频要解码），
-   * 那一下必然有空档，能不换就不换。
+   * "Recently" brings a little orientation preference: the one behind you needs to be discounted to count - changing
+   * the orientation requires restarting a running animation (the new video needs to be decoded). There must be a gap
+   * at that time, so if you can't, don't change it.
    *
-   * @param petPx - 宠物中心 x。
-   * @param facing - 当前朝向。
-   * @returns 挑中的那份；场上没有已落地的饭时返回 null。
+   * @param petPx - Pet Center x.
+   * @param facing - Current heading.
+   * @returns is the chosen portion; when there is no food that has landed on the field, it returns to null.
    */
   function nearest(petPx: number, facing: 'left' | 'right'): RiceItem | null {
     let best: RiceItem | null = null;
@@ -175,26 +178,27 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
     return best;
   }
 
-  /** 把一份饭从场上摘掉（元素交给调用方决定什么时候删）。 */
+  /** Remove a piece of rice from the field (the element is handed over to the caller to decide when to delete it). */
   function detach(item: RiceItem): void {
     const index = items.indexOf(item);
     if (index >= 0) items.splice(index, 1);
   }
 
   /**
-   * 吃掉一份：飞到嘴边，随咀嚼缩小，到点自己删元素。
+   * Eat one portion: fly to your mouth, shrink with chewing, and delete elements when it reaches the point.
    *
-   * @param item - 被吃的那份（调用方应已 detach）。
-   * @param mouthX - 嘴部视口 x。
-   * @param mouthY - 嘴部视口 y。
-   * @param durationMs - 飞行时长（用真实片长，才与咀嚼同步）。
+   * @param item - the portion that was eaten (caller should be detach).
+   * @param mouthX - Mouth viewport x.
+   * @param mouthY - Mouth viewport y.
+   * @param durationMs - flight duration (use real film length to synchronize with chewing).
    */
   function flyToMouth(item: RiceItem, mouthX: number, mouthY: number, durationMs: number): void {
     const dx = mouthX - item.x;
     const dy = mouthY - (item.y - item.h / 2);
     item.el.style.zIndex = '5';
-    // 飞行末段把食物缩到 0.72：整份原尺寸怼在脸上会把眼睛盖住。
-    // transform-origin 是 50% 100%（底边），所以缩放是「从下往上收」，不会越缩越高。
+    // Shrink the food to 0.72 at the end of the flight: if the entire original size is placed on the face, the eyes
+    // will be covered. transform-origin is 50% 100% (bottom), so the scaling is "from bottom to top" and will not
+    // shrink higher and higher.
     item.el.animate(
       [
         { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0 },
@@ -208,11 +212,11 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
   }
 
   /**
-   * 空碗：从嘴边掉到地上，弹两下，然后淡出。
+   * Empty bowl: falls from the mouth to the ground, bounces twice, then fades out.
    *
-   * @param x - 嘴部视口 x。
-   * @param fromY - 嘴部视口 y（碗底先放这儿）。
-   * @param scale - 精灵缩放。
+   * @param x - Mouth viewport x.
+   * @param fromY - Mouth viewport y (the bottom of the bowl is placed here first).
+   * @param scale - Sprite scaling.
    */
   function dropEmptyBowl(x: number, fromY: number, scale: number): void {
     const w = 124 * scale;
@@ -248,11 +252,11 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
   }
 
   /**
-   * 头顶分数气泡：图标随刚吃下的那份饭变（碗饭 / 饭团）。
+   * Score bubble above the head: The icon changes with the portion of rice just eaten (bowl of rice/rice ball).
    *
-   * @param value - 累计份数。
-   * @param type - 刚吃下的种类。
-   * @param geom - 当前几何量（决定气泡位置）。
+   * @param value - Cumulative number of copies.
+   * @param type - Just eaten.
+   * @param geom - the current geometric quantity (determines the bubble position).
    */
   function popScore(value: number, type: 'bowl' | 'ball', geom: Geometry): void {
     const isBowl = type === 'bowl';
@@ -297,7 +301,7 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
     window.setTimeout(() => node.remove(), 1350);
   }
 
-  /** 收场时把场上的饭淡出清掉，并停掉落体循环。 */
+  /** At the end of the game, clear the food on the field and stop the body circulation. */
   function clear(): void {
     if (frame !== 0) {
       window.cancelAnimationFrame(frame);
@@ -321,14 +325,14 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
     kick,
     nearest,
     popScore,
-    /** 场上还有几份（调用方据此决定要不要继续掉）。 */
+    /** There are still a few copies on the field (the caller decides whether to continue dropping based on this). */
     count: (): number => items.length,
-    /** 精灵缩放到米饭尺寸用：按基准宽换算（大宠物配大盘饭，不夹到 1）。 */
+    /** To scale the elves to the size of rice, use: Convert based on the base width (large pets are paired with a large plate of rice, and do not clip to 1). */
     scaleOf: (spriteW: number): number => (spriteW > 0 ? spriteW / CFG.refWidth : 1),
     spawn,
     toast,
   };
 }
 
-/** 米饭层的公开面。 */
+/** The open side of the rice layer. */
 export type Scene = ReturnType<typeof createScene>;

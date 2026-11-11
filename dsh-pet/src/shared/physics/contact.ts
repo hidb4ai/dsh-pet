@@ -1,16 +1,18 @@
 /**
- * 接触面求解：把撞击后的速度按接触面法向与切向分解，法向反弹、切向摩擦。
+ * Contact surface solution: Decompose the velocity after impact according to the normal and tangential directions of
+ * the contact surface, normal rebound and tangential friction.
  *
- * 法向统一约定为「指向离开接触面的一侧」，四条边因此共用同一套公式；
- * 只算速度，位置夹回仍由 throw.ts 负责。
+ * The normal direction is uniformly agreed to be "pointing to the side away from the contact surface", so the four
+ * edges share the same set of formulas; only the speed is calculated, and the position clamping is still responsible
+ * for throw.ts.
  */
 import type { PhysicsParams } from '../types.ts';
 import { REST_NORMAL, REST_NORMAL_EPS, REST_TANGENT } from './constants.ts';
 
-/** 轴对齐接触面。 */
+/** Axis aligned contact surface. */
 export type ContactEdge = 'left' | 'right' | 'ceiling' | 'floor';
 
-/** 每个接触面的单位法向（nx, ny），朝向可通行的一侧。 */
+/** The unit normal direction of each contact surface (nx, ny), facing the passable side. */
 export const CONTACT_NORMALS: Readonly<Record<ContactEdge, { readonly nx: number; readonly ny: number }>> = {
   left: { nx: 1, ny: 0 },
   right: { nx: -1, ny: 0 },
@@ -18,24 +20,26 @@ export const CONTACT_NORMALS: Readonly<Record<ContactEdge, { readonly nx: number
   floor: { nx: 0, ny: -1 },
 };
 
-/** 一次接触求解的结果：出射速度（px/s）与法向 / 切向分量，后两者供调用方判静止。 */
+/** The result of a contact solution: exit velocity (px/s) and normal/tangential components, the latter two are used by the caller to determine stationary. */
 export interface ContactResult {
   readonly vx: number;
   readonly vy: number;
-  /** 出射法向速度（px/s，≥ 0，沿法向外）。 */
+  /** Outgoing normal velocity (px/s, ≥ 0, outward along the normal direction). */
   readonly normalSpeed: number;
-  /** 出射切向速度（px/s，带符号，沿切向）。 */
+  /** Outgoing tangential velocity (px/s, signed, along the tangential direction). */
   readonly tangentSpeed: number;
 }
 
 /**
- * 求一次接触后的速度：法向按恢复系数反弹，低于阈值即贴住归零；切向只按摩擦衰减。
+ * Find the velocity after a contact: the normal direction rebounds according to the recovery coefficient, and when it
+ * is lower than the threshold, it sticks to zero; the tangential direction only attenuates according to friction.
  *
- * @param speed - 撞击后的速度（px/s），法向分量由接触面决定，不要求是竖直或水平。
- * @param edge - 撞到的边。
- * @param physics - 恢复系数与切向摩擦。
- * @param dt - 本步时长（s），摩擦按它换算衰减量。
- * @returns 出射速度；法向 / 切向分量供 {@link isRestingOnContacts} 判静止。
+ * @param speed - Velocity after impact (px/s), the normal component is determined by the contact surface, which does
+ * not need to be vertical or horizontal.
+ * @param edge - The edge hit.
+ * @param physics - Coefficient of restitution and tangential friction.
+ * @param dt - The duration of this step (s), according to which the attenuation is converted by friction.
+ * @returns exit velocity; normal/tangential components provide {@link isRestingOnContacts} to determine stationary.
  */
 export const resolveContact = (
   speed: { readonly vx: number; readonly vy: number },
@@ -48,9 +52,9 @@ export const resolveContact = (
   const ty = nx;
   const vn = speed.vx * nx + speed.vy * ny;
   const vt = speed.vx * tx + speed.vy * ty;
-  // 法向速度低于阈值就归零：否则重力持续压向同一面时每帧都被反弹回去，表现为贴面抖动。
+  // If the normal velocity is lower than the threshold, it will be reset to zero: otherwise, when gravity continues to press on the same surface, it will be bounced back every frame, which will appear as veneer jitter.
   const normalSpeed = Math.abs(vn) < REST_NORMAL ? 0 : Math.abs(vn) * physics.restitution;
-  // 切向只衰减、不改方向：撞墙时它是 vy，落地与撞顶时它是 vx。
+  // The tangential direction only attenuates and does not change direction: when it hits the wall, it is vy, and when it hits the ground or hits the top, it is vx.
   const tangentSpeed = vt * Math.max(0, 1 - physics.groundFriction * dt);
   return {
     vx: normalSpeed * nx + tangentSpeed * tx,
@@ -61,11 +65,12 @@ export const resolveContact = (
 };
 
 /**
- * 本步接触是否都已静止：每个接触面的法向速度≈0 且切向速度低于阈值。
+ * Whether the contacts at this step are all stationary: the normal velocity of each contact surface ≈ 0 and the
+ * tangential velocity is lower than the threshold.
  *
- * @param edges - 本步接触到的边；空数组表示没碰到任何面。
- * @param speed - 求完接触后的速度（px/s）。
- * @returns 全部接触面都贴住且切向低速时为 `true`。
+ * @param edges - The edges touched in this step; an empty array means no faces were touched.
+ * @param speed - Find the speed after contact (px/s).
+ * @returns When all contact surfaces are in contact and the tangential speed is low, it is `true` .
  */
 export const isRestingOnContacts = (
   edges: readonly ContactEdge[],

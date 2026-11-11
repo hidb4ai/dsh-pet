@@ -1,10 +1,11 @@
 /**
- * user-data 决策的单测：只测不碰 Electron 的部分。
+ * Single test of user-data decision: only test the part that does not touch Electron.
  *
- * 为什么值得单测：回退路径算错时，受限令牌下 helper 仍会卡在 ready 之前，
- * 而真机 CI 复现不了受限令牌。这里用注入的 fs 把「可写 / 不可写 / 回退也失败」三条分支钉住。
+ * Why it is worth a single test: When the fallback path is calculated incorrectly, helper under the restricted token
+ * will still be stuck before ready, and the real machine CI cannot reproduce the restricted token. Here, the injected
+ * fs is used to verify the three branches of "writable/unwritable/failed to roll back".
  *
- * 跑法：node --test scripts/tests/user-data.test.mjs（npm run test:ui 会带上）
+ * Running method: node --test scripts/tests/user-data.test.mjs (npm run test:ui will be brought)
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +17,7 @@ import { dirname, join } from 'node:path';
 const require = createRequire(import.meta.url);
 const { dshHomeDir, isWritableDir, resolveUserDataDir } = require('../../runtime/electron-helper/main/user-data.js');
 
-/** 假 fs：只有列在 Set 里的目录可写，其余写入抛 EACCES。 */
+/** False fs: Only the directories listed in Set can be written, and other writes will throw EACCES. */
 function fakeFs(writableDirs) {
   return {
     mkdirSync: () => {},
@@ -31,18 +32,18 @@ function fakeFs(writableDirs) {
   };
 }
 
-describe('dshHomeDir —— DSH 主目录解析', () => {
-  test('DSH_HOME 优先：设了环境变量就用它', () => {
+describe('dshHomeDir - DSH main directory analysis', () => {
+  test('DSH_HOME priority: use the environment variable if it is set', () => {
     assert.equal(dshHomeDir({ DSH_HOME: join('root', 'custom') }, join('root', 'home')), join('root', 'custom'));
   });
 
-  test('未设 DSH_HOME：回落到 ~/.dsh', () => {
+  test('DSH_HOME not set: fallback to ~/.dsh', () => {
     assert.equal(dshHomeDir({}, join('root', 'home')), join('root', 'home', '.dsh'));
   });
 });
 
-describe('isWritableDir —— 必须真的写进去才算可写', () => {
-  test('真实临时目录：可写', () => {
+describe('isWritableDir——You must actually write it in before it can be written.', () => {
+  test('Real temporary directory: writable', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-userdata-'));
     try {
       assert.equal(isWritableDir(dir), true);
@@ -51,36 +52,36 @@ describe('isWritableDir —— 必须真的写进去才算可写', () => {
     }
   });
 
-  test('写入被拒：不可写', () => {
+  test('Write rejected: not writable', () => {
     assert.equal(isWritableDir(join('appdata', 'helper'), { fs: fakeFs(new Set()) }), false);
   });
 });
 
-describe('resolveUserDataDir —— 回退决策', () => {
+describe('resolveUserDataDir - rollback decision', () => {
   const currentDir = join('appdata', 'dsh-pet-electron-helper');
   const dshHome = join('root', '.dsh');
 
-  test('原目录可写：不改变目录', () => {
+  test('The original directory is writable: do not change the directory', () => {
     const out = resolveUserDataDir({ currentDir, dshHome, appMode: false, fs: fakeFs(new Set([currentDir])) });
     assert.deepEqual(out, { dir: currentDir, fallback: false, error: null });
   });
 
-  test('原目录不可写：回退到 $DSH_HOME 下的 electron-profile', () => {
+  test('The original directory cannot be written: fall back to electron-profile under $DSH_HOME', () => {
     const fallbackDir = join(dshHome, 'dsh-pet', 'electron-profile');
     const out = resolveUserDataDir({ currentDir, dshHome, appMode: false, fs: fakeFs(new Set([fallbackDir])) });
     assert.deepEqual(out, { dir: fallbackDir, fallback: true, error: null });
   });
 
-  test('独立应用模式：回退到 app-profile，避免与 helper 抢同一份 profile', () => {
+  test('Independent application mode: fall back to app-profile to avoid grabbing the same copy of profile with helper', () => {
     const fallbackDir = join(dshHome, 'dsh-pet', 'app-profile');
     const out = resolveUserDataDir({ currentDir, dshHome, appMode: true, fs: fakeFs(new Set([fallbackDir])) });
     assert.deepEqual(out, { dir: fallbackDir, fallback: true, error: null });
   });
 
-  test('原目录与回退目录都不可写：保留原目录并带回错误', () => {
+  test('Neither the original directory nor the fallback directory is writable: keep the original directory and bring back the error', () => {
     const out = resolveUserDataDir({ currentDir, dshHome, appMode: false, fs: fakeFs(new Set()) });
     assert.equal(out.dir, currentDir);
     assert.equal(out.fallback, false);
-    assert.ok(out.error instanceof Error, '应带回原始错误供日志输出');
+    assert.ok(out.error instanceof Error, 'The original error should be brought back for log output');
   });
 });

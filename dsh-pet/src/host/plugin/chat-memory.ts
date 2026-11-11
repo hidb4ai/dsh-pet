@@ -1,8 +1,10 @@
 /**
- * 对话与记忆：读写记忆文件、串行化对话队列、维护活跃宠物并生成碎碎念与回复。
+ * Dialogue and Memory: Read and write memory files, serialize dialogue queues, maintain active pets, and generate
+ * whispers and replies.
  *
- * 人设由 ./persona 拼装，模型与记忆服务请求分别委托给 ./chat、./whisper、./powercontext。
- * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
+ * persona is assembled by ./persona, and model and memory service requests are delegated to ./chat, ./whisper, and
+ * ./powercontext respectively. Dependencies are explicitly passed in by apply (see input type), and the module does
+ * not read globals or create singletons.
  * @module dsh-pet/src/host/plugin/chat-memory
  */
 import { join } from 'node:path';
@@ -47,10 +49,10 @@ function memoryConfig(conf: Record<string, unknown>): ChatMemoryConfig {
   return chatMemoryConfigValid(conf.chatMemory) ? conf.chatMemory : { ...DEFAULT_CHAT_MEMORY };
 }
 
-/** 第三方召回的硬超时（ms）：到点按“不修改内容”继续生成，不拖住这一轮对话。 */
+/** Hard timeout for third-party recall (ms): Click "Do not modify content" to continue generating without delaying this round of dialogue. */
 const RECALL_TIMEOUT_MS = 1500;
 
-/** 校验召回补丁里的历史项：形状不对的整段丢弃，避免坏数据把生成打崩。 */
+/** Validate history entries in a recall patch. Discard malformed history as a whole so invalid data cannot break generation. */
 function isChatTurn(value: unknown): value is ChatTurn {
   const turn = value as { role?: unknown; content?: unknown; ts?: unknown } | null;
   return (
@@ -60,14 +62,14 @@ function isChatTurn(value: unknown): value is ChatTurn {
   );
 }
 
-/** 这一句该由哪一端念：取宠物实例的 display 推导（桌面优先）；两端都不显示时为 `undefined`。 */
+/** Which end should read this sentence: take the derivation of display of the pet instance (desktop priority); when both ends are not displayed, it is `undefined`. */
 function voiceTargetFor(pet: Record<string, unknown>): VoiceTarget | undefined {
   return pickVoiceSurface(String(pet.display ?? '')) ?? undefined;
 }
 
-/** 对话与记忆的输入：装配期对象与更早的工厂。 */
+/** Input of dialogue and memory: assembly period objects and earlier factories. */
 export type ChatMemoryInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<HostSetup, 'configPaths'> &
   Pick<HostSetup, 'log'> &
@@ -77,22 +79,24 @@ export type ChatMemoryInput = {
   Pick<HostSetup, 'userRoot'>;
 
 /**
- * 创建对话与记忆。
+ * Create conversations and memories.
  */
 export function createChatMemory(deps: ChatMemoryInput) {
   const { ctx, configPaths, log, memeDirsFor, playback, state, userRoot } = deps;
-  // 命令「当前桌宠」（/pet 选择、/chat 使用）：全局单值不分会话；进程内内存，重启回默认第一只
+  // Command "current desktop pet" (/pet selected, /chat used): global single value regardless of session; in-process memory, restart back to the default first pet
   let activePetId = '';
 
-  // 碎碎念周期调度的「上次生成时刻」（按宠物）：调度拍据此判断到没到点。
-  // 生成结果直接写 S，多端共享同一句由 S 天然保证，不需要第二份缓存。
+  // The "last spawn time" of whisper periodic scheduling (according to pet): the scheduling time is determined based
+  // on this. The generated result is directly written as S. Sharing the same sentence among multiple terminals is
+  // naturally guaranteed by S, without the need for a second cache.
   const lastWhisperAt = new Map<string, number>();
 
-  // 对话记忆文件（唯一读写方 = 本进程；浏览器/桌面两端都只是客户端 → 同一实例天然共享同一份记忆）。
-  // 结构双层：{ <种类桶 assetRoot ?? petId>: { <实例 id>: { messages: ChatMemoryMessage[] } } }
+  // Conversation memory file (the only reader and writer = this process; both the browser/desktop are just clients →
+  // the same instance naturally shares the same memory). Structure double layer: { <type bucket assetRoot ?? petId >:
+  // { <instance id >: { messages : ChatMemoryMessage [] } } }
   const memoryPath = join(userRoot, 'memory.json');
 
-  // 对话写操作串行队列：read-modify-write 排队执行，防两端同时对话时交错写盘
+  // Conversation write operation serial queue: read-modify-write queue execution to prevent staggered disk writing when both ends are conversing at the same time.
   let chatQueue: Promise<void> = Promise.resolve();
 
   /** Refuse to overwrite an unreadable journal: it also owns remote scope and Source identities. */
@@ -130,7 +134,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
     }
   };
 
-  /** 把一次读写封进串行队列（同进程内防交错），返回 fn 的结果 */
+  /** Encapsulate a read and write into a serial queue (prevent interleaving within the same process) and return the result of fn */
   const withMemoryLock = <T>(fn: () => Promise<T>): Promise<T> => {
     const run = chatQueue.then(fn, fn);
     chatQueue = run.then(
@@ -242,11 +246,14 @@ export function createChatMemory(deps: ChatMemoryInput) {
     };
   };
 
-  /** 某宠物的最终人设 system：实例级 `pets[].whisperPrompt` 优先，没写回落到所属条目的那份。
-   *  拼装在 ./persona（纯函数）：人设正文 + 名字声明 + 一行时间背景，时间每次现算；
-   *  对话路径传 `{ historyTimes: true }` 追加【历史】说明，碎碎念没有历史，不传。
-   *  收 `findPetInstance` 的命中结果而不是 (petId, cfg)：调用方都已解析过，再查只会多一处
-   *  「查不到就兜底 main」的不可达分支。 */
+  /**
+   * The final persona system of a certain pet: instance level `pets[].whisperPrompt` takes priority, and no fallback
+   * is written to the share of the corresponding entry. assemble in ./persona (pure function): persona text + name
+   * declaration + one line of time background, time is calculated each time; the conversation path is passed to
+   * `{ historyTimes: true }` , and the [history] description is appended. Whisper has no history and is not passed.
+   * Collect the hit result of `findPetInstance` instead of (petId, cfg): The caller has been parsed, and if you check
+   * again, there will only be one more unreachable branch of "fallback main if not found".
+   */
   const petSystemPrompt = (
     found: { conf: Record<string, unknown>; pet: Record<string, unknown> },
     options: { historyTimes?: boolean } = {},
@@ -259,21 +266,26 @@ export function createChatMemory(deps: ChatMemoryInput) {
       ...(options.historyTimes === true ? { historyTimes: true } : {}),
     });
 
-  /** 对话记忆轮数（1 轮 = 1 问 1 答）：该宠物所属条目的 chatMemoryRounds（合并器已填默认）。
-   *  收已解析的条目配置：调用方都已拿到 `findPetInstance` 的结果。 */
+  /**
+   * Number of dialogue memory rounds (1 round = 1 question 1 answer): chatMemoryRounds of the entry to which the pet
+   * belongs (the merger has filled in the default). Receive the parsed entry configuration: The caller has received
+   * the result of `findPetInstance` .
+   */
   const memoryRounds = (conf: Record<string, unknown>): number => {
     const v = Number(conf.chatMemoryRounds);
     return Number.isFinite(v) && v >= 0 ? Math.floor(v) : 5;
   };
 
   /**
-   * 对话前修改内容：召回钩子返回要覆盖的字段，核心合并后再交给模型。
+   * Modify content before dialogue: recall hook returns the fields to be covered, and the core is merged before being
+   * handed over to the model.
    *
-   * 超时、抛错、返回非法形状都当“不修改”，只记提供者 id 与原因。
+   * Timeouts, errors, and returning invalid shapes are treated as "not modified", and only the provider id and the
+   * reason are recorded.
    *
-   * @param petId - 目标宠物；第三方按它区分记忆空间。
-   * @param content - 本轮将要发给模型的 system/history/userText。
-   * @returns 合法的覆盖字段；没有可应用的字段时 undefined。
+   * @param petId - the target pet; third parties use it to distinguish memory space.
+   * @param content - system/history/userText that will be sent to the model this round.
+   * @returns is a valid override field; undefined is when no applicable field is available.
    */
   const recallPatch = async (petId: string, content: ChatContent): Promise<ChatContentPatch | undefined> => {
     const provider = activeChatMemoryProvider();
@@ -294,7 +306,10 @@ export function createChatMemory(deps: ChatMemoryInput) {
       return Object.keys(patch).length === 0 ? undefined : patch;
     } catch (error) {
       log.warn(
-        '[dsh-pet] 记忆召回失败 id=' + provider.id + '：' + (error instanceof Error ? error.message : String(error)),
+        '[dsh-pet] Memory recall failed id=' +
+          provider.id +
+          '：' +
+          (error instanceof Error ? error.message : String(error)),
       );
       return undefined;
     } finally {
@@ -303,10 +318,12 @@ export function createChatMemory(deps: ChatMemoryInput) {
   };
 
   /**
-   * 落盘后接收这一轮问答：核心不等待，失败只记提供者 id 与原因。
+   * After persist to disk, receive this round of Q&A: the core does not wait, and only the provider id and the reason
+   * are recorded for failure.
    *
-   * @param petId - 目标宠物。
-   * @param turn - 本轮问答与元信息；action/image 只是名字，不含素材本体。
+   * @param petId - Target pet.
+   * @param turn - This round of Q&A and meta-information; action/image is just the name and does not contain the asset
+   * itself.
    */
   const captureTurn = (
     petId: string,
@@ -319,23 +336,29 @@ export function createChatMemory(deps: ChatMemoryInput) {
       .then(() => capture.call(provider, { petId, ...turn }))
       .catch((error) => {
         log.warn(
-          '[dsh-pet] 记忆接收失败 id=' + provider.id + '：' + (error instanceof Error ? error.message : String(error)),
+          '[dsh-pet] Memory capture failed id=' +
+            provider.id +
+            '：' +
+            (error instanceof Error ? error.message : String(error)),
         );
       });
   };
 
-  /** 生成并返回某宠物的一句碎碎念（周期调度、菜单手动触发与命令行共用）：人设取它自己的 whisperPrompt，
-   *  没写回落到所属条目；成功写进 S 的 pets.<id>.say——碎碎念 / 命令气泡 / 对话回复在前端是同一条
-   *  展示链路，所以共用一个叶子。配图开关开启时从表情包池随机抽 1 张。
-   *  失败带回真实 reason（含 unknown-pet / unknown-image），成功带回生成的文本——调用方不必再拉一拍 /state。
+  /**
+   * Generate a pet whisper for scheduled, menu and command callers. Use its whisperPrompt or inherit the containing
+   * entry's persona.
+   * Publish successful text to S at pets.<id>.say, sharing the display path with commands and chat. Select a random
+   * meme when enabled.
+   * Return the actual failure reason, including unknown-pet/unknown-image, or generated text so callers need not
+   * immediately reread /state.
    *
-   *  @param petId - 目标宠物实例 id。
-   *  @param image - 指定配图的名称：给了就只用这张（不受 whisperImageEnabled 门控，手动点图是显式意图），
-   *  不在池内返回 unknown-image；缺省 = 按开关随机抽或纯文本。
-   *  @param voiceTo - 这一句该由哪一端念；缺省按它自己的 display 推导（桌面优先，见 {@link pickVoiceSurface}）。
-   *  路由层带 `?surface=` 的会显式传请求面，其余调用点留空即可。
-   *  @param kind - 这次生成的来源：`whisper` = 周期调度，受 `voiceWhisperEnabled` 管；`manual` = 菜单、
-   *  斜杠命令、路由主动触发，不看那个开关（用户主动点的就是这一句）。缺省 `manual`。
+   * @param petId - Target pet instance ID.
+   * @param image - Explicit image name, bypassing whisperImageEnabled. Return unknown-image if absent from the pool;
+   * otherwise default to a random image or text according to configuration.
+   * @param voiceTo - Playback surface, inferred from display when absent; desktop takes priority (see
+   * {@link pickVoiceSurface} ). Routes with `?surface=` pass it explicitly.
+   * @param kind - `whisper` respects `voiceWhisperEnabled` ; `manual` covers menu, slash-command and explicit route
+   * requests and bypasses that switch. Defaults to `manual` .
    */
   const publishWhisper = async (
     petId: string,
@@ -348,41 +371,43 @@ export function createChatMemory(deps: ChatMemoryInput) {
   > => {
     const cfg = readAllConfig(configPaths);
     const found = findPetInstance(cfg, petId);
-    // 宠物可能在「校验那次读」与这里之间被删（配置随时会变，两次读之间就是窗口）：
-    // 明确失败、不生成不写 S——写下去就是一只已不存在宠物的幽灵叶子（常驻到进程重启）。
+    // The pet may be deleted between the "verification reading" and here (the configuration may change at any time,
+    // and the window is between two reads): clear failure, no generation, no writing S - written down is a ghost leaf
+    // that no longer exists (resident until the process is restarted).
     if (!found) return { ok: false, reason: 'unknown-pet', message: '没有这只桌宠：' + petId };
-    // 每一类语音由自己的开关决定：周期调度看 voiceWhisperEnabled，手动触发（右键菜单、
-    // 斜杠命令）看 voiceEnabled。叶子不带 voiceTo = 谁都不念，气泡照旧弹。
+    // Each type of voice is determined by its own switch: for periodic scheduling, see voiceWhisperEnabled, for manual
+    // triggering (right-click menu, slash command), see voiceEnabled. Leaves without voiceTo = no one wants to play,
+    // bubble still plays.
     const whisperVoiceOn = cfg.main?.voiceWhisperEnabled === true;
     const manualVoiceOn = cfg.main?.voiceEnabled === true;
     const voiceOff = kind === 'whisper' ? !whisperVoiceOn : !manualVoiceOn;
     const target = voiceOff ? undefined : (voiceTo ?? voiceTargetFor(found.pet));
     const system = petSystemPrompt(found);
-    // 池只算一次：点名的图与随机抽图共用同一份（含文件存在性判定）。
+    // The pool is only counted once: the named picture and the randomly drawn picture share the same one (including file existence determination).
     const pool = readMemePool(found.conf.memes, memeDirsFor(found.entry));
-    // 点名了却没命中 = 配置写错或图已被删：明确失败，不静默换成另一张（点了 A 却看到 B 会以为坏了）。
+    // I called the name but missed = the configuration was wrongly written or the picture has been deleted: the clear failed, do not silently change to another one (if you click A but see B, you will think it is broken).
     const forced = image === undefined ? undefined : matchMeme(pool, image);
     if (image !== undefined && forced === undefined) {
       return { ok: false, reason: 'unknown-image', message: '表情包不在池内：' + image };
     }
     const meme = forced ?? (found.conf.whisperImageEnabled === true ? pickMeme(pool) : undefined);
-    // 模型：条目配置的 whisperModel 优先（留空 = 不指定）；生成侧失败会回落到当前对话的模型重试一次
+    // Model: whisperModel of the entry configuration takes precedence (leave blank = not specified); failure on the generation side will fallback to the model of the current conversation and try again.
     const result = await generateWhisper(ctx, {
       system,
       meme,
       preferred: configuredModel(found.conf, 'whisperModel'),
     });
     if (!result.ok) {
-      // 失败不写 S：静默跳过 + warn，不伪造文案、不弹错误气泡
+      // Do not write S on failure: silently skip + warn, no forged text, no error bubbles
       log.warn(
-        '[dsh-pet] 碎碎念生成失败 pet=' +
+        '[dsh-pet] Whisper generation failed pet=' +
           petId +
           ' reason=' +
           result.reason +
           (result.message ? ' ' + result.message : ''),
       );
-      // 真实 reason 原样带回：路由若把失败硬编码成 generate-error，独立模式下已算出的
-      // provider-missing 就会在边界被吞掉（API.md 描述的降级 reason 正是它）。
+      // The real reason is brought back as it is: If the route is hardcoded as generate-error, the provider-missing
+      // calculated in standalone mode will be swallowed at the boundary (API.md describes the downgrade reason).
       return result;
     }
     state.writePet(petId, 'say', {
@@ -390,18 +415,22 @@ export function createChatMemory(deps: ChatMemoryInput) {
       ...(result.image ? { image: result.image } : {}),
       ...(target ? { voiceTo: target } : {}),
     });
-    // 成功也留一行：否则 logs.txt 里「没触发」与「触发了并且成功」无法区分。
+    // Leave a line for success: otherwise "not triggered" and "triggered and successful" in logs.txt cannot be distinguished.
     log.info(
-      `[dsh-pet] 碎碎念生成成功 pet=${petId}，${result.text.length} 字` +
-        (result.image ? `，配图=${result.image}` : ''),
+      `[dsh-pet] Whisper generated pet=${petId}, ${result.text.length} characters` +
+        (result.image ? `, image=${result.image}` : ''),
     );
-    // 文本随返回值带出，且与刚写进叶子的是同一个变量：两条出口给同一份文本，不是一个真相两个版本
+    // The text is brought out with the return value, and it is the same variable as the one just written into the leaf: two exits give the same text, not two versions of the same truth.
     return { ok: true, text: result.text, ...(result.image ? { image: result.image } : {}) };
   };
 
-  /** 生成并写一句梦话：system 只用人设，功能指令在 whisper（与碎碎念同属代码常量）；不配图、不念、不换动画。
-   *  睡着时「换动画」本身就是打扰，所以写 `say` 显式 `anim: false`，也不写 `voiceTo`。
-   *  @returns 是否真的生成并写进了 S；失败只留一行日志，调度下一拍再试。 */
+  /**
+   * Generate and write a sleep whisper: system Only use persona, and the function command is whisper (the same code
+   * constant as whisper); no pictures, no reading, no animation. "Changing animations" while sleeping is a disturbance
+   * in itself, so write `say` instead of explicit `anim: false` , and don't write `voiceTo` either.
+   * Whether @returns is really generated and written into S; if it fails, only one line of log will be left, and the
+   * next tick will be scheduled to try again.
+   */
   const publishSleepTalk = async (petId: string): Promise<boolean> => {
     const cfg = readAllConfig(configPaths);
     const found = findPetInstance(cfg, petId);
@@ -414,7 +443,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
     });
     if (!result.ok) {
       log.warn(
-        '[dsh-pet] 梦话生成失败 pet=' +
+        '[dsh-pet] Dream speech generation failed pet=' +
           petId +
           ' reason=' +
           result.reason +
@@ -423,12 +452,15 @@ export function createChatMemory(deps: ChatMemoryInput) {
       return false;
     }
     state.writePet(petId, 'say', { text: result.text, anim: false });
-    log.info(`[dsh-pet] 梦话生成成功 pet=${petId}，${result.text.length} 字`);
+    log.info(`[dsh-pet] Dream speech generated pet=${petId}, ${result.text.length} characters`);
     return true;
   };
 
-  /** 与某只宠物对话：截取最近记忆 → 生成回复 → 写入记忆 → 写进 S 的 pets.<id>.say。
-   *  供 POST /chat 与 /chat 命令共用（锁内读写，防两端交错写盘）；成功带回回复文本。 */
+  /**
+   * Conversation with a certain pet: intercept recent memory → generate reply → write to memory → write pets .< id >.
+   * say of S. Shared by POST /chat and / chat commands (reading and writing within the lock to prevent interleaved
+   * disk writing at both ends); successfully brings back the reply text.
+   */
   const chatWithPet = async (
     petId: string,
     text: string,
@@ -440,36 +472,42 @@ export function createChatMemory(deps: ChatMemoryInput) {
     withMemoryLock(async () => {
       const cfg = readAllConfig(configPaths);
       const found = findPetInstance(cfg, petId);
-      // 宠物在「校验那次读」与这里之间被删了——本函数还要先排 withMemoryLock 的串行队列，
-      // 窗口可能是秒级，所以这一支真会命中。明确失败：不生成、不写记忆也不写叶子，
-      // 否则会在 memory.json 里永久留下一个已删宠物的分桶，外加一只幽灵叶子。
+      // The pet was deleted between the "verification reading" and here - this function also needs to queue the serial
+      // queue of withMemoryLock first. The window may be seconds, so this one will really hit. Definite failure: no
+      // generation, no memory writing, no leaf writing, otherwise a deleted pet bucket and a ghost leaf will be
+      // permanently left in memory.json.
       if (!found) return { ok: false, reason: 'unknown-pet', message: '没有这只桌宠：' + petId };
       const rounds = memoryRounds(found.conf);
-      // 配图：开关关闭 → 空池（指令与解析都不介入）；目录链按所属条目取。
-      // 张数上限（chatImageLimit，0 = 不限制）：整张清单每条消息都要附，截断后费用上限可控。
+      // Picture: switch off → empty pool (instructions and analysis are not involved); directory links are taken
+      // according to the corresponding entries. The upper limit of the number of sheets (chatImageLimit, 0 = no
+      // limit): the entire list must be attached to each message, and the upper limit of the cost is controllable
+      // after truncation.
       const pool =
         found.conf.chatImageEnabled === true
           ? limitPool(readMemePool(found.conf.memes, memeDirsFor(found.entry)), Number(found.conf.chatImageLimit))
           : [];
-      // 动作名单：开关开启才取（关掉 = 不注入也不解析）；名单本身为空（没配 categories）同样等于关闭。
+      // Action list: Take only when the switch is turned on (off = no injection or parsing); the list itself is empty (no categories is configured), which is also equivalent to being closed.
       const actions = found.conf.chatAnimationEnabled === true ? chatActionNames(found.conf.animations) : [];
       const mem = await readMemory();
-      // 坏结构（数组/标量）按空桶重建；messages 不是数组的条目按新会话处理，避免 push 到坏对象上崩溃
+      // Bad structure (array/scalar) is rebuilt as an empty bucket; messages entries that are not arrays are processed as new sessions to avoid push crashing on bad objects
       const bucket =
         mem[found.entry] && typeof mem[found.entry] === 'object' && !Array.isArray(mem[found.entry])
           ? mem[found.entry]
           : (mem[found.entry] = {});
       const existing = bucket[petId];
       if (existing !== undefined && (!existing || !Array.isArray(existing.messages))) {
-        log.error(`[dsh-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按新会话处理：${memoryPath}`);
+        log.error(
+          `[dsh-pet] Invalid memory structure (messages is not an array) pet=${petId}; starting a new conversation: ${memoryPath}`,
+        );
       }
       const entry =
         existing && typeof existing === 'object' && !Array.isArray(existing)
           ? existing
           : (bucket[petId] = { messages: [] });
       if (!Array.isArray(entry.messages)) entry.messages = [];
-      // rounds = 0（用户关掉历史）→ 空历史；否则截尾部 rounds 轮（1 轮 = 1 问 1 答）。
-      // 不能写 slice(-rounds * 2)：-0 在 JS 里 === 0，slice(-0) 返回整个数组而不是空。
+      // rounds = 0 (user turns off history) → empty history; otherwise, truncate the tail rounds rounds (1 round = 1
+      // question 1 answer). Cannot write slice (- rounds * 2): -0 In JS === 0, slice (-0) returns the entire array
+      // instead of empty.
       const config = memoryConfig(found.conf);
       const list =
         config.maxHistoryBytes > 0
@@ -489,17 +527,18 @@ export function createChatMemory(deps: ChatMemoryInput) {
         }
         await writeMemory(mem);
       }
-      // 人设：实例级 whisperPrompt 优先，没写回落所属条目（与碎碎念同一拼装）。
-      // 有历史才追加【历史】段：没有历史时那段话在描述不存在的前缀，只会误导模型。
+      // persona: instance level whisperPrompt takes priority, and the entry of fallback is not written (the same
+      // assemble as whisper). Only add the [History] paragraph when there is history: When there is no history, that
+      // paragraph is describing a prefix that does not exist, which will only mislead the model.
       const system = petSystemPrompt(found, { historyTimes: list.length > 0 });
-      // 图片只记尺寸与字节数（不记 base64）：模型不支持读图时 dsh-llm 会把它投影成占位文本，靠这行日志定位
+      // Only the size and number of bytes of the image are recorded (base64 is not recorded): When the model does not support image reading, dsh-llm will project it into a placeholder text, and rely on this line of logs to locate it.
       if (image !== undefined) {
         log.info(
-          `[dsh-pet] 对话附带图片 pet=${petId}，${image.width}x${image.height}，${image.bytes} 字节` +
-            '（模型不支持读图时内核会以占位文本代替）',
+          `[dsh-pet] Chat image pet=${petId}, ${image.width}x${image.height}, ${image.bytes} bytes` +
+            '(the kernel substitutes placeholder text if the model cannot read images)',
         );
       }
-      // 第三方记忆：对话前修改内容；失败或超时降级为原内容（见 recallPatch）。
+      // Third-party memory: Modify content before dialogue; fail or time out and downgrade to original content (see recallPatch).
       const patch =
         config.backend === 'powercontext'
           ? undefined
@@ -508,7 +547,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
               history: list.map(({ role, content, ts }) => ({ role, content, ts })),
               userText: text,
             });
-      // 模型：条目配置的 chatModel 优先（留空 = 不指定）；生成侧失败会回落到当前对话的模型重试一次
+      // Model: chatModel of the entry configuration takes precedence (leave blank = not specified); failure on the generation side will fallback to the model of the current conversation and try again.
       const generated = await generateChat({
         ctx,
         system: patch?.system ?? system,
@@ -522,25 +561,28 @@ export function createChatMemory(deps: ChatMemoryInput) {
       });
       if (!generated.ok) return generated;
       const now = Date.now();
-      // 用户上传的图只存不送：记忆要能还原「这一轮带过图」（聊天记录存档），但不把图本体重发给模型；
-      // AI 配的图只回填名称标记（见 chat.ts 的 historyMarkersOf），同样不带图本体。
+      // The pictures uploaded by the user are only saved but not sent: the memory must be able to restore the
+      // "pictures brought in this round" (chat record archive), but the picture itself is not resent to the model; the
+      // picture with AI only backfills the name tag (see chat.ts's historyMarkersOf), and also does not have the
+      // picture itself.
       entry.messages.push({ role: 'user', content: text, ts: now, ...(image ? { image } : {}) });
       entry.messages.push({
         role: 'assistant',
         content: generated.text,
         ts: now,
         ...(generated.image ? { meme: generated.image } : {}),
-        // 动作名与配图名同类：落盘只存名字，回放历史时由 chat.ts 以 [动作:名] 回填——
-        // 否则模型记不得自己演过什么，用户说「换一个」它无从判断
+        // The action name is the same as the picture name: persist to disk only saves the name, and when replaying the
+        // history, chat.ts will backfill it with [action: name] - otherwise the model cannot remember what it has
+        // performed, and it will not be able to judge if the user says "change it"
         ...(generated.action ? { action: generated.action } : {}),
       });
       if (config.backend === 'powercontext') queueMemoryTurn(memoryState(entry, config), text, generated.text, now);
       await writeMemory(mem);
       if (config.backend === 'powercontext') {
-        // 同步排在当前落盘锁之后，回复不等待远端采集。
+        // The synchronization is queued after the current persist to disk lock, and the reply does not wait for remote collection.
         void syncMemory(petId).catch(() => log.warn('dsh-pet: memory sync persistence unavailable'));
       } else {
-        // 明确选择 PowerContext 时独占记忆链路，避免第三方后端重复采集。
+        // Exclusive memory link when PowerContext is explicitly selected to avoid repeated collection by third-party backends.
         captureTurn(petId, {
           userText: text,
           replyText: generated.text,
@@ -549,32 +591,37 @@ export function createChatMemory(deps: ChatMemoryInput) {
           ...(generated.image !== undefined ? { image: generated.image } : {}),
         });
       }
-      // 动作先写：与 POST /anim 同一条写回链路（记录 + anim 叶子），渲染端据此播放并回报执。
+      // The action is written first: the same writeback link as POST /anim (record + anim leaf), the renderer plays and reports the execution accordingly.
       if (generated.action !== undefined) {
         const record = playback.create(petId, generated.action);
         state.writePet(petId, 'anim', { name: generated.action, playbackId: record.playbackId });
       }
-      // 回复写进 S（与碎碎念同一个叶子：前端本来就是同一条展示链路）。
-      // 该由哪一端念按这只宠物的 display 推：对话请求带的是 surface=any，本来就没有具体的一端可用。
-      // 对话回复归「手动播报」：用户发了消息才有的这一句，由 voiceEnabled 决定念不念。
+      // The reply is written into S (the same leaf as whisper: the front end is originally the same display link).
+      // Which end should press this pet's display push: The dialogue request contains surface = any, and there is no
+      // specific end available. The conversation reply returns to "manual broadcasting": this sentence is only
+      // available after the user sends a message, and it is up to voiceEnabled to decide whether to read it or not.
       const replyVoiceTo = cfg.main?.voiceEnabled === true ? voiceTargetFor(found.pet) : undefined;
-      // 只有动作没有正文（模型只写了标记）→ 不写 say，避免弹一个空气泡。
+      // Only actions but no text (the model is marked write-only) → Do not write say to avoid popping an empty bubble.
       if (generated.text !== '') {
         state.writePet(petId, 'say', {
           text: generated.text,
           ...(generated.image ? { image: generated.image } : {}),
-          // 带动作时显式关掉碎碎念动画：气泡照弹，但不把刚点播的动作顶掉
+          // Explicitly turn off the whisper animation when taking action: the bubble is played, but the action of the just playback request is not blocked.
           ...(generated.action !== undefined ? { anim: false } : {}),
           ...(replyVoiceTo ? { voiceTo: replyVoiceTo } : {}),
         });
       }
-      // 同一份文本随返回值带出（叶子照写，不是二选一）
+      // The same text is brought out with the return value (the leaves are written as written, not one of the two)
       return { ok: true as const, text: generated.text, ...(generated.image ? { image: generated.image } : {}) };
     });
 
-  /** 删除某只宠物的对话记忆：`ts` 缺省 = 清空全部，给了 ts = 只删命中的轮（一轮两条共享 ts，成对删）。
-   *  与对话共用同一条串行队列——删除不会插进一次回复的读-改-写中间，也不会被它覆盖写回。
-   *  原生宠物删空后摘掉空条目；已绑定长期记忆的宠物保留绑定，只取消尚未发送的证据。 */
+  /**
+   * Delete the dialogue memory of a certain pet: `ts` default = clear all, given ts = only delete the hit round (two
+   * in a round share ts, delete in pairs). Shares the same serial queue as the conversation - deletion will not be
+   * inserted into the read-modify-write interval of a reply, nor will it be overwritten by it. Empty entries are
+   * removed after native pets are deleted; pets that have been bound to long-term memory remain bound, and only
+   * evidence that has not yet been sent is cancelled.
+   */
   const deleteHistory = async (
     petId: string,
     ts?: readonly number[],
@@ -582,7 +629,7 @@ export function createChatMemory(deps: ChatMemoryInput) {
     withMemoryLock(async () => {
       const cfg = readAllConfig(configPaths);
       const found = findPetInstance(cfg, petId);
-      // 与对话同一支：宠物随时可能被删，明确失败，不在文件里留没人消费的分桶
+      // Same as the dialogue: pets may be deleted at any time, clear failure, no unconsumed buckets are left in the file
       if (!found) return { ok: false as const, reason: 'unknown-pet' as const, message: '没有这只桌宠：' + petId };
       const mem = await readMemory();
       const byPet = mem[found.entry];
@@ -601,18 +648,20 @@ export function createChatMemory(deps: ChatMemoryInput) {
         } else if (kept.length > 0 && leaf !== undefined) {
           leaf.messages = kept;
         } else if (byPet !== undefined) {
-          // 清空（或本来就只剩坏数据）：摘掉宠物叶子；条目空了连条目一起摘
+          // clear (or only bad data is left): remove the pet leaves; if the entry is empty, remove the entry as well
           delete byPet[petId];
           if (Object.keys(byPet).length === 0) delete mem[found.entry];
         }
         await writeMemory(mem);
       }
-      // 只记数量与动作，不打正文（记忆内容是用户隐私）
-      log.info(`[dsh-pet] 删除对话记忆 pet=${petId}，removed=${removed}` + (ts === undefined ? '（清空）' : ''));
+      // Only remember the quantity and action, without typing the text (the memory content is user privacy)
+      log.info(
+        `[dsh-pet] Deleted chat history pet=${petId}, removed=${removed}` + (ts === undefined ? '(cleared all)' : ''),
+      );
       return { ok: true as const, removed };
     });
 
-  /** 已删宠物残留历史的查询与清理（判定与读写细节见 ./memory-orphans）。 */
+  /** Query and clean up the residual history of deleted pets (see ./memory-orphans for details on determination and reading and writing). */
   const { orphanHistory, deleteOrphans } = createMemoryOrphans({
     configPaths,
     readMemory,
@@ -621,10 +670,10 @@ export function createChatMemory(deps: ChatMemoryInput) {
     log,
   });
 
-  /** 当前活跃宠物 id（会话事件写入，余额与碎念读取）。 */
+  /** Currently active pet id (session event writing, balance and thoughts reading). */
   const getActivePetId = (): string => activePetId;
 
-  /** 改写当前活跃宠物 id。 */
+  /** Rewrite the currently active pet id. */
   const setActivePetId = (id: string): void => {
     activePetId = id;
   };
@@ -646,5 +695,5 @@ export function createChatMemory(deps: ChatMemoryInput) {
     setActivePetId,
   };
 }
-/** 对话与记忆的产出（供下游工厂按需 Pick）。 */
+/** Output of dialogue and memory (for downstream factories on demand Pick). */
 export type ChatMemory = ReturnType<typeof createChatMemory>;

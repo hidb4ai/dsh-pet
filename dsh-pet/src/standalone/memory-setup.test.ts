@@ -1,4 +1,4 @@
-/** DSH 模式的准备流程：真实 HTTP 模型检查、独立进程生命周期与配置隔离。 */
+/** Preparation process for DSH mode: real HTTP model checking, independent process lifecycle and configuration isolation. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createServer } from 'node:http';

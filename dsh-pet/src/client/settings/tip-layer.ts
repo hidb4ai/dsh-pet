@@ -1,34 +1,38 @@
 /**
- * 设置页的悬浮说明气泡：把 `data-tip` 的悬停从 CSS 伪元素改成挂在 body 的单例气泡。
+ * Setting page's hover description bubble: Change the hover of `data-tip` from the CSS pseudo element to the singleton
+ * bubble hanging on body.
  *
- * 伪元素只能锚在触发元素上，右列与贴顶的说明会被窗口边缘或滚动容器裁掉；这里改用
- * `tooltipPlacement` 按光标摆位，越界先翻边、仍越界就夹回视口，两个方向都不会丢字。
- * 触发元素仍是 `data-tip` 属性（见 ./ui），本模块用事件委托统一接管，不逐个挂监听。
- * 全局状态只有一份监听与一个气泡：`attachTipLayer()` 装、它返回的函数拆，重复装返回同一份。
+ * Pseudo elements can only be anchored on the triggering element. The descriptions in the right column and top will be
+ * cut off by the edge of the window or the scroll container. Here, `tooltipPlacement` is used to position according to
+ * the cursor. If it goes out of bounds, it will be turned over first. If it still goes out of bounds, it will be
+ * clipped back to the viewport. No words will be lost in either direction. The trigger element is still the `data-tip`
+ * attribute (see ./ui ). This module uses event delegation to take over the unified control and does not hang up the
+ * monitoring one by one. The global state has only one listener and one bubble: `attachTipLayer()` is installed and
+ * the function it returns is disassembled. Repeated installation returns the same copy.
  * @module dsh-pet/src/client/settings/tip-layer
  */
 import { tooltipPlacement } from '../../shared/tooltip.ts';
 
-/** 气泡 class，外观在 ./css。 */
+/** bubble class, appearance in ./css. */
 const TIP_CLASS = 'pet-cfg-tip';
 
-/** 触发元素的属性名：选择器与取值都从它派生，改名只改一处。 */
+/** The attribute name of the trigger element: both the selector and the value are derived from it, and only one change is required when changing the name. */
 const TIP_ATTR = 'data-tip';
 
-/** 光标与气泡的间隙（px）。 */
+/** The gap between the cursor and bubble (px). */
 const TIP_GAP_PX = 10;
 
-/** 触发元素用到的最小子集：只读 `data-tip`。 */
+/** Minimum subset of trigger elements: read-only `data-tip`. */
 interface TipTrigger {
   getAttribute: (name: string) => string | null;
 }
 
-/** 事件目标用到的最小子集：从命中节点往上找触发元素。 */
+/** The smallest subset used by the event target: find the trigger element from the hit node upwards. */
 interface ClosestHost {
   closest: (selector: string) => TipTrigger | null;
 }
 
-/** 三类事件里本模块用到的字段；结构化类型让测试不必造真 PointerEvent。 */
+/** The fields used by this module in the three types of events; the structured type allows testing without having to create PointerEvent. */
 interface HoverEvent {
   target: EventTarget | null;
   relatedTarget?: EventTarget | null;
@@ -36,22 +40,22 @@ interface HoverEvent {
   clientY: number;
 }
 
-/** 唯一的那个气泡；悬停很频繁，反复建删会让气泡闪。 */
+/** The only bubble; hovering is very frequent, and repeated creation and deletion will cause the bubble to flash. */
 let bubble: HTMLDivElement | undefined;
 
-/** 当前挂着气泡的触发元素，用于跳过「在同一元素内移动」的重复派发。 */
+/** The trigger element of the current bubble is used to skip the repeated dispatch of "moving within the same element". */
 let current: TipTrigger | undefined;
 
-/** 这一层的解除函数；`undefined` 表示没装。 */
+/** The release function of this layer; `undefined` means not installed. */
 let detach: (() => void) | undefined;
 
-/** 收起气泡：元素留着复用，只摘显隐。 */
+/** Collapse bubble: keep the element in reuse and only show and hide it. */
 function hideTip(): void {
   bubble?.classList.remove('is-on');
   current = undefined;
 }
 
-/** 取气泡元素，没有就建一个挂到 body——挂在设置页里会被滚动容器裁掉。 */
+/** Take the bubble element, if not, create one and hang it at body - it will be cut off by the scrolling container if it is hung in the settings page. */
 function ensureTip(): HTMLDivElement {
   if (bubble !== undefined && bubble.parentNode === document.body) return bubble;
   const el = document.createElement('div');
@@ -62,7 +66,7 @@ function ensureTip(): HTMLDivElement {
   return el;
 }
 
-/** 从事件目标往上找触发元素；不在说明元素上时返回 `undefined`。 */
+/** Search the trigger element upwards from the event target; if it is not on the description element, `undefined` is returned. */
 function triggerOf(node: EventTarget | null): TipTrigger | undefined {
   const host = node as unknown as ClosestHost | null;
   if (host === null || typeof host.closest !== 'function') return undefined;
@@ -70,15 +74,15 @@ function triggerOf(node: EventTarget | null): TipTrigger | undefined {
 }
 
 /**
- * 在光标处显示说明。
+ * Display description at cursor.
  *
- * @param text - 气泡正文。
- * @param cursor - 光标位置（视口坐标）。
+ * @param text - bubble text.
+ * @param cursor - Cursor position (viewport coordinates).
  */
 function showTip(text: string, cursor: { x: number; y: number }): void {
   const el = ensureTip();
   el.textContent = text;
-  // 先归零再量：位置不定时量到的仍是真实宽高，不归零会按上一处坐标判断翻边
+  // Return to zero first and then measure: the measured position is still the true width and height if the position is not fixed. If not returned to zero, the flanging will be judged according to the previous coordinates.
   el.style.left = '0px';
   el.style.top = '0px';
   const placed = tooltipPlacement(
@@ -92,7 +96,7 @@ function showTip(text: string, cursor: { x: number; y: number }): void {
   el.classList.add('is-on');
 }
 
-/** 光标进入触发元素：换一条说明就重摆，同一元素内移动不动。 */
+/** The cursor enters the trigger element: it will be reset if another description is given, and it cannot move within the same element. */
 function onOver(event: HoverEvent): void {
   const trigger = triggerOf(event.target);
   if (trigger === undefined || trigger === current) return;
@@ -102,7 +106,7 @@ function onOver(event: HoverEvent): void {
   current = trigger;
 }
 
-/** 光标离开：移进触发元素自己的子节点也会派发 pointerout，只有真离开才收。 */
+/** Cursor leaves: pointerout will also be sent when moving into the trigger element's own child node, and it will only be collected when the cursor leaves. */
 function onOut(event: HoverEvent): void {
   const from = triggerOf(event.target);
   if (from === undefined) return;
@@ -111,18 +115,18 @@ function onOut(event: HoverEvent): void {
 }
 
 /**
- * 装上说明气泡层。
+ * Install the description bubble layer.
  *
- * @returns 拆除函数：摘监听、摘气泡，可重复调用。
+ * @returns dismantling function: remove the monitor and remove the bubble, which can be called repeatedly.
  */
 export function attachTipLayer(): () => void {
   if (detach !== undefined) return detach;
-  // 监听目标当场捕获：拆的时候全局可能已经不在（宿主换页、测试拆环境），不能回头再读 window
+  // The monitoring target is captured on the spot: the global situation may not be there when dismantling (host page change, test disassembly environment), and you cannot go back and read window
   const root = document;
   root.addEventListener('pointerover', onOver);
   root.addEventListener('pointerout', onOut);
   root.addEventListener('pointerdown', hideTip);
-  // 滚动时气泡会僵在原地：capture 才能收听到设置页内容区自身的滚动
+  // The bubble will freeze in place when scrolling: capture can be used to hear the scrolling of the content area of the settings page itself.
   root.addEventListener('scroll', hideTip, true);
   detach = () => {
     root.removeEventListener('pointerover', onOver);

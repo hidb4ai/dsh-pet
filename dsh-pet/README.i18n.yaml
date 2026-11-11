@@ -2,35 +2,35 @@ version: 1
 english: README.md
 chinese: README.zh.md
 headings:
-  - en: 'dsh-pet-powercontext'
-    zh: 'dsh-pet-powercontext'
+  - en: dsh-pet-powercontext
+    zh: dsh-pet-powercontext
     en_sha256: 4066d4f82c87fafd64e3e0298d1d086f31c6b82e8092b2b57b3080b272ec9f66
     zh_sha256: 4066d4f82c87fafd64e3e0298d1d086f31c6b82e8092b2b57b3080b272ec9f66
-  - en: 'Overview'
-    zh: '概述'
+  - en: Overview
+    zh: 概述
     en_sha256: d4b1ea5708dd532930a85188b45aff6f0a3ed458500c7577e0127a538eb0d100
     zh_sha256: 9a377ae82211e65af4c270eddd1e59a93a9ed9b76f236b74c4a44121f881bac4
-  - en: 'Use this package'
-    zh: '使用本包'
+  - en: Use this package
+    zh: 使用本包
     en_sha256: 725c5a439a8424c2b748c3c14507f50613c4b79d8d94633163c60ae0e00eef71
     zh_sha256: e5494022a7122fb882a7c07a2b706a82bcf1dca04979a00153f7775fbf84c0bd
-  - en: 'Understand the implementation'
-    zh: '理解实现'
+  - en: Understand the implementation
+    zh: 理解实现
     en_sha256: af22475bd00b4a9995d1df1dede9f68237837171bc5586ed5a5c64a5e8dcfc96
     zh_sha256: 55d70ef8c97f54cdf019fc15e1b2326a0ebf25559dea190b4ead95cf166d7b21
-  - en: 'Explore further'
-    zh: '进一步探索'
+  - en: Explore further
+    zh: 进一步探索
     en_sha256: 87a70086429aa0c29b85498d3b2dd5653d20bbf78a5b51734508fa9c2f9487ec
     zh_sha256: e048d68939f874c6ea4d5bdaaf9b82ed665586d4259e8e45acc4d4b495191da1
-  - en: 'Model behavior'
-    zh: '模型体验'
+  - en: Model behavior
+    zh: 模型体验
     en_sha256: 653026a1ee4f89f1e52d3816e00a5ff5f851dfccd770ee968c57226c68de97a8
     zh_sha256: a134f112c35c38a4939fc8292e77f7e49a55d6f6c04b7deb63cb4d8561b76e5b
-  - en: 'Known limits'
-    zh: '已知限制'
+  - en: Known limits
+    zh: 已知限制
     en_sha256: 021bd19116af7d613bde9dba32c5c15bc731641b58cf7886f965a49cf86a8451
     zh_sha256: f90b034f28036e403768c9c05e8dbee54245253f26314599acfb236c960688d5
-  - en: 'Development notes'
-    zh: '开发备注'
+  - en: Development notes
+    zh: 开发备注
     en_sha256: dc882db1550e43ba4035bc08b38ae3a62774ab230adc226b14914543fe856476
     zh_sha256: a94db6b166b18be7a3cf376f99250f613cea63c73a0cd6c06b447bad2c53d2cd

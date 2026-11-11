@@ -1,8 +1,11 @@
 /**
- * 自播动画链（src/client/pet/animation/animation.ts）的契约测试：假 video、假素材加载器、假 fetch。
+ * Contract test of self-broadcast animation chain (src/client/pet/animation/animation.ts): fake video, fake asset
+ * loader, fake fetch.
  *
- * 四条契约：防重命中仍回 playing；换源会丢弃被新切换覆盖的迟到加载；
- * 首帧就位才翻前台并上报 playing；冻结与打断如实回 cancelled（且只回一次）。
+ * Four contracts: to prevent heavy hits, playing will still be returned; when the source is changed, late loads
+ * covered by the new switch will be discarded; when the first frame is in place, it will be turned to the foreground
+ * and reported to playing; when freezes and interruptions are made, cancelled will be returned faithfully (and only
+ * once).
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +16,7 @@ import type { EndedCue } from './cues.ts';
 import type { ReportableStatus } from '../../../shared/playback.ts';
 import type { Animations } from '../../../shared/types.ts';
 
-/** 假 video：只实现动画链用到的成员。 */
+/** False video: Only the members used by the animation chain are implemented. */
 class FakeVideo {
   loop = true;
   muted = false;
@@ -49,7 +52,7 @@ class FakeVideo {
     );
   }
 
-  /** 触发一次事件（模拟浏览器派发）。 */
+  /** Trigger an event (simulate browser dispatch). */
   fire(type: string): void {
     for (const listener of this.listeners.get(type) ?? []) {
       listener({ currentTarget: this } as unknown as Event);
@@ -71,7 +74,7 @@ class FakeVideo {
   }
 }
 
-/** 假素材加载器：手动决定每次 load 的结局。 */
+/** Fake asset loader: Manually determine the outcome of each load. */
 class FakeLoader implements AssetLoader {
   requests: Array<{ url: string; handlers: AssetHandlers }> = [];
   released: string[] = [];
@@ -100,7 +103,7 @@ const animations = {
   events: { workStatus: [['ws-run-a', 'ws-run-b']], balance: ['bal1'] },
 } as unknown as Animations;
 
-/** 装配一套依赖：两只假 video、假加载器、记录回执与判定。 */
+/** Assemble a set of dependencies: two fake video, fake loader, record receipt and judgment. */
 function harness(overrides: Partial<OwnAnimationDeps> = {}) {
   const videoA = new FakeVideo();
   const videoB = new FakeVideo();
@@ -153,73 +156,81 @@ function harness(overrides: Partial<OwnAnimationDeps> = {}) {
   };
 }
 
-describe('createOwnAnimation —— 换源与回执', () => {
-  test('普通换源：目标槽位挂上 blob 地址并 load', () => {
+describe('createOwnAnimation —— Source change and receipt', () => {
+  test('Ordinary source change: The target slot has the address blob and load', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, null);
     const [request] = h.loader.requests;
     assert.ok(request.url.includes('/thumb/duck/idle1'), request.url);
     request.handlers.onObjectUrl('blob:1');
-    // 首次换源写的是后台槽位 B。
+    // The first time the source is changed, the background slot B is written.
     assert.equal(h.videoB.src, 'blob:1');
     assert.equal(h.videoB.loadCalls, 1);
   });
 
-  test('首帧就位：翻前台、开始播放并回 playing', async () => {
+  test('The first frame is in place: turn to the foreground, start playing and return to playing', async () => {
     const h = harness();
     h.anim.switchTo('idle1', true, 'pb-1');
     h.loader.requests[0].handlers.onObjectUrl('blob:1');
     h.videoB.fire('loadeddata');
-    // playing 回执挂在 play() 的微任务上：只有兑现才代表确实开始出画。
+    // The playing receipt is hung on the microtask of play(): only when it is cashed does it mean that the painting has actually started.
     await Promise.resolve();
     assert.equal(h.videoB.classList.contains('is-front'), true);
     assert.equal(h.videoB.playCalls, 1);
     assert.deepEqual(h.reports, [{ id: 'pb-1', status: 'playing', reason: undefined }]);
-    assert.equal(h.ready.length, 1, '就位后要通知组件补 Q 弹与走位');
+    assert.equal(
+      h.ready.length,
+      1,
+      'After it is in place, the component must be notified to add Q elasticity and movement.',
+    );
     assert.equal(h.anim.frontVideo(), h.videoB);
   });
 
-  test('防重命中：上一次换源还挂着时重复请求，不重新取素材但如实回 playing', () => {
+  test('Anti-rehit: Repeat the request when the last source change is still pending. The asset will not be fetched again but playing will be returned truthfully.', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, 'pb-1');
-    // 首帧还没到就又来了同一条请求（点播编号随 state 变化会再驱动一次 effect）。
+    // The same request comes again before the first frame arrives (the playback request number changes with state and will drive effect again).
     h.reports.length = 0;
     h.anim.switchTo('idle1', true, 'pb-2');
-    assert.equal(h.loader.requests.length, 1, '同一段已在播，不该再取一次素材');
+    assert.equal(
+      h.loader.requests.length,
+      1,
+      'The same segment is already being played, so the asset should not be retrieved again.',
+    );
     assert.deepEqual(h.reports, [{ id: 'pb-2', status: 'playing', reason: undefined }]);
   });
 
-  test('被新切换覆盖的迟到加载：拿到的地址立即释放，不写进元素', () => {
+  test('Late load overwritten by new switch: the obtained address is released immediately and the element is not written.', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, null);
     const first = h.loader.requests[0];
     h.anim.switchTo('turn1', true, null);
     const second = h.loader.requests[1];
     first.handlers.onObjectUrl('blob:stale');
-    assert.deepEqual(h.loader.released, ['blob:stale'], '迟到的那份必须释放');
+    assert.deepEqual(h.loader.released, ['blob:stale'], 'The late one must be released');
     second.handlers.onObjectUrl('blob:fresh');
     assert.equal(h.videoB.src, 'blob:fresh');
   });
 
-  test('素材加载失败：点播回 failed，且释放挂起的换源', () => {
+  test('Asset loading failed: playback request returns failed and releases the pending source swap.', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, 'pb-1');
     h.loader.requests[0].handlers.onError(new Error('HTTP 404'));
     assert.deepEqual(h.reports, [{ id: 'pb-1', status: 'failed', reason: 'asset-load' }]);
-    // 释放后再切同一段不会被防重挡住。
+    // Cutting the same section after releasing it will not be blocked by anti-heavy.
     h.anim.switchTo('idle1', true, null);
     assert.equal(h.loader.requests.length, 2);
   });
 
-  test('点播编号消费一次：switchTo 会通知组件清掉它', () => {
+  test('The playback request number is consumed once: switchTo will notify the component to clear it.', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, 'pb-1');
     assert.equal(h.cleared, 1);
     h.anim.switchTo('idle1', true, null);
-    assert.equal(h.cleared, 1, '没有点播编号就不该再清');
+    assert.equal(h.cleared, 1, 'If there is no playback request number, it should not be cleared again.');
   });
 
-  test('url 形态：一次性交接，用完整地址而不拼路由', () => {
+  test('url form: one-time handover, use the complete address instead of spelling route', () => {
     const h = harness();
     h.anim.setCueUrl('https://example.com/a.webm');
     h.anim.switchTo('https://example.com/a.webm', true, null);
@@ -227,8 +238,8 @@ describe('createOwnAnimation —— 换源与回执', () => {
   });
 });
 
-describe('createOwnAnimation —— 播完与冻结', () => {
-  test('播完先回 ended，再按动画池给判定', () => {
+describe('createOwnAnimation——End and freeze', () => {
+  test('After playing, return to ended first, and then press the animation pool for judgment.', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, 'pb-1');
     h.loader.requests[0].handlers.onObjectUrl('blob:1');
@@ -239,13 +250,13 @@ describe('createOwnAnimation —— 播完与冻结', () => {
     assert.deepEqual(cue, { kind: 'random' });
   });
 
-  test('后台元素的 ended 一律丢弃', () => {
+  test('ended of background elements are always discarded', () => {
     const h = harness();
     const cue = h.anim.handleEnded({ currentTarget: h.videoA } as unknown as Event);
     assert.deepEqual(cue, { kind: 'ignore' });
   });
 
-  test('拖拽中不推进动画链（但回执照旧）', () => {
+  test('The animation chain is not advanced during dragging (but the license is restored)', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, 'pb-1');
     h.loader.requests[0].handlers.onObjectUrl('blob:1');
@@ -256,27 +267,27 @@ describe('createOwnAnimation —— 播完与冻结', () => {
     assert.deepEqual(h.reports[h.reports.length - 1], { id: 'pb-1', status: 'ended', reason: undefined });
   });
 
-  test('冻结：暂停前台并如实回 cancelled；解冻只翻转状态', () => {
+  test('Freeze: Pause the foreground and return to cancelled truthfully; unfreeze only flips the state', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, 'pb-1');
     h.loader.requests[0].handlers.onObjectUrl('blob:1');
     h.videoB.fire('loadeddata');
     const frozen = h.anim.setFrozen(true);
     assert.deepEqual(frozen, { kind: 'frozen' });
-    assert.equal(h.videoB.paused, true, '冻结要把前台暂停');
+    assert.equal(h.videoB.paused, true, 'Freezing requires the front desk to be suspended.');
     assert.deepEqual(h.reports[h.reports.length - 1], { id: 'pb-1', status: 'cancelled', reason: 'frozen' });
     assert.equal(h.anim.isFrozen(), true);
     assert.deepEqual(h.anim.setFrozen(false), { kind: 'resumed' });
-    assert.equal(h.anim.setFrozen(false), null, '没翻转就不该再报');
+    assert.equal(h.anim.setFrozen(false), null, 'If it is not flipped, it should not be reported again.');
   });
 
-  test('冻结期间播完不推进', () => {
+  test('No progress will be made after playing during the freezing period', () => {
     const h = harness();
     h.anim.setFrozen(true);
     assert.deepEqual(h.anim.handleEnded(undefined), { kind: 'ignore' });
   });
 
-  test('dispose：中断在途素材并释放已建地址', () => {
+  test('dispose: Interrupt the asset in transit and release the established address', () => {
     const h = harness();
     h.anim.switchTo('idle1', true, null);
     h.loader.requests[0].handlers.onObjectUrl('blob:1');

@@ -1,59 +1,61 @@
 /**
- * 「吃白饭」的传输层：调 dsh-pet 的接口、等点播回执、读页面内实况。
+ * The "freeloader" transport layer: adjust the interface of dsh-pet, wait for the playback request receipt, and read
+ * the live content on the page.
  *
- * 业务失败一律 HTTP 200 + `ok: false`，所以这里不抛；只有网络层失败（断连 / 被 abort）才抛。
- * 每次请求都带超时并挂在演出自己的 AbortSignal 上——收场时把挂在半路的请求一刀切断，
- * 否则一次卡死会让 running 永远为 true，再点菜单只会回「它已经在吃了」，而锁还挂在宿主里。
+ * Business failure is always HTTP 200 + `ok: false` , so it is not thrown here; it is only thrown when the network
+ * layer fails (disconnected/abort). Each request has a timeout and is hung on the performance's own AbortSignal - at
+ * the end, the request that is hanging in the middle is cut off. Otherwise, a freeze will make running forever true.
+ * Clicking the menu again will only return "It is already eating", and the lock is still hung in the host.
  * @module dsh-pet/src/client/baifan/transport
  */
 import { CFG, ROUTE } from './constants.ts';
 
-/** 点播回执的终态。 */
+/** The final state of the playback request receipt. */
 export interface PlaybackEnd {
-  /** 终态：正常播完 / 播放失败 / 被顶掉。 */
+  /** Final state: Normal playback completed/playback failed/rejected. */
   status: 'ended' | 'failed' | 'cancelled' | 'timeout' | 'gone';
-  /** 失败原因（status 为 failed 时）。 */
+  /** Reason for failure (when status is failed). */
   reason?: string;
 }
 
-/** 页面内实况读数（`petApi7340` 的子集）。 */
+/** Live readings within the page (subset of `petApi7340`). */
 interface PoseApi {
-  /** 读一只宠物的归一化中心点与朝向。 */
+  /** Read the normalized center point and orientation of a pet. */
   pose?: (petId: string) => { x: number; y: number; facing: 'left' | 'right' } | null;
-  /** 读当前点播的播放进度。 */
+  /** Read the playback progress of the current playback request. */
   progress?: (petId: string) => {
     playbackId: string | null;
     currentTime: number;
     duration: number;
     paused: boolean;
-    /** 当前点播的素材地址（url 形态下就是那段地址）。 */
+    /** The asset address of the current playback request (in the form of url, it is that address). */
     anim?: string;
   } | null;
 }
 
 /**
- * 造传输层。
+ * Build the transport layer.
  *
- * @param ctx - 客户端上下文；只用来取 `petApi7340` 这个只读服务。
- * @returns 接口调用与读数方法；`attach` 用来把本场演出的取消信号挂上去。
+ * @param ctx - client context; only used to obtain the read-only service `petApi7340` .
+ * @returns interface calling and reading method; `attach` is used to hang the cancellation signal of this show.
  */
 export function createTransport(ctx: { get: (name: string) => unknown }) {
-  /** 本场演出的取消信号；收场时由 attach(null) 换成 null 并 abort 旧的。 */
+  /** The cancellation signal of this show; at the end of the show, it is changed from attach ( null ) to null and abort. */
   let scene: AbortController | null = null;
 
-  /** 页面内只读服务；老版本 dsh-pet 没有它，调用点按「这一页没有宠物」处理。 */
+  /** Read-only service in the page; the old version dsh-pet does not have it, and the click "There are no pets on this page" is called. */
   function api(): PoseApi | undefined {
     return ctx.get('petApi7340') as PoseApi | undefined;
   }
 
   /**
-   * 调一次接口。
+   * Adjust the interface once.
    *
-   * @param method - HTTP 方法。
-   * @param path - 含查询串的路径。
-   * @param body - 有则按 JSON 发。
-   * @param signal - 覆盖演出信号的取消信号（一般不用）。
-   * @returns 解析后的响应体；解析失败时 `ok: false`。
+   * @param method - HTTP method.
+   * @param path - Path containing query string.
+   * @param body - If yes, press JSON.
+   * @param signal - Cancel signal covering the performance signal (generally not used).
+   * @returns The parsed response body; `ok: false` when parsing fails.
    */
   async function call(
     method: string,
@@ -88,7 +90,7 @@ export function createTransport(ctx: { get: (name: string) => unknown }) {
     }
   }
 
-  /** 读实况（同页零请求）；拿不到服务或没这样宠物时返回 null。 */
+  /** Read live (zero requests for the same page); return null when service cannot be obtained or there is no such pet. */
   function pose(petId: string): { x: number; y: number; facing: 'left' | 'right' } | null {
     const read = api()?.pose;
     if (typeof read !== 'function') return null;
@@ -99,7 +101,7 @@ export function createTransport(ctx: { get: (name: string) => unknown }) {
     }
   }
 
-  /** 读当前播放进度；页面内服务缺失时返回 null。 */
+  /** Read the current playback progress; return null when the service in the page is missing. */
   function progress(petId: string): {
     playbackId: string | null;
     currentTime: number;
@@ -117,14 +119,15 @@ export function createTransport(ctx: { get: (name: string) => unknown }) {
   }
 
   /**
-   * 等一次点播走到终态。
+   * Wait for a playback request to reach the final state.
    *
-   * `POST /anim` 的 ok 只代表受理：素材没拿到、解码失败、被新点播顶掉、被锁冻住，都可能让它
-   * 根本没播完。真正的结束只有渲染端上报的回执知道，所以挂 GET /playback/{id} 等三个终态；
-   * 单次 timeout 上限 10 秒，套一层循环把总预算拉长。
+   * `POST /anim` and ok only represent acceptance: the asset has not been obtained, the decoding failed, it has been
+   * rejected by a new playback request, and it has been locked. It may not have finished playing at all. The real end
+   * is only known by the receipt reported by the renderer, so there are three final states such as GET /playback / {
+   * id }; the upper limit of a single timeout is 10 seconds, and a layer of loops is used to extend the total budget.
    *
-   * @param id - 点播编号；null 表示这次点播根本没受理。
-   * @returns 终态。
+   * @param id - playback request number; null means that this playback request was not accepted at all.
+   * @returns final state.
    */
   async function waitPlayback(id: string | null): Promise<PlaybackEnd> {
     if (id === null) return { status: 'gone' };
@@ -144,7 +147,7 @@ export function createTransport(ctx: { get: (name: string) => unknown }) {
       } catch {
         return { status: 'gone' };
       }
-      // 记录过期（60 秒后清理）回 { error: 'unknown playback' }
+      // The record expires (cleared after 60 seconds) and returns { error : ' unknown playback ' }
       if (r.error !== undefined) return { status: 'gone' };
       if (r.status === 'ended' || r.status === 'failed' || r.status === 'cancelled') {
         return { status: r.status, reason: typeof r.reason === 'string' ? r.reason : undefined };
@@ -153,7 +156,7 @@ export function createTransport(ctx: { get: (name: string) => unknown }) {
   }
 
   return {
-    /** 换本场演出的取消信号；传 null 表示收场（并 abort 旧的那一个）。 */
+    /** Change the cancellation signal of this show; pass null to indicate the end (and abort to the old one). */
     attach: (next: AbortController | null): void => {
       scene?.abort();
       scene = next;
@@ -165,5 +168,5 @@ export function createTransport(ctx: { get: (name: string) => unknown }) {
   };
 }
 
-/** 传输层的公开面。 */
+/** The public side of the transport layer. */
 export type Transport = ReturnType<typeof createTransport>;

@@ -1,8 +1,8 @@
 /**
- * 右键菜单挂载：创建 DOM、定位、点击外关闭与回调派发。
+ * Right-click menu mounting: create DOM, position, click outside to close and callback dispatch.
  *
- * 不决定菜单内容（归 ./tree），只负责呈现与事件。
- * 必须始终成立：卸载时必须摘掉全部监听，不留悬挂元素。
+ * Does not determine the menu content (owned by ./tree), only responsible for presentation and events. This must
+ * always be true: when unmounting, all monitors must be removed, leaving no hanging elements.
  * @module dsh-pet/src/shared/menu/mount
  */
 import type { ContextMenuMount, MenuBranch, MenuLeaf, MenuNode } from './types.ts';
@@ -12,24 +12,29 @@ function isBranchNode(n: MenuNode): n is MenuBranch {
   return 'children' in n && Array.isArray((n as MenuBranch).children);
 }
 
-/** 挂载一个系统风格右键菜单（级联子菜单）到 document.body，位置为视口坐标。
- *  结构：根容器零尺寸，每级面板平级挂载、按触发项屏幕位置贴边定位（优先父面板右侧，
- *  放不下翻到父面板左侧，且不与任何已展开面板重叠）。
- *  级联：指针在菜单树内绝不自动收起，整体离开（root mouseleave，软 200ms）才关闭整棵菜单。
- *  clamp：允许占用的矩形（视口局部坐标）；桌面传「窗口 ∩ 工作区」——宠物贴边时窗口外扩的部分
- *  会被 OS 裁掉，约束进去即可完整显示，窗口与宠物零移动。 */
+/**
+ * Mount a system-style right-click menu (cascading submenu) to document.body, and the position is the viewport
+ * coordinates. Structure: The root container has zero size, each level of panel is mounted horizontally, and is
+ * positioned next to the screen position of the trigger item (prioritizes the right side of the parent panel, flips to
+ * the left side of the parent panel if it cannot fit, and does not overlap with any expanded panels). Cascading: The
+ * pointer will never automatically close up in the menu tree, and the entire menu will be closed only when the entire
+ * menu leaves (root mouseleave, soft 200 ms). clamp: The rectangle allowed to be occupied (local coordinates of the
+ * viewport); the desktop passes "Window ∩ Workspace" - when the pet is attached to the edge, the extended part of the
+ * window will be cut off by OS, and it can be fully displayed when constrained in, with zero movement of the window
+ * and the pet.
+ */
 export function mountContextMenu(opts: {
   tree: MenuNode[];
   x: number;
   y: number;
   onAction: (leaf: MenuLeaf) => void;
-  /** 菜单被关闭（点项/点外/Esc）后的通知：挂载方据此复位自身状态（如桌面可交互标记） */
+  /** Notification after the menu is closed (click item/click outside/Esc): the mounting party resets its own state accordingly (such as the desktop interactive mark) */
   onClose?: () => void;
-  /** 菜单允许占用的矩形（视口局部坐标）；缺省 = 整个视口 */
+  /** The rectangle the menu is allowed to occupy (viewport local coordinates); default = entire viewport */
   clamp?: { x: number; y: number; w: number; h: number };
 }): ContextMenuMount {
   const { tree, x, y, onAction, onClose, clamp } = opts;
-  // 防御：clamp 含非有限值（如坐标来源缺失变成 NaN）时回落整个视口，否则面板会落到 (0,0)
+  // Defense: When clamp contains non-limited values (for example, the coordinate source is missing and becomes NaN), fallback the entire viewport, otherwise the panel will fall to (0,0)
   const c =
     clamp && Number.isFinite(clamp.x + clamp.y + clamp.w + clamp.h)
       ? clamp
@@ -42,12 +47,12 @@ export function mountContextMenu(opts: {
 
   let closed = false;
 
-  /** 每个面板当前展开的子面板（无 = 未展开）；hideChain 会沿链清除 */
+  /** Each panel's currently expanded subpanels (none = not expanded); hideChain will be cleared along the chain */
   const openChild = new Map<HTMLElement, HTMLElement>();
-  /** 指针整体离开菜单树的兜底关闭定时器（root mouseover 重新进入即取消） */
+  /** The pointer leaves the fallback of the menu tree as a whole and closes the timer (root mouseover cancels when re-entering) */
   let leaveTimer: number | null = null;
 
-  /** 关闭某面板及其后代面板整条链（display:none + 清 openChild 链） */
+  /** Close the entire chain of a certain panel and its descendant panels (display:none + clear openChild chain) */
   const hideChain = (panel: HTMLElement): void => {
     panel.style.display = 'none';
     const child = openChild.get(panel);
@@ -57,8 +62,11 @@ export function mountContextMenu(opts: {
     }
   };
 
-  /** 把子面板摆到触发项旁边：优先父面板右侧，放不下翻到父面板左侧，
-   *  且不与任何已展开面板重叠；贴边时夹进 clamp。 */
+  /**
+   * Place the sub-panel next to the trigger item: give priority to the right side of the parent panel. If it cannot
+   * fit, flip to the left side of the parent panel, and do not overlap with any expanded panels; when welding, it is
+   * sandwiched into clamp.
+   */
   const showPanel = (panel: HTMLElement, item: HTMLElement): void => {
     const rect = item.getBoundingClientRect();
     panel.style.left = '';
@@ -82,13 +90,16 @@ export function mountContextMenu(opts: {
     panel.style.top = pick.top + 'px';
   };
 
-  /** 构建一层面板；分支项的子面板平级挂到 root 下、不嵌套。
-   *  面板先入 DOM、子面板后入，层级越深绘制越靠上（子菜单盖在父菜单上层）。 */
+  /**
+   * Build a layer of panels; the sub-panels of branch items are horizontally linked to root and are not nested. The
+   * panel enters DOM first, and the sub-panel enters last. The deeper the level, the higher it is drawn (the sub-menu
+   * is placed on top of the parent menu).
+   */
   const buildPanel = (nodes: MenuNode[]): HTMLElement => {
     const panel = document.createElement('div');
     panel.className = 'dsh-pet-menu-column';
     panel.style.display = 'none';
-    // 桌面 clamp：把列高封顶到可视矩形内（否则 62vh 相对的是窗口高度，可视区更小时仍会溢出被裁）
+    // Desktop clamp: Cap the column height to the visible rectangle (otherwise 62 vh is relative to the window height, and when the visible area is smaller, it will still overflow and be cropped)
     if (clamp) panel.style.maxHeight = Math.min(460, Math.max(120, c.h - 16)) + 'px';
     root.appendChild(panel);
     for (const node of nodes) {
@@ -104,9 +115,9 @@ export function mountContextMenu(opts: {
         arrow.textContent = '▸';
         item.appendChild(label);
         item.appendChild(arrow);
-        const childPanel = buildPanel(node.children); // 递归：子面板已入树（晚于本面板）
-        // 悬停分支：先收掉本面板其它分支已展开的子面板链，再展开当前的。
-        // 指针在本菜单树内移动绝不自动收起——跨 4px 缝隙或面板间隙都不会触发关闭。
+        const childPanel = buildPanel(node.children); // Recursion: The sub-panel has entered the tree (later than this panel). Hover branch: First close the expanded
+        // sub-panel chains of other branches of this panel, and then expand the current one. Pointer movement within this menu
+        // tree never automatically closes - crossing a 4 px gap or panel gap will not trigger a close.
         item.addEventListener('mouseenter', () => {
           const prev = openChild.get(panel);
           if (prev && prev !== childPanel) hideChain(prev);
@@ -114,26 +125,27 @@ export function mountContextMenu(opts: {
           showPanel(childPanel, item);
         });
       } else {
-        // 缩略图必须在 label 之前：菜单项是 flex 行，图片靠左、文字紧随其后。
-        // 只给配图叶子带 thumb，其余项结构不变（不占位、不改变行高）。
+        // The thumbnail must be before label: the menu item is the flex line, with the image on the left and the text
+        // immediately following. Only add thumb to the picture leaf, and the structure of the other items remains
+        // unchanged (no space occupied, no line height change).
         if (node.thumb) {
           const thumb = document.createElement('img');
           thumb.className = 'dsh-pet-menu-thumb';
           thumb.src = node.thumb;
           thumb.alt = '';
           thumb.draggable = false;
-          // 菜单面板可滚动：可视区外的图不必立刻下载（27 张原图共约 4.6MB）。
+          // The menu panel is scrollable: pictures outside the visible area do not need to be downloaded immediately (27 original pictures total about 4.6 MB).
           thumb.loading = 'lazy';
           thumb.decoding = 'async';
           item.appendChild(thumb);
-          // 图与文字的间距单独收窄（菜单默认 14px 是给「文字 ↔ 箭头」的，配图看着太散）
+          // The spacing between pictures and text is individually narrowed (the menu default 14 px is for "text ↔ arrows", and the pictures look too scattered)
           item.classList.add('dsh-pet-menu-item-pic');
         }
         const label = document.createElement('span');
         label.className = 'dsh-pet-menu-label';
         label.textContent = node.label;
         item.appendChild(label);
-        // 右侧灰色提示（如快捷键）：与 label 同一 flex 行，space-between 自动贴右
+        // Gray prompt on the right (such as shortcut keys): flex is on the same line as label, space-between is automatically pasted to the right
         if (node.hint) {
           const hint = document.createElement('span');
           hint.className = 'dsh-pet-menu-hint';
@@ -155,10 +167,10 @@ export function mountContextMenu(opts: {
   const rootPanel = buildPanel(tree);
   rootPanel.style.display = 'block';
 
-  // 必须先 append 到文档：未入文档时量不到面板尺寸，一切「静默无显示」
+  // The document must be append first: the panel size cannot be measured before the document is entered, and everything is "silent and no display"
   document.body.appendChild(root);
 
-  // 根面板定位：按 (x,y) 下落，超出 clamp 矩形时夹回（与子面板同一套逻辑但无触发项）
+  // Root panel positioning: press (x, y) to drop, and clamp back when it exceeds the clamp rectangle (same set of logic as the sub-panel but no trigger items)
   rootPanel.style.left = '';
   rootPanel.style.top = '';
   const rw = rootPanel.offsetWidth;
@@ -166,8 +178,9 @@ export function mountContextMenu(opts: {
   rootPanel.style.left = Math.max(c.x + 4, Math.min(x, c.x + c.w - rw - 4)) + 'px';
   rootPanel.style.top = Math.max(c.y + 4, Math.min(y, c.y + c.h - rh - 4)) + 'px';
 
-  // 指针整体离开菜单树（离开全部面板的并集）→ 200ms 后关闭整棵菜单；
-  // 期间任何指针移动（mouseover 冒泡到 root）都视为仍在菜单内，取消关闭
+  // The entire menu is closed after the pointer leaves the menu tree as a whole (leaving the union of all panels) →
+  // 200 ms; during this period, any pointer movement (mouseover bubbles to root) is deemed to be still within the
+  // menu, and the close is cancelled.
   root.addEventListener('mouseleave', () => {
     if (leaveTimer !== null) window.clearTimeout(leaveTimer);
     leaveTimer = window.setTimeout(() => {

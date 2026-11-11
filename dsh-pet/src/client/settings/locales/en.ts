@@ -1,5 +1,6 @@
 /**
- * 设置页英文文案；键集必须与 zh 完全一致，缺键或多键在类型检查期报错。
+ * English copy of the settings page; the key set must be exactly the same as zh. Missing keys or multiple keys will
+ * report an error during the type check period.
  */
 import type { Key } from './zh.ts';
 
@@ -27,7 +28,7 @@ export const en: Record<Key, string> = {
 
   nav: 'Pet Config',
   intro: 'Manage multiple pets: each pet has its own size and position (applies instantly after saving).',
-  // 卡片标题与卡片级说明；说明统一进问号气泡。
+  // Card title and card-level description; descriptions are unified into question mark bubble.
   petCardTitle: 'Pet',
   avatarLabel: 'Avatar',
   avatarHint:
@@ -44,7 +45,7 @@ export const en: Record<Key, string> = {
   cornerHint: 'Which screen corner the pet sticks to (per-monitor work area in desktop mode).',
   marginXHint: 'Horizontal distance from the chosen corner (px); any number.',
   marginYHint: 'Vertical distance from the chosen corner (px); any number.',
-  // 「/」命令菜单的行标题（图标由 app.ts 补上）。
+  // Row title of "/" command menu (icon added by app.ts).
   'cmd.chat': 'Chat',
   'cmd.pet': 'Pet',
   'cmd.balance': 'Balance',

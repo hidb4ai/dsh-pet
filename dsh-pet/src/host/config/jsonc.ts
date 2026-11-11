@@ -1,14 +1,15 @@
 /**
- * JSONC 容忍读取：把用户手写、带 // 注释的配置解析成对象。
+ * JSONC tolerates reading: parses user-written, //-annotated configurations into objects.
  *
- * 不校验字段，不做合并；解析失败一律抛出，由调用方决定回退还是报错。
- * 必须始终成立：只做去注释与解析，绝不改写用户文件内容。
+ * Fields are not verified, and no merging is performed; parsing failures are always thrown, and the caller decides
+ * whether to return or report an error. This must always be true: only annotations and parsing are done, and user file
+ * contents are never rewritten.
  * @module dsh-pet/src/host/config/jsonc
  */
 import { existsSync, readFileSync } from 'node:fs';
 import type { ConfigPaths } from './constants.ts';
 
-/** 仅删除字符串之外的 JSONC 注释，保留字符串转义、换行与相邻 JSON token 的分隔。 */
+/** Only delete JSONC comments outside the character string, retaining character string escape, newline and separation of adjacent JSON token. */
 function stripJsonc(src: string): string {
   let out = '';
   let inString = false;
@@ -39,7 +40,7 @@ function stripJsonc(src: string): string {
   return out.trim();
 }
 
-/** 读取并解析 JSONC 文件；不存在/解析失败 → undefined（调用方决定处理） */
+/** Read and parse JSONC file; does not exist/parse failed → undefined (caller decides to process) */
 export function readJsonc(path: string): Record<string, unknown> | undefined {
   try {
     const raw = JSON.parse(stripJsonc(readFileSync(path, 'utf8'))) as unknown;
@@ -50,10 +51,11 @@ export function readJsonc(path: string): Record<string, unknown> | undefined {
 }
 
 /**
- * 读磁盘上的用户层原对象（JSONC 容忍，与读取路径共用同一份解析器）。
- * 写路径必须用它：PUT /config 的透传保留要把用户手改的高级字段原样带回，而用户层可能是带 // 注释
- * 的 config.jsonc 原文；若用严格 JSON.parse，解析抛错被吞 → existing 变 undefined → 白名单重建
- * → 高级字段全部丢失。文件不存在 / 损坏 → undefined。
+ * Reading user-level raw objects on disk (JSONC tolerated, shares the same parser as the read path). It must be used
+ * to write the path: PUT /config's transparent transmission retention requires the user's manually modified advanced
+ * fields to be brought back as they are, and the user layer may be the original config.jsonc with // annotations; if
+ * strict JSON.parse is used, parsing errors will be thrown → existing becomes undefined → whitelist reconstruction →
+ * all advanced fields will be lost. File does not exist/corrupt → undefined.
  */
 export function readUserConfig(paths: ConfigPaths): Record<string, unknown> | undefined {
   const file = effectiveUserFile(paths);
@@ -61,9 +63,10 @@ export function readUserConfig(paths: ConfigPaths): Record<string, unknown> | un
 }
 
 /**
- * 用户层存在但解析不了（真损坏：连 JSONC 剥注释都救不回来）。
- * 用途：PUT /config 的损坏预检——保存是白名单重建，existing 读不出来会让原有内容被整份静默丢掉，
- * 所以先不写盘、回 200 + `reason=user-config-unparsable` 让设置页弹窗确认。文件不存在 → false。
+ * The user layer exists but cannot be parsed (really damaged: even JSONC stripped comments cannot be saved). Purpose:
+ * PUT /config damage pre-check - saving is whitelist reconstruction. If existing cannot be read, the original content
+ * will be silently discarded, so do not write to the disk first, return 200 + `reason=user-config-unparsable` and let
+ * the setting page pop-up window confirm. File does not exist → false.
  */
 export function userConfigUnparsable(paths: ConfigPaths): boolean {
   const file = effectiveUserFile(paths);

@@ -1,14 +1,15 @@
 /**
- * 桌面托盘的行为契约（runtime/electron-helper/main/tray.js）。
+ * Desktop system tray behavior contract (runtime/electron-helper/main/tray.js).
  *
- * 三条行为必须成立：勾选来自配置、点一下写回相反的一档、退出项按运行形态决定自己退还是交给宿主。
- * 依赖全由调用方注入（含 Electron 的 Tray/Menu/nativeImage），所以这里不需要真的 Electron。
+ * Three actions must be established: check from configuration, click to write back the corresponding file, and exit
+ * the item to decide whether to return it to the host according to the running state. All dependencies are injected by
+ * caller (Tray/Menu/nativeImage including Electron), so there is no need for real Electron here.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
-/** 托盘模块是给 Helper 用的 CJS，没有类型声明：这里按用到的形状窄化。 */
+/** The system tray module is for Helper and CJS. There is no type declaration: here it is narrowed according to the shape used. */
 interface TrayModule {
   createTray(deps: Record<string, unknown>): {
     start(): Promise<void>;
@@ -18,7 +19,7 @@ interface TrayModule {
   };
 }
 
-/** 一条菜单项：只断言用到的字段。 */
+/** One menu item: only fields used by assertion. */
 interface MenuItem {
   label: string;
   type?: string;
@@ -28,7 +29,7 @@ interface MenuItem {
 
 const { createTray } = createRequire(import.meta.url)('../../runtime/electron-helper/main/tray.js') as TrayModule;
 
-/** 造一套假依赖：记录宿主请求、菜单模板与退出调用。 */
+/** Create a set of fake dependencies: log host requests, menu templates and exit calls. */
 function harness(options: {
   appMode?: boolean;
   isBridge?: boolean;
@@ -80,15 +81,15 @@ function harness(options: {
   return { tray, requests, bodies, quits, menus };
 }
 
-/** 取最后一次构建出来的菜单模板。 */
+/** Get the last menu template built. */
 function lastMenu(menus: MenuItem[][]): MenuItem[] {
   const menu = menus[menus.length - 1];
-  assert.ok(menu, '托盘应已构建出菜单');
+  assert.ok(menu, 'The system tray should have built a menu');
   return menu;
 }
 
-describe('createTray —— 勾选与点击', () => {
-  test('勾选状态来自配置：含 desktop / both 的两只被打勾', async () => {
+describe('createTray - Check and click', () => {
+  test('The check status comes from the configuration: two including desktop / both are checked', async () => {
     const { tray, menus } = harness({
       pets: [
         { label: 'a', id: 'a', display: 'both' },
@@ -104,7 +105,7 @@ describe('createTray —— 勾选与点击', () => {
     );
   });
 
-  test('点一下写回相反的一档：both→web，web→both，desktop→none，none→desktop', async () => {
+  test('Click to write back the opposite state: both → web, web → both, desktop → none, none → desktop', async () => {
     const cases: ReadonlyArray<readonly [string, string]> = [
       ['both', 'web'],
       ['web', 'both'],
@@ -115,27 +116,30 @@ describe('createTray —— 勾选与点击', () => {
       const { tray, menus, requests, bodies } = harness({ pets: [{ label: 'a', id: 'a', display: from }] });
       await tray.start();
       const item = lastMenu(menus).find((entry) => entry.type === 'checkbox');
-      assert.ok(item?.click, '每只宠物都应有可点的开关项');
+      assert.ok(item?.click, 'Each pet should have a clickable switch item');
       item.click();
-      assert.ok(requests.includes('POST /dsh-pet-7340/pet-display'), `display=${from} 时应把新值写回宿主`);
+      assert.ok(
+        requests.includes('POST /dsh-pet-7340/pet-display'),
+        `When display = ${from}, the new value should be written back to the host`,
+      );
       assert.equal(
         (JSON.parse(bodies[0] ?? '{}') as { display?: string }).display,
         to,
-        `display=${from} 应写成 ${to}（浏览器位保持不动）`,
+        `display = ${from} should be written as ${to} (the browser bit remains unchanged)`,
       );
     }
   });
 });
 
-describe('createTray —— 退出项的分支', () => {
-  test('应用模式：自己 app.quit()，不请求宿主', async () => {
+describe('createTray - Exit the branch of the item', () => {
+  test('Application mode: self app.quit(), not requesting host', async () => {
     const { tray, menus, quits, requests } = harness({
       appMode: true,
       pets: [{ label: 'a', id: 'a', display: 'both' }],
     });
     await tray.start();
     const quit = lastMenu(menus).find((item) => item.label === '退出');
-    assert.ok(quit?.click, '应用模式必须有退出项');
+    assert.ok(quit?.click, 'Application mode must have an exit item');
     quit.click();
     assert.deepEqual(quits, ['app.quit']);
     assert.equal(
@@ -144,7 +148,7 @@ describe('createTray —— 退出项的分支', () => {
     );
   });
 
-  test('bridge 且宿主允许：把退出交给宿主（自己退会被当成崩溃重启）', async () => {
+  test('bridge and the host allows it: hand over the exit to the host (your own exit will be treated as a crash and restart)', async () => {
     const { tray, menus, quits, requests } = harness({
       isBridge: true,
       canQuit: true,
@@ -152,13 +156,13 @@ describe('createTray —— 退出项的分支', () => {
     });
     await tray.start();
     const quit = lastMenu(menus).find((item) => item.label === '退出');
-    assert.ok(quit?.click, '宿主允许时应有退出项');
+    assert.ok(quit?.click, 'There should be an exit item when host is allowed');
     quit.click();
-    assert.deepEqual(quits, [], 'bridge 下不得自己退');
-    assert.ok(requests.includes('POST /dsh-pet-7340/quit'), '必须把退出请求交给宿主');
+    assert.deepEqual(quits, [], 'bridge is not allowed to withdraw by yourself.');
+    assert.ok(requests.includes('POST /dsh-pet-7340/quit'), 'The exit request must be handed over to the host');
   });
 
-  test('bridge 且宿主不允许：不出现退出项', async () => {
+  test('bridge and host is not allowed: no exit item appears', async () => {
     const { tray, menus } = harness({
       isBridge: true,
       canQuit: false,
@@ -172,19 +176,23 @@ describe('createTray —— 退出项的分支', () => {
   });
 });
 
-describe('createTray —— 重建后刷新', () => {
-  test('refresh 重读配置：勾选跟着变，菜单被替换', async () => {
+describe('createTray - Refresh after rebuilding', () => {
+  test('refresh Reread the configuration: the check box changes and the menu is replaced', async () => {
     const pets: Array<Record<string, unknown>> = [{ label: 'a', id: 'a', display: 'both' }];
     const { tray, menus } = harness({ pets });
     await tray.start();
     assert.equal(lastMenu(menus)[0].checked, true);
     pets[0] = { label: 'a', id: 'a', display: 'web' };
     await tray.refresh();
-    assert.equal(menus.length, 2, 'refresh 应重新设置一次菜单');
-    assert.equal(lastMenu(menus)[0].checked, false, '配置变了勾选要跟着变');
+    assert.equal(menus.length, 2, 'refresh menu should be reset once');
+    assert.equal(
+      lastMenu(menus)[0].checked,
+      false,
+      'If the configuration changes, the check box must be changed accordingly.',
+    );
   });
 
-  test('没建托盘时 refresh 什么都不做（托盘开关关掉的情况）', async () => {
+  test('refresh does nothing when the system tray is not created (when the system tray switch is turned off)', async () => {
     const { tray, menus } = harness({ pets: [] });
     await tray.refresh();
     assert.equal(menus.length, 0);

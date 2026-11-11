@@ -1,8 +1,10 @@
 /**
- * 气泡单槽：余额、说话、工作状态三种气泡的显隐、停留计时与优先级选择。
- * 不负责何时点亮与动画联动：tick 判定、抽动画、打日志都在 PetCard；也不负责外观，哑组件在 client/bubble.ts。
- * 依赖注入的 react 与两个气泡组件；三个停留计时器都归本模块清理。
- * 不变量：同一时刻只渲染一个气泡，优先级依次为终态任务、说话、余额、非终态任务。
+ * Bubble single slot: display, stay timing and priority selection of three bubbles: balance, conversation and working
+ * status. It is not responsible for when it lights up and is linked to the animation: tick judgment, animation, and
+ * logging are all in PetCard; it is not responsible for the appearance, and the dumb components are in
+ * client/bubble.ts. Dependency injection of react and two bubble components; the three dwell timers are all cleaned up
+ * by this module. Invariant: Only one bubble is rendered at the same time, and the priorities are final tasks,
+ * conversations, balances, and non-final tasks.
  * @module dsh-pet/src/client/pet/card/bubble-slots
  */
 import { balancePageCount as balancePageCountOf, type BalanceState } from '../../../shared/balance/index.ts';
@@ -19,45 +21,46 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
 
-/** 当前该挂哪个气泡；`none` 表示哪个条件都不成立。 */
+/** Which bubble should be hung currently; `none` means that neither condition is true. */
 export type BubbleSlot = 'todo' | 'work-terminal' | 'whisper' | 'balance' | 'work' | 'none';
 
-/** 优先级判定的输入：全部是渲染期的既成事实，判定本身不产生副作用。 */
+/** The input of the priority determination: all are fait accompli during the rendering period, and the determination itself does not produce side effects. */
 export interface BubbleSlotInput {
-  /** 待办面板是否打开；打开时独占槽位，其余气泡一律让位。 */
+  /** Whether the to-do panel is open; when it is opened, it occupies the slot exclusively and all other bubbles will give way. */
   todoOn: boolean;
-  /** 工作状态是否为终态（success / error）。 */
+  /** Whether the working state is the final state (success / error). */
   workTerminal: boolean;
-  /** 工作气泡是否点亮。 */
+  /** Is the work bubble lit? */
   workOn: boolean;
-  /** 工作气泡文本。 */
+  /** Working bubble text. */
   workText: string | null;
-  /** 配置是否启用工作状态联动。 */
+  /** Configure whether to enable working status linkage. */
   workStatusEnabled: boolean;
-  /** 说话气泡是否点亮。 */
+  /** Whether the speaking bubble is lit. */
   whisperOn: boolean;
-  /** 说话气泡文本。 */
+  /** Speak bubble text. */
   whisperText: string | null;
-  /** 余额气泡是否点亮。 */
+  /** Is the balance bubble lit? */
   balanceOn: boolean;
-  /** 余额数据是否已拉到；null 表示尚未拉到。 */
+  /** Whether the balance data has been retrieved; null means it has not been retrieved yet. */
   balanceAvailable: boolean;
-  /** 配置是否启用余额。 */
+  /** Configure whether to enable balance. */
   balanceEnabled: boolean;
-  /** 本次余额是否手动请求；手动请求不受开关门控。 */
+  /** Whether this balance is manually requested; manual requests are not subject to switch gating. */
   balanceManual: boolean;
 }
 
 /**
- * 决定当前挂哪个气泡。
+ * Determine which bubble is currently hanging.
  *
- * 终态任务只活 10s，所以不让位；非终态常驻，让位 10s 没有损失。
+ * The final state task only lives 10 s, so it does not give way; if it is not in the final state, there is no loss in
+ * giving up 10 s.
  *
- * @param input - 三种气泡的显隐与开关。
- * @returns 命中的槽位；都不成立时为 `none`。
+ * @param input - The visibility and switching of three bubbles.
+ * The slot hit by @returns; when neither is true, it is `none` .
  */
 export function decideBubbleSlot(input: BubbleSlotInput): BubbleSlot {
-  // 面板是用户主动打开的窗口：它占槽时其余气泡一律让位，关掉后按原规则恢复。
+  // The panel is a window that the user actively opens: when it occupies the slot, all other bubbles will give way, and it will be restored according to the original rules after it is closed.
   if (input.todoOn) return 'todo';
   if (input.workTerminal && input.workOn && input.workText && input.workStatusEnabled) return 'work-terminal';
   if (input.whisperOn && input.whisperText) return 'whisper';
@@ -67,18 +70,19 @@ export function decideBubbleSlot(input: BubbleSlotInput): BubbleSlot {
 }
 
 /**
- * 余额气泡的可翻页数。
+ * The number of pages that the balance bubble can turn.
  *
- * 页数规则归 shared（与每页内容同源），这里只补一个「还没有结果」的兜底。
+ * The page number rule belongs to shared (same origin as the content of each page), and only one fallback of "no
+ * result yet" is added here.
  *
- * @param balance - 最近一次余额结果；`null` 表示这一拍还没有数据。
- * @returns 页数，至少 1。
+ * @param balance - the latest balance result; `null` means there is no data for this beat.
+ * @returns Number of pages, at least 1.
  */
 export function balancePageCount(balance: BalanceState | null): number {
   return balance ? balancePageCountOf(balance) : 1;
 }
 
-/** 余额气泡组件；props 与 `client/bubble.ts` 的 BalanceBubble 一致。 */
+/** Balance bubble component; props is consistent with BalanceBubble of `client/bubble.ts`. */
 export type BalanceBubbleComponent = (props: {
   state: BalanceState;
   on: boolean;
@@ -86,96 +90,97 @@ export type BalanceBubbleComponent = (props: {
   onCycle: () => void;
 }) => ReactNode;
 
-/** 说话气泡组件；配图二选一，props 与 `client/bubble.ts` 的 WhisperBubble 一致。 */
+/** Speech bubble component; choose one of the two pictures, props is consistent with WhisperBubble of `client/bubble.ts`. */
 export type WhisperBubbleComponent = (props: {
   text: string;
   image?: string;
   url?: string;
   assetRoot?: string;
   on: boolean;
-  /** 可点时的回调；工作气泡用它跳会话，缺省即不可点。 */
+  /** The callback is clickable; the work bubble uses it to jump to the session, and it is not clickable by default. */
   onClick?: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
 }) => ReactNode;
 
-/** 注入的 react 能力。 */
+/** Injected react capability. */
 export interface BubbleSlotsRuntime {
-  /** 创建元素。 */
+  /** Create element. */
   h: typeof jsx;
-  /** 状态。 */
+  /** Status. */
   useState: <T>(init: T) => [T, Dispatch<SetStateAction<T>>];
-  /** 引用。 */
+  /** Quote. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
-  /** 副作用；用于卸载时清计时器。 */
+  /** side effect; used to clear the timer when unmounting. */
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
 }
 
-/** 待办面板气泡组件；props 与 `client/todo-bubble.ts` 的 TodoBubble 一致。 */
+/** To-do panel bubble component; props is consistent with TodoBubble of `client/todo-bubble.ts`. */
 export type TodoBubbleComponent = (props: { on: boolean; onClose: () => void }) => ReactNode;
 
-/** 三种气泡组件。 */
+/** Three bubble components. */
 export interface BubbleComponents {
-  /** 余额气泡。 */
+  /** Balance bubble. */
   balanceBubble: BalanceBubbleComponent;
-  /** 待办面板气泡。 */
+  /** To-do panel bubble. */
   todoBubble: TodoBubbleComponent;
-  /** 说话气泡。 */
+  /** Talk bubble. */
   whisperBubble: WhisperBubbleComponent;
 }
 
-/** 每次渲染由 PetCard 提供的视图输入。 */
+/** View input provided by PetCard is rendered each time. */
 export interface BubbleSlotsInput {
-  /** 最近一次余额结果。 */
+  /** The latest balance result. */
   balance: BalanceState | null;
-  /** 配置是否启用余额。 */
+  /** Configure whether to enable balance. */
   balanceEnabled: boolean;
-  /** 本次余额是否手动请求。 */
+  /** Whether to manually request the balance this time. */
   balanceManual: boolean;
-  /** 配置是否启用工作状态联动。 */
+  /** Configure whether to enable working status linkage. */
   workStatusEnabled: boolean;
-  /** 工作状态是否处于终态。 */
+  /** Is the working state in the final state? */
   workTerminal: boolean;
-  /** 当前展示条目所属会话；有值才把工作气泡做成可点。 */
+  /** The session to which the currently displayed item belongs; the work bubble will be clickable only if it has a value. */
   workSessionId?: string | null;
-  /** 点工作气泡时跳过去；缺省即不可点（网页端直接切，桌面端由容器转发）。 */
+  /** Jump to the work bubble when you click it; it is disabled by default (the web page is switched directly, and the desktop is forwarded by the container). */
   onFocusSession?: (sessionId: string) => void;
-  /** 说话气泡配图的素材根。 */
+  /** The asset root of the speech bubble image. */
   assetRoot?: string;
 }
 
-/** 气泡单槽对外的读写面。 */
+/** Bubble is the external reading and writing surface of a single slot. */
 export interface BubbleSlots {
-  /** 点亮余额气泡并回到第一页，重置停留计时。 */
+  /** Light up the balance bubble and return to the first page to reset the dwell timer. */
   showBalance(): void;
-  /** 点余额气泡翻页，并重置停留计时。 */
+  /** Click the balance bubble to turn the page and reset the dwell time. */
   cycleBalance(): void;
-  /** 点亮说话气泡；duration 为 0 时不改动当前气泡，undefined 用默认时长。 */
+  /** Light up the speech bubble; when duration is 0, the current bubble will not be changed, and undefined uses the default duration. */
   showWhisper(text: string, parts: { image?: string; url?: string }, duration?: number): void;
-  /** 收起说话气泡；不碰动画与另两种气泡。 */
+  /** Put away the speaking bubble; do not touch the animation and other two bubbles. */
   clearWhisper(): void;
-  /** 更新工作气泡文本，显隐不动。 */
+  /** Update the work bubble text, showing and hiding. */
   updateWorkText(text: string | null): void;
-  /** 点亮工作气泡；terminal 决定 10s 后自动收起，非终态常驻。 */
+  /** Light up the working bubble; terminal automatically closes after deciding 10 s, non-final state permanent. */
   lightWork(terminal: boolean): void;
-  /** 收起工作气泡但保留文本。 */
+  /** Collapse the work bubble but keep the text. */
   hideWork(): void;
-  /** 回空闲：收起工作气泡并清文本。 */
+  /** Return to idle: close the work bubble and clear the text. */
   resetWork(): void;
-  /** 打开待办面板：它独占槽位，其余气泡让位。 */
+  /** Open the to-do panel: it occupies the slot exclusively and the rest of the bubbles give way. */
   showTodo(): void;
-  /** 收起待办面板，按原优先级恢复其余气泡。 */
+  /** Collapse the to-do panel and restore the remaining bubbles according to their original priorities. */
   hideTodo(): void;
-  /** 开关待办面板：已开则收起，供快捷键使用。 */
+  /** Switch to-do panel: when opened, close it for shortcut keys. */
   toggleTodo(): void;
-  /** 按优先级渲染当前该挂的气泡；无气泡时为 null。 */
+  /** Render the currently hanging bubble according to priority; when there is no bubble, it is null. */
   node(): ReactNode;
 }
 
 /**
- * 制造气泡单槽的 hook，每个 PetCard 调一次。
+ * Create bubble single-slot hook, and call each PetCard once.
  *
- * @param rt - 注入的 react 能力。
- * @param components - 余额与说话气泡组件。
- * @returns 接收视图输入的 hook；钩子内部的状态与计时器随卡片卸载一并清理。
+ * @param rt - Injected react capabilities.
+ * @param components - Balance and speaking bubble components.
+ * @returns hook that receives view input; the internal state and timer of the hook are cleared together with the card
+ * unmount.
  */
 export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComponents) {
   const { h, useState, useRef, useEffect } = rt;
@@ -184,12 +189,13 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
   const WhisperBubble = components.whisperBubble;
 
   return function useBubbleSlots(input: BubbleSlotsInput): BubbleSlots {
-    // 余额气泡：显隐与展开页。
+    // Balance bubble: Show, hide and expand the page.
     const [balanceOn, setBalanceOn] = useState(false);
     const [balancePage, setBalancePage] = useState(0);
     const balanceTimerRef = useRef<number | null>(null);
-    // 说话气泡：显隐、文本与配图（池内名与完整地址二选一）。收起时机在 bubbleHoldRef：
-    // 语音合成期间挂起计时，播完再留一小段尾巴（见 shared/bubble-hold）。
+    // Speech bubble: visible, hidden, text and pictures (choose one of the name in the pool and the complete address).
+    // The closing time is bubbleHoldRef: the timing is suspended during speech synthesis, and a short tail is left
+    // after playing (see shared/bubble-hold).
     const [whisperOn, setWhisperOn] = useState(false);
     const [whisperText, setWhisperText] = useState<string | null>(null);
     const [whisperImage, setWhisperImage] = useState<string | undefined>(undefined);
@@ -197,19 +203,19 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
     const whisperHoldRef = useRef<BubbleHoldState>(BUBBLE_HOLD_IDLE);
     const whisperTextRef = useRef<string | null>(null);
     const whisperTimerRef = useRef<number | null>(null);
-    // 待办面板：独占槽位，没有停留计时，显隐只由用户开关。
+    // To-do panel: exclusive slot, no dwell timer, visible and hidden only by the user.
     const [todoOn, setTodoOn] = useState(false);
-    // 工作状态气泡：显隐与文本。
+    // Working status bubble: display, hide and text.
     const [workOn, setWorkOn] = useState(false);
     const [workText, setWorkText] = useState<string | null>(null);
     const workTimerRef = useRef<number | null>(null);
-    // 语音播报状态：只在手动触发的那一句上有值，气泡据此显示转圈 / 喇叭
+    // Voice broadcast status: Only the sentence that is manually triggered has a value, and the bubble displays the circle/speaker accordingly.
     const [voiceState, setVoiceState] = useState<VoiceState>('idle');
 
-    // 订阅是模块级单例：卸载时必须退订，否则旧卡片会被后续状态推送重渲染
+    // subscribe is a module-level singleton: you must unsubscribe when unmounting, otherwise the old card will be re-rendered by subsequent status push
     useEffect(() => subscribeVoiceState(setVoiceState), []);
 
-    // 卸载后不再 setState：三个计时器都在这里清。
+    // No more setState after unmount: All three timers are cleared here.
     useEffect(
       () => () => {
         if (balanceTimerRef.current !== null) window.clearTimeout(balanceTimerRef.current);
@@ -219,14 +225,14 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
       [],
     );
 
-    /** 重置余额气泡的停留计时；重复触发先清旧定时器，否则旧的会提前收起。 */
+    /** Reset the dwell time of the balance bubble; clear the old timer first if triggered repeatedly, otherwise the old one will be put away in advance. */
     const armBalanceTimeout = () => {
       if (balanceTimerRef.current !== null) window.clearTimeout(balanceTimerRef.current);
       balanceTimerRef.current = window.setTimeout(() => setBalanceOn(false), BUBBLE_DURATION_MS);
     };
 
     const showBalance = () => {
-      setBalancePage(0); // 新一轮查询从第一页开始。
+      setBalancePage(0); // A new round of query starts from the first page.
       setBalanceOn(true);
       armBalanceTimeout();
     };
@@ -234,14 +240,14 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
     const cycleBalance = () => {
       const pages = balancePageCount(input.balance);
       setBalancePage((page) => (page + 1) % pages);
-      // 重新计时：第 8 秒点开才剩 2 秒，看不清下一页。
+      // Retiming: There are only 2 seconds left after clicking on the 8th second, and the next page cannot be seen clearly.
       armBalanceTimeout();
     };
 
-    /** 推进说话气泡的收起计划，并按新计划重排计时器。 */
+    /** Advance the speech bubble collapse plan and reset the timer according to the new plan. */
     const applyWhisperHold = (event: BubbleHoldEvent): void => {
       const next = reduceBubbleHold(whisperHoldRef.current, event);
-      if (next === whisperHoldRef.current) return; // 同引用 = 无事发生，别白白重排计时器
+      if (next === whisperHoldRef.current) return; // Same reference = nothing happens, don’t reset the timer in vain
       whisperHoldRef.current = next;
       setWhisperOn(next.on);
       if (whisperTimerRef.current !== null) window.clearTimeout(whisperTimerRef.current);
@@ -253,20 +259,21 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
       }, next.delayMs);
     };
 
-    // 语音报开始/结束时推进收起计划：合成慢的时候气泡得挂住，播完再收。
-    // 只认文本相同的那一句——同一页面上的其他宠物共用这份模块单例状态。
+    // Promote the closing plan when the voice report starts/ends: When the synthesis is slow, the bubble must be hung
+    // up, and then closed after the broadcast. Only recognize the sentence with the same text - other pets on the same
+    // page share this module singleton state.
     useEffect(
       () =>
         subscribeVoiceUtterance((event) => {
           if (event.text !== whisperTextRef.current) return;
           applyWhisperHold(utteranceToHold(event));
         }),
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- 订阅只建一次：收起计划全部经 ref 现读，重订阅只会漏事件
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Subscribe once and read dismissal schedules through refs; resubscribing could miss events.
       [],
     );
 
     const showWhisper = (text: string, parts: { image?: string; url?: string }, duration?: number) => {
-      if (duration === 0) return; // 只联动动画、不改气泡时走这里。
+      if (duration === 0) return; // Go here when only linking animation and not changing bubble.
       setWhisperText(text);
       whisperTextRef.current = text;
       setWhisperImage(parts.image);
@@ -284,7 +291,7 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
     const lightWork = (terminal: boolean) => {
       setWorkOn(true);
       if (workTimerRef.current !== null) window.clearTimeout(workTimerRef.current);
-      // 非终态常驻，不设自动收起。
+      // Non-final state permanent, no automatic closing.
       workTimerRef.current = terminal ? window.setTimeout(() => setWorkOn(false), BUBBLE_DURATION_MS) : null;
     };
 
@@ -335,12 +342,12 @@ export function createBubbleSlots(rt: BubbleSlotsRuntime, components: BubbleComp
               voiceState,
             });
       }
-      // 终态与非终态共用同一个组件，差别只在停留时长与优先级。
+      // The final state and the non-final state share the same component, the only difference is the duration and priority.
       if (slot === 'work' || slot === 'work-terminal') {
         if (workText === null) return null;
         const sessionId = input.workSessionId ?? '';
         const onFocus = input.onFocusSession;
-        // 拿不到会话就别做成可点：点下去没有任何去处，比不可点更糟。
+        // If you can't get the session, don't make it clickable: clicking on it will go nowhere, which is worse than being unclickable.
         const onClick = sessionId !== '' && onFocus !== undefined ? () => onFocus(sessionId) : undefined;
         return h(WhisperBubble, {
           text: workText,

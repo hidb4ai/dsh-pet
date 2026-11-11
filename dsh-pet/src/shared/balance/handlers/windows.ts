@@ -1,7 +1,8 @@
 /**
- * windows 形态：三窗口用量的百分比口径、气泡文案与最紧迫窗口判定。
+ * windows form: percentage of three window usage conventions, bubble text and most urgent window determination.
  *
- * 与服务商无关——各窗口满额度与滚动窗时长都由数据带出，这里不写死任何服务商的额度。
+ * It has nothing to do with the service provider - the full quota of each window and the duration of the rolling
+ * window are brought out by the data, and the quota of any service provider is not written down here.
  *
  * @module dsh-pet/src/shared/balance/handlers/windows
  */
@@ -11,9 +12,10 @@ import type { BalanceBubbleRow, BalanceView, WindowKey, WindowUsage } from '../t
 import type { ShapeHandler } from './shape.ts';
 
 /**
- * 周与月的窗口展示名，供气泡与联想框文案使用。
+ * The window display name of the week and month, used for bubble and association box text.
  *
- * 滚动窗的时长是服务商自己的业务事实（如 5 小时），不走这张表，见 DEFAULT_ROLLING_LABEL。
+ * The length of the rolling window is the service provider's own business fact (such as 5 hours). If you don't follow
+ * this table, see DEFAULT_ROLLING_LABEL.
  */
 export const WINDOW_LABELS = {
   weekly: '周',
@@ -21,33 +23,38 @@ export const WINDOW_LABELS = {
 } as const;
 
 /**
- * 滚动窗展示名的兜底，服务商应随数据带 rollingLabel，缺省时才用它。
+ * The fallback of the rolling window display name, the service provider should bring rollingLabel with the data, and
+ * it is used by default.
  *
- * 缺一个标签会让气泡出现空档，而 5h 是当前两个滚动窗口服务商的共同取值。
+ * Missing a label will leave a gap in the bubble, and 5 h is the current common value of the two rolling window
+ * service providers.
  */
 export const DEFAULT_ROLLING_LABEL = '5h';
 
-/** 取窗口展示名：滚动窗用服务商自报值，周与月走固定表 */
+/** Get the window display name: the rolling window uses the service provider’s self-reported value, and the weekly and monthly fixed tables */
 function windowLabel(v: BalanceView, w: WindowKey): string {
   if (w === 'rolling') return v.rollingLabel ?? DEFAULT_ROLLING_LABEL;
   return WINDOW_LABELS[w];
 }
 
-/** 各窗口的满额度，全部来自数据 */
+/** The full quota of each window is all derived from data. */
 function windowQuotas(v: BalanceView): Record<WindowKey, number | undefined> {
   return { rolling: v.rollingCapUsd, weekly: v.weeklyCapUsd, monthly: v.monthlyCapUsd };
 }
 
 /**
- * 取最先告急的一个窗口，所有 windows 形态的服务商共用同一套判定。
+ * Taking the first critical window, all service providers in the windows state share the same set of judgments.
  *
- * 满额度齐全时按绝对口径比剩余额度（USD）；有窗口给不出满额度时退化为比已用百分比——
- * 两窗额度量级不同，缺一个还硬比绝对剩余会反直觉。不存在的窗口直接跳过，不补 0。
+ * When the full quota is complete, the absolute conventions are used to compare the remaining quota (USD); when there
+ * is a window that cannot provide the full quota, it degenerates to the ratio of the used percentage - the two window
+ * quotas have different magnitudes, and it is counterintuitive to compare the absolute surplus if one is missing.
+ * Windows that do not exist are skipped directly without adding 0.
  *
- * 绝对口径的副作用是滚动窗通常先报（额度最小），这一行为刻意保留，两端一致。
+ * A side effect of absolute conventions is that rolling windows usually report first (the smallest amount). This
+ * behavior is deliberately retained and consistent on both ends.
  */
 export function urgentWindow(v: BalanceView): WindowUsage | undefined {
-  // 只有 windows 形态有「窗口」概念：money（账户余额）与 points（积分）都没有可告急的窗口
+  // Only the windows form has the concept of "window": money (account balance) and points (points) have no emergency windows.
   if (v.shape !== 'windows') return undefined;
   const quotas = windowQuotas(v);
   const resets: Record<WindowKey, string | undefined> = {
@@ -84,9 +91,11 @@ export function urgentWindow(v: BalanceView): WindowUsage | undefined {
 }
 
 /**
- * 把重置时间转成一句相对文案，保留一位小数。
+ * Convert the reset time into a relative copy, keeping one decimal place.
  *
- * 四天及以上报「N.x 天」，不足四天报「N.x 小时」；已过重置点报「已重置」，时间未知返回空串。
+ * If it has been four days or more, it will report "N.x days", if it is less than four days it will report "N.x
+ * hours"; if the reset point has passed, it will report "reset", if the time is unknown, an empty string will be
+ * returned.
  */
 export function resetInText(iso?: string): string {
   if (!iso) return '';
@@ -99,18 +108,18 @@ export function resetInText(iso?: string): string {
   return Math.max(0.1, Math.round(hoursF * 10) / 10).toFixed(1) + ' 小时';
 }
 
-/** 三窗口取最大值，只有月窗口时就是它本身 */
+/** Take the maximum value of the three windows. When there is only a monthly window, it is itself. */
 function windowsPercent(v: BalanceView): number | undefined {
   return Math.max(v.rolling ?? 0, v.weekly ?? 0, v.monthly ?? 0);
 }
 
-/** 把 resetInText 的三种返回翻成一句提示：空串 = 时间未知，'已重置' = 已经过点，其余 = 倒计时。 */
+/** Convert the three types of returns of resetInText into one prompt: empty string = unknown time, 'reset' = the point has been passed, and the rest = countdown. */
 function resetPhrase(reset: string): string {
   if (reset === '') return '重置时间未知';
   return reset === '已重置' ? reset : reset + '重置';
 }
 
-/** 两行：最紧迫窗口的已用百分比与重置倒计时 */
+/** Two lines: used percentage of most urgent window and reset countdown */
 function windowsRows(v: BalanceView): BalanceBubbleRow[] {
   const w = urgentWindow(v);
   if (!w) return [{ role: 'label', text: '额度数据不可用' }];
@@ -122,9 +131,11 @@ function windowsRows(v: BalanceView): BalanceBubbleRow[] {
 }
 
 /**
- * 展开态每个存在的窗口一行：窗口名、进度条、已用百分比与重置倒计时。
+ * Each existing window in the expanded state has one line: window name, progress bar, used percentage and reset
+ * countdown.
  *
- * 只列存在的窗口，rolling 与 weekly 缺省表示该服务商没有这个窗口，不补 0、不画空条。
+ * Only existing windows are listed. rolling and weekly default to indicate that the service provider does not have
+ * this window. No zeros are added and no empty bars are drawn.
  */
 function windowsDetail(v: BalanceView): BalanceBubbleRow[] {
   const resets: Record<WindowKey, string | undefined> = {
@@ -136,7 +147,7 @@ function windowsDetail(v: BalanceView): BalanceBubbleRow[] {
   for (const w of ['rolling', 'weekly', 'monthly'] as WindowKey[]) {
     const percent = v[w];
     if (percent === undefined) continue;
-    // 与收起态同一套重置文案，两端原样渲染。
+    // The same set of reset text as the collapsed state, and both ends are rendered as they are.
     const reset = resetInText(resets[w]);
     const usedText = Math.round(percent) + '%';
     const resetText = resetPhrase(reset);
@@ -153,7 +164,7 @@ function windowsDetail(v: BalanceView): BalanceBubbleRow[] {
   return rows.length > 0 ? rows : windowsRows(v);
 }
 
-/** 紧凑计数：1.2B / 96.0M / 478.3K，千以下取整。固定一位小数——同一页三个数字宽度稳定，不随取值跳动。 */
+/** Compact count: 1.2 B / 96.0 M / 478.3 K, rounded to the nearest 1000. Fixed one decimal place - the width of three numbers on the same page is stable and does not jump with the value. */
 function compactCount(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
@@ -162,10 +173,12 @@ function compactCount(n: number): string {
 }
 
 /**
- * 第三页：本期累计用量。一行 `usage` 承载整张卡，两端摆成三行两列——
- * 「Token / 总量」「输入 / 输出」「本期请求数 / 花费」，总量是唯一的大字。
+ * The third page: Cumulative usage in this period. One row of `usage` carries the entire card, and the two ends are
+ * arranged into three rows and two columns - "Token / total amount", "input / output", "number of requests in this
+ * period / cost", the total amount is the only big character.
  *
- * 服务商没给这项数据时返回 undefined，由页数判定决定气泡只有两页；给的一半数字不会被拼进来。
+ * When the service provider does not provide this data, it returns undefined, which is determined by the number of
+ * pages. The bubble has only two pages; half of the given number will not be spelled in.
  */
 function windowsUsage(v: BalanceView): BalanceBubbleRow[] | undefined {
   const u = v.usage;
@@ -175,7 +188,7 @@ function windowsUsage(v: BalanceView): BalanceBubbleRow[] | undefined {
   const output = compactCount(u.outputTokens) + ' 出';
   const period = '本期 ' + u.requests + ' 次';
   const spend = '$' + u.spentUsd.toFixed(2);
-  // 比例条用真实占比：输入通常占绝对多数，条看起来几乎单色是事实，不做最小宽度放大。
+  // The proportion bar uses the real proportion: the input usually accounts for the absolute majority, it is a fact that the bar looks almost monochrome, and the minimum width is not enlarged.
   const sum = u.inputTokens + u.outputTokens;
   const inputPercent = sum > 0 ? (u.inputTokens / sum) * 100 : undefined;
   return [
@@ -193,7 +206,7 @@ function windowsUsage(v: BalanceView): BalanceBubbleRow[] | undefined {
   ];
 }
 
-/** windows 形态的展示规则：百分比取三窗口最大，展开态逐窗口一行，有用量时多一页。 */
+/** The display rules of windows form: the percentage is the largest among the three windows, the expanded state is one line per window, and one page is added when the amount is available. */
 export const windowsHandler: ShapeHandler = {
   percent: windowsPercent,
   rows: windowsRows,

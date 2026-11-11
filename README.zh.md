@@ -2,176 +2,106 @@
 
 **一只会陪你聊天、跟着工作状态动起来，也能记住你偏好的桌宠。**
 
-[English](README.md) · 简体中文
+[English](README.md) · 简体中文 · [文档](docs/zh/README.md) · [安装](docs/zh/guides/installation.md) · [下载版本](https://github.com/ob-labs/dsh-pet-powercontext/releases)
 
-<p>
-  <img src="dsh-pet/assets/preview/qingkuai-yaobaiwu.gif" width="180" alt="桌宠跳舞">
-  <img src="dsh-pet/assets/preview/shuan-huoguo.gif" width="180" alt="桌宠吃火锅">
-  <img src="dsh-pet/assets/preview/sanqiu-paojie.gif" width="180" alt="桌宠抛接球">
-</p>
+把她拖到工作区旁边，写一段人设，随时聊两句。桌宠既能作为 **DeepSeek Harness（DSH）插件**，也能 **独立运行**。可选的 **PowerContext 1.5.0** 长期记忆，让事实与偏好在退出近期聊天窗口后仍有机会被找回。
 
-dsh-pet 可以住在 **DeepSeek Harness（DSH）** 里，也可以作为**独立应用**运行。你可以拖着它到处跑，给它起名字、设人设，和它聊天，让它念出回复、提醒待办。开启可选的 **PowerContext 1.5.0 长期记忆**后，聊过的偏好和事实可以在后续对话中再次用上，不必一直塞在最近几轮聊天里。
+本项目基于 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。
 
-本仓库基于 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 扩展。要体验这里介绍的 PowerContext 能力，请构建当前分支；上游 npm 包和下载版不一定包含这些改动。
+## 看看用起来的样子
 
-## 桌宠能做什么
+![在完整 DeepSeek Harness 界面中与桌宠真实聊天](docs/assets/demos/dsh-chat.gif)
 
-| 能力 | 用起来是什么样 |
-| --- | --- |
-| 动画与互动 | 100+ 段动画，点击、拖拽、甩抛；多只宠物可以一起漫游、碰撞。 |
-| 聊天与人设 | 每只宠物有自己的名字和性格；聊天回复可以配合动作或已有图片。 |
-| 语音 | 可选音色并朗读回复；语音输入需要宿主提供兼容服务。 |
-| 日常小工具 | 待办清单、到期提醒、睡觉，以及受支持服务商的余额或额度查询。 |
-| DSH 联动 | 跟随会话工作状态切换表现，接收任务通知；这些能力依赖 DSH 宿主服务。 |
-| 自定义宠物 | 安装独立素材包，也可以自己制作角色和动画。 |
-| 长期记忆 | 在不同对话和重启后召回偏好、事实；每只宠物的记忆分别保存。 |
+_同一界面保留 DSH 工作区、Agent 会话和桌宠聊天面板，实际发送消息，观看桌宠回复和动作。两边的回复都来自真实模型调用；项目名和饮品偏好是虚构的演示输入。_
 
-聊天需要配置模型。语音、图片、余额、系统通知和会话联动能否使用，取决于模型、服务商和运行方式。记住“午休时不要打扰我”可以帮助桌宠回答问题，**不会自动修改提醒设置或安排任务**。
+![在 DeepSeek Harness 中召回长期记忆并查看已记住的事实](docs/assets/demos/dsh-memory-recall.gif)
 
-更多展示见[动画预览](GALLERY.md)，详细能力见 [FEATURES.md](FEATURES.md)，制作自己的宠物见 [MAKE-YOUR-OWN-PET.md](MAKE-YOUR-OWN-PET.md)。
+_后台抽取后，桌宠再次答出项目名 Moonleaf 和“无糖茉莉花茶”。本次演示将近期聊天设为 **0 轮**：实际模型请求携带召回记忆和新问题，没有携带历史问答。展开「Remembered facts」可以查看抽取后的事实。_
 
-## 从源码开始使用
+以上 GIF 在 Linux Chromium 中实录，使用当前分支、**DSH 0.2.2-rc.1** 与 **PowerContext 1.5.0**，保留界面原有的中英文控件。[查看原尺寸聊天截图](docs/assets/screenshots/dsh-chat.en.png) · [召回与记忆列表](docs/assets/screenshots/dsh-facts.en.png) · [图文来源](docs/assets/README.md)。
 
-准备 **Node.js 22.12 或更高版本**及 pnpm，在仓库根目录执行：
+## 先养好一只
+
+DSH CLI 需要 **Node.js 24.9+**，独立模式需要 **22.12+**，可统一使用 Node.js 24。在终端执行：
 
 ```sh
-cd dsh-pet
-pnpm install --frozen-lockfile
+git clone --branch master https://github.com/ob-labs/dsh-pet-powercontext.git
+cd dsh-pet-powercontext/dsh-pet
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm build
 pnpm standalone --setup
 ```
 
-打开终端打印的本机设置地址。在「**开始养鱼**」里选择服务商、填写 API Key，检查连接后即可聊天。长期记忆可以暂不开启；需要时再填写 Embedding 模型及其向量维度。
+打开本机设置页，选择服务商、填写 API Key 并检查连接。可以先只聊天，再开启本机长期记忆；程序会在用户目录准备自己的 Python 和 PowerContext 环境。
 
-勾选本机长期记忆后，程序会在用户数据目录准备独立的 Python 3.12 和 PowerContext 1.5.0，检查模型连接和记忆服务的就绪状态。首次安装需要联网，以及系统 `curl`、`tar` 工具。自动安装支持 Linux/macOS；Windows 随 PowerContext 保持实验性支持。
+装进 DSH 时，在内层包目录运行 `dsh plugin --profile web add "file:$PWD"` 后重启 DSH。桌面版使用 `--profile desktop`。先停用上游 `dsh-pet` 插件，再启用本包；保留共用的数据目录，以继续使用原配置和记忆。
 
-需要桌面窗口时，构建后先运行 `pnpm ensure:electron`，再运行 `pnpm start:app`。桌面渲染需要图形会话和 Electron，项目脚本会准备对应运行时；没有桌面的 Linux 环境可以使用本机网页。
+版本发布后，也可运行 `dsh plugin --profile web add dsh-pet-powercontext@beta` 安装插件，或运行 `npx dsh-pet-powercontext@beta --setup` 启动独立设置。
 
-### 在 DSH 中使用
+[小白上手教程](docs/zh/tutorials/first-pet.md) · [完整安装方式，含 Windows](docs/zh/guides/installation.md) · [选择模型服务](docs/zh/guides/models.md)
 
-完成上述构建后，在内层 `dsh-pet/` 包目录执行：
+## 桌宠与记忆分别做什么
 
-```sh
-# 浏览器版 DSH
-dsh plugin --profile web add "file:$PWD"
-# DSH 桌面应用把 web 改成 desktop
-```
+| 桌宠提供                             | PowerContext 提供                  |
+| ------------------------------------ | ---------------------------------- |
+| 点击、拖拽、抛掷，播放 100+ 动画素材 | 跨越近期窗口和重启，按问题召回事实 |
+| 独立人设、聊天与可配置语音           | 不同宠物各自的记忆 Scope           |
+| 待办、提醒、睡觉和可选碎碎念         | 查看来源、更正事实、申请遗忘       |
+| 跟随 DSH 会话工作状态                | 分别限制近期正文与召回正文         |
+| 安装自己的角色和动画包               | 暂停记忆后继续使用近期聊天         |
 
-安装或修改宿主代码后重启 DSH。此集成支持 DSH `0.2.2-rc.1`，该版本 CLI 需要 **Node.js 24.9 或更高版本**。
+会话联动、语音识别、服务商余额等能力取决于运行方式和宿主服务。聊天中记住一句承诺，不会自动创建提醒或执行动作。
 
-打开 **设置 → 桌宠配置 → 本机长期记忆**，选择记忆模型预设，或填写生成模型与 Embedding 配置，点击「检查并启用记忆」。页面显示安装进度和服务就绪状态，并提供取消、暂停、恢复和重试。聊天继续使用 DSH 中选择的模型，记忆整理单独配置模型。
+模型预设包括 DeepSeek、OpenAI、通义千问、硅基流动、火山方舟、智谱、Kimi、Ollama 和可选 LiteLLM 网关。聊天、记忆整理与 Embedding 可以使用不同服务商。[功能说明](docs/zh/reference/features.md) · [动画预览](docs/zh/reference/gallery.md)
 
-本机服务安装在运行 DSH 的机器上，应用于默认宠物条目；自定义宠物包保留独立设置。已有 PowerContext 服务也可在宠物的模型设置中连接。当前只采集桌宠对话，尚未给 DSH 的编程 Agent 会话接入记忆。
+## 为什么接记忆，token 又省在哪里
 
-分发安装包时，在内层包目录运行 `npm pack --pack-destination /仓库外的目录`，再用 `dsh plugin --profile web add /绝对路径/dsh-pet-powercontext-0.1.0-beta.1.tgz` 安装。反复验证重新构建的包时，为每个归档使用不同文件名，避免安装器命中本地归档缓存。
+小窗口控制当轮输入。PowerContext 将成功的文本问答交给后台整理，再按新问题召回相关证据，让应用不必每次把完整聊天都带给模型，也能接上较早的经历。
 
-上游包安装、Windows 下载版和打包方法见 [INSTALL.md](INSTALL.md)。
+![PDF 原图：固定千轮初始历史后，复用次数增加时的费用变化](docs/assets/benchmarks/reuse-cost.zh.png)
 
-### 选择模型服务
+所提供的《教你如何多快好省来养大肥鱼》使用合成对话和真实模型调用，几个结果回答的是不同问题：
 
-浏览器插件与独立版共用服务预设：DeepSeek、OpenAI、通义千问（北京／新加坡）、硅基流动、火山方舟、智谱、Kimi、Ollama、LiteLLM 网关和自定义 OpenAI 兼容地址。选择预设会填写接口地址；有默认模型时一并填写，仍需确认账户和地域可用。
+| 实验                                  | 观察结果                                  | 适用条件                                                         |
+| ------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| 140 回合回放：原生近期 10 轮改为 4 轮 | 聊天输入减少 **35.8%**                    | 小窗口答中旧事实 0/25；加入记忆达到 25/25，也增加了开销          |
+| 固定 1000 轮初始历史，复用 100 次     | 已知生成输入减少 **88.9%**                | 对照是每次携带全历史，不是默认原生 10 轮                         |
+| 同一复用实验，计入整理与维护          | 已知费用估算 **¥4.73 对 ¥6.99，低 32.3%** | 历史价格估算；回答结果不同，对照还有七次未计价调用，不是实际账单 |
 
-- **聊天模型**：DSH 中沿用宿主模型选择；独立版在「开始养鱼」中配置。
-- **记忆整理模型**：独立版默认沿用聊天模型，取消勾选即可另配服务商、模型和密钥；DSH 中独立配置。
-- **向量模型**：单独选择 Embedding 服务商。例如聊天用 DeepSeek，整理用另一家生成服务，向量用硅基流动。生成服务未提供向量预设时不会冒充向量服务。
+长期记忆不会自动更便宜，短对话和大批历史的初次导入可能更贵。请连同[完整实验、原图与限制](docs/zh/explanation/memory-and-cost.md)一起看，再按[用量控制指南](docs/zh/guides/token-budget.md)调整自己的桌宠。
 
-填写地址和密钥后，点击「获取模型列表」，在模型输入框中选择候选项，或直接手动填写模型／接入点 ID。列表过滤明确不匹配的能力，能力未知的模型仍需连接检查。没有列表接口、账户无权限或网络失败时，仍可手填。切换地址会清空正在编辑的密钥；已保存密钥只在同一完整地址下复用，不跨域或跨路径传递。
+## 数据与控制权
 
-向量维度应与模型实际输出一致。固定维度模型（如 BGE-M3）通常无需发送 `dimensions`；预设会关闭此参数，但连接检查仍核对向量长度。自定义服务只适用于当前支持的 `/chat/completions` 和文本 `/embeddings` 接口；多模态向量接口不能直接代替文本接口。
+记忆默认关闭，按需开启。本机记忆首次设置采用近期 4 轮、近期正文 6000 字节和召回正文 4096 字节。字节不是 token，后台抽取、输出、重试和其他功能还有各自的费用。
 
-Ollama 需要先安装并下载模型，再填写模型名和向量维度；本机无认证服务可不填密钥。LiteLLM 是可选的自建网关：填写网关地址、网关 Key 和模型别名即可，不会自动安装网关。记忆侧复用 PowerContext 1.5.0 内的 Pydantic AI 适配能力，本向导当前配置 OpenAI 兼容协议，不意味着全部原生协议均已接入。参见 [LiteLLM 网关文档](https://docs.litellm.ai/docs/proxy/quick_start) 和 [Ollama 兼容接口](https://docs.ollama.com/api/openai-compatibility)。
+- **已同步**只表示对话送达 PowerContext，不代表抽取完成或一定能召回。
+- **暂停**保留数据；**遗忘**将原子记忆移出召回，来源和历史版本仍保留。删除本机聊天不会删除远端证据。
+- 本机记忆在宿主的 `$DSH_HOME/dsh-pet/powercontext/` 下运行，远程模型仍会收到生成和 Embedding 所需文本。
+- 只采集桌宠对话，尚未给 DSH 编程 Agent 会话接入记忆，也不会自动导入旧聊天。
 
-**更换已有记忆库的向量模型**：向导固定已有库的地址、模型和维度，允许更新密钥。相同维度的不同模型也不能直接混用。若确需更换，请保留原库，在另一数据目录准备新的 PowerContext 服务，用保留的来源对话重新采集和整理，验证召回后再在宠物配置中切换记忆服务地址。当前没有一键迁移旧向量功能；切回原地址即可继续使用保留的旧库。
+[启用、验证与管理记忆](docs/zh/guides/memory.md)
 
+## 文档与开发
 
-## PowerContext 带来了什么
+| 下一步       | English                                                                                  | 简体中文                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 跟着教程使用 | [First pet](docs/en/tutorials/first-pet.md)                                              | [养好第一只桌宠](docs/zh/tutorials/first-pet.md)                              |
+| 配置与排障   | [Guides](docs/en/README.md#do)                                                           | [操作指南](docs/zh/README.md#解决具体问题)                                    |
+| 接入其他应用 | [HTTP](docs/en/reference/http-api.md) · [Cordis](docs/en/reference/cordis.md)            | [HTTP](docs/zh/reference/http-api.md) · [Cordis](docs/zh/reference/cordis.md) |
+| 开发与发布   | [Development](docs/en/reference/development.md) · [Releases](docs/en/guides/releases.md) | [开发](docs/zh/reference/development.md) · [发布](docs/zh/guides/releases.md) |
 
-最近几轮对话足以接住当下的话题，却很容易丢掉更早聊过的细节。PowerContext 把适合长期保留的事实和偏好整理出来，在相关话题出现时再取回，避免每次都重放整段聊天记录。
+源码位于内层 `dsh-pet/` 包目录：
 
-比如你告诉它：“我喜欢喝无糖茉莉花茶。”后台整理完成后，即使这句话已经不在近期窗口里，之后聊到饮料时仍有机会召回。追问“那我呢？”时，检索会参考最近对话来理解指代。口味变了，可以直接查看并更正那条记忆。
-
-```mermaid
-flowchart LR
-  A[完成一轮聊天] --> B[写入本机待同步队列]
-  B --> C[PowerContext 接收对话来源]
-  C --> D[模型整理原子记忆]
-  D --> E[按当前话题召回相关记忆]
-  E --> F[桌宠模型生成回复]
-```
-
-- **近期上下文与长期记忆分开控制。** 聊天中的分界线按实际字节预算计算近期轮数，不表示线外的内容都被遗忘了。
-- **每只宠物独立记忆。** 绑定和待同步记录会持久保存，重启后继续使用；切换服务地址不会把旧队列发送到新服务。
-- **记住了什么，可以看见。** 在聊天里打开「记得的事」，浏览当前可召回的记忆，查看来源摘录、更正内容或确认遗忘。更正带版本校验，避免旧页面覆盖新内容。
-- **记忆暂时不可用，仍能聊天。** 召回超时后使用近期对话继续；采集失败的问答留在本机队列里重试。
-- **历史证据不等于当前指令。** 召回内容按历史资料交给模型，当前用户的纠正优先。
-
-长期记忆默认关闭。首次使用本机引导接入时，默认保留 4 轮近期历史、最多 6000 字节近期正文及 4096 字节召回正文。前台召回默认超时 1.5 秒，后台生成另设 120 秒超时。这些是上限，不是响应速度承诺。
-
-### 怎样确认它真的记住了
-
-1. 开启记忆，等待服务就绪。
-2. 告诉桌宠一个明确、适合长期保存的偏好，完成一轮问答。
-3. 查看待同步、已同步状态，等待后台整理后，在「记得的事」中刷新。
-4. 在后续聊天里重新谈到相关话题。回答不对时，先核对记忆正文与来源，再决定更正或遗忘。
-
-**“已同步”只表示对话送达，不表示已经抽取，也不保证一定召回。** 后台每 30 秒检查一次；实际整理可能更久，也可能判断这轮对话没有值得长期记住的内容。
-
-已有服务器的接入、鉴权和故障恢复见 [POWERCONTEXT.md](POWERCONTEXT.md)。
-
-## 数据放在哪里，怎样控制
-
-| 操作 | 实际效果 |
-| --- | --- |
-| 删除聊天记录 | 删除本机消息，取消对应的未发送记录；已送达或正在发送的对话、远端记忆仍保留。 |
-| 更正一条记忆 | 保存新的内容版本，原始来源仍作为历史证据保留。 |
-| 遗忘一条记忆 | 将该原子记忆标记为 forgotten，停止长期召回；不物理删除来源和旧版本。近期聊天或新对话仍可能包含同一信息。 |
-| 暂停记忆 | 停止新的召回和补传；本机管理模式还会停止对应记忆进程。已有数据保留。 |
-
-希望某件事既不进入近期上下文、也不再长期召回时，需要**遗忘对应记忆，并删除相关本机聊天**。这不等于物理清除全部远端证据；有彻底删除要求时，还需另行管理服务端数据与保留策略。删除宠物前，先管理它的长期记忆，以免失去界面入口和绑定线索。
-
-本机聊天保存在宠物数据目录的 `memory.json` 中。本机管理的 PowerContext 把数据库、运行时和私有设置放在 `$DSH_HOME/dsh-pet/powercontext/`，只监听回环地址，使用自动生成的令牌。生成和 Embedding 仍会把所需文本发送给你配置的模型服务商，也可能产生费用；数据库在本机，不代表模型推理也在本机。
-
-## 开发与接口
-
-代码在内层 `dsh-pet/` 目录：
-
-- `src/host/`：配置、聊天、记忆持久化、路由和 DSH 集成。
-- `src/client/`：桌宠渲染、聊天和设置界面。
-- `src/shared/`：共享类型、动画和互动逻辑。
-- `src/standalone/`：独立运行、模型配置、本机记忆生命周期。
-- `runtime/`：Electron 桌面壳；`assets/`：动画与其他素材。
-
-```sh
-pnpm typecheck
-pnpm lint
-pnpm format:check
-pnpm check:cycles
-pnpm check:runtime
-pnpm check:openapi
-pnpm test
-pnpm test:ui
-pnpm build
-```
-
-配置参考 [CONFIG.md](CONFIG.md)。HTTP 能力见 [API.md](API.md) 和 [openapi.yaml](openapi.yaml)，插件调用见 [CORDIS-API.md](CORDIS-API.md)、[CORDIS.md](CORDIS.md)。反馈问题时请附提交或版本、操作系统、运行方式及复现步骤；分享日志前去掉密钥和私人聊天内容。
-
-### 发布 npm 包
-
-包名为 `dsh-pet-powercontext`，首个版本为 `0.1.0-beta.1`。发布完成后，DSH 用户运行 `dsh plugin --profile web add dsh-pet-powercontext@beta`，独立模式运行 `npx dsh-pet-powercontext@beta --setup`。保留 `dsh-pet-standalone` 命令作为别名。启用本包前先停用上游 `dsh-pet` 插件：两者共用路由、命令和已有的 `$DSH_HOME/dsh-pet/` 数据目录；保留此目录即可继续使用原配置和记忆。
-
-[发布流程](.github/workflows/release.yml)参考 [memory-powermem](https://github.com/ob-labs/memory-powermem/blob/main/.github/workflows/release.yml)：
-
-- PR 和 **Run workflow** 执行检查、构建、测试并上传可安装的 `.tgz` 产物。手动运行可填写分支、标签或 PR ref，即使选择标签也不会发布。
-- 推送 `v*` 标签时，标签必须与 `dsh-pet/package.json` 完全一致，首发标签是 `v0.1.0-beta.1`。成功后创建 GitHub Release，附上经过测试的安装包和 `SHA256SUMS`，再调用 Windows 桌面打包流程挂载 ZIP。
-- 需要同时发布 npm 时，在仓库 Actions Variables 设置 `NPM_PUBLISH=true`，Actions Secrets 设置 `NPM_TOKEN`，使用有发布权限且启用 bypass 2FA 的 granular token。未开启时只创建 GitHub Release。不要把 Token 提交到 `.npmrc`。
-- `alpha.N`、`beta.N`、`rc.N` 版本分别发布到对应 npm 标签，并标记为 GitHub 预发布；正式版才使用 `latest`。流程校验已提交的版本，不在发布过程中临时改版本。
-
-先将 workflow 合并到 `master`，配置变量和密钥，再从准备发布的提交推送匹配的版本标签。开启 npm 发布后，发布失败会阻止后续 GitHub Release 步骤。已发布的 npm 版本不能覆盖，修改内容后需要升版。安装包和临时测试数据均放在 runner 临时目录；本机 Linux 验证时使用 `/data/codex-tmp/` 并设置 `TMPDIR`。
+| 目录                  | 职责                                   |
+| --------------------- | -------------------------------------- |
+| `src/host/`           | 配置、HTTP 路由、聊天、队列与 DSH 接入 |
+| `src/client/`         | 角色渲染、设置和聊天界面               |
+| `src/shared/`         | 共享类型、动画与交互规则               |
+| `src/standalone/`     | 独立应用、模型设置与本机记忆生命周期   |
+| `runtime/`、`assets/` | Electron 外壳与角色素材                |
 
 ## 致谢与许可
 
-代码采用 [MIT](LICENSE)。宠物形象、动画、提示词和源视频另受角色相关授权约束，不能把代码的 MIT 许可套用到素材上。
+代码采用 [MIT 许可](LICENSE)。角色形象、动画、提示词与源视频遵循[单独的许可和署名要求](dsh-pet/ASSET-LICENSE.md)，包括上游注明的 CC BY-NC-SA 4.0，不适用代码许可。
 
-角色是社区二创的 DeepSeek「大肥鱼／鲸鱼娘」，**不是 DeepSeek 官方形象**。原型「溟月」出自 [上善无形](https://space.bilibili.com/4456176)，女仆鲸鱼娘设计出自 [ZipZipPipe](https://space.bilibili.com/4168597)。上游注明的形象授权为 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans)：署名、非商业、相同方式共享，详见[原始声明](https://www.bilibili.com/opus/1247156596114456581)。衍生作品须在公开仓库或产品网站注明 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。
-
-长期记忆由 [PowerContext](https://github.com/oceanbase/powercontext) 提供。
+鲸鱼娘是社区二创形象，并非 DeepSeek 官方角色。原型“溟月”：[上善无形](https://space.bilibili.com/4456176)；女仆鲸鱼娘设计：[ZipZipPipe](https://space.bilibili.com/4168597)；原版桌宠：[PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)；长期记忆：[PowerContext](https://github.com/oceanbase/powercontext)。

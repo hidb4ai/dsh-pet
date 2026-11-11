@@ -1,9 +1,11 @@
 /**
- * 主进程装配的冒烟测试：给定一只宠物，必须真的建出窗口并加载 index.html。
+ * Smoke test of main process assembly: given a pet, the window must actually be built and index.html loaded.
  *
- * 为什么要这一条：runtime 下的模块不在类型检查里，装配错了（参数没解构、路径写错）只会表现成
- * 「桌面上什么都没有」，而按文本断言的守卫看不出这种错。这里用替身 electron 把 main.js 真跑一遍。
- * 不启动真实 Electron、不开窗口：只断言窗口对象被创建、加载的是存在的页面。
+ * Why this article is needed: The module under runtime is not included in the type check. If the assembly is wrong
+ * (the parameters are not destructuring, the path is written incorrectly), it will only appear as "nothing on the
+ * desktop", and the guard who presses the text assertion cannot see this error. Here we use the stand-in electron to
+ * run main.js for real. Do not start the real Electron and do not open the window: only the assertion window object is
+ * created and the existing page is loaded.
  */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -15,7 +17,7 @@ import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 
-/** 替身 electron：任意未实现的方法都当空函数，避免逐个补齐。 */
+/** Substitute electron: Any unimplemented method is treated as an empty function to avoid filling it in one by one. */
 function createFakeElectron(created: Array<{ loaded?: { file: string } }>): unknown {
   const noop = (): void => {};
   const makeWindow = (): unknown => {
@@ -76,12 +78,12 @@ function createFakeElectron(created: Array<{ loaded?: { file: string } }>): unkn
   });
 }
 
-test('给定一只宠物：主进程会建窗，并加载存在的 index.html', async () => {
+test('Given a pet: the main process will create a window and load the existing index.html', async () => {
   const created: Array<{ loaded?: { file: string } }> = [];
   const originalLoad = (Module as unknown as { _load: (...args: unknown[]) => unknown })._load;
   const originalSetInterval = globalThis.setInterval;
   const originalEnv = { ...process.env };
-  // 建窗后每个窗口会起两条常驻定时器：测试里换成空函数，否则进程不退出
+  // After the window is created, each window will have two resident timers: replace them with empty functions in the test, otherwise the process will not exit.
   globalThis.setInterval = (() => 0) as unknown as typeof setInterval;
   (Module as unknown as { _load: (...args: unknown[]) => unknown })._load = function patched(
     request: unknown,
@@ -97,7 +99,7 @@ test('给定一只宠物：主进程会建窗，并加载存在的 index.html', 
 
   try {
     require(fileURLToPath(new URL('../../runtime/electron-helper/main.js', import.meta.url)));
-    // whenReady 的回调是微任务链：等一拍宏任务让它跑完
+    // The callback of whenReady is a microtask chain: wait for the macrotask to finish running
     await new Promise((resolve) => setTimeout(resolve, 50));
   } finally {
     (Module as unknown as { _load: (...args: unknown[]) => unknown })._load = originalLoad;
@@ -105,9 +107,9 @@ test('给定一只宠物：主进程会建窗，并加载存在的 index.html', 
     process.env = originalEnv;
   }
 
-  assert.equal(created.length, 1, '一只宠物必须建出一个窗口（0 个就是桌面上什么都没有）');
+  assert.equal(created.length, 1, 'A pet must create a window (0 means there is nothing on the desktop)');
   const loaded = created[0]?.loaded;
-  assert.ok(loaded, '窗口必须调用 loadFile（否则窗口是空的）');
-  assert.match(loaded.file, /index\.html$/, '加载的必须是渲染端页面');
-  assert.ok(existsSync(loaded.file), '页面文件必须真实存在');
+  assert.ok(loaded, 'The window must call loadFile (otherwise the window is empty)');
+  assert.match(loaded.file, /index\.html$/, 'The renderer page must be loaded');
+  assert.ok(existsSync(loaded.file), 'The page file must actually exist');
 });

@@ -1,16 +1,17 @@
 /**
- * 右键菜单：打开/关闭、叶子动作派发，以及菜单里用到的自绘节点渲染。
+ * Right-click menu: open/close, leaf action dispatch, and self-drawn node rendering used in the menu.
  *
- * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
- * 菜单结构与文案来自 shared-core（两端同一份）；这里只决定点下去之后做什么。
+ * PetSprite is defined by sprite.js. This file only adds methods to the prototype and must be loaded afterwards. The
+ * menu structure and text come from shared-core (the same copy at both ends); here only determines what to do
+ * after clicking.
  * @module dsh-pet/runtime/electron-helper/sprite-menu
  */
 'use strict';
 
-// 菜单首项文案随宿主形态变：桌面应用唤起主窗口，独立模式打开本机 AI 设置页，web 宿主打开站点。
+// The text of the first menu item changes with the host form: the desktop application evokes the main window, the standalone mode opens the local AI settings page, and the web host opens the site.
 const OPEN_LABEL = { desktop: '打开软件', standalone: '打开 AI 设置', web: '打开网站' };
 
-/** 睡觉拒绝台词的气泡时长（ms）：比默认 10s 略短，它只是「被打扰了」的一句回绝。 */
+/** The bubble duration of the sleep rejection line (ms): slightly shorter than the default 10 s, it is just a rejection of "I was disturbed". */
 const SLEEP_REFUSE_BUBBLE_MS = 8000;
 
 Object.assign(PetSprite.prototype, {
@@ -18,64 +19,70 @@ Object.assign(PetSprite.prototype, {
     const d = this.dragState;
     if (d.active || d.dragging || this.justDragged || this.menuOpen) return;
     e.preventDefault();
-    this.stopThrow(); // 菜单弹出前停住飞行中的宠物
-    this.stopMove(); // 菜单悬停期间宠物不漫游
-    // 桌面专属工具根项 + 共享菜单树（动作 → 分类 → 具体动画）。碎碎念/对话无条件显示：手动触发
-    // 不受 whisperEnabled 限制（该字段只影响自动轮询）。首项文案与去向随宿主形态变，见 OPEN_LABEL。
-    // 顺序：打开软件 / 余额 / 待办 / 碎碎念 / 对话 / 配图 / 睡觉 → 动作树 → 显示位置 / 重载配置 / 回到初始位置。
+    this.stopThrow(); // Stop the flying pet before the menu pops up
+    this.stopMove(); // Pets do not roam during menu hover. Desktop exclusive tool root item + shared menu tree (Action → Category →
+    // Specific animation). Whisper/conversation is displayed unconditionally: manual triggering is not restricted by
+    // whisperEnabled (this field only affects automatic polling). The text and destination of the first item change
+    // with the host form, see OPEN_LABEL. Sequence: open the software / balance / to-do / whisper / conversation / picture
+    // / sleep → action tree → display position / reload configuration / return to the initial position.
     const tools = [
       {
         label: OPEN_LABEL[OPEN_TARGET],
         action: 'open-site',
         hint: OPEN_SHORTCUT_HINT,
       },
-      // 「查看余额」无条件显示：关了 balanceEnabled 的宠物也能点，手动请求不受开关限制，点了一定给答复。
+      // "Check Balance" is displayed unconditionally: balanceEnabled pets can also click it if it is turned off. Manual requests are not restricted by the switch. If you click it, you will definitely get a reply.
       { label: '查看余额', action: 'show-balance' },
-      // 「待办事项」是待办面板的唯一入口（单击宠物不再弹面板），排在余额之后。
+      // "To-do items" is the only entry point of the to-do panel (clicking the pet will no longer pop up the panel), ranking after the balance.
       { label: '待办事项', action: 'todo', hint: S.TODO_HOTKEY_HINT },
       { label: '碎碎念', action: 'whisper' },
       { label: '对话', action: 'chat', hint: S.CHAT_HOTKEY_HINT },
     ];
-    // 「配图」：与浏览器端同一份分支（纳入对话的配图 / 其他），点一张就用它说一句；没有可用图时
-    // 返回 null，整项不出现。数据来自拍平层吹入的条目级字段（this.pet.memes / chatImageEnabled /
-    // chatImageLimit），与网页端同一个 flattenConfigPets；缩略图走 BASE 的 /pic/memes 绝对地址
-    // （桌面窗口是 file://，相对路径取不到图）。
+    // "Pictures": The same branch as the browser (pictures included in the conversation/others), click on one and use
+    // it to say a sentence; when there is no available picture, null will be returned, and the entire item will not
+    // appear. The data comes from the entry-level fields (this.pet.memes/chatImageEnabled/chatImageLimit) blown in
+    // from the flat layer, which is the same as flattenConfigPets on the web page; the thumbnail goes to the absolute
+    // address of BASE/pic/memes (the desktop window is file://, and the relative path cannot get the image).
     const memeBranch = S.buildMemeBranch(this.pet, (name) => S.memeThumbUrl(BASE, this.pet.assetRoot, name));
     if (memeBranch) tools.push(memeBranch);
-    // 睡觉/起来：睡着时这一项是「起来」（点它等于叫醒），醒着时是「睡觉」。两种文案共用一个位置，
-    // 排在「配图」之后、动作树之前（与浏览器端的菜单同一排法）。
-    // 该条目没配 animations.sleep 就整项不出现——与配置注释「不写 = 没有睡觉功能」一致。
+    // Sleep/wake up: When you are asleep, this item is "wake up" (clicking it is equivalent to waking up), when you
+    // are awake, it is "sleep". The two types of text share the same position, ranking after the "image" and
+    // before the action tree (the same arrangement as the menu on the browser side). If this entry is not configured
+    // with animations.sleep, the entire entry will not appear - consistent with the configuration comment "not written
+    // = no sleep function".
     if (Array.isArray(this.animations.sleep) && this.animations.sleep.length > 0) {
       if (this.sleeping) tools.push({ label: '起来', action: 'wake', hint: S.SLEEP_HOTKEY_HINT });
       else tools.push({ label: '睡觉', action: 'sleep', hint: S.SLEEP_HOTKEY_HINT });
     }
-    // 动作树之后是维护类：显示位置 → 重载配置 → 回到初始位置。
+    // After the action tree is the maintenance class: display position → reload configuration → return to initial position.
     const tail = [
-      // 显示位置（仅网页/仅桌面/两者/都不）：改这只宠物的 display 配置，由宿主重载生效。
-      // 与浏览器端注入同一份子菜单，两端文案与取值不会漂移。不就地开关窗：窗口是进程启动时按
-      // DSH_PET_PETS 一次性建的，就地增删既改不了磁盘配置也改不了窗口数量。
+      // Display location (web page only/desktop only/both/neither): Change the display configuration of this pet, and
+      // the host reload will take effect. Inject the same submenu as the browser side, and the copy and values at both
+      // ends will not drift. Do not open and close windows in place: Windows are created once by pressing DSH_PET_PETS
+      // when the process is started. In-place additions and deletions cannot change either the disk configuration or
+      // the number of windows.
       S.displayMenuBranch(),
-      // 重载配置：请宿主重启桌面 Helper，全部窗口按最新配置重建。维护动作，排在回到初始位置之前。
+      // Reload configuration: Please restart the host desktop Helper and rebuild all windows according to the latest configuration. Maintenance actions are scheduled before returning to the initial position.
       { label: '重载配置', action: 'reload' },
       { label: '回到初始位置', action: 'home' },
     ];
-    // 第三方菜单项统一收在「更多」下：label 唯一的直接平铺，label 重名的按 owner 分子菜单。
-    // 放在最后——「更多」不插在工具项与动作之间。
+    // Third-party menu items are unified under "More": label is the only direct tile, label has the same name as owner
+    // molecule menu. Put it last - "More" is not inserted between the tool item and the action.
     const more = S.buildMoreBranch(this.menuItems);
     const tree = tools.concat(S.buildMenuTree(this.animations), tail, more ? [more] : []);
     if (!tree.length) return;
     this.menuOpen = true;
-    this.setInteractive(true); // 菜单是窗口内 DOM：悬停期间整窗保持可交互，关闭后恢复命中区穿透
+    this.setInteractive(true); // The menu is inside the window DOM: The entire window remains interactive during hovering, and the hit area is restored after closing click-through
     this.syncInputBusy();
     window.__dshPetDebug.menuOpen = true;
     const m = S.mountContextMenu({
       tree,
       x: e.clientX,
       y: e.clientY,
-      // 只允许在「窗口 ∩ 工作区」内显示：宠物贴边时外扩余量伸出屏幕，菜单走进那里会被 OS 裁掉
+      // Only allowed to be displayed in "Window ∩ Workspace": When the pet is close to the edge, the expansion margin extends out of the screen, and the menu will be cropped by OS when entering there.
       clamp: this.visibleClampRect(),
       onAction: (leaf) => this.onMenuAction(leaf),
-      // 菜单被点外/Esc 关闭（非菜单项路径）：同样复位可交互标记，恢复命中区判定
+      // Menu clicked out/Esc closed (non-menu item path): Also reset the interactive mark and restore the hit area determination
       onClose: () => {
         this.menuOpen = false;
         window.__dshPetDebug.menuOpen = false;
@@ -84,15 +91,17 @@ Object.assign(PetSprite.prototype, {
       },
     });
     this.menuClose = m.close;
-    this.syncInputRegions(); // mountContextMenu 完成布局后才能读取菜单矩形
+    this.syncInputRegions(); // mountContextMenu can only read the menu rectangle after completing the layout
   },
 
-  /** keepFacing = 调用方已显式指定朝向：跳过下面「文字类动画点播前强制朝左」的镜像修正，显式值优先。 */
+  /** keepFacing = caller has explicitly specified the orientation: Skip the following mirror correction of "Forcing the left orientation before text animation playback request", the explicit value takes precedence. */
   onMenuAction(leaf, keepFacing, fromHost) {
     this.closeMenu();
     if (!leaf || typeof leaf !== 'object') return;
-    // 睡觉：打扰类动作在点击这一刻就拒绝——弹一句台词，什么都不执行。持锁时让路（锁=控制权交给第三方）。
-    // 对话弹窗、待办面板、点播动画都是渲染端行为，宿主闸门拦不到；两端用同一份放行判定。
+    // Sleep: Interruption actions will be rejected at the moment of clicking - play a line and nothing will be
+    // executed. Give way while holding a lock (lock = giving control to a third party). Dialog pop-ups, to-do panels,
+    // and playback request animations are all renderer behaviors and cannot be blocked by the host gate; both ends use
+    // the same release decision.
     if (this.sleeping && !this.frozen && !fromHost && !S.isSleepAllowedAction(leaf.action)) {
       const pool = Array.isArray(this.pet.sleepRefuseTexts) ? this.pet.sleepRefuseTexts : [];
       const text = pool[Math.floor(Math.random() * pool.length)];
@@ -100,65 +109,66 @@ Object.assign(PetSprite.prototype, {
       return;
     }
     if (leaf.action === 'third-party') {
-      // 第三方菜单项：只把 (owner, label) 交给宿主，具体做什么由注册方自己查 /menu/events。
-      // 带上宠物 id——同一条菜单项在不同宠物上被点，注册方要能分辨是哪只。
+      // Third-party menu items: Only ( owner , label ) are handed over to the host, and the specific actions are left
+      // to the register party to check / menu/events. Bring pets id - If the same menu item is clicked on different
+      // pets, register must be able to tell which one it is.
       if (leaf.owner) {
         S.postAction(BASE + '/menu/click', { owner: leaf.owner, label: leaf.label, pet: this.pet.id }).catch(() => {
-          /* 上报失败不影响本地：注册方下次轮询自然拿不到这次触发 */
+          /* Failure to report does not affect the local area: the register party will naturally not get this trigger next time it polls */
         });
       }
       return;
     }
     if (leaf.action === 'open-site') {
-      if (window.petBridge) window.petBridge.openDshSite(ORIGIN); // 系统默认浏览器打开（等效 Ctrl+点击链接）
+      if (window.petBridge) window.petBridge.openDshSite(ORIGIN); // The system default browser is opened (equivalent to Ctrl + click link)
       return;
     }
     if (leaf.action === 'show-balance') {
-      this.showBalanceFromMenu(); // 立即拉余额并展示（无需等 1s 触发轮询，展示路径与周期触发一致）
+      this.showBalanceFromMenu(); // Pull the balance immediately and display it (no need to wait for 1 s to trigger polling, the display path is consistent with the periodic trigger)
       return;
     }
     if (leaf.action === 'sleep' || leaf.action === 'wake') {
-      // 只发请求，画面等 sleep 叶子回来才动：三段名与时机都由宿主/渲染端状态机决定（见 setSleep）
+      // Only send requests, and the screen will not move until the sleep leaf comes back: the three segment names and timing are determined by the host / renderer state machine (see setSleep)
       this.postSleepAction(leaf.action);
       return;
     }
     if (leaf.action === 'whisper') {
-      // leaf.image 只在「配图」菜单的子项上出现：指定这一句用哪张图，其余入口不带（仍随机抽图）。
-      this.showWhisperFromMenu(leaf.image); // 立即让 host 强制新生成一句并展示（绕过节流；展示路径与周期触发一致）
+      // leaf.image only appears on the sub-item of the "Picture" menu: specify which picture to use for this sentence, and the other entry points are not included (pictures are still randomly selected).
+      this.showWhisperFromMenu(leaf.image); // Immediately force host to generate a new sentence and display it (bypass throttling; the display path is consistent with the periodic trigger)
       return;
     }
     if (leaf.action === 'chat') {
-      this.showChatFromMenu(); // 打开对话弹窗（记忆经 host /chat 读写，浏览器/桌面同一实例共享）
+      this.showChatFromMenu(); // Open the dialog pop-up window (memory via host / chat to read and write, browser/desktop shared in the same instance)
       return;
     }
     if (leaf.action === 'todo') {
-      this.toggleTodo(); // 打开待办面板（右键菜单入口）
+      this.toggleTodo(); // Open the to-do panel (right-click menu entry point)
       return;
     }
     if (leaf.action === 'home') {
-      this.goHome(); // 停漫游/移动，清会话位置，回配置角落
+      this.goHome(); // Stop roaming/mobility, clear the session location, and return to the configuration corner
       return;
     }
     if (leaf.action === 'set-display') {
-      this.setPetDisplay(leaf.display); // 改这只宠物的显示位置：写 display 配置，由宿主重载生效
+      this.setPetDisplay(leaf.display); // Change the display position of this pet: write display configuration, and it will take effect after host reloading
       return;
     }
     if (leaf.action === 'reload') {
-      this.reloadDesktop(); // 请宿主重启桌面 Helper：全部桌面宠物窗口按最新配置重建
+      this.reloadDesktop(); // Please host to restart the desktop Helper: All desktop pet windows will be rebuilt according to the latest configuration.
       return;
     }
     if (!leaf.anim) return;
-    // 回执归属：这一段若来自第三方点播，编号跟着换源走（自播动画传 null）
+    // Receipt attribution: If this section comes from a third-party playback request, the number will follow the source change (self-broadcast animation transmission null)
     const playbackId = typeof leaf.playbackId === 'string' && leaf.playbackId ? leaf.playbackId : null;
-    // 文字类（noMirror）朝右是镜像的：点播前强制朝左，避免文字镜像。keepFacing 时跳过（显式值优先）。
+    // The text class (noMirror) is mirrored to the right: it is forced to the left before playback request to avoid text mirroring. Skip if keepFacing (explicit values take precedence).
     if (!keepFacing && S.isNoMirrorAnimation(this.animations.categories, leaf.anim) && this.facing === 'right') {
       this.facing = 'left';
     }
-    // 点播移动动画：走真实移动（与随机游走同一套），只有「选哪个动画」由菜单决定；挪不动则退化纯播放。
+    // playback request moving animation: real movement (same set as random walk), only "which animation to choose" is determined by the menu; if it cannot move, it will degrade to pure playback.
     if (this.animations.moves.actions.some((a) => a.name === leaf.anim)) {
       const moved = this.tryMove(leaf.anim, playbackId);
       if (moved === false) this.playOnce(leaf.anim, playbackId);
-      // moved === true = 已有移动/抛掷在进行中（没换源）：本段不会真的播起来 → 如实回 failed/busy
+      // moved === true = There is already a move/throw in progress (no source change): this segment will not be played → truthfully return to failed/busy
       else if (moved === true && playbackId) this.reportPlayback(playbackId, 'failed', 'busy');
       return;
     }
@@ -172,51 +182,59 @@ Object.assign(PetSprite.prototype, {
     }
     this.menuOpen = false;
     window.__dshPetDebug.menuOpen = false;
-    this.syncInputBusy(); // 菜单关：若没有别的占用（拖拽/弹窗）则交还常规判定
+    this.syncInputBusy(); // Menu off: If there is no other occupation (drag/pop-up window), return to regular judgment.
     if (!this.inputBusy()) this.setInteractive(false);
   },
 
-  // 「查看余额」菜单：POST 动作让宿主刷新余额。结果这里什么都不用做——写叶子会让版本号变，
-  // 挂着的长轮询那一拍立刻返回并展示（同一展示路径）。数据只有一个出口（S），菜单只负责让它刷新。
-  // 不做 balanceEnabled 门控：手动请求不受开关限制，关了余额的宠物被点一次也该看到数据。
+  // The balance menu sends a POST refresh command. Updating the state leaf changes its counter and immediately
+  // releases the pending long poll, which displays the result through the usual path.
+  // State S remains the sole data source; the menu only requests a refresh. Manual requests bypass balanceEnabled so a
+  // disabled periodic balance feature still supports explicit checks.
   showBalanceFromMenu() {
     S.postAction(BALANCE_URL)
       .then((ok) => {
-        if (!ok) console.warn('[dsh-pet] 菜单查看余额：刷新动作未成功');
+        if (!ok) console.warn('[dsh-pet] Balance refresh from the context menu failed');
       })
       .catch((e) => {
-        console.error('[dsh-pet] 菜单查看余额异常', e);
+        console.error('[dsh-pet] Balance context-menu action threw an error', e);
       });
   },
 
-  // 「碎碎念」菜单：POST 动作让宿主立即新生成一句（写进 S）。动作不回文本，文本随版本号变化由
-  // 挂着的长轮询送达。手动触发不受 whisperEnabled 限制（该字段只关自动周期）。
-  // image 给了就只用这张（「配图」菜单点的是具体某张）：不在池内宿主回 unknown-image，本端只记日志。
+  // "Whisper" menu: The POST action allows the host to immediately generate a new sentence (written into S). The
+  // action does not return text. The text changes with the version number and is sent by hanging long polling. Manual
+  // triggering is not restricted by whisperEnabled (this field only turns off the automatic cycle). If image is given,
+  // only use this one (click on the specific picture in the "Picture" menu): if it is not in the pool, the host will
+  // return unknown-image, and the local end will only record the log.
   showWhisperFromMenu(image) {
-    // surface 必填：本窗口就是桌面端
-    // 桌面窗口是 file://，语音接口得走 bridge 绝对地址；念不念由 say.voiceTo 决定，
-    // 本端身份在启动时已经 S.setSurface('desktop') 登记过。
+    // surface Required: This window is the desktop. The desktop window is file://, and the voice interface must use
+    // the bridge absolute address; whether to read or not is determined by say.voiceTo. The identity of this terminal
+    // has been registered as S.setSurface (' desktop ') at startup.
     S.setVoiceBase(BASE);
-    // 图名是配置里的中文键，必须编码（可能含空格与全角字符）
+    // The picture name is the Chinese key in the configuration and must be encoded (may contain spaces and full-width characters)
     const pic = image ? '&image=' + encodeURIComponent(image) : '';
     S.postAction(WHISPER_URL + '?pet=' + encodeURIComponent(this.pet.id) + '&surface=desktop' + pic)
       .then((ok) => {
         if (!ok)
-          console.warn('[dsh-pet] 菜单碎碎念：生成动作未成功 pet=' + this.pet.id + (image ? ' image=' + image : ''));
+          console.warn(
+            '[dsh-pet] Menu whisper generation failed pet=' + this.pet.id + (image ? ' image=' + image : ''),
+          );
       })
       .catch((e) => {
-        console.warn('[dsh-pet] 菜单碎碎念异常', e);
+        console.warn('[dsh-pet] Whisper context-menu action threw an error', e);
       });
   },
 
-  // 「对话」菜单：最简输入框（shared 组件）——回车发送后弹窗消失，回复用碎碎念同款显示（说话动画 +
-  // 气泡 10s），只多一步用户输入。记忆经宿主 /chat 读写，同一实例的浏览器与桌面共享。
-  // 弹窗跟随身体命中区 this.hit（桌宠在视频中间，视频框右上角 ≠ 宠物右上角），超出视口自动夹回；
-  // 弹窗是窗口内 DOM，期间整窗保持可交互，关闭后恢复命中区穿透。
-  /** 悬停时粘贴一张图：弹窗没开就带着图打开，开着就塞进去；纯文字交给系统自己处理。 */
+  // "Dialogue" menu: the simplest input box (shared component) - the pop-up window disappears after pressing Enter to
+  // send, and the same style of reuse whisper is displayed (speaking animation + bubble 10 s), with only one more step
+  // for user input. The memory is read and written via host / chat, and is shared between the browser and desktop of
+  // the same instance. The pop-up window follows the body hit area this.hit (desktop pet is in the middle of the
+  // video, the upper right corner of the video frame ≠ the upper right corner of the pet), and is automatically
+  // clipped back when it exceeds the viewport; the pop-up window is DOM within the window, during which the entire
+  // window remains interactive, and the hit area is restored after click-through is closed.
+  /** Paste a picture when hovering: open the pop-up window with the picture when it is not open, and insert it when it is open; leave the pure text to the system for processing. */
   onPasteImage(e) {
     if (!this.hoverBody) return;
-    // 焦点在输入框里是正常粘贴，抢了会把文字粘丢——那种情况弹窗自己会接
+    // If the focus is in the input box, the text will be pasted normally. If you grab it, the text will be lost. In that case, the pop-up window will automatically respond.
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
     const file = S.firstImageFromClipboard(e.clipboardData);
@@ -229,13 +247,13 @@ Object.assign(PetSprite.prototype, {
     this.showChatFromMenu(file);
   },
 
-  /** 截一帧（主进程取宠物所在屏）；形状与浏览器侧 EncodedImage 一致，拿不到就抛给调用方决定。 */
+  /** Cut a frame (the main process takes the screen where the pet is); the shape is consistent with EncodedImage on the browser side. If it cannot be obtained, it will be thrown to the caller for decision. */
   async captureEncoded() {
     if (!window.petBridge || typeof window.petBridge.captureScreen !== 'function') {
-      throw new Error('当前环境不支持截屏');
+      throw new Error('Screen capture is unavailable in this environment');
     }
     const shot = await window.petBridge.captureScreen();
-    if (!shot) throw new Error('没有取到屏幕画面');
+    if (!shot) throw new Error('No screen image was captured');
     return {
       base64: shot.data,
       mediaType: shot.mediaType,
@@ -247,7 +265,7 @@ Object.assign(PetSprite.prototype, {
     };
   },
 
-  /** 截图快捷键：弹窗开着就把图塞进当前弹窗，没开就带着图打开；截不到也开弹窗把原因写出来。 */
+  /** Shortcut key for taking screenshots: If the pop-up window is open, insert the picture into the current pop-up window; if it is not open, open it with the picture; if the pop-up window cannot be taken, open the pop-up window and write down the reason. */
   async screenshotFromShortcut() {
     let encoded;
     try {
@@ -273,9 +291,9 @@ Object.assign(PetSprite.prototype, {
     if (this.chatMount) {
       this.chatMount.close();
       this.chatMount = null;
-      return; // 已开着：先关旧的
+      return; // Already open: turn off the old one first
     }
-    // 语音接口同样走 bridge 地址；念不念由 say.voiceTo 决定（本端身份启动时已 setSurface('desktop')）
+    // The voice interface also uses the bridge address; whether to read or not is determined by say.voiceTo (the local identity is setSurface (' desktop ') when starting)
     S.setVoiceBase(BASE);
     const m = S.mountChatDialog({
       petId: this.pet.id,
@@ -283,35 +301,36 @@ Object.assign(PetSprite.prototype, {
       surface: 'desktop',
       x: Math.max(4, this.hit.getBoundingClientRect().right + 6),
       y: Math.max(4, this.hit.getBoundingClientRect().top + 6),
-      // 拖拽落到宠物身上时直接带着图开弹窗
+      // When dragging and dropping on the pet, the pop-up window will be opened directly with the picture.
       ...(image ? { initialImage: image } : {}),
-      // 截图快捷键：截到的帧是 base64，没有 File
+      // Screenshot shortcut key: The captured frame is base64, not File
       ...(encoded ? { initialEncoded: encoded } : {}),
-      // 截屏：主进程取宠物所在屏的一帧（JPEG base64），形状与浏览器侧一致
+      // Screenshot: main process takes a frame of the screen where the pet is (JPEG base64), the shape is consistent with the browser side
       capture: () => this.captureEncoded(),
-      // 弹窗同菜单：只允许在「窗口 ∩ 工作区」内显示，贴边时不被屏幕裁掉
+      // The pop-up window is the same as the menu: it is only allowed to be displayed in "Window ∩ Workspace" and will not be cropped by the screen when it is attached to the edge.
       clamp: this.visibleClampRect(),
       onSent: () => {
-        // 发送成功：回复已写进 S → 版本号变 → 挂着的长轮询立刻返回并弹气泡
-        console.info('[dsh-pet] 对话已发送 pet=' + this.pet.id);
+        // Sent successfully: the reply has been written into S → the version number changes → the hanging long polling returns immediately and pops the bubble
+        console.info('[dsh-pet] Chat sent pet=' + this.pet.id);
       },
       onClose: () => {
         this.chatMount = null;
         this.chatOpen = false;
         window.__dshPetDebug.chatOpen = false;
-        this.syncInputBusy(); // 弹窗关：交还常规判定（菜单还开着的话仍保持忙）
-        if (!this.menuOpen) this.setInteractive(false); // 无菜单时恢复命中区穿透
+        this.syncInputBusy(); // Pop-up window closed: Return to normal judgment (remain busy if the menu is still open)
+        if (!this.menuOpen) this.setInteractive(false); // Restore hit area click-through when there is no menu
       },
     });
     this.chatMount = m;
-    this.chatOpen = true; // 穿透守卫：弹窗期间整窗保持可交互
+    this.chatOpen = true; // click-through guard: the entire window remains interactive during the pop-up window
     window.__dshPetDebug.chatOpen = true;
     this.syncInputBusy();
     this.setInteractive(true);
   },
 
-  // 快捷键「按住 M 说话」的两端：按下时若没有弹窗就先开一个，再让它开录；松开只收尾、不关窗，
-  // 识别结果落进输入框等用户确认（不自动发送）。
+  // Both ends of the shortcut key "Press and hold M to speak": if there is no pop-up window when pressed, open one
+  // first, and then let it start recording; release it only to cleanup, not close the window, and the recognition
+  // result will fall into the input box and wait for user confirmation (not automatically sent).
   startHearChat() {
     if (!this.chatMount) this.showChatFromMenu();
     if (this.chatMount) this.chatMount.startHear();
@@ -321,8 +340,10 @@ Object.assign(PetSprite.prototype, {
     if (this.chatMount) this.chatMount.stopHear();
   },
 
-  // 待办面板开关：面板占气泡槽（优先级最高），期间整窗保持可交互，关闭后交还命中区穿透。
-  // 与浏览器半侧共用 shared/todo/panel，只有接口基址不同（桌面是 file:// 页面，必须绝对地址）。
+  // To-do panel switch: The panel occupies the bubble slot (highest priority), during which the entire window remains
+  // interactive, and the hit area is returned to click-through after closing. It shares shared/todo/panel with the
+  // browser side, only the interface base address is different (the desktop is the file:// page, which must be an
+  // absolute address).
   toggleTodo() {
     if (this.todoPanel) {
       this.closeTodo();
@@ -331,11 +352,12 @@ Object.assign(PetSprite.prototype, {
     const panel = S.createTodoPanel({
       baseUrl: BASE + '/todos',
       onClose: () => this.closeTodo(),
-      // 点宠物本体不收起：拖它走是常见需求，收起就没法一边看清单一边挪位置。
+      // Keep the list open when clicking the pet so users can drag the pet while reading the list.
       keepOpenOn: (target) => typeof target?.closest === 'function' && target.closest('.pet-hit') !== null,
     });
-    // replaceChildren 而不是 appendChild：气泡里还留着上一次渲染的行（碎碎念/余额），
-    // 而 renderBubble 在面板开着时会提前返回、走不到清空那一步，不清就会叠在面板上方。
+    // replaceChildren instead of appendChild: The last rendered line (whisper/balance) still remains in the bubble,
+    // but renderBubble will return early when the panel is open and cannot reach the clear step, and the unclear line
+    // will be stacked on top of the panel.
     this.bubble.replaceChildren(panel.el);
     this.todoPanel = panel;
     this.todoOpen = true;
@@ -345,7 +367,7 @@ Object.assign(PetSprite.prototype, {
     this.setInteractive(true);
   },
 
-  // 收起待办面板：摘掉面板节点、撤掉气泡变体类，再把槽位交回正常判定。
+  // Collapse the to-do panel: remove the panel node, remove the bubble variant class, and then return the slot to normal judgment.
   closeTodo() {
     const panel = this.todoPanel;
     if (!panel) return;
@@ -357,7 +379,7 @@ Object.assign(PetSprite.prototype, {
     if (!this.menuOpen && !this.chatOpen) this.setInteractive(false);
   },
 
-  // 「回到初始位置」菜单：停掉漫游/移动，清掉会话位置，回到配置角落
+  // "Return to initial position" menu: stop roaming/moving, clear the session position, and return to the configuration corner
   goHome() {
     this.stopThrow();
     this.stopMove();
@@ -365,20 +387,24 @@ Object.assign(PetSprite.prototype, {
     this.position();
   },
 
-  // 「重载配置」菜单：请宿主重启桌面 Helper，与设置页「保存」同一条重启路径（宿主 POST /reload →
-  // syncDesktop）。不在渲染端就地重拉：窗口数量/display/size 由宿主按 DSH_PET_PETS 建，且全局轮询是
-  // 一次性启动的（loopsStarted），就地重建会漏启新循环或留下旧定时器。
-  // 本请求由即将被重启的进程发出，响应可能永远不回（宿主杀进程时回调地址已失效），故不 await、
-  // 不重试，失败只记日志——重载本身就是把本进程换掉。
+  // "Reload Configuration" menu: Please host the desktop Helper and use the same restart path as the "Save" setting
+  // page (host POST /reload → syncDesktop). Without in-place re-pulling of the renderer: Number of
+  // windows/display/size is built by the host according to DSH_PET_PETS, and global polling is started once
+  // (loopsStarted). In-place reconstruction will miss the start of the new cycle or leave the old timer. This request
+  // is issued by a process that is about to be restarted, and the response may never be returned (the callback address
+  // has expired when the host kills the process), so there is no await or retry, and only a log is recorded for
+  // failure - reloading itself means replacing the process.
   reloadDesktop() {
     fetch(BASE + '/reload', { method: 'POST' }).catch((e) => {
-      console.warn('[dsh-pet] 重载配置请求失败（宿主不可达？）', e);
+      console.warn('[dsh-pet] Configuration reload request failed; the host may be unreachable', e);
     });
   },
 
-  // 「显示位置」菜单：改这一只宠物的 display，写它自己的配置，再由宿主重载生效。取值直接来自菜单项，
-  // 渲染端不做推导（当前状态以配置为准）。不就地开关窗：窗口是进程启动时按 DSH_PET_PETS 一次性建的。
-  // 与 reloadDesktop 同一处境：选「仅网页/都不」时本进程会在重载中被换掉，故不 await、不重试。
+  // "Display location" menu: Change the display of this pet, write its own configuration, and then reload it by the
+  // host to take effect. The value comes directly from the menu item, and the renderer does not perform derivation
+  // (the current status is subject to the configuration). Do not open and close the window locally: the window is
+  // created once by pressing DSH_PET_PETS when the process is started. The same situation as reloadDesktop: When
+  // selecting "Only web pages/neither", this process will be replaced during reloading, so await will not be retried.
   setPetDisplay(display) {
     if (!display) return;
     fetch(BASE + '/pet-display', {
@@ -386,15 +412,16 @@ Object.assign(PetSprite.prototype, {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: this.pet.id, display }),
     }).catch((e) => {
-      console.warn('[dsh-pet] 显示位置请求失败（宿主不可达？）', e);
+      console.warn('[dsh-pet] Display-mode request failed; the host may be unreachable', e);
     });
   },
 
   /**
-   * 自定义节点树 → DOM（custom 形态的渲染器）。
+   * Custom node tree → DOM (custom form renderer).
    *
-   * tag 与样式白名单在 shared 的解析层已裁过，这里只做映射：不用 innerHTML，文本走 createTextNode，
-   * 第三方内容因而没有注入面。样式键是 camelCase，直接赋给 el.style 即可。
+   * tag and the style whitelist have been cut out in the parsing layer of shared, and only mapping is done here:
+   * innerHTML is not used, the text is createTextNode, and there is no injection surface for third-party content. The
+   * style key is camelCase, which can be directly assigned to el.style.
    */
   renderTree(node) {
     const el = document.createElement(node.tag);
@@ -406,7 +433,7 @@ Object.assign(PetSprite.prototype, {
       el.alt = '';
       return el;
     }
-    // 文本与子节点可同时存在：先文本、后子节点（与 textContent + appendChild 的顺序一致）
+    // Text and sub-nodes can exist at the same time: text first, then sub-nodes (consistent with the order of textContent + appendChild)
     if (node.text) el.appendChild(document.createTextNode(node.text));
     for (const child of node.children || []) el.appendChild(this.renderTree(child));
     return el;

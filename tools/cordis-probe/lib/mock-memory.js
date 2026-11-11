@@ -1,40 +1,44 @@
 /**
- * Mock 记忆实现：按宠物保留最近 5 轮问答，用户问“记得/之前/上次”时把最近一轮作为证据注入，
- * 并要求模型复读一个标记——回复出现该标记，才能证明 recall 真的改写了内容（原生历史给不出它）。
+ * Mock memory implementation: retain the last 5 rounds of questions and answers according to pets. When the user asks
+ * "remember/before/last time", the latest round is injected as evidence, and the model is required to reread a mark -
+ * only when the mark appears in the reply can it be proved that recall has really rewritten the content (the native
+ * history cannot provide it).
  *
- * 验证 `petApi7340.memory` 的两条入口：`recall` 在生成前改本轮内容，`capture` 在落盘后收这一轮；
- * `stats().captured` 给开关路由做“capture 真的被调用”的证据。
- * 不联网、不落盘；进程内存态，重启即空。
+ * Verify the two entry points of `petApi7340.memory` : `recall` changes the content of this round before generation,
+ * `capture` collects this round after persisting to disk; `stats().captured` provides evidence for switch routing that
+ * "capture is really called". Not connected to the Internet, does not persist to disk; the process memory state will
+ * be empty after restarting.
  * @module dsh-cordis-probe/mock-memory
  */
 
-/** 每只宠物保留的轮数上限：超出的从最旧的开始丢。 */
+/** The upper limit of the number of rounds each pet can keep: any pets that are exceeded will be discarded starting from the oldest one. */
 const MAX_TURNS = 5;
 
-/** 触发召回的问句特征：只认“问记忆”的话，普通闲聊不注入。 */
+/** Characteristics of questions that trigger recall: only words "asking about memory" are recognized, and ordinary chatting is not injected. */
 const RECALL_PATTERN = /(记得|之前|上次|说过|聊过)/;
 
-/** 召回时必须复读的标记：模型复读它 = recall 生效；原生历史不可能产生这段文字。 */
+/** The mark that must be repeated when recalling: The model rereads it = recall takes effect; it is impossible for the native history to generate this text. */
 export const MOCK_RECALL_MARKER = '[MOCK-RECALL-OK]';
 
 /**
- * 造一个 mock 记忆 provider。
+ * Create a mock memory provider.
  *
- * @returns 可直接交给 `petApi7340.memory.register` 的定义。
+ * @returns can be passed directly to the definition of `petApi7340.memory.register` .
  */
 export function createMockMemoryProvider() {
-  /** petId -> 最近 5 轮 `{ userText, replyText, ts }`。 */
+  /** petId -> The last 5 rounds of `{ userText, replyText, ts }`. */
   const turns = new Map();
-  /** 已接收的轮数（跨宠物累计），给开关路由当证据。 */
+  /** Number of rounds received (accumulated across pets), used as evidence for switch routing. */
   let captured = 0;
 
   return {
     id: 'mock-memory',
 
     /**
-     * 生成前召回：只有问句命中特征时才返回补丁，否则保持原内容。
-     * @param input - `{ petId, userText }`；其余字段本 mock 不用。
-     * @returns 改后的 `userText`；没有可注入的记忆时返回 undefined。
+     * Recall before generation: Return the patch only when the question hits the feature, otherwise keep the original
+     * content.
+     * @param input - `{ petId, userText }` ; the remaining fields are not used in mock.
+     * @returns modified `userText` ; returns undefined when there is no memory to inject.
      */
     recall({ petId, userText }) {
       if (!RECALL_PATTERN.test(userText)) return undefined;
@@ -55,8 +59,8 @@ export function createMockMemoryProvider() {
     },
 
     /**
-     * 落盘后接收：存下这一轮并计数；坏输入直接跳过，不写半条。
-     * @param input - `{ petId, userText, replyText, ts }`。
+     * Receive after persist to disk: save this round and count; skip bad input directly, do not write half of it.
+     * @param input - `{ petId, userText, replyText, ts }` .
      */
     capture({ petId, userText, replyText, ts }) {
       if (typeof userText !== 'string' || typeof replyText !== 'string') return;
@@ -68,8 +72,8 @@ export function createMockMemoryProvider() {
     },
 
     /**
-     * 已接收的轮数（跨宠物累计）。
-     * @returns 计数快照；开关路由把它放进响应。
+     * Number of rounds received (cumulative across pets).
+     * @returns count snapshot; switch routing to put it in the response.
      */
     stats() {
       return { captured };

@@ -1,18 +1,20 @@
 /**
- * 面板悬浮提示的契约测试 —— 钉住「body 层气泡、按光标摆位、离开/滚动收起、卸载回收」。
+ * Contract test of panel floating prompt - verify "body layer bubble, position by cursor, leave/scroll to collapse,
+ * unmount recycling".
  *
- * 气泡不能画在消息列表里（列表是 overflow:auto，伪元素会被裁掉），这条一旦被改回 CSS 方案，
- * 表现是「贴顶的消息看不到提示」而不是报错，所以这里断言挂载点与摆位，而不只是「有没有元素」。
+ * The bubble cannot be drawn in the message list (the list is overflow:auto, and the pseudo elements will be cut off).
+ * Once this is changed back to the CSS scheme, the performance is "the top message cannot see the prompt" instead of
+ * an error, so the assertion mounting point and positioning here are not just "whether there is an element".
  *
- * 假 DOM 只实现本模块用到的成员（不引 jsdom）：class 用 Set 表示，`style` 是普通对象，
- * 元素没有排版，宽高直接给定值。
+ * False DOM only implements the members used by this module (jsdom is not quoted): class is represented by Set.
+ * `style` is an ordinary object. The elements are not typeset, and the width and height are directly given.
  */
 import { test, describe, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { disposeTip, TIP_CLASS, tipAttrs } from './tooltip.ts';
 
-/** 极简元素替身：`parentNode` 与 `remove()` 连通，用来验证「挂到 body / 从 body 摘掉」。 */
+/** Minimalist element stand-in: `parentNode` is connected to `remove()`, used to verify "attached to body/removed from body". */
 class FakeEl {
   readonly tag: string;
   readonly attrs = new Map<string, string>();
@@ -21,7 +23,7 @@ class FakeEl {
   readonly children: FakeEl[] = [];
   parent: FakeEl | null = null;
   textContent = '';
-  /** 假 DOM 没有排版：给固定宽高，摆位计算才有真实尺寸可用。 */
+  /** False DOM has no typesetting: the width and height are fixed, and the real size is available for positioning calculation. */
   offsetWidth = 80;
   offsetHeight = 26;
 
@@ -66,7 +68,7 @@ class FakeEl {
   }
 }
 
-/** 极简事件目标：记录监听，`fire()` 模拟一次派发。 */
+/** Minimalist event target: record monitoring, `fire()` simulates one dispatch. */
 class FakeTarget {
   readonly listeners = new Map<string, Set<() => void>>();
 
@@ -80,7 +82,7 @@ class FakeTarget {
     this.listeners.get(type)?.delete(listener);
   }
 
-  /** 该类型当前挂着的监听数（用来验证卸载时确实摘干净）。 */
+  /** The number of currently hanging monitors of this type (used to verify that they are indeed removed when unmounting). */
   count(type: string): number {
     return this.listeners.get(type)?.size ?? 0;
   }
@@ -90,13 +92,13 @@ class FakeTarget {
   }
 }
 
-/** 极简 document 替身 + 视口尺寸。 */
+/** Minimalist document stand-in + viewport size. */
 class FakeWindow extends FakeTarget {
   innerWidth = 1280;
   innerHeight = 800;
 }
 
-/** 极简 document 替身。 */
+/** Minimalist document stand-in. */
 class FakeDocument extends FakeTarget {
   readonly body = new FakeEl('body');
 
@@ -105,7 +107,7 @@ class FakeDocument extends FakeTarget {
   }
 }
 
-/** 装一套假全局，返回 document 与还原函数。 */
+/** Install a fake global, return document and restore function. */
 function withFakeDom(): { doc: FakeDocument; win: FakeWindow; restore: () => void } {
   const doc = new FakeDocument();
   const win = new FakeWindow();
@@ -123,7 +125,7 @@ function withFakeDom(): { doc: FakeDocument; win: FakeWindow; restore: () => voi
   };
 }
 
-/** 当前挂在 body 上的气泡（按 class 认，不依赖下标）。 */
+/** The bubble currently hanging on body (acknowledged by class, does not rely on subscripts). */
 function tips(doc: FakeDocument): FakeEl[] {
   return doc.body.children.filter((el) => el.attrs.get('class') === TIP_CLASS);
 }
@@ -132,15 +134,19 @@ afterEach(() => {
   disposeTip();
 });
 
-describe('tipAttrs —— 悬停时的 body 层气泡', () => {
-  test('光标进入：在 body 上建一个 tooltip 气泡，正文与显隐状态就位', () => {
+describe('tipAttrs - body layer bubble on hover', () => {
+  test('Cursor entry: Create a tooltip bubble on body, with the text and visible state in place', () => {
     const { doc, restore } = withFakeDom();
     try {
       const attrs = tipAttrs('播放这句');
       attrs.onMouseEnter({ clientX: 100, clientY: 100 });
 
       const bubble = tips(doc);
-      assert.equal(bubble.length, 1, '气泡应该挂在 body 上（列表是滚动容器，挂在里面会被裁掉）');
+      assert.equal(
+        bubble.length,
+        1,
+        'The bubble should be hung on body (the list is a scrolling container and will be cropped if hung inside)',
+      );
       assert.equal(bubble[0].attrs.get('role'), 'tooltip');
       assert.equal(bubble[0].textContent, '播放这句');
       assert.equal(bubble[0].classList.contains('is-on'), true);
@@ -149,7 +155,7 @@ describe('tipAttrs —— 悬停时的 body 层气泡', () => {
     }
   });
 
-  test('摆位：光标右下放得下就放右下，间隙 10px', () => {
+  test('Positioning: Place the cursor in the lower right corner as long as it fits, with a gap of 10 px', () => {
     const { doc, restore } = withFakeDom();
     try {
       tipAttrs('播放这句').onMouseEnter({ clientX: 100, clientY: 100 });
@@ -161,7 +167,7 @@ describe('tipAttrs —— 悬停时的 body 层气泡', () => {
     }
   });
 
-  test('摆位：光标贴右下角时翻到光标左上，不会伸出视口', () => {
+  test('Positioning: When the cursor is attached to the lower right corner, it flips to the upper left corner of the cursor and does not extend out of the viewport.', () => {
     const { doc, restore } = withFakeDom();
     try {
       tipAttrs('播放这句').onMouseEnter({ clientX: 1270, clientY: 790 });
@@ -174,7 +180,7 @@ describe('tipAttrs —— 悬停时的 body 层气泡', () => {
     }
   });
 
-  test('光标离开：只摘显隐，元素留着复用（悬停频繁，反复建删会闪）', () => {
+  test('Cursor leaves: only the elements are shown and hidden, and the element remains reuse (hovering frequently, repeated creation and deletion will cause it to flash)', () => {
     const { doc, restore } = withFakeDom();
     try {
       const attrs = tipAttrs('点开看大图');
@@ -189,7 +195,7 @@ describe('tipAttrs —— 悬停时的 body 层气泡', () => {
     }
   });
 
-  test('换一个触发元素再悬停：复用同一个气泡，正文换成新的', () => {
+  test('Change the trigger element and then hover: reuse the same bubble and replace the text with the new one', () => {
     const { doc, restore } = withFakeDom();
     try {
       tipAttrs('播放这句').onMouseEnter({ clientX: 100, clientY: 100 });
@@ -203,7 +209,7 @@ describe('tipAttrs —— 悬停时的 body 层气泡', () => {
     }
   });
 
-  test('滚动或被按下：气泡立刻收起（fixed 定位不会跟着内容走，留着就错位）', () => {
+  test('After scrolling or being pressed: the bubble is immediately folded (fixed positioning will not follow the content, and will be misaligned if left on)', () => {
     const { doc, win, restore } = withFakeDom();
     try {
       tipAttrs('播放这句').onMouseEnter({ clientX: 100, clientY: 100 });
@@ -218,14 +224,14 @@ describe('tipAttrs —— 悬停时的 body 层气泡', () => {
     }
   });
 
-  test('不接 focus：点击按钮也会获得焦点，接了会在大图/播放期间留一个撤不掉的气泡', () => {
+  test('If you don’t answer focus: Clicking the button will also gain focus. If you answer it, a bubble will remain in the big picture/during playback that cannot be removed.', () => {
     const attrs = tipAttrs('播放这句');
     assert.deepEqual(Object.keys(attrs).sort(), ['onMouseEnter', 'onMouseLeave']);
   });
 });
 
-describe('disposeTip —— 卸载回收', () => {
-  test('摘掉气泡与全局监听，之后重新悬停能再建一个', () => {
+describe('disposeTip —— unmount recycling', () => {
+  test('Remove the bubble and global monitor, and then re-hover to create another one.', () => {
     const { doc, win, restore } = withFakeDom();
     try {
       tipAttrs('播放这句').onMouseEnter({ clientX: 100, clientY: 100 });
@@ -233,19 +239,19 @@ describe('disposeTip —— 卸载回收', () => {
       assert.equal(doc.count('pointerdown'), 1);
 
       disposeTip();
-      assert.equal(tips(doc).length, 0, '气泡应该从 body 上摘掉');
+      assert.equal(tips(doc).length, 0, 'bubble should be removed from body');
       assert.equal(win.count('scroll'), 0);
       assert.equal(doc.count('pointerdown'), 0);
 
       tipAttrs('播放这句').onMouseEnter({ clientX: 100, clientY: 100 });
-      assert.equal(tips(doc).length, 1, '卸载只是回收，不是停用');
-      assert.equal(win.count('scroll'), 1, '监听不能重复叠加');
+      assert.equal(tips(doc).length, 1, 'unmount is only for recycling, not deactivation.');
+      assert.equal(win.count('scroll'), 1, 'Monitoring cannot be superimposed repeatedly.');
     } finally {
       restore();
     }
   });
 
-  test('没显示过就卸载：不建元素、不报错', () => {
+  test('Unmount if it is not displayed: no element will be created and no error will be reported', () => {
     const { doc, restore } = withFakeDom();
     try {
       disposeTip();

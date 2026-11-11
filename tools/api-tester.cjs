@@ -1,27 +1,16 @@
 /**
- * dsh-pet HTTP 接口测试页的本地代理。
+ * Local proxy and browser console for the dsh-pet HTTP API.
+ * The console and its proxy share an origin; API requests are forwarded to the configured DSH port.
+ * Host authentication still applies. This development tool does not change the host's CORS policy.
  *
- * 为什么需要它：宿主路由（src/host/index.ts）**不返回 CORS 头**——浏览器半侧之所以能用，
- * 是因为它由 DSH 自己的 Web 服务同源提供。测试页要么是 file://（Origin: null），
- * 要么是本地另一个端口，跨域请求会被浏览器直接拦掉（不是 404，是压根发不出去）。
- * 所以这里起一个同源小服务：转发到宿主，并补上 CORS 头。
+ * Usage:
+ *   node tools/api-tester.cjs --no-open
+ *   node tools/api-tester.cjs --port 3080 --proxy-port 8741
+ * Use --dir to serve another static directory (default: tools/).
  *
- * 用法：
- *   node tools/api-tester.cjs                # 默认探测 3080，自动开浏览器
- *   node tools/api-tester.cjs --port 3080    # 指定宿主端口
- *   node tools/api-tester.cjs --no-open      # 不自动开浏览器
- *
- * 也可以用 --dir 指向别的静态目录（默认 tools/ 自身），方便调试别的页面。
- * 只监听 127.0.0.1；这条命令不碰任何生产代码。
- *
- * 另外它还扮演**第三方素材托管方**，让测试页能把"自己托管的 url"这条路走通：
- *   POST /__upload?name=<原文件名>   请求体 = 文件原始字节 → { ok, url, bytes }
- *   GET  /__uploads/<文件名>         把刚上传的文件原样送回去（带 CORS）
- * 上传落在系统临时目录（`<tmp>/dsh-pet-tester-uploads`），**不污染仓库**。
- *
- * 注意 /__uploads 的响应**必须带 CORS**：测试页在 8741、DSH 页面在另一个端口，浏览器端素材
- * 走的是 `fetch`，跨源就会被拦。这正是"外站 url 要对方自己配 CORS"那条规则的真实演示——
- * 换成桌面端（`el.src` 直连、媒体加载不走 CORS）则不需要。
+ * The server binds to 127.0.0.1. POST /__upload?name=<filename> accepts raw file bytes and returns
+ * a URL under /__uploads/. Uploads stay in the system temporary directory, outside the repository.
+ * Uploaded media responses include CORS headers so a pet on another local port can fetch them.
  */
 'use strict';
 
@@ -42,13 +31,13 @@ const ROOT_DIR = path.resolve(argOf('--dir', __dirname));
 const PAGE = argOf('--page', 'api-tester.html');
 const NO_OPEN = argv.includes('--no-open');
 
-/** 转发目标端口：测试页上的输入框可以改它（经 /__target），所以是可变状态 */
+/** Forwarding target port: the input box on the test page can change it (via / __target), so it is in a variable state */
 let hostPort = Number(argOf('--port', '3080'));
 
-/** 路由前缀：与 src/host/index.ts 的 ROUTE_PREFIX 一致（7340 是名字，不是端口） */
+/** Routing prefix: consistent with ROUTE_PREFIX of src/host/index.ts (7340 is the name, not the port) */
 const PREFIX = '/dsh-pet-7340';
 
-/** 这一跳要补的 CORS 头。注意：**只给本机测试代理补**，不改宿主行为。 */
+/** This jump requires CORS headers. Note: **Only adds** to the local test agent and does not change the host behavior. */
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, PUT, OPTIONS',
@@ -56,14 +45,14 @@ const CORS = {
   'access-control-max-age': '600',
 };
 
-/** 需要转发的路径：接口前缀本身 + 代理自身的探测端点 */
+/** The path that needs to be forwarded: the interface prefix itself + the proxy's own detection endpoint */
 const isApi = (url) => url === PREFIX || url.startsWith(PREFIX + '/') || url.startsWith(PREFIX + '?');
 
-/** 上传落盘目录：系统临时目录，**不污染仓库**（测试页在这里扮演"第三方托管素材"） */
+/** Upload persist to disk directory: system temporary directory, outside the repository (the test page here acts as a "third-party managed asset") */
 const UPLOAD_DIR = path.join(os.tmpdir(), 'dsh-pet-tester-uploads');
-/** 单个上传上限：防手滑传个几 GB 把临时盘塞满 */
+/** Limit each upload to 512 MiB to bound temporary disk usage. */
 const UPLOAD_MAX = 512 * 1024 * 1024;
-/** 上传/回读用的 MIME（`<video>` / `<img>` 靠它解码；认不出的按二进制流送） */
+/** MIME used for upload/readback (`<video>` / `<img>` is decoded by it; unrecognized ones are streamed as binary) */
 const UPLOAD_MIME = {
   '.webm': 'video/webm',
   '.mp4': 'video/mp4',
@@ -87,13 +76,13 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
-/** 转发一个请求到宿主，并把响应（含 CORS 头）回给浏览器 */
+/** Forward a request to host and send the response (including CORS header) back to the browser */
 function forward(req, res) {
   const target = `http://127.0.0.1:${hostPort}${req.url}`;
   const headers = { ...req.headers, host: `127.0.0.1:${hostPort}` };
 
   const upstream = http.request(target, { method: req.method, headers }, (up) => {
-    // 转发时保留上游的 content-type 等，再叠 CORS；源站没给 content-length 也不影响（chunked 照传）
+    // When forwarding, keep the upstream content-type, etc., and then overlay CORS; it will not be affected if the source station does not give content-length (chunked is passed as usual)
     res.writeHead(up.statusCode || 502, { ...up.headers, ...CORS });
     up.pipe(res);
   });
@@ -101,8 +90,8 @@ function forward(req, res) {
   upstream.on('error', (err) => {
     const msg =
       err.code === 'ECONNREFUSED'
-        ? `连不上宿主 http://127.0.0.1:${hostPort}——DSH 没在跑，或端口不对（页面上改端口，或启动时 --port 指定）`
-        : `转发失败：${err.message}`;
+        ? `Cannot connect to http://127.0.0.1:${hostPort}. Start DSH or change the port in the page or with --port.`
+        : `Proxy request failed: ${err.message}`;
     res.writeHead(502, { 'content-type': 'application/json; charset=utf-8', ...CORS });
     res.end(JSON.stringify({ proxyError: msg, target }, null, 2));
   });
@@ -111,10 +100,10 @@ function forward(req, res) {
 }
 
 /**
- * 代理自己的小端点（**不是** dsh-pet 接口，所以放在前缀之外）：
- *   GET  /__target        → { port }        页面启动时问"现在转发到哪个端口"
- *   POST /__target?port=N → { port }        页面改了端口输入框，切换转发目标
- * 这样测试页不用重新启动代理就能换端口试。
+ * Proxy your own small endpoint (**not** the dsh-pet interface, so put it outside the prefix): GET / __target → { port
+ * } When the page starts, it asks "Which port to forward to now" POST / __target ? port = N → { port } The port input
+ * box is changed on the page and the forwarding target is switched. This way, the test page can change the port
+ * without restarting the agent.
  */
 function handleTarget(req, res, url) {
   if (req.method === 'POST' || req.method === 'GET') {
@@ -126,10 +115,12 @@ function handleTarget(req, res, url) {
 }
 
 /**
- * 收一个上传：请求体就是文件的**原始字节**（不走 multipart——省掉一个解析器，而
- * `fetch(url, { body: file })` 本来就能直接发 File/Blob）。流式落盘，不把整个文件读进内存。
+ * Receive an upload: the request body is the **original bytes** of the file (do not use multipart - save a parser, and
+ * `fetch(url, { body: file })` can directly send File/Blob). Streaming persist to disk does not read the entire file
+ * into memory.
  *
- * 返回的 url 指向本代理自己的端口 —— 对 DSH 页面来说是**跨源**地址，正是要测的那条路。
+ * The returned url points to the proxy's own port - a **cross-origin** address for the DSH page, which is the path to
+ * be tested.
  */
 function handleUpload(req, res, url) {
   const json = (status, obj) => {
@@ -138,7 +129,7 @@ function handleUpload(req, res, url) {
   };
   if (req.method !== 'POST') return json(405, { ok: false, error: 'use POST' });
 
-  // 只取原文件的**基名**（剥掉任何路径成分，防穿越）；扩展名保留——回读时靠它定 MIME
+  // Only take the **base name** of the original file (strip off any path components to prevent traversal); the extension is retained - rely on it to determine MIME during readback
   const raw = path.basename(String(url.searchParams.get('name') || 'upload'));
   const ext = (path.extname(raw) || '.bin').toLowerCase();
   const name = Date.now().toString(36) + '-' + crypto.randomBytes(4).toString('hex') + ext;
@@ -147,7 +138,7 @@ function handleUpload(req, res, url) {
   try {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   } catch (e) {
-    return json(500, { ok: false, error: '建上传目录失败：' + e.message });
+    return json(500, { ok: false, error: 'Could not create the upload directory: ' + e.message });
   }
 
   const out = fs.createWriteStream(file);
@@ -160,33 +151,33 @@ function handleUpload(req, res, url) {
     req.unpipe(out);
     out.destroy();
     fs.rm(file, { force: true }, () => {});
-    // 不 destroy(req)：把剩下的请求体排掉，让客户端看到明确的状态码，而不是连接被掐
+    // No destroy (req): Drain the remaining request body so that the client can see a clear status code instead of the connection being blocked.
     req.resume();
     json(status, { ok: false, error: msg });
   };
 
   req.on('data', (chunk) => {
     bytes += chunk.length;
-    if (bytes > UPLOAD_MAX) fail(413, `文件太大（上限 ${Math.round(UPLOAD_MAX / 1024 / 1024)}MB）`);
+    if (bytes > UPLOAD_MAX) fail(413, `File too large (limit: ${Math.round(UPLOAD_MAX / 1024 / 1024)} MB)`);
   });
-  req.on('error', (e) => fail(400, '接收失败：' + e.message));
-  out.on('error', (e) => fail(500, '写盘失败：' + e.message));
+  req.on('error', (e) => fail(400, 'Receive failed: ' + e.message));
+  out.on('error', (e) => fail(500, 'Write failed: ' + e.message));
   out.on('finish', () => {
     if (done) return;
-    if (!bytes) return fail(400, '空文件');
+    if (!bytes) return fail(400, 'Empty file');
     done = true;
     json(200, { ok: true, url: `http://127.0.0.1:${PROXY_PORT}/__uploads/${name}`, bytes, name });
   });
   req.pipe(out);
 }
 
-/** 把刚上传的文件原样送回。**CORS 必须给**：浏览器端素材走 fetch，跨源就靠它。 */
+/** Send back the file you just uploaded as it is. ** CORS must be given**: The browser-side asset uses fetch, and cross-origin depends on it. */
 function serveUpload(req, res, name) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8', ...CORS });
     return res.end('use GET');
   }
-  // path.basename 再兜一道：`/__uploads/..%2f..%2fsecret` 这类穿越在拼路径前就被削平
+  // path.basename Another trip: `/__uploads/..%2f..%2fsecret` This type of crossing is flattened before the path is assembled.
   const file = path.join(UPLOAD_DIR, path.basename(decodeURIComponent(name)));
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) {
@@ -196,7 +187,7 @@ function serveUpload(req, res, name) {
     res.writeHead(200, {
       'content-type': UPLOAD_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
       'content-length': st.size,
-      // 文件名每次上传都不同，但测试页会反复重传 —— no-store 保证永远拿到刚传的那一份
+      // The file name is different every time it is uploaded, but the test page will be retransmitted repeatedly - no-store guarantees that you will always get the copy you just uploaded.
       'cache-control': 'no-store',
       ...CORS,
     });
@@ -205,7 +196,7 @@ function serveUpload(req, res, name) {
   });
 }
 
-/** 静态文件（测试页本身）；做了防穿越校验 */
+/** Static file (test page itself); anti-traversal verification has been done */
 function serveStatic(req, res) {
   let rel = decodeURIComponent(req.url.split('?')[0]);
   if (rel === '/' || rel === '') rel = '/' + PAGE;
@@ -231,7 +222,7 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
   if (url.pathname === '/__target') return handleTarget(req, res, url);
-  // 代理自己扮演"第三方素材托管方"：上传 + 回读（都在前缀之外，不会被当成 dsh-pet 接口转发）
+  // The agent acts as a "third-party asset custodian": upload + readback (all outside the prefix and will not be forwarded as the dsh-pet interface)
   if (url.pathname === '/__upload') return handleUpload(req, res, url);
   if (url.pathname.startsWith('/__uploads/')) {
     return serveUpload(req, res, url.pathname.slice('/__uploads/'.length));
@@ -242,9 +233,9 @@ const server = http.createServer((req, res) => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`\n端口 ${PROXY_PORT} 已被占用。换个端口：node tools/api-tester.cjs --proxy-port 8742\n`);
+    console.error(`\nPort ${PROXY_PORT} is busy. Try: node tools/api-tester.cjs --proxy-port 8742\n`);
   } else {
-    console.error('\n代理启动失败：' + err.message + '\n');
+    console.error("\nProxy startup failed:" + err.message + '\n');
   }
   process.exit(1);
 });
@@ -252,19 +243,19 @@ server.on('error', (err) => {
 server.listen(PROXY_PORT, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${PROXY_PORT}/${PAGE}`;
   console.log('');
-  console.log('  dsh-pet 接口测试页');
+  console.log("  dsh-pet API tester");
   console.log('  ─────────────────────────────────────────────');
-  console.log(`  测试页   ${url}`);
-  console.log(`  转发到   http://127.0.0.1:${hostPort}${PREFIX}`);
-  console.log(`  上传素材 ${UPLOAD_DIR}`);
-  console.log('           （测试页「上传视频」把文件放这儿，再由 /__uploads/ 提供出去，');
-  console.log('             模拟"第三方自己托管素材、只给一个 url"）');
+  console.log(`  Tester   ${url}`);
+  console.log(`  Upstream http://127.0.0.1:${hostPort}${PREFIX}`);
+  console.log(`  Uploads  ${UPLOAD_DIR}`);
+  console.log("           Uploaded videos are served from /__uploads/,");
+  console.log("           simulating third-party assets provided by URL.");
   console.log('');
-  console.log('  Ctrl+C 退出');
+  console.log("  Press Ctrl+C to quit");
   console.log('');
 
   if (NO_OPEN) return;
-  // Windows 用 start（注意第一个空参数是窗口标题占位），macOS 用 open，其余 xdg-open
+  // Windows uses start (note that the first empty parameter is the window title placeholder), macOS uses open, and the rest xdg-open
   const [cmd, args] =
     process.platform === 'win32'
       ? ['cmd', ['/c', 'start', '', url]]
@@ -274,6 +265,6 @@ server.listen(PROXY_PORT, '127.0.0.1', () => {
   try {
     spawn(cmd, args, { stdio: 'ignore', detached: true }).unref();
   } catch {
-    /* 打不开就算了，地址已经打印在上面 */
+    /* Even if it cannot be opened, the address has been printed on it. */
   }
 });

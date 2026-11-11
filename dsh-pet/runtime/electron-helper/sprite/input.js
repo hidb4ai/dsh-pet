@@ -1,19 +1,22 @@
 /**
- * 指针与命中：按下/移动/抬起、点击、可交互区同步与输入租约上报。
+ * Pointer and hit: press/move/lift, click, interactive area synchronization and input lease reporting.
  *
- * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
- * 副作用是 DOM 事件与 IPC（setInteractive / syncInputBusy），不碰播放与运动状态机。
+ * PetSprite is defined by sprite.js. This file only adds methods to the prototype and must be loaded afterwards. The
+ * side effect is the DOM event and IPC (setInteractive / syncInputBusy), which do not touch the playback and motion
+ * state machines.
  * @module dsh-pet/runtime/electron-helper/sprite-input
  */
 'use strict';
 
 Object.assign(PetSprite.prototype, {
   onPointerDown(e) {
-    // 只认左键：右键进入拖拽判定会与右键菜单打架
+    // Start dragging only with the left button; right-button dragging conflicts with the context menu.
     if (e.button !== 0) return;
-    // 占用锁：用户点了或拖了这只宠物 = 用户接管，立刻撤掉第三方占用。这是唯一一处「渲染端 → 宿主」
-    // 的锁上报——宿主看不见鼠标，而锁在它手里（/lock/release 的 force 形态）。
-    // 先本地解冻再上报：等叶子往返会让宠物「点了半天才动」，而此刻 frozen 为真说明这次释放必然成功。
+    // Occupation lock: The user clicks or drags this pet = the user takes over and the third-party occupation is
+    // immediately removed. This is the only lock report of "renderer → host" - the host cannot see the mouse, but the
+    // lock is in its hands (force form of / lock/release). Defrost locally first and then report: Waiting for the
+    // leaves to go back and forth will make the pet "click for a long time before moving", and the fact that frozen is
+    // true at this moment means that this release must be successful.
     if (this.frozen) {
       if (this.lockTimer !== null) {
         window.clearTimeout(this.lockTimer);
@@ -21,10 +24,10 @@ Object.assign(PetSprite.prototype, {
       }
       this.applyFreeze(false);
       S.postAction(BASE + '/lock/release?pet=' + encodeURIComponent(this.pet.id), { force: true }).then((ok) => {
-        if (!ok) console.warn('[dsh-pet] 用户接管上报未送达 pet=' + this.pet.id);
+        if (!ok) console.warn('[dsh-pet] User takeover report not delivered pet=' + this.pet.id);
       });
     }
-    // 抓取速度日志：stopThrow 之前读，否则飞行速度就没了；静止时记录 0
+    // Fetch speed log: Read before stopThrow, otherwise the flight speed will be lost; record 0 when stationary
     const grabState = this.throwState;
     console.log(
       '[dsh-pet] ' +
@@ -38,10 +41,11 @@ Object.assign(PetSprite.prototype, {
         ' |v|=' +
         (grabState ? Math.round(Math.hypot(grabState.vx, grabState.vy)) : 0),
     );
-    // 点击积分：按下瞬间即触发（不等松开）。读 stopThrow 之前的飞行速度，达标就爆发 + 弹窗；
-    // pressScoreFired 标记本次按下已触发，松开的 click 据此不再重复弹、也不再播普通点击动画。
+    // Click points: Triggered as soon as pressed (without waiting for release). Read the previous flight speed of
+    // stopThrow, and a pop-up window will explode when it reaches the standard; pressScoreFired marks that this press
+    // has been triggered, and the released click will no longer play the normal click animation.
     this.pressScoreFired = false;
-    // 修饰键+点击是「呼出 DSH」快捷键：不弹积分，避免快捷键顺手刷分
+    // Modifier key + click is the shortcut key for "Call out DSH": points will not be played to avoid shortcut keys to easily increase points.
     if (grabState && !isOpenShortcut(e)) {
       const grabSpeed = Math.hypot(grabState.vx, grabState.vy);
       if (grabSpeed >= S.SCORE_MIN_SPEED) {
@@ -68,26 +72,28 @@ Object.assign(PetSprite.prototype, {
         });
       }
     }
-    this.stopThrow(); // 空中抓取：从当前落点开始新拖拽（this.pos 实时）
+    this.stopThrow(); // Air grab: start a new drag from the current landing point (this.pos real-time)
     this.stopDragFollow();
     this.stopMove();
     this.dragTrail = [];
-    // 弹弓：按下时记时刻、按下时比对——间隔 = 两次按下之间的距离，与这次拖了多久无关，
-    // 也没有「待拉」状态或超时清理。
+    // Slingshot: Record the time when pressed, compare when pressed - interval = the distance between two presses, it
+    // has nothing to do with how long the drag has been, and there is no "waiting for pull" state or timeout cleanup.
     const pressNow = performance.now();
     const sling = pressNow - this.lastPressAt < S.SLINGSHOT_DOUBLE_MS;
-    this.lastPressAt = sling ? 0 : pressNow; // 命中就清掉，免得连点三下弹两次
+    this.lastPressAt = sling ? 0 : pressNow; // Clear it as soon as it hits, so you don’t have to click three times to bounce it twice.
     this.hit.classList.add('dragging');
-    // 收起悬浮提示：拖拽期间指针始终在身体内，不主动收提示会跟着宠物一路飘（松手后由 onPointerUp 复位）
+    // Close the floating prompt: the pointer is always within the body during dragging. If you do not actively close the prompt, it will float with the pet (reset by onPointerUp after letting go)
     this.setTip(false);
     this.stopMove();
     try {
       this.hit.setPointerCapture(e.pointerId);
     } catch {
-      /* 忽略捕获失败 */
+      /* Ignore capture failure */
     }
-    // 记录按下时的指针屏幕坐标与宠物窗口位置：增量全部用 screenX/Y 算——屏幕坐标与窗口位置无关，
-    // 不受窗口逐帧移动影响（window.screenX 会滞后/缓存）；物理像素 ÷scale 进 CSS 系。
+    // Record the pointer screen coordinates and pet window position when pressed: all increments are calculated using
+    // screenX/Y - the screen coordinates have nothing to do with the window position and are not affected by the
+    // frame-by-frame movement of the window (window.screenX will lag/cached); physical pixels ÷ scale enter the CSS
+    // system.
     this.dragState = {
       active: true,
       dragging: false,
@@ -96,11 +102,13 @@ Object.assign(PetSprite.prototype, {
       petX: this.pos.x,
       petY: this.pos.y,
     };
-    // 拖拽信号：主进程兜底通道按光标与窗口矩形判定，而窗口比身体大一圈；拖拽中宠物滞后于光标，
-    // 光标可能出窗 → 翻回穿透 → 收不到 pointermove/pointerup。这里上报「我正在用输入」。
+    // Drag signal: The main process fallback channel is determined by the cursor and the window rectangle, and the
+    // window is one circle larger than the body; the pet lags behind the cursor during dragging, and the cursor may go
+    // out of the window → click-through → cannot receive pointermove/pointerup. Report "I am using input" here.
     this.syncInputBusy();
-    // 弹弓：把本次是否拉弓与按下时的宠物中心补进同一次拖拽状态。放在上报之后是为了不稀释
-    // 源码守卫（它要求 busy 必须在建立状态后紧跟着上报）。
+    // Slingshot: Add whether the bow is drawn this time and the center of the pet when it is pressed into the same
+    // drag state. It is placed after the report in order not to dilute the source code guard (it requires that busy
+    // must be reported immediately after the status is established).
     this.dragState.sling = sling;
     this.dragState.anchorX = this.pos.x + this.halfW;
     this.dragState.anchorY = this.pos.y + this.halfH;
@@ -109,23 +117,23 @@ Object.assign(PetSprite.prototype, {
   onPointerMove(e) {
     const d = this.dragState;
     if (!d.active) return;
-    // 阈值判定用屏幕坐标增量（clientX 会随窗口移动变化，屏幕坐标稳定）；÷scale 进 CSS 系
+    // Screen coordinate increment is used for threshold determination (clientX will change with the movement of the window, and the screen coordinates are stable); ÷ scale enters the CSS system
     const dx = toLocal(e.screenX) - d.sx;
     const dy = toLocal(e.screenY) - d.sy;
     if (!d.dragging) {
       if (Math.hypot(dx, dy) < S.DRAG_THRESHOLD) return;
       d.dragging = true;
-      // 睡觉：位置照常跟手，但不换拖拽动画——睡姿循环整段归睡觉状态机，顶掉就回不来了。
+      // Sleeping: The position follows the hand as usual, but the drag animation is not changed - the entire sleeping position cycle returns to the sleep state machine, and it cannot be returned after being pushed out.
       if (this.animations.drag.length && !this.sleeping) {
         this.playOnce(S.pick(this.animations.drag));
       }
-      this.syncInputBusy(); // 拖拽成立：主进程兜底通道闭嘴（见 inputBusy）
+      this.syncInputBusy(); // Drag and drop is established: main process fallback channel shuts up (see inputBusy)
     }
-    // 记录指针轨迹（screenX/Y 采样，速度一致；初速估算用；÷scale 进 CSS 系）
+    // Record pointer trajectory (screenX/Y sampling, consistent speed; used for initial velocity estimation; ÷ scale into CSS system)
     const now = performance.now();
     this.dragTrail.push({ t: now, x: toLocal(e.screenX), y: toLocal(e.screenY) });
     this.dragTrail = S.trimTrail(this.dragTrail, now);
-    // 弹簧目标 = 按下时的宠物位置 + 指针屏幕增量（窗口怎么动都不影响坐标），由 rAF 逐帧追赶
+    // Spring target = pet position when pressed + pointer screen increment (coordinates will not be affected no matter how the window moves), chased frame by frame by rAF
     this.dragTarget = { x: d.petX + dx, y: d.petY + dy };
     this.startDragFollow();
   },
@@ -136,16 +144,18 @@ Object.assign(PetSprite.prototype, {
     d.active = false;
     d.dragging = false;
     this.hit.classList.remove('dragging');
-    this.stopDragFollow(); // 弹簧跟随立即停（位置定格在实时 this.pos）
-    this.syncInputBusy(); // 拖拽结束：交还给常规判定（幂等，非拖拽时多调一次不发 IPC）
-    // 提示复位：点击/拖拽期间收起，指针仍在命中区内就恢复。用 hitRect 而不是 getBoundingClientRect
-    // ——命中区是窗口坐标里的权威几何，与 onMouseMove 同源。必须留在 syncInputBusy() 之后：
-    // 源码守卫只扫本函数开头 400 字符找上报调用，插到前面会把上报挤出窗口。
+    this.stopDragFollow(); // The spring follows and stops immediately (the position is fixed at this.pos in real time)
+    this.syncInputBusy(); // End of dragging: Return to normal judgment (idempotent, adjust once more than once without sending IPC when not
+    // dragging) Prompt reset: retract during click/drag, and restore when the pointer is still in the hit area. Use
+    // hitRect instead of getBoundingClientRect - the hit zone is the authoritative geometry in window coordinates and has
+    // the same origin as onMouseMove. It must be left after syncInputBusy(): The source code guard only scans the 400
+    // characters at the beginning of this function to find the report call. Inserting it in front will squeeze the report
+    // out of the window.
     if (e && Number.isFinite(e.clientX)) {
       const r = this.hitRect;
       const px = e.clientX - this.winOffset.x;
       const py = e.clientY - this.winOffset.y;
-      // 先按松手位置更新光标再摆位/显示，否则会重现拖拽前的位置（与浏览器 placeTip 同一处理）
+      // Press the release position to update the cursor before positioning/displaying it, otherwise the position before dragging will be reproduced (same processing as browser placeTip)
       this.tipCursor = {
         x: this.pos.x - this.winOffset.x + e.clientX,
         y: this.pos.y - this.winOffset.y + e.clientY,
@@ -158,7 +168,7 @@ Object.assign(PetSprite.prototype, {
         this.justDragged = false;
       }, 100);
       if (e && Number.isFinite(e.screenX)) {
-        // 原始输入留痕（实机排查用：验证指针屏幕坐标与窗口位移是否一致，如 DPI 缩放问题）
+        // Original input traces (for actual machine troubleshooting: verify whether the pointer screen coordinates are consistent with the window displacement, such as DPI scaling problem)
         window.__dshPetDebug.lastDragRaw = {
           petX: d.petX,
           petY: d.petY,
@@ -168,18 +178,20 @@ Object.assign(PetSprite.prototype, {
           yUp: e.screenY,
         };
       }
-      // 拖拽松手：非终态工作状态恢复档位循环，否则回 idle。必须用 playOnce：switchTo(idle,false)
-      // 会 loop 播放、ended 永不触发，随机链就再也回不来。
-      // 睡觉：拖拽期间没换过动画、睡姿照播，这里不接回 idle，否则会把睡姿顶掉。
+      // Drag and release: the non-final working state resumes the state cycle, otherwise it returns to idle. playOnce
+      // must be used: switchTo ( idle , false ) will play loop, ended will never trigger, and the random chain will
+      // never return. Sleeping: No animations or sleeping postures have been changed during dragging. Do not connect
+      // idle here, otherwise the sleeping posture will be removed.
       if (!this.sleeping && !this.resumeWorkStatusAnim()) {
         if (this.animations.idle.length) this.playOnce(S.pick(this.animations.idle, this.anim));
       }
-      // 释放位置 = 弹簧跟随后的实际包围盒左上角（不是指针目标：滞后时落点应跟随宠物实际位置）
+      // Release position = the upper left corner of the actual bounding box after the spring follows (not the pointer target: the landing point should follow the actual position of the pet when lagging)
       const px = this.pos.x;
       const py = this.pos.y;
       if (d.sling) {
-        // 弹弓：力度 = 拉距（与手速无关），方向 = 拉的反方向；拉向量用宠物实际中心算
-        // （弹簧有滞后，用户看到的是宠物被拉出去多远）。之后与甩抛走同一条 startThrow。
+        // Slingshot: Strength = pulling distance (regardless of hand speed), direction = the opposite direction of
+        // pulling; the pulling vector is calculated using the actual center of the pet (the spring has hysteresis, and
+        // the user sees how far the pet is pulled). Then the same startThrow is thrown away.
         const pullX = px + this.halfW - d.anchorX;
         const pullY = py + this.halfH - d.anchorY;
         const dist = Math.hypot(pullX, pullY);
@@ -202,7 +214,7 @@ Object.assign(PetSprite.prototype, {
         );
         this.startThrow(px, py, v.vx, v.vy);
       } else {
-        // 初速估算：够快就抛掷，否则原地放下
+        // Estimation of muzzle velocity: throw it if it is fast enough, otherwise put it down on the spot
         const vel = S.estimateReleaseVelocity(this.dragTrail, performance.now(), this.physics);
         this.dragTrail = [];
         if (vel) {
@@ -220,10 +232,10 @@ Object.assign(PetSprite.prototype, {
           );
           this.startThrow(px, py, vel.vx, vel.vy);
         } else {
-          // customPos 语义 = 宠物中心的比例（position() 用 rx*W - halfW 还原左上角），松手无边界夹取
+          // customPos semantics = the proportion of the pet center (position() uses rx * W - halfW to restore the upper left corner), let go and capture without borders
           this.customPos = { rx: (px + this.halfW) / VIEW.w, ry: (py + this.halfH) / VIEW.h };
           this.position();
-          // 释放后的最终窗口位置：冒烟断言「释放不位移」用
+          // Final window position after release: smoke assertion "release without displacement" is used
           window.__dshPetDebug.lastDragRelease = { x: this.pos.x, y: this.pos.y };
         }
       }
@@ -231,15 +243,18 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 本窗口是否必须保持可交互（= 我正在用这个窗口的鼠标输入）。
+   * Does this window have to remain interactive (= I am using mouse input in this window).
    *
-   * 来源是拖拽中 / 右键菜单开着 / 对话或待办弹窗开着（外加可点的余额气泡）：它们都靠窗口级鼠标事件驱动，
-   * 窗口一变回穿透输入链就断（拖拽定格、松手也没人报 pointerup）。
-   * 这是渲染端专有的知识，主进程无从推断；同时上报控件矩形，菜单/聊天框外仍继续穿透。
+   * The source is dragging / right-click menu is open / dialogue or to-do pop-up window is open (plus clickable
+   * balance bubble): they are all driven by window-level mouse events, and the input chain is broken as soon as the
+   * window changes back to click-through (no one reports pointerup when dragging freezes or letting go). This is the
+   * proprietary knowledge of the renderer and cannot be inferred by the main process; at the same time, the control
+   * rectangle is reported, and click-through continues outside the menu/chat box.
    */
   inputBusy() {
-    // 可点的气泡（余额翻页、工作气泡跳会话）同样是来源：它们长在窗口里、靠窗口级 click 触发，
-    // 却悬在平时穿透的余量区，正需要借 busy + 控件矩形把它们圈出来。
+    // Clickable bubbles (balance page flipping, work bubble jumping session) are also from the same source: they grow
+    // in the window and are triggered by window-level click, but they hang in the margin area of normal click-through.
+    // It is necessary to borrow busy + control rectangle to encircle them.
     return (
       this.dragState.active ||
       this.menuOpen ||
@@ -250,26 +265,27 @@ Object.assign(PetSprite.prototype, {
     );
   },
 
-  /** 余额气泡当前有几页：规则归共享层（与每页内容同源），这里只补「还没有结果」的兜底。 */
+  /** There are currently several pages in the balance bubble: the rules belong to the shared layer (same origin as the content of each page), and only the fallback of "no result yet" is added here. */
   balancePageCount() {
     const s = this.balanceState;
     return s ? S.balancePageCount(s) : 1;
   },
 
-  /** 余额气泡此刻是否可点切页：页数多于 1 且气泡正在显示。 */
+  /** The balance bubble supports paging only while visible and containing more than one page. */
   balanceClickable() {
     if (!this.bubbleOn || this.balanceWrap) return false;
     return this.balancePageCount() > 1;
   },
 
-  /** 工作气泡此刻是否可点：它正占着气泡槽，且拿到了可跳转的会话。 */
+  /** Is the work bubble clickable at the moment: it is occupying the bubble slot and has a jumpable session. */
   workClickable() {
     return this.bubbleSlot === 'work' && !!this.workSessionId;
   },
 
   /**
-   * 上报一次「要不要保持可交互」。所有状态变化点都走这里（幂等，值没变不发 IPC）。
-   * 与 setInteractive 的分工：后者表达光标在不在身体上，本方法表达我有没有在用输入（优先级更高）。
+   * Report once "Should we keep it interactive?" All state change points go here (idempotent, IPC will not be sent if
+   * the value does not change). Division of labor with setInteractive: The latter expresses whether the cursor is on
+   * the body, while this method expresses whether I am using input (higher priority).
    */
   syncInputBusy() {
     this.syncInputRegions();
@@ -283,7 +299,7 @@ Object.assign(PetSprite.prototype, {
   syncInputRegions() {
     if (!window.petBridge || !window.petBridge.setInputRegions) return;
     const rects = [];
-    // 控件矩形 = 主进程允许接收点击的区域，矩形外继续穿透。可点的余额气泡悬在余量区，不登记就点不到。
+    // Control rectangle = main process allows the area to receive clicks, and click-through continues outside the rectangle. The clickable balance bubble hangs in the balance area and cannot be clicked without registration.
     const controls = [
       ...document.querySelectorAll('.dsh-pet-menu-column, .dsh-pet-chat, .dsh-pet-todo, .pet-bubble.is-clickable'),
     ];
@@ -312,87 +328,98 @@ Object.assign(PetSprite.prototype, {
 
   setInteractive(flag) {
     const next = !!flag;
-    if (next === this._interactive) return; // 只在状态变化时发 IPC，避免逐帧刷屏
+    if (next === this._interactive) return; // Only send IPC when the status changes to avoid refreshing the screen frame by frame.
     this._interactive = next;
     window.__dshPetDebug.interactive = next;
     if (window.petBridge) window.petBridge.setInteractive(next);
   },
 
   /**
-   * 悬浮提示显隐。
+   * The floating prompt is shown and hidden.
    *
-   * 由 onMouseMove 的「光标在不在身体命中区」驱动，而不是 pointerenter/leave：身体外整窗穿透，
-   * 光标离开身体时 pointerleave 未必派发，提示会赖在屏幕上不走；几何判定与穿透翻转同源才只有一种口径。
+   * It is driven by onMouseMove's "whether the cursor is in the body hit zone" instead of pointerenter/leave:
+   * click-through of the entire window outside the body. When the cursor leaves the body, pointerleave may not be
+   * dispatched, and the prompt will stay on the screen; there is only one convention for geometric determination and
+   * click-through flipping to have the same origin.
    */
   onMouseMove(e) {
-    // 拖拽态下所有按键已松开：说明 pointerup/pointercancel/lostpointercapture 全丢了，
-    // 就地按松手收尾，否则 dragState.active 与 inputBusy 永久为 true（穿透永不恢复）。
+    // All keys have been released in the dragging state: it means that pointerup/pointercancel/lostpointercapture is
+    // all lost, press and release the cleanup command on the spot, otherwise dragState.active and inputBusy will
+    // always be true (click-through will never be restored).
     if (this.dragState.active && e.buttons === 0) {
       this.onPointerUp(e);
       return;
     }
-    // 拖拽中窗口逐帧跟随光标，指针相对窗口有帧级抖动——强制保持可交互，绝不翻转（翻转会断拖拽）
+    // The window follows the cursor frame by frame during dragging, and the pointer jitters relative to the window at the frame level - it is forced to remain interactive and never flipped (flipping will interrupt dragging)
     if (this.dragState.active) {
       this.setInteractive(true);
       return;
     }
-    // 右键菜单/对话弹窗/待办面板开启：整窗保持可交互，关闭后恢复命中区判定
+    // When the right-click menu/dialog pop-up window/to-do panel is opened: the entire window remains interactive, and the hit zone determination is restored after closing.
     if (this.menuOpen || this.chatOpen || this.todoOpen) {
-      this.syncInputRegions(); // 级联菜单按悬停增减面板，及时更新占用区域
+      this.syncInputRegions(); // The cascading menu increases or decreases panels by hovering, and updates the occupied area in time.
       this.setInteractive(true);
-      this.setTip(false); // 菜单/弹窗期间提示让位，不跟浮层抢注意力
+      this.setTip(false); // The prompts give way during the menu/pop-up window and do not compete with the floating layer for attention.
       return;
     }
     const r = this.hitRect;
-    // forwarded 事件坐标以窗口为原点；转换到 sprite 坐标要扣减本体在窗口内的偏移。异常时退回屏幕坐标推导：
-    // ÷scale 后减去窗口屏幕原点即窗口内坐标（hitRect/pos 均为 CSS 系）。
+    // forwarded event coordinates take the window as the origin; when converted to sprite coordinates, the offset of
+    // the body within the window must be deducted. Return to the screen coordinate derivation in case of exception: ÷
+    // scale and then subtract the origin of the window screen, which is the coordinate within the window (hitRect/pos
+    // are all CSS systems).
     const wx = Number.isFinite(e.clientX) ? e.clientX : toLocal(e.screenX) - (this.pos.x + VIEW.x - this.winOffset.x);
     const wy = Number.isFinite(e.clientY) ? e.clientY : toLocal(e.screenY) - (this.pos.y + VIEW.y - this.winOffset.y);
     const px = wx - this.winOffset.x;
     const py = wy - this.winOffset.y;
     const inBody = px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-    // 快捷键与拖拽都只在"光标在身体上"时生效，与提示/穿透同源，避免另一套判定
+    // Shortcut keys and dragging only take effect when "the cursor is on the body", which has the same origin as prompt/click-through to avoid another set of judgments.
     this.hoverBody = inBody;
-    // 光标存视口坐标（窗口原点 + 窗口内坐标）：窗口随宠物移动时贴光标不会漂。必须在 setTip 之前
-    // 更新——setTip 变显隐时会立刻渲染一次，晚一步就会用上一次的光标摆位。
+    // The cursor stores the viewport coordinates (window origin + coordinates within the window): the cursor will not
+    // drift when the window moves with the pet. It must be updated before setTip - setTip will be rendered immediately
+    // when it becomes visible, and the last cursor position will be used one step later.
     if (inBody) this.tipCursor = { x: this.pos.x - this.winOffset.x + wx, y: this.pos.y - this.winOffset.y + wy };
     this.setInteractive(inBody);
-    // 悬浮提示与可交互判定同源（同一个 inBody）：进身体出现，离开收起
+    // The floating prompt and the interactive judgment have the same origin (the same inBody): appear when entering the body, and collapse when leaving.
     this.setTip(inBody);
-    // 跟随光标：位置依赖光标，每次移动都要重摆（setTip 只在显隐变化时渲染）
+    // Follow the cursor: The position depends on the cursor, and it must be reset every time it moves (setTip is only rendered when the visibility changes)
     if (this.tipOn) this.renderTip();
   },
 
   onClick(e) {
     const d = this.dragState;
     if (d.active || d.dragging || this.justDragged) return;
-    // Ctrl（macOS 为 Cmd）+ 左键 = 呼出 DSH：与菜单首项同一动作，只是快捷键——
-    // 不播点击动画、也不参与积分，避免「摸一下宠物」变成「开窗口」。
+    // Ctrl (macOS is Cmd) + left button = call out DSH: The same action as the first item in the menu, just a shortcut
+    // key - no click animation will be played, and no points will be involved to avoid "touching the pet" becoming
+    // "opening the window".
     if (isOpenShortcut(e)) {
       this.stopThrow();
       this.stopMove();
       if (window.petBridge) window.petBridge.openDshSite(ORIGIN);
       return;
     }
-    // 积分判定已在 onPointerDown（按下即触发）完成：已触发过就只收手停住，不再播普通点击动画
+    // Points judgment has been completed at onPointerDown (press to trigger): once triggered, just stop and no longer play the normal click animation.
     if (this.pressScoreFired) {
       this.pressScoreFired = false;
       this.stopThrow();
       this.stopMove();
       return;
     }
-    this.stopThrow(); // 点击飞行中的宠物 = 收手停住（再播点击回应）
+    this.stopThrow(); // Click on the pet in flight = stop (replay and click to respond)
     this.stopMove();
-    // 睡觉：点一下就是叫醒。挤压与音效照常（手感与平时一致），但不播点击回应动画——
-    // 叫醒的表现由 /wake 写回的 sleep 叶子驱动（end 播一遍，播完回随机链）。
-    // 这里直接压当前前台那一帧：平时靠 pendingSquash 等新动画就位，这条路没有换源。
+    // Sleep: Click to wake up. The squeeze and sound effects are as usual (the feel is the same as usual), but the
+    // click response animation is not played - the wake-up performance is driven by the sleep leaf written back by /
+    // wake (end is played once, and a random chain is returned after playing). Here we directly press the current
+    // foreground frame: we usually rely on pendingSquash and other new animations to be in place, and there is no
+    // source change in this way.
     if (this.sleeping) {
       playClickSound();
       const front = this.front === 0 ? this.videoA : this.videoB;
       if (front) this.startSquash(front);
       this.postSleepAction('wake');
-      // 入睡过渡里被点：这次入睡作废，按普通点击播回应动画——「起来」那段不再播。
-      // 先本地清状态：等叶子回来时 setSleep 会因「本来没睡」直接返回，不会插一段 end。
+      // Being clicked during the transition to falling asleep: This time falling asleep will be invalidated. Press the
+      // normal click to play the response animation - the "getting up" part will no longer play. Clear the status
+      // locally first: when the leaf comes back, setSleep will return directly because it "didn't sleep", and end will
+      // not be inserted.
       if (this.sleepPhase === 'start') {
         this.sleeping = false;
         this.sleepSet = null;
@@ -401,23 +428,25 @@ Object.assign(PetSprite.prototype, {
       }
       return;
     }
-    // 点击音效与浏览器同位置：放在「按下已触发积分」的早退之后、点击动画判断之前
+    // The click sound effect is in the same position as the browser: placed after the early exit of "Press Triggered Points" and before the click animation judgment
     playClickSound();
     if (!this.animations.clicks.length) return;
-    this.pendingSquash = true; // 等新点击动画切到前台后 Q 弹（压新首帧，与浏览器一致）
+    this.pendingSquash = true; // Q after the new click animation switches to the foreground (press the new first frame, consistent with the browser)
     this.playOnce(S.pick(this.animations.clicks));
   },
 
-  // 右键菜单（统一自绘组件：树与渲染都来自 shared-core 的同一份 menu 模块）
-  // 菜单/弹窗可视矩形（窗口局部坐标）= 窗口 ∩ 工作区：宠物贴边时外扩余量伸出屏幕，窗口内固定定位的
-  // 菜单会走进被屏幕裁掉的部分。把菜单约束到这个矩形内即可完整显示，窗口与宠物零移动；
-  // 退化（可视区过小/窗口整体出屏）返回 null，调用方按窗口视口兜底。
+  // Right-click menu (unified self-drawn component: both tree and rendering come from the same menu module of
+  // shared-core) Menu/pop-up window visible rectangle (local coordinates of the window) = window ∩ workspace: When the
+  // pet is attached to the edge, the expansion margin extends out of the screen, and the fixedly positioned menu in
+  // the window will go into the part cut off by the screen. Constrain the menu to this rectangle to display it
+  // completely, with zero movement of the window and pet; degradation (the visual area is too small/the entire window
+  // goes off the screen) returns null, and the caller fallsback according to the window viewport.
 });
 
 Object.assign(PetSprite.prototype, {
   /**
-   * 拖拽经过命中区：只处理带文件的拖拽。
-   * 必须 preventDefault，否则窗口会把这个文件当导航打开（页面直接被替换）。
+   * Dragging through the hit area: only dragging with files is processed. Must be preventDefault, otherwise the window
+   * will open this file as a navigation (the page will be replaced directly).
    */
   onDragOverImage(e) {
     if (!S.dragHasFiles(e)) return;
@@ -425,7 +454,7 @@ Object.assign(PetSprite.prototype, {
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
   },
 
-  /** 松手：第一张图片直接开对话并挂成待发送图；不是图片就当没发生。 */
+  /** Let go: The first picture will directly open a dialogue and be hung as a picture to be sent; if it is not a picture, it will be treated as if it did not happen. */
   onDropImage(e) {
     const file = S.firstImageFile(e.dataTransfer);
     if (!file) return;
@@ -433,9 +462,9 @@ Object.assign(PetSprite.prototype, {
     this.showChatFromMenu(file);
   },
 
-  /** 悬停快捷键：按住 M 说话、L 开对话、S 截图、Z 切换睡/醒、D 开关待办、1-4 切显示位置。 */
+  /** Hover shortcut keys: press and hold M to speak, L to open a conversation, S to take screenshots, Z to switch sleep/wake, D to switch to-do, 1-4 to switch display positions. */
   onHotkey(e) {
-    // 按住说话先判：它要吃掉按住期间的自动重复，晚一步就会被输入框收走
+    // Press and hold to speak first: it will eat up the automatic repeat during the press and hold period, and it will be taken away by the input box if it is one step too late.
     if (this.hearHold.onKeyDown(e)) {
       e.preventDefault();
       return;
@@ -462,14 +491,14 @@ Object.assign(PetSprite.prototype, {
       this.toggleTodo();
       return;
     }
-    // 睡觉：与浏览器同为切换语义；该条目没配睡觉动画时整项无效（菜单里也不出现）
+    // Sleep: The same switching semantics as the browser; when this item is not equipped with a sleep animation, the entire item is invalid (it does not appear in the menu)
     if (S.isSleepHotkey(e) && Array.isArray(this.animations.sleep) && this.animations.sleep.length > 0) {
       e.preventDefault();
       this.postSleepAction(this.sleeping ? 'wake' : 'sleep');
     }
   },
 
-  /** 松手：结束「按住说话」的那次录音（没在按住时什么都不做）。 */
+  /** Release: End the recording of "Press and Talk" (do nothing while pressing and holding). */
   onHotkeyUp(e) {
     this.hearHold.onKeyUp(e);
   },

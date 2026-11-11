@@ -1,12 +1,11 @@
-"""纯最近邻水印填充：每个水印像素 = 第 k 近的"非水印像素"的颜色
+"""Pure nearest neighbor watermark filling: each watermark pixel = color of the k nearest "non-watermark pixel"
 
-- 流式逐帧处理（内存占用小）
-- scipy distance_transform_edt(return_indices) 算最近非水印像素坐标
-- k>1：跳过紧贴水印的取色源（淡入淡出的未标记水印字空洞），取更远的真背景
-- mask=0 像素不变（距离0 → 取自身）
+- Streaming frame-by-frame processing (small memory footprint)
+- scipy distance_transform_edt ( return_indices ) calculates the nearest non-watermark pixel coordinates
+- k >1: Skip the color source close to the watermark (the unmarked watermark character hole that fades in and out), and take the true background further away
+- mask =0 pixel remains unchanged (distance 0 → take itself)
 
-用法: python fill_nn.py <视频> <mask> <输出> [时长] [k]
-"""
+Usage: python fill_nn.py <video> < mask > <output> [duration] [ k ]"""
 from __future__ import annotations
 
 import subprocess
@@ -22,7 +21,7 @@ W, H, FPS = 1280, 720, 24
 
 
 def read_exact(stream, n):
-    """阻塞读满 n 字节（管道 read 可能部分返回，必须循环）。EOF 时返回不足。"""
+    """Blocked reading of n bytes (pipeline read may partially return and must be looped). Return insufficient when EOF."""
     buf = b""
     while len(buf) < n:
         chunk = stream.read(n - len(buf))
@@ -33,12 +32,11 @@ def read_exact(stream, n):
 
 
 def kth_nearest(wm: np.ndarray, k: int):
-    """返回每个水印像素第 k 近的非水印像素坐标 (iy, ix)。
+    """Return the k nearest non-watermark pixel coordinates (iy, ix) of each watermark pixel.
 
-    distance_transform_edt 的 indices = 每个像素到最近"零元素"的索引；
-    传入 wm（水印=非零、非水印=零）→ indices 即"每个像素最近的【非水印】坐标"。
-    第 k 近：把前 k-1 轮被引用的取色源并入 wm（变成非零），使其不再被指向。
-    """
+     distance_transform_edt of indices = the index of each pixel to the nearest "zero element";
+    Pass in wm (watermark = non-zero, non-watermark = zero) → indices, which is the "nearest [non-watermark] coordinate of each pixel".
+    Nearest k: Merge the color source referenced in the previous k-1 round into wm (become non-zero) so that it is no longer pointed to."""
     cur = wm.copy()
     for _ in range(k):
         _, idx = distance_transform_edt(cur, return_indices=True)
@@ -50,17 +48,17 @@ def kth_nearest(wm: np.ndarray, k: int):
 
 
 def fill_nn(video: Path, mask_path: Path, dst: Path, dur: int = 10, k: int = 1) -> int:
-    # 输入管道：原视频 rgb24 流
+    # Input pipeline: original video rgb24 stream
     p1 = subprocess.Popen(
         [FFMPEG, "-loglevel", "error", "-i", str(video),
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         stdout=subprocess.PIPE)
-    # 输入管道：mask gray 流
+    # Input pipe: mask gray stream
     p2 = subprocess.Popen(
         [FFMPEG, "-loglevel", "error", "-i", str(mask_path),
          "-f", "rawvideo", "-pix_fmt", "gray", "-"],
         stdout=subprocess.PIPE)
-    # 输出管道：rgb24 流 → libx264
+    # Output pipe: rgb24 stream → libx264
     p3 = subprocess.Popen(
         [FFMPEG, "-y", "-loglevel", "error",
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
@@ -76,12 +74,12 @@ def fill_nn(video: Path, mask_path: Path, dst: Path, dur: int = 10, k: int = 1) 
         mbuf = read_exact(p2.stdout, W * H)
         if len(mbuf) < W * H:
             break
-        frame = np.frombuffer(buf, np.uint8).reshape(H, W, 3).copy()  # copy: frombuffer 只读
+        frame = np.frombuffer(buf, np.uint8).reshape(H, W, 3).copy()  # copy : frombuffer read-only
         mask = np.frombuffer(mbuf, np.uint8).reshape(H, W)
         wm = mask == 255
         if wm.any():
             iy, ix = kth_nearest(wm, k)
-            # 只重映射水印像素；clip 防御边缘越界。非水印像素绝不改动。
+            # Only remap watermark pixels; clip defends edge out of bounds. Non-watermark pixels are never altered.
             yi = np.clip(iy[wm], 0, H - 1)
             xi = np.clip(ix[wm], 0, W - 1)
             frame[wm] = frame[yi, xi]
@@ -91,7 +89,7 @@ def fill_nn(video: Path, mask_path: Path, dst: Path, dur: int = 10, k: int = 1) 
     p2.stdout.close()
     p3.stdin.close()
     rc1, rc2, rc3 = p1.wait(), p2.wait(), p3.wait()
-    print(f"填充完成: {dst} ({n}帧, rc={rc3})")
+    print(f"Fill complete: {dst} ({n} frames, rc={rc3})")
     return rc3
 
 

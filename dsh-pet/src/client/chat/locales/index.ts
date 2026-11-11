@@ -1,6 +1,7 @@
 /**
- * 对话面板字典的唯一出口：命名空间、键类型与全部语言的汇总。
- * zh 是键集真源，每种语言都声明成 `Record<Key, string>`，漏翻一个键在类型检查期就报错。
+ * The only exit from the dialog panel dictionary: summary of namespaces, key types and all languages. zh is the true
+ * source of the key set. Each language is declared as `Record<Key, string>` . If a key is missed, an error will be
+ * reported during type checking.
  * @module dsh-pet/src/client/chat/locales
  */
 import { de } from './de.ts';
@@ -12,10 +13,10 @@ import { pt } from './pt.ts';
 import { ru } from './ru.ts';
 import { zh } from './zh.ts';
 
-/** 字典命名空间。 */
+/** Dictionary namespace. */
 export const NS = 'pet.chat';
 
-/** 按宿主语言 id 汇总的字典，整包交给 `ctx.locale.register`。 */
+/** Dictionaries compiled by host language id, the whole package is given to `ctx.locale.register`. */
 export const dicts = { zh, en, ja, es, fr, de, ru, pt };
 
 export { zh } from './zh.ts';

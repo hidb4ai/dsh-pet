@@ -1,24 +1,32 @@
 /**
- * 宠物头像地址的唯一拼装处：聊天面板的消息头像与设置页的预览都用它。
+ * The only assemble location for the pet avatar address: it is used for both the message avatar in the chat panel and
+ * the preview of the settings page.
  *
- * 不放 client/chat 里：设置页也要用，而设置页不该反向依赖对话面板的数据访问模块。
+ * Do not put it in client/chat: the settings page must also be used, and the settings page should not rely on the data
+ * access module of the dialog panel.
  * @module dsh-pet/src/shared/avatar
  */
 import { ROUTE_PATH } from './constants.ts';
 
-/** 插件 logo 地址：没上传过头像时宿主回发的默认图。 */
+/** Plugin logo address: The default image sent back by the host when no avatar has been uploaded. */
 export const LOGO_URL = ROUTE_PATH + '/logo';
 
 /**
- * 宠物头像地址：按素材根取，没上传过的由宿主回退默认 logo。
+ * Pet avatar address: According to the asset root, if it has not been uploaded before, the host will fall back to the
+ * default logo.
  *
- * 参数名刻意用 `root` 而不是 `pet`：它和其它端点的 `pet`（宠物实例 id，如 `main`）不是一回事，
- * 这里是素材根（目录前缀，如 `baimao`）。同名不同义会让第三方按 `pet` 的既有语义调用后静默拿到默认图。
+ * The parameter name is deliberately `root` instead of `pet` : it is not the same as `pet` (pet instance id, such as
+ * `main` ) of other endpoints. Here is the asset root (directory prefix, such as `baimao` ). If the same name is not
+ * synonymous, the third party will silently get the default image after calling it according to the existing semantics
+ * of `pet` .
  *
- * `v` 只用于破缓存——换过头像后同一 URL 会被浏览器记住，带上本次渲染的版本号才会重新取图。
+ * `v` is only used to break the cache - after changing the avatar, the same URL will be remembered by the browser, and
+ * the image will be re-fetched only with the version number of this rendering.
  *
- * @param assetRoot - 宠物所属条目（素材根）；空串按「只有默认 logo」处理。
- * @param version - 本次渲染的版本号，打开面板 / 刷新 / 上传成功时换一个。
+ * @param assetRoot - the entry to which the pet belongs (asset root); the empty string is treated as "only the default
+ * logo".
+ * @param version - The version number of this rendering, change it when the panel is opened/refreshed/uploaded
+ * successfully.
  */
 export function avatarUrl(assetRoot: string, version: number): string {
   const root = assetRoot.trim();

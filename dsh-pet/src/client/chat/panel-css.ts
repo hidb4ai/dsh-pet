@@ -1,13 +1,13 @@
 /**
- * 对话面板的 CSS 文本：只在这里写选择器与 token，不出现字面色值。
+ * CSS text in dialog panel: Only selector and token are written here, no literal color value appears.
  *
- * 尺寸统一走 ./metrics 的 {@link SIZE}（CSS 与输入框自动长高共用一份），
- * 与 styles.ts 分开是因为这里是纯字符串：改样式时 diff 只落在这里。
+ * The size is unified as ./metrics {@link SIZE} (CSS shares a copy with the input box’s automatic height increase). It
+ * is separated from styles.ts because this is a pure character string: diff only falls here when changing the style.
  * @module dsh-pet/src/client/chat/panel-css
  */
 import { px, SIZE } from './metrics.ts';
 
-/** 面板样式（选择器前缀 `pet-chat`，避免与 DSH 或其它插件撞名）。 */
+/** Panel style (selector prefix `pet-chat` to avoid name collision with DSH or other plugins). */
 export const PANEL_CSS = `
 .pet-chat-memory-status { flex: none; padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .pet-chat-memory-status p { margin: 0 0 4px; }
@@ -68,9 +68,13 @@ export const PANEL_CSS = `
   flex: 0 0 auto;
 }
 
-/* 人设卷帘：展开时把消息列表顶下去，而不是浮在对话上——人设可以很长，浮层会挡住内容。
-   0fr → 1fr 是唯一不用量高度的展开过渡；夹层负责裁剪，正文层才放内边距与边框，
-   否则收起时 padding 与 border 仍在，留下一道缝。 */
+/*
+ * Persona roller shutter: Push the message list down when expanding, instead of floating on the
+ * conversation - persona can be very long, and the floating layer will block the content.
+ *    0 fr → 1 fr is the only expansion transition that does not require height measurement; the mezzanine
+ * layer is responsible for cropping, and the text layer only places padding and borders.
+ *    Otherwise, padding and border are still there when folded, leaving a gap.
+ */
 .pet-chat-persona {
   display: grid;
   grid-template-rows: 0fr;
@@ -97,7 +101,10 @@ export const PANEL_CSS = `
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-s-14);
   line-height: 1.6;
-  /* 人设正文自己带换行与缩进：保留排版，长单词与 URL 也要能断开 */
+  /*
+   * Persona text has its own line breaks and indents: retain the typesetting, and long words must be able to
+   * be separated from URL
+   */
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -148,7 +155,10 @@ export const PANEL_CSS = `
   gap: ${px(SIZE.gap)};
 }
 
-/* 指南页卡片图标：框架给的槽位只按图标尺寸排版，所以让 logo 铺满它 */
+/*
+ * Guide page card icon: The slot given by the framework is only typed according to the icon size, so let
+ * logo fill it
+ */
 .pet-chat-guide-icon {
   width: 100%;
   height: 100%;
@@ -228,7 +238,10 @@ export const PANEL_CSS = `
   font: var(--dsw-font-xxxs-11);
 }
 
-/* 线本身用伪元素画，文字居中：视觉上是「一条带说明的分隔线」 */
+/*
+ * The line itself is drawn with pseudo elements, and the text is centered: visually it is "a dividing line
+ * with an explanation"
+ */
 .pet-chat-memory::before,
 .pet-chat-memory::after {
   content: '';
@@ -246,7 +259,10 @@ export const PANEL_CSS = `
   gap: ${px(SIZE.gap)};
 }
 
-/* 多选模式：整轮是一张可点卡片；选中给浅底，未选中透明（与豆包的选中样式一致） */
+/*
+ * Multi-selection mode: The whole round is a clickable card; selected will have a light background, and
+ * unselected will be transparent (consistent with the selection style of the bean bag)
+ */
 .pet-chat-round.is-selecting {
   padding: ${px(SIZE.gapTight)} ${px(SIZE.gapWide)};
   border-radius: var(--dsw-radius-md);
@@ -357,7 +373,10 @@ export const PANEL_CSS = `
   color: var(--dsw-alias-label-caption);
 }
 
-/* 时间右边的播报 / 动作按钮：与时间同字号，靠透明度与颜色表意，不占额外行高 */
+/*
+ * The broadcast/action button on the right side of the time: the same font size as the time, relying on
+ * transparency and color to convey meaning, and does not occupy additional line height
+ */
 .pet-chat-speak,
 .pet-chat-action {
   display: inline-flex;
@@ -383,17 +402,24 @@ export const PANEL_CSS = `
   opacity: 1;
 }
 
-/* 动作键图标：内联 SVG 单色三角，颜色跟行内文字走。
-   换成 emoji（▶️）会渲染成一块彩色方块，和喇叭放在一起就是两种风格。 */
+/*
+ * Action key icon: Inline SVG solid color triangle, the color follows the inline text.
+ *    Switching to emoji (▶️) will render it into a colored square, which creates two styles when placed
+ * together with the speaker.
+ */
 .pet-chat-action-icon {
   display: block;
   width: ${px(SIZE.hairline * 5)};
   height: ${px(SIZE.hairline * 5)};
 }
 
-/* 生成中：只有上半圈带色的细环，靠旋转表达「在生成」。
-   尺寸与时间文字同高；border-box + flex:none 是必须的：默认 content-box 会把描边算在尺寸外，
-   而在 flex 行里被压缩时环会变成椭圆，看着就是个「奇怪的圆角方块」。 */
+/*
+ * Generating: Only the upper half of the thin ring is colored, which expresses "generating" by rotating.
+ *    The size is the same height as the time text; border-box + flex:none is required: by default
+ * content-box will count the stroke outside the size.
+ *    When compressed in the flex row, the ring will turn into an ellipse, which looks like a "strange
+ * rounded square".
+ */
 .pet-chat-speak.is-loading {
   opacity: 0.9;
   cursor: default;
@@ -411,14 +437,19 @@ export const PANEL_CSS = `
   animation: pet-chat-spin 0.8s linear infinite;
 }
 
-/* 播放中：主色 + 满不透明，和「可播放」明显区分 */
+/*
+ * Playing: Main color + full opacity, clearly distinguished from "playable"
+ */
 .pet-chat-speak.is-playing {
   opacity: 1;
   color: var(--dsw-alias-state-business-primary);
   cursor: default;
 }
 
-/* 失败：压暗表示没成，但仍可点（重试），所以指针保持手型 */
+/*
+ * Failure: Darkening means failure, but you can still click (retry), so the pointer remains in the hand
+ * shape
+ */
 .pet-chat-speak.is-failed {
   opacity: 0.5;
 }
@@ -431,7 +462,10 @@ export const PANEL_CSS = `
 
 .pet-chat-time.is-pet {
   align-self: flex-start;
-  /* 与宠物气泡左沿对齐：让时间明显属于这一轮的回答，而不是下一轮提问的开头 */
+  /*
+   * Align with the left edge of the pet bubble: make the time clearly belong to the answers of this round,
+   * rather than the beginning of the next round of questions
+   */
   margin-left: ${px(SIZE.avatar + SIZE.gap)};
 }
 
@@ -562,14 +596,22 @@ export const PANEL_CSS = `
   cursor: default;
 }
 
-/* 生成中：输入的文字压成三级色，与转圈一起说明「这句已经发出去了，在等回复」。
-   输入框本身仍可编辑（可以先把下一句打好），所以只改颜色、不 pointer-events: none。 */
+/*
+ * Generating: The input text is pressed into a three-level color, and the circle is used to indicate "This
+ * sentence has been sent, and we are waiting for a reply."
+ *    The input box itself is still editable (you can type the next sentence first), so only the color is
+ * changed, not pointer-events : none.
+ */
 .pet-chat-composer.is-busy .pet-chat-input {
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* 发送键里的转圈：与播报按钮共用 pet-chat-spin，只画半圈弧。
-   box-sizing 必须 border-box，否则 1.5px 描边会把 12px 撑大，在 34px 的圆钮里显得偏大。 */
+/*
+ * The circle in the send key: shared with the broadcast button pet-chat-spin, only half a circle arc is
+ * drawn.
+ *     box-sizing must be border-box, otherwise the 1.5 px stroke will enlarge the 12 px, making it look too
+ * big in the 34 px round button.
+ */
 .pet-chat-send-spinner {
   box-sizing: border-box;
   width: ${px(SIZE.spinner)};
@@ -581,8 +623,11 @@ export const PANEL_CSS = `
   animation: pet-chat-spin 0.8s linear infinite;
 }
 
-/* 悬浮提示气泡：挂在 body 上按光标定位（见 ./tooltip），不在 .pet-chat 里，
-   所以字体与颜色全部自带——气泡是深色底，两种主题下都靠白字与背景的对比度读。 */
+/*
+ * Floating prompt bubble: Hang on body and position it with the cursor (see ./ tooltip), not in . pet-chat.
+ *    So the fonts and colors are all built-in - bubble has a dark background, and both themes rely on the
+ * contrast between the white text and the background to be read.
+ */
 .pet-chat-tip {
   position: fixed;
   z-index: 2147483000;

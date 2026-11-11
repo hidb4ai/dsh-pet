@@ -58,7 +58,7 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
-      # npm pack 的 prepack 已包含构建、类型、lint、格式、循环依赖、桌面运行时与 OpenAPI 检查。
+      # npm pack runs prepack: build, types, lint, formatting, cycles, desktop runtime and OpenAPI checks.
       - name: Build and pack
         run: |
           mkdir -p "$RUNNER_TEMP/release"
@@ -119,7 +119,7 @@ jobs:
           node-version: "24"
           registry-url: https://registry.npmjs.org
 
-      # 发布同一份已测试归档；令牌只提供给此步骤，包内生命周期脚本不再执行。
+      # Publish the tested archive. Expose the token only here and disable lifecycle scripts.
       - name: Publish to npm
         if: vars.NPM_PUBLISH == 'true'
         env:

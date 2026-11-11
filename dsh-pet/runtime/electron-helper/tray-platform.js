@@ -1,19 +1,22 @@
 /**
- * 托盘的平台差异（纯判定，不 require electron）。
+ * Platform differences in system tray (pure judgment, not require electron).
  *
- * 规则住在这里、main.js 只接线，是为了能被 node:test 直接加载：macOS 菜单栏有深浅色，图标须按
- * 模板图处理且左键单击即弹菜单；Windows 的 setContextMenu 只接管右键，图标还会被收进溢出面板；
- * Linux 的 click 事件不可靠，原生 GNOME 默认不显示托盘图标。这些差异代码管不了，只能按平台分流。
+ * The rules live here, main.js is only wired, so that it can be loaded directly by node:test: macOS menu bar has dark
+ * and light colors, the icon must be processed according to the template image and the left-click menu pops up;
+ * Windows's setContextMenu only takes over the right click, and the icon will be included in the overflow panel;
+ * Linux's click event is unreliable and native GNOME does not display the system tray icon by default. These different
+ * codes cannot be managed and can only be divided according to platforms.
  * @module dsh-pet/runtime/electron-helper/tray-platform
  */
 'use strict';
 
 /**
- * 托盘的平台开关。
+ * Platform switch of system tray.
  *
- * @param platform - process.platform 的值。
- * @returns templateImage 图标是否按模板图处理；leftClickPopsMenu 左键单击是否需手动弹菜单；
- *   hideDock 是否隐藏 Dock 图标（macOS 专有）。
+ * @param platform - process.platform value.
+ * @returns templateImage Whether the icon is processed according to the template image; leftClickPopsMenu Whether the
+ * menu needs to be opened manually when left clicking;
+ * hideDock Whether to hide the Dock icon (macOS exclusive).
  */
 function trayPlatform(platform) {
   const mac = platform === 'darwin';

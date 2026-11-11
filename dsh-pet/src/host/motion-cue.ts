@@ -1,49 +1,53 @@
 /**
- * 位置 / 抛掷指令（`POST /dsh-pet-7340/position`、`POST /dsh-pet-7340/throw`）的纯决策层。
+ * Pure decision-making layer for position/throw instructions (`POST /dsh-pet-7340/position`,
+ * `POST /dsh-pet-7340/throw` ).
  *
- * 与 ./anim 同一分工：只判定该不该受理、受理成什么，不碰 HTTP、不碰 S，可完全离线单测。
- * 不负责运动学：抛掷复用渲染端既有的 startThrow，位置的三条路也都是既有运动学，本层只剩参数
- * 校验与坐标夹取。必须始终成立：`?pet=` 必填且必须真实存在，绝不默认退到列表第一只。
- * 契约见 API.md 与 openapi.yaml。
+ * The same division of labor as ./anim: only determine whether it should be accepted and what it should be, without
+ * touching HTTP or S. It can be completely offline and single tested. Not responsible for kinematics: throw the
+ * existing startThrow of reuse renderer, and the three paths of position also have existing kinematics. Only parameter
+ * verification and coordinate clamping are left in this layer. Must always be true: `?pet=` is required and must
+ * really exist, and will never be returned to the first one in the list by default. See contracts API.md and
+ * openapi.yaml.
  * @module dsh-pet/src/host/motion-cue
  */
 
 import { flattenPetList } from './config.ts';
 
-/** 受理失败的分类（路由原样透出给调用方，与 ./anim 同一套词汇）。 */
+/** Classification of acceptance failure (route is exposed to the caller as it is, the same vocabulary as ./anim). */
 export type MotionFailure = 'bad-request' | 'pet-required' | 'unknown-pet';
 
 /**
- * 位置指令的运动模式（三选一）。
- * 与 shared/state.ts 的同名联合体是两份（宿主不 import src/shared），改动时两边要一起改。
+ * Motion mode of position command (choose one from three). The union with the same name as shared/state.ts is two
+ * copies (host is not import src/shared), and both sides must be changed together when changing.
  */
 export type PositionMode = 'instant' | 'spring' | 'line';
 
-/** 合法模式集合：校验与错误信息共用一份。 */
+/** Valid mode set: Check and error information share one. */
 export const POSITION_MODES: readonly PositionMode[] = ['instant', 'spring', 'line'];
 
-/** 位置决策结论：通过则给出最终要写进 S 的内容（`duration` 为 `null` = 该模式不用时间）。 */
+/** Position decision conclusion: If passed, the final content to be written into S will be given (`duration` is `null` = this mode does not take time). */
 export type PositionDecision =
   | { ok: true; petId: string; x: number; y: number; mode: PositionMode; duration: number | null }
   | { ok: false; reason: MotionFailure; message: string };
 
-/** 抛掷决策结论。 */
+/** Throw decision conclusion. */
 export type ThrowDecision =
   { ok: true; petId: string; angle: number; power: number } | { ok: false; reason: MotionFailure; message: string };
 
-/** 夹到 0~1：归一化坐标的合法范围，越界夹取而不是拒绝（响应里回的就是夹取后的值）。 */
+/** Clamped to 0~1: the valid range of normalized coordinates, clamping out of bounds instead of rejecting (the value after clamping is returned in the response). */
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
-/** 有限数字收窄：字符串、布尔、NaN、Infinity 一律不算（配置里也这么判）。 */
+/** Limited numbers are narrowed: character strings, Boolean, NaN, Infinity are not counted (this is also the case in the configuration). */
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
-/** 模式收窄：只认三个字面量（大小写、空白、非字符串一律不算），不认识返回 `null`。 */
+/** The mode is narrowed: only three literals are recognized (uppercase and lowercase, blank, and non-character strings are not counted). If not recognized, `null` is returned. */
 const positionMode = (v: unknown): PositionMode | null =>
   typeof v === 'string' && (POSITION_MODES as readonly string[]).includes(v) ? (v as PositionMode) : null;
 
 /**
- * 目标宠物解析（与 ./anim、./broadcast 同一口径）：`?pet=` 必填且必须真实存在。
- * 两种失败分开报：没给 → `pet-required`；给了但配置里没有 → `unknown-pet`。
+ * Target pet resolution (same conventions as ./anim, ./broadcast): `?pet=` is required and must actually exist. Two
+ * types of failures are reported separately: not given → `pet-required` ; given but not → `unknown-pet` in the
+ * configuration.
  */
 function resolvePet(
   cfg: Record<string, Record<string, unknown>>,
@@ -58,25 +62,28 @@ function resolvePet(
 }
 
 /**
- * 把外部给的位置请求核对成一个结论。
+ * Check the external location request into a conclusion.
  *
- * `x`/`y` 是宠物中心的归一化坐标（0~1）：前端持久位置 `customPos` 存的就是中心，调用方也不必
- * 知道宠物多大。`duration` 只有 `line` 模式要求（非负有限数，`0` = 立即到位），另两种模式给了也
- * 不看——调用方常把 body 模板整个复用，为此报错只会逼他们删字段。
- * 校验顺序：x/y → mode → duration → 宠物解析；参数是调用方的错，先纠它。
+ * `x` / `y` are the normalized coordinates (0~1) of the pet center: the front-end persistent position `customPos`
+ * stores the center, and the caller does not need to know how old the pet is. `duration` is only required by the
+ * `line` mode (non-negative finite number, `0` = immediately available), and the other two modes are not looked at if
+ * given - the caller often reuses the entire body template, and reporting an error will only force them to delete
+ * fields. Verification sequence: x/y → mode → duration → Pet analysis; the parameter is the caller’s fault, correct it
+ * first.
  *
- * @param args - 定位参数：`requested` 是 `?pet=` 原值（空串 → `pet-required`）；`mode` 必填
- *   （`instant` / `spring` / `line`）；`duration` 仅 `line` 模式必填（毫秒）。
+ * @param args - Positioning parameters: `requested` is the original value of `?pet=` (empty string → `pet-required` );
+ * `mode` is required
+ * (`instant` / `spring` / `line` ); `duration` Required for `line` mode only (milliseconds).
  */
 export function decidePosition(args: {
   cfg: Record<string, Record<string, unknown>>;
-  /** `?pet=` 的原值（必填：空串 → `pet-required`） */
+  /** The original value of `?pet=` (required: empty string → `pet-required`) */
   requested: string;
   x: unknown;
   y: unknown;
-  /** 必填：`instant` / `spring` / `line` */
+  /** Required: `instant` / `spring` / `line` */
   mode?: unknown;
-  /** 仅 `line` 模式必填：行程时间（毫秒），非负有限数，`0` = 立即到位 */
+  /** Required only for `line` mode: travel time (milliseconds), non-negative finite number, `0` = immediately in place */
   duration?: unknown;
 }): PositionDecision {
   const x = finite(args.x);
@@ -104,8 +111,9 @@ export function decidePosition(args: {
 }
 
 /**
- * 决策结论 → 写进 S 叶子的载荷。非 `line` 模式不带 `duration`：叶子形状本身就是语义（有
- * `duration` 就是「按时间走直线」），也省得前端去读一个恒为 `0` 的字段。
+ * Decision conclusion → Write the load of the S leaf. The non-`line` mode does not have `duration` : the leaf shape
+ * itself is semantic (with `duration` it means "walking in a straight line according to time"), and it saves the front
+ * end from reading a field that is always `0` .
  */
 export const positionLeafData = (d: {
   x: number;
@@ -116,19 +124,22 @@ export const positionLeafData = (d: {
   d.duration === null ? { x: d.x, y: d.y, mode: d.mode } : { x: d.x, y: d.y, mode: d.mode, duration: d.duration };
 
 /**
- * 把外部给的抛掷请求核对成一个结论。
+ * Check the external throwing request into a conclusion.
  *
- * `angle` 单位度，`0` = 正右、逆时针为正（屏幕坐标 y 向下，所以「往上抛」写 90）；这里不做角度
- * 归一化——前端换算成 vx/vy 时 sin/cos 对任意实数都成立。`power` 是力度倍率（`1.0` = 1200 px/s
- * 软钳速之前，实际初速会被既有软上限压到约 1021）。不设死区：拖拽松手时低于 500 px/s 算
- * 「温柔放下」，那是拖拽语义；接口是明确命令，再小也照抛。
+ * `angle` unit degree, `0` = straight right, counterclockwise is positive (screen coordinate y is downward, so "throw
+ * up" is written as 90); there is no angle normalization here - when the front end is converted to vx/vy, sin/cos is
+ * true for any real number. `power` is the force magnification (`1.0` = 1200. Before px/s soft clamp speed, the actual
+ * initial velocity will be suppressed to about 1021 by the existing soft upper limit). There is no dead zone: when the
+ * drag is released, if it is lower than 500 px/s, it is considered "gently letting go", which is the drag semantics;
+ * the interface is a clear command, no matter how small it is, it will be ignored.
  *
- * @param args - 抛掷参数：`requested` 是 `?pet=` 原值（空串 → `pet-required`）；`angle` 单位度；
- *   `power` 是力度倍率，必须大于 0。
+ * @param args - Throwing parameters: `requested` is the original value of `?pet=` (empty string → `pet-required` );
+ * `angle` unit degree;
+ * `power` is the force multiplier, which must be greater than 0.
  */
 export function decideThrow(args: {
   cfg: Record<string, Record<string, unknown>>;
-  /** `?pet=` 的原值（必填：空串 → `pet-required`） */
+  /** The original value of `?pet=` (required: empty string → `pet-required`) */
   requested: string;
   angle: unknown;
   power: unknown;

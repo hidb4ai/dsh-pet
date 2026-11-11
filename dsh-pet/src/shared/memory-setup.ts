@@ -1,18 +1,18 @@
-/** 设置页可读取的本机记忆状态；模型配置中不包含凭据。 */
+/** Settings page readable native memory state; credentials not included in model configuration. */
 import type { ChatMemoryConfig } from './chat-memory-config.ts';
 
-/** 用户填写的公开模型参数；密钥通过单独的写请求提交。 */
+/** Public model parameters filled in by user; key submitted via separate write request. */
 export interface MemorySetupModels {
   baseUrl: string;
   model: string;
   embeddingBaseUrl: string;
   embeddingModel: string;
   embeddingDimension: number;
-  /** 固定维度模型可以不发送 dimensions，但仍校验实际输出长度。 */
+  /** The fixed dimension model can not send dimensions but still verify the actual output length. */
   embeddingSendDimensions?: boolean;
 }
 
-/** 本机记忆管理界面的轮询快照。 */
+/** Polling snapshot of the native memory management interface. */
 export interface MemorySetupStatus {
   available: boolean;
   stage: string;
@@ -28,6 +28,6 @@ export interface MemorySetupStatus {
   retryDraft: boolean;
   models?: MemorySetupModels;
   serverUrl?: string;
-  /** 只同步记忆字段，避免覆盖页面中尚未保存的其他设置。 */
+  /** Only synchronize memory fields to avoid overwriting other unsaved settings in the page. */
   binding?: { chatMemory: ChatMemoryConfig; chatMemoryRounds: number };
 }

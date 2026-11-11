@@ -1,9 +1,12 @@
 /**
- * 待办提醒循环：定时挑一条到点的待办，让当前可见的桌宠说一句。
+ * To-do reminder loop: select a to-do item at regular intervals and let the currently visible desktop pet say
+ * something.
  *
- * 不决定节奏与文案（归 ../todo/policy），也不读写文件（归 ../todo/store）。
- * 每拍最多说一条，避免多条同时到期时刷屏；写进 S 之后才记 lastRemindedAt，重启不会重复。
- * 没有可见宠物或被第三方占用时跳过且不推进——条件满足后的下一拍立刻补上，这次提醒不会丢。
+ * It does not determine the rhythm and text (returned to ../todo/policy), nor does it read or write files
+ * (returned to ../todo/store). Each tick can only say one at most to avoid flushing the screen when multiple entries
+ * expire at the same time; write S before recording lastRemindedAt, so it will not be repeated after restarting. When
+ * there is no visible pet or it is occupied by a third party, it will be skipped and not advanced - the next tick
+ * after the conditions are met will be filled in immediately, and this reminder will not be lost.
  * @module dsh-pet/src/host/plugin/todo-reminders
  */
 import { pickVoiceSurface } from '../surface.ts';
@@ -15,50 +18,54 @@ import type { HostSetup } from './setup.ts';
 import type { PetLookup } from './pet-lookup.ts';
 import type { HostContext } from './context.ts';
 
-/** 巡检查找间隔（ms）：比最短提醒间隔（5 分钟）小一档即可，不必更密。 */
+/** Patrol search interval (ms): It can be one level smaller than the shortest reminder interval (5 minutes), it does not need to be more dense. */
 const TICK_MS = 60 * 1000;
 
-/** 提醒气泡停留时长（ms）：比默认 10 秒久一点，欠着的事值得多看两眼。 */
+/** Reminder bubble dwell time (ms): a little longer than the default 10 seconds. Things you owe are worth a second look. */
 const BUBBLE_DURATION_MS = 15 * 1000;
 
-/** 一拍所需的最小能力（与完整输入同形，便于测试替身）。 */
+/** Minimum ability required for one shot (same shape as full input, easy to test avatars). */
 export interface TodoReminderTickDeps {
-  /** 待办存储：读清单、记提醒时刻。 */
+  /** To-do storage: read the list and remember the reminder time. */
   todos: Pick<TodoStore, 'list' | 'markReminded'>;
-  /** 当前生效的宠物列表（成品配置拍平）。 */
+  /** Currently effective pet list (resolved configuration is flat). */
   effectivePetList: () => Record<string, unknown>[];
-  /** 占用锁：被第三方占用的宠物这一拍不打扰。 */
+  /** Occupation lock: Pets occupied by a third party will not be disturbed during this beat. */
   lock: Pick<LockStore, 'locked'>;
-  /** 睡着的宠物不打扰：提醒是「跟它说话」，睡着时说了它也听不见，换一只醒着的。
-   *  缺省视为都不睡（老调用方与测试替身不必改）。 */
+  /**
+   * Don’t disturb a sleeping pet: The reminder is to “talk to it”. Even if you talk to it while it is asleep, it can’t
+   * hear you. Try another one that is awake. By default, no sleep is considered (the old caller and test double do not
+   * need to be changed).
+   */
   isSleeping?: (petId: string) => boolean;
-  /** 轮询状态：提醒写进 `pets.<id>.say`。 */
+  /** polling status: Reminder is written to `pets.<id>.say`. */
   state: Pick<PollStateStore, 'writePet'>;
-  /** 日志出口。 */
+  /** Log export. */
   log: Pick<HostSetup['log'], 'info' | 'warn'>;
-  /** 时间源；测试注入固定时钟。 */
+  /** Time source; test injects a fixed clock. */
   now?: () => number;
-  /** 是否有端在线（长轮询在挂）。没有就不提醒：写进 S 也没人看见，还白白推进了排期。 */
+  /** Is there any terminal online (long polling is hanging). If not, no reminder: No one saw it after writing it into S, and the schedule was pushed forward in vain. */
   hasListener?: () => boolean;
-  /** 待办播报开关（成品配置的 `main.voiceTodoEnabled`）：关着就不写 `voiceTo`，只弹气泡。 */
+  /** To-do broadcast switch (`main.voiceTodoEnabled` in resolved configuration): When turned off, `voiceTo` will not be written, only bubbles will be played. */
   isVoiceTodoEnabled: () => boolean;
 }
 
-/** 提醒循环的输入。 */
+/** Reminder loop input. */
 export type TodoReminderInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
-  /** 当前挂着长轮询的端数量：>0 表示有人能看到这次提醒。 */
+  /** The number of terminals currently hanging long polling: >0 means someone can see this reminder. */
   waiterCount: () => number;
 } & Pick<PetLookup, 'lock'> &
   Pick<PetLookup, 'sleep'> &
   Pick<TodoReminderTickDeps, 'todos' | 'effectivePetList' | 'state' | 'log' | 'isVoiceTodoEnabled'>;
 /**
- * 挑一个承担这次提醒的宠物：优先网页端可见的，其次桌面端；被第三方占用的跳过。
+ * Choose a pet that will be responsible for this reminder: the ones visible on the web page will be given priority,
+ * followed by the desktop; those occupied by third parties will be skipped.
  *
- * @param pets - 成品配置拍平后的宠物列表。
- * @param isLocked - 该宠物是否正被占用。
- * @returns 宠物 id；没有可用的返回 null。
+ * @param pets - The pet list after the finished configuration is flattened.
+ * @param isLocked - Whether the pet is occupied.
+ * @returns pet id; no available return null.
  * @internal
  */
 export function pickReminderSpeaker(
@@ -80,13 +87,13 @@ export function pickReminderSpeaker(
 }
 
 /**
- * 跑一拍：最多提醒一条，成功后记下提醒时刻。
+ * Run for a beat: you can be reminded at most once, and the reminder time will be recorded after success.
  *
- * @param deps - 存储、宠物列表、锁与状态写入。
- * @returns 无返回值；没有到点或没有可开口的宠物时静默返回。
+ * @param deps - Storage, pet list, locks and status writing.
+ * @returns has no return value; it returns silently when there is no arrival point or there are no pets to speak.
  */
 export async function tickTodoReminders(deps: TodoReminderTickDeps): Promise<void> {
-  // 没有端在线时整拍跳过、不推进 lastRemindedAt：下一次有人连上时还是「到点」状态。
+  // When there is no terminal online, the whole shot is skipped and not advanced. lastRemindedAt: The next time someone connects, it will still be in the "point" state.
   if (deps.hasListener !== undefined && !deps.hasListener()) return;
   const now = deps.now?.() ?? Date.now();
   const due = pickReminder(await deps.todos.list(), now);
@@ -98,8 +105,9 @@ export async function tickTodoReminders(deps: TodoReminderTickDeps): Promise<voi
     (petId) => deps.isSleeping?.(petId) ?? false,
   );
   if (speaker === null) return;
-  // 该由哪一端念：pickReminderSpeaker 已排除 display=none，所以这里不会是 null（防御性保留可选）；
-  // 播报开关关掉时干脆不写这个键（叶子不带 = 谁都不念），气泡照旧弹。
+  // Which end should be read: pickReminderSpeaker has been excluded from display = none, so it will not be null
+  // (defensive reservation is optional); when the broadcast switch is turned off, simply do not write this key (no
+  // leaf = no one reads it), the bubble will still play.
   const display = String(pets.find((pet) => String(pet.id ?? '') === speaker)?.display ?? '');
   const voiceTo = deps.isVoiceTodoEnabled() ? pickVoiceSurface(display) : null;
   deps.state.writePet(speaker, 'say', {
@@ -108,20 +116,20 @@ export async function tickTodoReminders(deps: TodoReminderTickDeps): Promise<voi
     ...(voiceTo ? { voiceTo } : {}),
   });
   await deps.todos.markReminded(due.todo.id, now);
-  // 只记 id 与剩余时长：待办正文是用户内容，不进日志。
+  // Only remember id and remaining time: the to-do text is user content and will not be entered in the log.
   const remainingSec = due.todo.dueAt === null ? 0 : Math.round((due.todo.dueAt - now) / 1000);
-  deps.log.info(`[dsh-pet] 待办提醒 todo=${due.todo.id} pet=${speaker} 剩余=${remainingSec}s`);
+  deps.log.info(`[dsh-pet] To-do reminder todo=${due.todo.id} pet=${speaker} remaining=${remainingSec}s`);
 }
 
 /**
- * 注册提醒循环；返回的清理函数由 ctx.effect 收集。
+ * register reminder loop; the returned cleanup function is collected by ctx.effect.
  *
- * @param deps - 宿主上下文与一拍所需的能力。
+ * @param deps - host context with a beat required capabilities.
  */
 export function registerTodoReminders(deps: TodoReminderInput): void {
   const { ctx, effectivePetList, isVoiceTodoEnabled, lock, log, sleep, state, todos, waiterCount } = deps;
 
-  /** 一拍：失败只打日志，不让循环停摆。 */
+  /** One shot: Only log will be logged if failed, and the cycle will not be stopped. */
   const tick = async (): Promise<void> => {
     try {
       await tickTodoReminders({
@@ -135,7 +143,7 @@ export function registerTodoReminders(deps: TodoReminderInput): void {
         todos,
       });
     } catch (error) {
-      log.warn('[dsh-pet] 待办提醒失败：' + (error instanceof Error ? error.message : String(error)));
+      log.warn('[dsh-pet] To-do reminder failed:' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -143,13 +151,13 @@ export function registerTodoReminders(deps: TodoReminderInput): void {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    /** 排下一拍；已卸载就不再排。 */
+    /** Queue next tick; if it is unmounted, it will not be queued again. */
     function arm(): void {
       if (disposed) return;
       timer = setTimeout(() => void run(), TICK_MS);
     }
 
-    /** 跑一拍再排下一拍：启动即检查一次，不等第一个周期。 */
+    /** Run one tick and then schedule next tick: Check once at startup, without waiting for the first cycle. */
     async function run(): Promise<void> {
       timer = null;
       await tick();

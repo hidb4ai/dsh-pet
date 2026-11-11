@@ -1,45 +1,46 @@
 /**
- * `/state` 的自调度轮询：请求 → 分发 → 立刻再请求，宿主没变化时挂起。
- * 首拍用无 since 的普通请求探出宿主是否支持长轮询（`counter` 存在即支持），之后带上 since 挂起等待。
- * 失败或老宿主退避一个间隔，避免变成忙等；卸载由 `isAlive` 判断，循环自行退出。
+ * `/state` 's self-scheduling polling: request → distribute → request again immediately, and hang when the host does
+ * not change. In the first shot, a normal request without since is used to find out whether the host supports long
+ * polling (`counter` is supported if it exists), and then since is used to suspend and wait. Failure or old host backs
+ * off for an interval to avoid becoming busy; unmount is judged by `isAlive` , and the loop exits on its own.
  * @module dsh-pet/src/client/pet/state-poll
  */
 import type { PollState } from '../../shared/state.ts';
 
-/** 轮询器依赖。 */
+/** poller dependency. */
 export interface StatePollDeps {
-  /** 拉一次状态；`timeoutMs` 已按宿主能力决定，`undefined` 表示普通请求。 */
+  /** Pull once status; `timeoutMs` has been determined according to host capability, `undefined` represents a normal request. */
   fetch: (options?: { since: number; timeoutMs: number }) => Promise<PollState | null>;
-  /** 拿到有效快照后分发叶子。 */
+  /** Distribute leaves after getting a valid snapshot. */
   onState: (state: PollState) => void;
-  /** 长轮询的挂起时长（ms）。 */
+  /** Long polling hang time (ms). */
   waitMs: number;
-  /** 失败或老宿主时的退避间隔（ms）。 */
+  /** Backoff interval when failed or old host (ms). */
   fallbackMs: number;
-  /** 组件是否仍然挂载；false 时循环立刻退出。 */
+  /** Whether the component is still mounted; when false, the loop exits immediately. */
   isAlive: () => boolean;
 }
 
-/** 一个不会 resolve 的等待：单纯让出这一拍，用定时器而不是忙等。 */
+/** A wait that does not know resolve: simply give up this beat, use a timer instead of busy waiting. */
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * 启动自调度轮询（调用方不 await：它一直跑到 `isAlive()` 返回 false）。
+ * Start self-scheduling polling (caller is not await: it runs all the way to `isAlive()` and returns to false).
  *
- * @param deps - 拉取、分发与节奏参数。
- * @returns 无返回值；循环结束后自然收尾。
+ * @param deps - Pull, dispatch and tempo parameters.
+ * @returns has no return value; it will naturally cleanup after the loop ends.
  */
 export async function runStatePoll(deps: StatePollDeps): Promise<void> {
-  /** 宿主是否支持长轮询：首拍带 counter 就是支持。 */
+  /** Does the host support long polling: if the first shot contains counter, it supports it. */
   let longPoll = false;
-  /** 上次拿到的 counter，作为长轮询的 since。 */
+  /** The counter obtained last time is the since of long polling. */
   let since: number | undefined;
   while (deps.isAlive()) {
     let state: PollState | null = null;
     try {
       state = await deps.fetch(longPoll && since !== undefined ? { since, timeoutMs: deps.waitMs } : undefined);
     } catch {
-      /* 轻量轮询失败静默，下一拍再试。 */
+      /* Light polling fails silently, try again next tick. */
     }
     if (!deps.isAlive()) return;
     if (state !== null) {
@@ -47,7 +48,7 @@ export async function runStatePoll(deps: StatePollDeps): Promise<void> {
       if (longPoll && typeof state.counter === 'number') since = state.counter;
       deps.onState(state);
     }
-    // 长轮询命中或首拉时立刻再请求；失败或老宿主则退避一个间隔。
+    // If long polling hits or first pulls, the request will be made again immediately; if it fails or the old host fails, it will back off by an interval.
     if (state === null || !longPoll) await sleep(deps.fallbackMs);
   }
 }

@@ -1,9 +1,10 @@
 /**
- * 「AI 模型与对话上下文」卡（src/client/settings/model-card.ts）的契约测试。
+ * Contract testing of the "AI Model and Dialogue Context" card (src/client/settings/model-card.ts).
  *
- * 两条契约：
- *   1. 三个对话开关的勾选态来自 `values`，切换回传的是配置字段名（键名错位会静默写坏别的开关）；
- *   2. 忙时全部控件禁用，模型选择器也拿到同一个 busy。
+ * Two contracts:
+ * 1. The check status of the three dialogue switches comes from `values` , and the switch returns the configuration
+ * field name (misplaced key names will silently damage other switches);
+ * 2. When busy, all controls are disabled and the model selector also gets the same busy.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,7 +18,7 @@ interface Node {
 }
 
 const h = ((tag: unknown, props: Record<string, unknown>) => ({ tag, props })) as unknown as typeof jsx;
-/** 模型选择器替身：只把 props 原样挂出来，方便断言 busy 传到了。 */
+/** Model selector stand-in: only hang out props as it is, so that the assertion busy can be transferred easily. */
 const Picker = ((props: Record<string, unknown>) => ({ tag: 'select', props })) as never;
 const ModelCard = makeModelCard({ h, t: (key: string) => key } as never, Picker);
 
@@ -34,11 +35,11 @@ const allOff: ChatFlagValues = {
   chatAnimationEnabled: false,
 };
 
-/** 三个对话开关的框：数字输入的 props 里没有 checked，据此区分。 */
+/** The three dialogue switch boxes: there is no checked in the digital input props, so distinguish accordingly. */
 const toggles = (tree: unknown): Node[] =>
   flatten(tree).filter((node) => node.tag === 'input' && node.props.checked !== undefined);
 
-/** 一张卡的完整输入；未覆盖的字段给固定值。 */
+/** Complete input of a card; uncovered fields are given fixed values. */
 function props(values: ChatFlagValues, over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     busy: false,
@@ -57,20 +58,20 @@ function props(values: ChatFlagValues, over: Record<string, unknown> = {}): Reco
   };
 }
 
-describe('ModelCard —— 对话开关', () => {
-  test('三个开关都在，勾选态来自 values', () => {
+describe('ModelCard——Dialogue switch', () => {
+  test('All three switches are present, and the checked state comes from values', () => {
     const tree = ModelCard(
       props({ whisperImageEnabled: true, chatImageEnabled: false, chatAnimationEnabled: true }) as never,
     );
     const found = toggles(tree);
-    assert.equal(found.length, 3, '应该有三个对话开关');
+    assert.equal(found.length, 3, 'There should be three dialogue switches');
     assert.deepEqual(
       found.map((box) => box.props.checked),
       [true, false, true],
     );
   });
 
-  test('每个开关回传自己的配置字段名', () => {
+  test('Each switch returns its own configuration field name', () => {
     const seen: Array<[string, boolean]> = [];
     const tree = ModelCard(
       props(allOff, { onFlagChange: (key: string, value: boolean) => seen.push([key, value]) }) as never,
@@ -84,16 +85,16 @@ describe('ModelCard —— 对话开关', () => {
     );
     assert.ok(
       seen.every(([, value]) => value === true),
-      '回传的必须是布尔值，不是事件对象',
+      'What is returned must be a Boolean value, not an event object',
     );
   });
 
-  test('忙时开关与选择器全部禁用', () => {
+  test('Busy switches and selectors are all disabled', () => {
     const tree = ModelCard(props(allOff, { busy: true }) as never);
     for (const box of toggles(tree)) assert.equal(box.props.disabled, true);
-    // 选择器本身是组件，h 不会展开它：按组件引用找那两个格子。
+    // The selector itself is a component, h will not expand it: find the two grids according to the component reference.
     const pickers = flatten(tree).filter((node) => (node.tag as unknown) === Picker);
-    assert.equal(pickers.length, 2, '两个模型格子各有一个选择器');
+    assert.equal(pickers.length, 2, 'Each of the two model grids has a selector');
     for (const picker of pickers) assert.equal(picker.props.disabled, true);
   });
 });

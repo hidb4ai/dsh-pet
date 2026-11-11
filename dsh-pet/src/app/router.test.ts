@@ -83,7 +83,7 @@ test('app rejects untrusted file origins and hosts while authenticated desktop c
     assert.equal(media.status, 200);
     await media.text();
     assert.equal(calls, 2);
-    // 文件来源例外不适用于 AI 设置端点。
+    // The file source exception does not apply to the AI settings endpoint.
     assert.equal(
       (await fetch(server.base + '/standalone-ai/settings', { headers: { ...token, Origin: 'null' } })).status,
       403,
@@ -168,7 +168,7 @@ test('app caps request bodies before plugins/settings and catches synchronous an
   }
 });
 
-test('设置页对话面板脚本：有产物时由 app 路由提供 → 200 且类型与内容正确', async () => {
+test('Settings page dialog panel script: provided by app route when there is a product → 200 and the type and content are correct', async () => {
   const script = 'window.__CHAT_PANEL__ = 1;';
   const server = await start(
     [],
@@ -185,7 +185,7 @@ test('设置页对话面板脚本：有产物时由 app 路由提供 → 200 且
   }
 });
 
-test('设置页对话面板脚本：产物缺失时 → 404 并提示重新构建，而不是静默回空脚本', async () => {
+test('Settings page dialog panel script: when the product is missing → 404 and prompts to rebuild, instead of silently returning the empty script', async () => {
   const server = await start(
     [],
     () => {},
@@ -194,7 +194,7 @@ test('设置页对话面板脚本：产物缺失时 → 404 并提示重新构�
   try {
     const response = await fetch(server.base + '/standalone-ai/chat-panel.js');
     assert.equal(response.status, 404);
-    assert.match(await response.text(), /重新构建/);
+    assert.match(await response.text(), /rebuild/);
   } finally {
     await server.close();
   }

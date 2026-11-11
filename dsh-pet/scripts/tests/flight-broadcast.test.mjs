@@ -1,4 +1,4 @@
-/** 桌面飞行状态广播的合并、尾帧与生命周期。 */
+/** Merger, last frame and lifecycle of desktop flight status broadcast. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
@@ -18,7 +18,7 @@ function setup(t, count = 2) {
     });
   return { manager, messages };
 }
-test('密集更新即时记入站场，广播合并并采用最后一份状态', (t) => {
+test('Intensive updates are recorded in the station immediately, broadcasts are merged and the last status is adopted.', (t) => {
   const { manager, messages } = setup(t);
   for (let i = 0; i < 100; i++) manager.updatePetState('p0', { x: i, vx: i });
   assert.equal(manager.state.petStates.get('p0').x, 99);
@@ -30,21 +30,21 @@ test('密集更新即时记入站场，广播合并并采用最后一份状态',
   assert.equal(messages[0].state.p0.x, 99);
   assert.equal(messages[0].state.p0.vx, 99);
 });
-test('五只宠物同帧更新只广播一次完整站场', (t) => {
+test('Five pets update the entire station only once in the same frame.', (t) => {
   const { manager, messages } = setup(t, 5);
   for (let i = 0; i < 5; i++) manager.updatePetState('p' + i, { x: i, size: 462 });
   t.mock.timers.tick(16);
   assert.equal(messages.length, 5);
   assert.equal(Object.keys(messages[0].state).length, 5);
 });
-test('单只宠物仍登记状态，省去发回自身的碰撞广播', (t) => {
+test('A single pet is still registered, eliminating the need to send back its own collision broadcast.', (t) => {
   const { manager, messages } = setup(t, 1);
   manager.updatePetState('p0', { x: 30, size: 462 });
   t.mock.timers.tick(100);
   assert.equal(manager.state.petStates.get('p0').x, 30);
   assert.equal(messages.length, 0);
 });
-test('重复状态不再次安排广播', (t) => {
+test('Duplicate status does not schedule broadcast again', (t) => {
   const { manager, messages } = setup(t);
   manager.updatePetState('p0', { x: 30, size: 462 });
   t.mock.timers.tick(16);
@@ -52,7 +52,7 @@ test('重复状态不再次安排广播', (t) => {
   t.mock.timers.tick(16);
   assert.equal(messages.length, 2);
 });
-test('静止位置的尺寸或速度变化仍会广播', (t) => {
+test('Size or velocity changes from resting positions are still broadcast', (t) => {
   const { manager, messages } = setup(t);
   manager.updatePetState('p0', { x: 30, vx: 400, size: 462 });
   t.mock.timers.tick(16);
@@ -62,21 +62,21 @@ test('静止位置的尺寸或速度变化仍会广播', (t) => {
   assert.equal(messages[2].state.p0.vx, 0);
   assert.equal(messages[2].state.p0.size, 600);
 });
-test('明确刷新取消旧定时器，后续不会重复发旧状态', (t) => {
+test('Explicitly refresh and cancel the old timer, and the old status will not be sent again in the future.', (t) => {
   const { manager, messages } = setup(t);
   manager.updatePetState('p0', { x: 5 });
   manager.broadcastPetStates();
   t.mock.timers.tick(16);
   assert.equal(messages.length, 2);
 });
-test('窗口已销毁时跳过发送', (t) => {
+test('Skip sending when window has been destroyed', (t) => {
   const { manager, messages } = setup(t);
   manager.updatePetState('p0', { x: 5 });
   manager.state.windows.get('p1').isDestroyed = () => true;
   t.mock.timers.tick(16);
   assert.equal(messages.length, 1);
 });
-test('关闭全部窗口清理站场及未发送的定时器', (t) => {
+test('Close all windows to clear stations and unsent timers', (t) => {
   const { manager, messages } = setup(t);
   manager.updatePetState('p0', { x: 5 });
   manager.closeAll();
@@ -84,7 +84,7 @@ test('关闭全部窗口清理站场及未发送的定时器', (t) => {
   assert.equal(manager.state.petStates.size, 0);
   assert.equal(messages.length, 0);
 });
-test('一秒五只宠物以60帧更新，最多广播300条且保留落地尾帧', (t) => {
+test('Five pets are updated at 60 frames per second, with a maximum of 300 broadcasts and the last frame of landing is retained.', (t) => {
   const { manager, messages } = setup(t, 5);
   for (let frame = 0; frame < 60; frame++) {
     for (let i = 0; i < 5; i++) manager.updatePetState('p' + i, { x: frame, vx: frame === 59 ? 0 : 600 });
@@ -94,7 +94,7 @@ test('一秒五只宠物以60帧更新，最多广播300条且保留落地尾帧
   assert.equal(messages.at(-1).state.p0.x, 59);
   assert.equal(messages.at(-1).state.p0.vx, 0);
 });
-test('飞行逐帧更新窗口并捎带速度', () => {
+test('Flight updates window frame by frame and takes the speed with it', () => {
   let callback,
     now = 0;
   class Sprite {}

@@ -11,11 +11,15 @@ test('DSH scheduling preserves existing pet flag and configured cadence', () => 
 test('standalone scheduling additionally requires AI readiness, and keeps the configured cadence', () => {
   const policy = { isReady: () => true };
   assert.deepEqual(automaticWhisperSchedule(policy, true, 300), { enabled: true, periodSec: 300 });
-  assert.equal(automaticWhisperSchedule(policy, false, 300).enabled, false, '宠物自己关掉时不得启用');
+  assert.equal(
+    automaticWhisperSchedule(policy, false, 300).enabled,
+    false,
+    'It must not be enabled when the pet turns itself off',
+  );
   assert.equal(
     automaticWhisperSchedule({ isReady: () => false }, true, 300).enabled,
     false,
-    '独立模式 AI 未就绪时不得启用',
+    'Standalone mode AI must not be enabled when it is not ready',
   );
 });
 

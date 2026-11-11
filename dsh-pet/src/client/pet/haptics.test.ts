@@ -1,36 +1,37 @@
 /**
- * 触觉反馈的单元测试：钉住速度阈值、时长映射与冷却窗口。
+ * Unit testing for haptic feedback: verify speed threshold, duration mapping and cool down window.
  *
- * 只测纯逻辑：`vibrate` 与时钟都注入，不碰真实硬件（Node 里也没有 Vibration API）。
+ * Only pure logic is tested: `vibrate` and clock are injected, without touching the real hardware (Node does not
+ * contain Vibration API).
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createHaptics, HAPTIC_COOLDOWN_MS, HAPTIC_MIN_SPEED, pulseMsFor } from './haptics.ts';
 
-describe('pulseMsFor —— 速度到单次时长', () => {
-  test('低于下限、非数字 → 不震', () => {
+describe('pulseMsFor——Speed to single duration', () => {
+  test('Lower than the lower limit, not a number → no shock', () => {
     for (const speed of [0, HAPTIC_MIN_SPEED - 1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      assert.equal(pulseMsFor(speed), null, `${speed} 不该震`);
+      assert.equal(pulseMsFor(speed), null, `Speed ${speed} must not trigger vibration`);
     }
   });
 
-  test('下限处震最短，软碰与硬砸之间单调递增', () => {
+  test('The vibration at the lower limit is the shortest, and the relationship between soft impact and hard impact increases monotonically.', () => {
     assert.equal(pulseMsFor(HAPTIC_MIN_SPEED), 10);
     assert.equal(pulseMsFor(300), 10);
     const mid = pulseMsFor(900);
-    assert.ok(mid !== null && mid > 10 && mid < 28, `中速应落在区间内，实际 ${mid}`);
-    assert.ok((pulseMsFor(2000) ?? 0) > (pulseMsFor(400) ?? 0), '越快越久');
+    assert.ok(mid !== null && mid > 10 && mid < 28, `The medium speed should fall within the range, actual ${mid}`);
+    assert.ok((pulseMsFor(2000) ?? 0) > (pulseMsFor(400) ?? 0), 'The faster, the longer');
   });
 
-  test('超过硬锚点封顶 28ms', () => {
+  test('Exceeded hard anchor point cap 28 ms', () => {
     assert.equal(pulseMsFor(1500), 28);
     assert.equal(pulseMsFor(9000), 28);
   });
 });
 
-describe('createHaptics —— 一次碰撞一次脉冲', () => {
-  /** 假硬件：记录每次调用的时长。 */
+describe('createHaptics - one pulse per collision', () => {
+  /** Fake hardware: record the duration of each call. */
   const fake = () => {
     const calls: number[] = [];
     let clock = 0;
@@ -48,31 +49,31 @@ describe('createHaptics —— 一次碰撞一次脉冲', () => {
     };
   };
 
-  test('冷却窗口内同类撞击只震一次（贴地弹跳会连续多帧回报）', () => {
+  test('The same type of impact will only shock once within the cooling window (bounces against the ground will be reported in multiple frames)', () => {
     const f = fake();
     f.haptics.hit('floor', 900);
     f.advance(HAPTIC_COOLDOWN_MS - 1);
     f.haptics.hit('floor', 900);
-    assert.deepEqual(f.calls, [pulseMsFor(900)], '第二次应被吞掉');
+    assert.deepEqual(f.calls, [pulseMsFor(900)], 'The second time should be swallowed');
     f.advance(2);
     f.haptics.hit('floor', 900);
-    assert.equal(f.calls.length, 2, '过了窗口应重新震');
+    assert.equal(f.calls.length, 2, 'After passing the window, you should re-vibrate.');
   });
 
-  test('不同种类的撞击各有自己的冷却：撞墙不会吞掉落地', () => {
+  test('Different types of impacts have their own cooldowns: hitting a wall will not swallow the ground', () => {
     const f = fake();
     f.haptics.hit('floor', 900);
     f.haptics.hit('left', 900);
     assert.equal(f.calls.length, 2);
   });
 
-  test('速度不够不震', () => {
+  test('The speed is not enough for vibration', () => {
     const f = fake();
     f.haptics.hit('pet', 50);
     assert.deepEqual(f.calls, []);
   });
 
-  test('开关关掉时完全静默', () => {
+  test('Completely silent when switch is off', () => {
     const calls: number[] = [];
     const haptics = createHaptics({ vibrate: (ms) => calls.push(ms), now: () => 0, enabled: () => false });
     haptics.hit('floor', 2000);

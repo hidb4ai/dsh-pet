@@ -1,20 +1,21 @@
 /**
- * 单段 HTTP Range 解析：给 bridge 的素材应答用。
+ * Single segment HTTP Range analysis: used for asset response of bridge.
  *
- * 与宿主侧 src/host/http.ts 的 parseRange 同语义；两侧运行环境与构建边界不同（Node http 与 Electron
- * protocol.handle），各自实现一份。
+ * It has the same semantics as parseRange of src/host/http.ts on the host side; the running environment and build
+ * boundary of both sides are different (Node http and Electron protocol.handle), each implements one copy.
  * @module dsh-pet/runtime/electron-helper/range
  */
 'use strict';
 
 /**
- * 解析单段 Range 头。
+ * Parsing single segment Range header.
  *
- * 只接受 `bytes=<start>-<end>`、`bytes=<start>-`、`bytes=-<suffix>` 三种单段形式；多段、单位不符、
- * 语法非法返回 null（回整份），起点越界或 start > end 返回 'unsatisfiable'（回 416）。
- * @param header - 请求头原值，可能为 null。
- * @param totalBytes - 文件总字节数；非正数时一律忽略 Range。
- * @returns 闭区间 `{ start, end }`、'unsatisfiable' 或 null。
+ * Only three single-segment forms, `bytes=<start>-<end>` , `bytes=<start>-` , and `bytes=-<suffix>` , are accepted; if
+ * multiple segments, units do not match, or the syntax is invalid, null (return to the whole copy) will be returned.
+ * If the starting point is out of bounds or start > end, 'unsatisfiable' (return to 416) will be returned.
+ * @param header - The original value of the request header, which may be null.
+ * @param totalBytes - the total number of bytes in the file; Range is ignored if it is not a positive number.
+ * @returns closed interval `{ start, end }` , ' unsatisfiable ' or null.
  */
 function parseRange(header, totalBytes) {
   if (!header || totalBytes <= 0) return null;
@@ -25,7 +26,7 @@ function parseRange(header, totalBytes) {
   if (startText === '' && endText === '') return null;
 
   if (startText === '') {
-    // 后缀形式：bytes=-N，取末尾 N 字节
+    // Suffix form: bytes =- N, take the last N bytes
     const suffixLength = Number(endText);
     if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null;
     return { start: Math.max(0, totalBytes - suffixLength), end: totalBytes - 1 };

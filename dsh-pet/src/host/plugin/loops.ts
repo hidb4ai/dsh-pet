@@ -1,7 +1,9 @@
 /**
- * 轮询循环：余额定时刷新与碎碎念定时触发，随插件卸载一并停止。
+ * Polling loop: The balance is refreshed regularly and whisper is triggered regularly, and stops when the plugin is
+ * unmounted.
  *
- * 不实现取数与文案（归 balance-poll / chat-memory），只负责节奏与生命周期。
+ * It does not implement number retrieval and text (owned by balance-poll / chat-memory), but is only
+ * responsible for rhythm and lifecycle.
  * @module dsh-pet/src/host/plugin/loops
  */
 import { findPetInstance, flattenPetList, readAllConfig } from '../config.ts';
@@ -13,18 +15,18 @@ import type { PetLookup } from './pet-lookup.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 
-/** 梦话周期的兜底值（秒）：配置里 eventsRefreshSec.sleepTalk 缺失/非法时用它。 */
+/** Fallback value of sleep talking cycle (seconds): Use this when eventsRefreshSec.sleepTalk is missing/invalid in the configuration. */
 const SLEEP_TALK_DEFAULT_SEC = 60;
 
-/** 错峰队列里相邻两只之间的间隔（ms）：同拍到点的宠物依次开口，才会错开冒泡与语音。 */
+/** The gap between two adjacent ones in the staggered queue (ms): only when the pets that are photographed at the same time speak in sequence will the bubbling and voice be staggered. */
 const WHISPER_STAGGER_MS = 10_000;
 
-/** 错峰队列上限：6 只 × 10s = 60s，正好覆盖最短周期，队列不会追着拍跑。 */
+/** The upper limit of the off-peak queue is: 6 × 10 s = 60 s, which just covers the shortest period, and the queue will not chase and run away. */
 const WHISPER_QUEUE_MAX = 6;
 
-/** 轮询循环的输入。 */
+/** Input to polling loop. */
 export type LoopsInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<BalancePoll, 'balancePeriodSec'> &
   Pick<HostSetup, 'configPaths'> &
@@ -38,7 +40,7 @@ export type LoopsInput = {
   Pick<HostSetup, 'standaloneAiPolicy'> &
   Pick<BalancePoll, 'whisperPeriodSec'>;
 
-/** 注册轮询循环；返回的清理函数由 ctx.effect 收集。 */
+/** register polling loop; the returned cleanup function is collected by ctx.effect. */
 export function registerLoops(deps: LoopsInput): void {
   const {
     ctx,
@@ -54,8 +56,9 @@ export function registerLoops(deps: LoopsInput): void {
     standaloneAiPolicy,
     whisperPeriodSec,
   } = deps;
-  // 余额周期刷新：host 侧唯一定时器。周期每次重新读配置 eventsRefreshSec.balance，改了下一拍跟上。
-  // 没有任何启用余额的宠物时跳过查询：尊重配置，不白花外部 API 调用。
+  // Balance cycle refresh: host side only timer. The configuration eventsRefreshSec.balance is re-read every cycle,
+  // and the next tick is changed to keep up. Skip query when there are no balance-enabled pets: respect configuration
+  // and not waste external API calls.
   ctx.effect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -68,52 +71,58 @@ export function registerLoops(deps: LoopsInput): void {
       try {
         const cfg = readAllConfig(configPaths);
         sec = balancePeriodSec(cfg);
-        // 没有任何「醒着且启用余额」的宠物 → 不查（省外部调用）：睡着的宠物不看不听，
-        // 拉了也只会白花一次外部 API；配置改了或醒了，下一拍自然跟上。
+        // There are no pets that are "awake and have balance enabled" → Do not check (save external calls): A sleeping
+        // pet cannot see or hear, and pulling it will only waste an external API; if the configuration is changed or
+        // wakes up, the next tick will naturally follow.
         const pets = flattenPetList(cfg);
         if (pets.some((p) => p.balanceEnabled === true && !sleep.sleeping(String(p.id ?? '')))) {
           await refreshBalance();
         } else {
-          log.info('[dsh-pet] 余额周期跳过：没有醒着且启用余额的宠物');
+          log.info('[dsh-pet] Skipping scheduled balance refresh: no awake pet has balance enabled');
         }
       } catch (e) {
-        // 读配置抛错 = 安装损坏（readAllConfig 只在内置默认缺失/损坏时抛，用户层写坏只会告警回退）：
-        // 不再重排——每 30 分钟重试一次没有意义，而且会白占一个常驻定时器。留一行 warn：这条路径
-        // 会让余额周期永久停摆，不打日志就与「查了但没变化」无法区分。
+        // An error is thrown when reading the configuration = the installation is damaged (readAllConfig is only
+        // thrown when the built-in default is missing/damaged, and if the user layer is damaged, it will only alert
+        // and fall back): No more rearrangement - retrying every 30 minutes is meaningless, and will occupy a resident
+        // timer in vain. Leave a line warn: This path will permanently stop the balance cycle. Not logging is
+        // indistinguishable from "checked but no change".
         log.warn(
-          '[dsh-pet] 余额周期读配置失败，周期刷新已停止（重启 DSH 后恢复）：' +
+          '[dsh-pet] Scheduled balance configuration read failed; refresh stopped until DSH restarts:' +
             (e instanceof Error ? e.message : String(e)),
         );
         return;
       }
       arm(sec);
     }
-    void tick(); // 启动即拉一次，不等第一个周期
+    void tick(); // Pull once at startup, without waiting for the first cycle
     return () => {
       disposed = true;
       if (timer !== null) clearTimeout(timer);
     };
   }, 'dsh-pet: balance poll');
 
-  // 碎碎念周期：host 侧调度。一拍 = 读一次配置 + 把「到点」的宠物排进错峰队列；下一拍按最短周期排。
-  // 用固定拍 + 逐宠物比对 lastWhisperAt，而不是每宠一个定时器：宠物随配置增删、周期随条目改，
-  // 固定拍天然跟上，不用维护一堆定时器的生命周期。
+  // whisper cycle: host side scheduling. One tick = read the configuration once + queue the pets that have reached the
+  // "point" into the off-peak queue; next tick is arranged according to the shortest period. Use fixed beat +
+  // pet-by-pet comparison to compare lastWhisperAt instead of one timer for each pet: pets are added and deleted with
+  // the configuration, and the cycle changes with the entries. The fixed beat can naturally keep up, and there is no
+  // need to maintain a lifecycle of a bunch of timers.
   ctx.effect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    /** 待发布的宠物（FIFO）；一次只发一只，两只之间隔 {@link WHISPER_STAGGER_MS}。 */
+    /** Pets to be released (FIFO); only one will be released at a time, separated by {@link WHISPER_STAGGER_MS}. */
     const pending: string[] = [];
-    /** 队列内相邻两只之间的等待句柄；与拍定时器分开计，两者都要在卸载时清掉。 */
+    /** The waiting handle between two adjacent ones in the queue is counted separately from the shooting timer, and both must be cleared when unmounting. */
     let drainTimer: ReturnType<typeof setTimeout> | null = null;
 
-    /** 是否已经有一只正在生成；同一时刻只允许一只，否则两只仍会同时写出气泡。 */
+    /** Is there already one being generated? Only one is allowed at the same time, otherwise both will still write bubbles at the same time. */
     let pumping = false;
 
     /**
-     * 从队列取下一只发布，等它写完再隔一个间隔发下一只。
+     * Take a release from the queue, wait for it to be written, and then send the next one at an interval.
      *
-     * 间隔从「文字真的写进状态」算起，而不是从发起点算：单次生成耗时在 3–15 秒之间波动，
-     * 从发起点算的固定间隔会被慢的那只吃掉，两只又撞到一起。
+     * The interval is calculated from "the text is actually written into the state", not from the initial counting:
+     * the time taken for a single generation fluctuates between 3-15 seconds, and the fixed interval calculated from
+     * the initial counting will be eaten by the slower one, and the two will collide together.
      */
     async function pump(): Promise<void> {
       if (disposed || pumping || drainTimer !== null) return;
@@ -121,10 +130,10 @@ export function registerLoops(deps: LoopsInput): void {
       if (petId === undefined) return;
       pumping = true;
       try {
-        // kind=whisper 让生成侧按 voiceWhisperEnabled 决定要不要带 voiceTo。
+        // kind = whisper Let the generated side press voiceWhisperEnabled to decide whether to bring voiceTo.
         await publishWhisper(petId, undefined, undefined, 'whisper');
       } catch {
-        // 单只失败不挡住后面的宠物：原因已经由 publishWhisper 记过日志。
+        // A single pet failed to block the following pets: the reason has been recorded in the log by publishWhisper.
       } finally {
         pumping = false;
       }
@@ -145,7 +154,7 @@ export function registerLoops(deps: LoopsInput): void {
         const cfg = readAllConfig(configPaths);
         const now = Date.now();
         let min = Infinity;
-        // 每一拍的账：检查几只、到点几只、没到点几只、跳过几只（带原因）。只用于日志，调度行为不变。
+        // Account for each shot: how many animals were checked, how many were on point, how many were not on point, and how many were skipped (with reasons). Only used for logging, scheduling behavior remains unchanged.
         let checked = 0;
         let due = 0;
         let notDue = 0;
@@ -153,8 +162,9 @@ export function registerLoops(deps: LoopsInput): void {
         for (const pet of flattenPetList(cfg)) {
           const petId = String(pet.id ?? '');
           if (!petId) continue;
-          // petId 就是从同一份 cfg 拍平出来的，所以必然命中（findPetInstance 与 flattenPetList
-          // 搜索同一集合）；查不到只可能是两者口径漂移——跳过这一拍，不猜也不兜底 main。
+          // petId is flattened from the same cfg, so it must hit (findPetInstance and flattenPetList search the same
+          // set); if not found, it may only be due to the drift of the two conventions - skip this beat, do not guess
+          // or fallback main.
           const found = findPetInstance(cfg, petId);
           if (!found) continue;
           checked += 1;
@@ -164,13 +174,17 @@ export function registerLoops(deps: LoopsInput): void {
             whisperPeriodSec(found.conf),
           );
           if (!schedule.enabled) {
-            // 两种「没启用」分开记：宠物自己关掉，与独立模式 AI 未就绪，处理方式完全不同
-            skipped.push(petId + ': ' + (pet.whisperEnabled === true ? '独立模式 AI 未就绪' : 'whisperEnabled=false'));
+            // The two types of "not enabled" are recorded separately: the pet turns off by itself, and the standalone mode AI is not ready, and the processing methods are completely different.
+            skipped.push(
+              petId + ': ' + (pet.whisperEnabled === true ? 'standalone AI is not ready' : 'whisperEnabled=false'),
+            );
             continue;
           }
-          // 配置上不显示的宠物不生成：用户选「都不显示」就是不用了，后台继续调模型纯属白烧额度（#237）。
-          // 放在 min 之前：不可见的宠物也不该把整拍的周期拖住。不推进 lastWhisperAt——
-          // 与占用锁同一口径，重新可见后下一拍立刻补一句。
+          // Pets that are not displayed in the configuration are not generated: if the user selects "display none",
+          // then they do not need to use it. Continuing to adjust the model in the background is purely a waste of
+          // money (#237). Place before min: Invisible pets should not hold up the entire shot cycle. Do not advance
+          // lastWhisperAt - the same conventions as the occupied lock, and the next tick will be added immediately
+          // after it becomes visible again.
           const display = String(pet.display ?? '');
           if (!isDisplayed(display)) {
             skipped.push(petId + ': display=none');
@@ -182,51 +196,53 @@ export function registerLoops(deps: LoopsInput): void {
             notDue += 1;
             continue;
           }
-          // 占用锁：这只宠物被占用时跳过这一拍——不生成也不补（碎碎念是瞬时事件，过期即弃），
-          // 且不推进 lastWhisperAt：锁一放开，下一拍就该照常说。
-          // 只挡这一处 per-pet 来源；全局段（balance / workStatus）由渲染端按宠物忽略——
-          // 宿主跳过写入会连带静音别的宠物。
+          // Occupied lock: Skip this beat when this pet is occupied - neither generated nor supplemented (whisper is a
+          // transient event, discarded after expiration), and does not advance lastWhisperAt: As soon as the lock is
+          // released, the next tick should be said as usual. Only this per-pet source is blocked; the global segment
+          // (balance / workStatus) is ignored by the renderer - skipping writing by the host will also mute other
+          // pets.
           if (lock.locked(petId)) {
-            skipped.push(petId + ': 占用锁跳过');
+            skipped.push(petId + ': skipped because the pet is locked');
             continue;
           }
-          // 睡觉：不生成、也不推进 lastWhisperAt——醒来的下一拍立刻补一句，与占用锁同一口径。
+          // Sleeping: neither generated nor advanced lastWhisperAt - add the next tick immediately after waking up, which has the same conventions as occupying the lock.
           if (sleep.sleeping(petId)) {
-            skipped.push(petId + ': 睡觉中');
+            skipped.push(petId + ': sleeping');
             continue;
           }
-          // 队列有上限：宠物多、周期短时宁可这一拍少说几句，也不让错峰追着下一拍跑。
+          // The queue has an upper limit: when there are many pets and the cycle is short, it is better to say a few words less in this tick than to chase the next tick at the wrong peak.
           if (pending.length >= WHISPER_QUEUE_MAX) {
-            skipped.push(petId + ': 错峰队列已满');
+            skipped.push(petId + ': stagger queue is full');
             continue;
           }
           due += 1;
-          // 在调度时记：排队不改变周期语义，单只仍然每 sec 秒一句。
+          // Note during scheduling: queuing does not change the period semantics, only one sentence is still sent every sec seconds.
           lastWhisperAt.set(petId, now);
-          log.info(`[dsh-pet] 碎碎念到点 pet=${petId}（周期 ${sec}s），入队待发`);
+          log.info(`[dsh-pet] Whisper due pet=${petId} (interval ${sec}s); queued`);
           pending.push(petId);
         }
-        void pump(); // 本拍到点的宠物开始逐只发布
+        void pump(); // The pets that have been photographed will be released one by one.
         if (Number.isFinite(min)) next = min;
-        // 每拍一行汇总：调度是否还在跑、下一拍多久、为什么跳过，全在这一行里（300s 一条，量可忽略）
+        // One-line summary of each tick: whether the schedule is still running, how long the next tick is, and why it was skipped, all in this line (300 s per line, the amount can be ignored)
         log.info(
-          `[dsh-pet] 碎碎念调度：检查 ${checked} 只 → 到点 ${due}、未到点 ${notDue}、跳过 ${skipped.length}` +
-            (due > 1 ? `；${due} 只按 ${WHISPER_STAGGER_MS / 1000}s 间隔依次说` : '') +
+          `[dsh-pet] Whisper scheduling: checked=${checked}, due=${due}, notDue=${notDue}, skipped=${skipped.length}` +
+            (due > 1 ? `; ${due} pets scheduled ${WHISPER_STAGGER_MS / 1000}s apart` : '') +
             (skipped.length > 0 ? `（${skipped.join('；')}）` : '') +
-            `；下一拍 ${next}s`,
+            `; next tick in ${next}s`,
         );
       } catch (e) {
-        // 读配置抛错 = 安装损坏（同余额定时器）：不再重排，别白占常驻句柄。
-        // 但必须留一行 warn：这条路径会让自动碎碎念永久停摆。
+        // An error is thrown when reading the configuration = the installation is damaged (same as the balance timer):
+        // no more rearrangement, don’t occupy the resident handle in vain. But you must leave one line warn: this path
+        // will make automatic whisper stop permanently.
         log.warn(
-          '[dsh-pet] 碎碎念调度读配置失败，自动碎碎念已停止（重启 DSH 后恢复）：' +
+          '[dsh-pet] Whisper configuration read failed; automatic whispers stopped until DSH restarts:' +
             (e instanceof Error ? e.message : String(e)),
         );
         return;
       }
       arm(next);
     }
-    void tick(); // 启动即生成一次，不等第一个周期
+    void tick(); // Generate once at startup, not waiting for the first cycle
     return () => {
       disposed = true;
       if (timer !== null) clearTimeout(timer);
@@ -234,12 +250,13 @@ export function registerLoops(deps: LoopsInput): void {
     };
   }, 'dsh-pet: whisper poll');
 
-  // 梦话周期：只对正在睡的宠物，按各自条目的 eventsRefreshSec.sleepTalk 排。
-  // 与碎碎念同一个形态（固定拍 + 逐宠物比对 lastAt），宠物增删与周期改动天然跟上。
+  // Sleep talking cycle: only for sleeping pets, ranked according to eventsRefreshSec.sleepTalk of their respective
+  // entries. The same form as whisper (fixed beat + pet-by-pet comparison lastAt), pet additions and deletions and
+  // periodic changes can naturally keep up.
   ctx.effect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    /** petId → 上一次说梦话的时刻；醒来不清，下次睡着时按周期自然接着算。 */
+    /** petId → The last time you talked in your sleep; it is not clear when you wake up. The next time you fall asleep, it will naturally continue according to the cycle. */
     const lastTalkAt = new Map<string, number>();
     function arm(sec: number): void {
       if (disposed) return;
@@ -258,14 +275,14 @@ export function registerLoops(deps: LoopsInput): void {
           min = Math.min(min, sec);
           if (now - (lastTalkAt.get(petId) ?? 0) < sec * 1000) continue;
           lastTalkAt.set(petId, now);
-          // 不 await：生成要几秒，别把调度拍拖住
+          // No await: It takes a few seconds to generate, don’t delay the scheduling
           void publishSleepTalk(petId).catch(() => {});
         }
         if (Number.isFinite(min)) next = min;
       } catch (e) {
-        // 读配置抛错 = 安装损坏：停止本循环并留一行日志（与另外两个循环同一口径）
+        // Reading configuration error = installation damage: stop this loop and leave a line of log (same conventions as the other two loops)
         log.warn(
-          '[dsh-pet] 梦话调度读配置失败，说梦话已停止（重启 DSH 后恢复）：' +
+          '[dsh-pet] Dream speech configuration read failed; scheduler stopped until DSH restarts:' +
             (e instanceof Error ? e.message : String(e)),
         );
         return;
@@ -280,7 +297,7 @@ export function registerLoops(deps: LoopsInput): void {
   }, 'dsh-pet: sleep talk poll');
 }
 
-/** 梦话周期（秒）：条目级 eventsRefreshSec.sleepTalk，读不到按 60 兜底（与配置注释同一口径）。 */
+/** Sleep talking period (seconds): Entry level eventsRefreshSec.sleepTalk, if not read, press 60 fallback (same conventions as configuration comments). */
 function sleepTalkPeriodSec(conf: Record<string, unknown>): number {
   const table = conf.eventsRefreshSec as Record<string, unknown> | undefined;
   const sec = Number(table?.sleepTalk);

@@ -1,8 +1,10 @@
 /**
- * 设置页标签图标：直接读插件自己的 `assets/logo.png`，不在别处复制第二份图。
+ * Setting page label icon: directly read the plugin's own `assets/logo.png` , and do not copy the second image
+ * elsewhere.
  *
- * 两个本机服务（独立模式监听器与应用模式路由）共用本模块；读取结果按进程缓存，
- * 文件缺失时回 undefined，由调用方回 404——不在缺图时静默给一张占位图。
+ * Two local services (standalone mode listener and application mode route) share this module; the read results are
+ * cached by process, undefined is returned when the file is missing, and 404 is returned by the caller - no longer
+ * silently giving a placeholder image when the image is missing.
  * @module dsh-pet/src/standalone/icon
  */
 import { readFileSync } from 'node:fs';
@@ -12,9 +14,9 @@ import { PACKAGE_ROOT } from '../host/paths.ts';
 let cached: Buffer | undefined;
 
 /**
- * 读取标签图标字节。
+ * Read tag icon bytes.
  *
- * @returns PNG 字节；文件不存在或不可读时为 undefined。
+ * @returns PNG bytes; undefined when the file does not exist or is unreadable.
  */
 export function readSettingsIcon(): Buffer | undefined {
   if (cached) return cached;

@@ -1,8 +1,10 @@
 /**
- * 「AI 模型与对话上下文」卡：碎碎念 / 对话各自的模型（条目级），对话历史条数与配图张数上限（全局默认），
- * 以及三个与对话相关的开关（碎碎念配图 / 对话配图 / 对话动作联动）。
- * 都与全局开关同语义：只改本地状态，随「保存」整包写入；宿主生成时优先用模型，失败自动回落。
- * 候选清单拉取失败只在这里提示一行，不阻塞已有配置值的显示与保存。
+ * "AI Model and Dialogue Context" card: whisper/dialogue's respective model (entry level), the maximum number of
+ * dialogue history items and the number of pictures (global default), and three dialogue-related switches (whisper
+ * picture/dialogue picture/dialogue action linkage). They have the same semantics as the global switch: only the local
+ * state is changed, and the entire package is written with "save"; the model is used first when generating the host,
+ * and fallback occurs automatically if it fails. If the candidate list fails to be pulled, only one line will be
+ * prompted here, and the display and saving of existing configuration values will not be blocked.
  * @module dsh-pet/src/client/settings/model-card
  */
 import type { FunctionComponent } from 'react';
@@ -14,59 +16,59 @@ import { makeUiKit, numberInputProps } from './ui.ts';
 import { makeMemoryStatus } from './memory-status.ts';
 import type { ChatMemoryConfig } from '../../shared/chat-memory-config.ts';
 
-/** 两个模型字段的键名。 */
+/** Key names of two model fields. */
 export type ModelFieldKey = 'whisperModel' | 'chatModel';
 
-/** 三个对话开关的键名，与成品配置的字段名一致。 */
+/** The key names of the three dialogue switches are consistent with the field names of the resolved configuration. */
 export type ChatFlagKey = 'whisperImageEnabled' | 'chatImageEnabled' | 'chatAnimationEnabled';
 
-/** 三个对话开关的当前值。 */
+/** Current values of three dialogue switches. */
 export type ChatFlagValues = Record<ChatFlagKey, boolean>;
 
-/** 对话开关的展示顺序与文案键。 */
+/** Display order and text keys of dialogue switches. */
 const CHAT_TOGGLES: Array<{ key: ChatFlagKey; label: string }> = [
   { key: 'whisperImageEnabled', label: 'whisperImageToggle' },
   { key: 'chatImageEnabled', label: 'chatImageToggle' },
   { key: 'chatAnimationEnabled', label: 'chatAnimationToggle' },
 ];
 
-/** 模型卡的输入。 */
+/** Input of model card. */
 export interface ModelCardProps {
   petId?: string;
   longTermMemory?: ChatMemoryConfig;
   onLongTermMemoryChange?: (value: ChatMemoryConfig) => void;
-  /** 保存中或配置未就绪时禁用全部控件。 */
+  /** All controls are disabled while saving or configuration is not ready. */
   busy: boolean;
-  /** 候选清单；`null` 表示还在拉取。 */
+  /** Candidate list; `null` means it is still being pulled. */
   catalog: readonly ModelCatalogGroup[] | null;
-  /** 候选清单拉取失败。 */
+  /** Failed to pull candidate list. */
   failed: boolean;
-  /** 碎碎念用的模型。 */
+  /** Model used by whisper. */
   whisperModel: ModelSelection;
-  /** 对话用的模型。 */
+  /** Model for dialogue. */
   chatModel: ModelSelection;
-  /** 某个模型字段被改。 */
+  /** A certain model field was changed. */
   onModelChange: (key: ModelFieldKey, value: ModelSelection) => void;
-  /** 对话历史条数。 */
+  /** Number of conversation history items. */
   chatMemory: number;
-  /** 对话配图张数上限。 */
+  /** The maximum number of dialogue pictures. */
   chatImageLimit: number;
-  /** 改对话历史条数。 */
+  /** Change the number of dialogue history items. */
   onChatMemoryChange: (value: number) => void;
-  /** 改对话配图张数上限。 */
+  /** Change the upper limit of the number of dialogue pictures. */
   onChatImageLimitChange: (value: number) => void;
-  /** 三个对话开关的当前值。 */
+  /** Current values of three dialogue switches. */
   values: ChatFlagValues;
-  /** 某个对话开关被切换。 */
+  /** A certain dialogue switch is toggled. */
   onFlagChange: (key: ChatFlagKey, value: boolean) => void;
 }
 
 /**
- * 造模型卡。
+ * Make model cards.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @param picker - 模型选择器组件（由外壳用同一份运行时造好，跨渲染稳定）。
- * @returns 卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @param picker - Model selector component (built from the same runtime by the shell, stable across renders).
+ * @returns card assembly.
  */
 export function makeModelCard(
   rt: SettingsRuntime,
@@ -83,7 +85,7 @@ export function makeModelCard(
       if (memory) props.onLongTermMemoryChange?.({ ...memory, ...patch });
     };
 
-    /** 「全局默认」的数字格：标签与问号在上、数字输入在下。 */
+    /** "Global Default" number grid: labels and question marks are at the top, and number input is at the bottom. */
     const numField = (label: string, value: number, setter: (v: number) => void) =>
       field(
         t(label),
@@ -91,7 +93,7 @@ export function makeModelCard(
         t(label + 'Hint'),
       );
 
-    /** 「AI 模型」的一格：标签与问号在上、单下拉选择器在下。 */
+    /** A grid of "AI model": the label and question mark are on the top, and the single drop-down selector is on the bottom. */
     const modelCell = (key: ModelFieldKey, value: ModelSelection) => {
       const label = t(key === 'whisperModel' ? 'whisperModelLabel' : 'chatModelLabel');
       return field(

@@ -1,10 +1,13 @@
 /**
- * 菜单首项按宿主形态自动分派的契约测试（宿主 = DSH 桌面应用 / dsh web / 独立模式）。
+ * The first menu item is a contract test automatically assigned according to the host state (host = DSH desktop
+ * application / dsh web / standalone mode).
  *
- * 需求：三种形态下同一个工具项要有三种去向与文案——桌面应用「打开软件」（把主窗口叫回前台）、
- * 独立模式「打开 AI 设置」（本机设置页）、dsh web「打开网站」（DSH 站点）。
- * 判定逻辑已抽成纯函数 {@link resolveOpenTarget}，直接断言行为；两侧装配（宿主注入与 helper 解析）
- * 各自构建、无法互相 import，仍用源码断言守住接线。
+ * Requirements: The same tool item in the three forms must have three destinations and text - desktop
+ * application "Open the software" (call the main window back to the foreground), standalone mode "Open AI settings"
+ * (local settings page), dsh web "Open website" (DSH site). The judgment logic has been extracted into a pure function
+ * {@link resolveOpenTarget} , with direct assertion behavior; the assembly on both sides (host injection and helper
+ * parsing) are constructed separately and cannot be import mutually, and the source code assertion is still used to
+ * guard the wiring.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +15,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolveOpenTarget } from './plugin/desktop/spawn.ts';
 
-/** 包内文件源码（守卫用；相对 src/host/ 解析） */
+/** Source code of files in the package (for guarding; relative to src/host / parsing) */
 const readSource = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 const host =
@@ -21,7 +24,7 @@ const host =
   readSource('./plugin/desktop-helper.ts') +
   '\n' +
   readSource('./plugin/desktop/spawn.ts');
-/** 主进程源码：main.js 是装配根，行为散在 main/ 下的模块里，守卫要读全份。 */
+/** main process source code: main.js is the assembly root, and the behaviors are scattered in modules under main /. The guard must read the entire copy. */
 const mainSource = (dir: string): string =>
   [
     readSource(dir + 'main.js'),
@@ -31,7 +34,7 @@ const mainSource = (dir: string): string =>
   ].join('\n');
 const main = mainSource('../../runtime/electron-helper/');
 const constants = readSource('../../runtime/electron-helper/constants.js');
-/** 渲染端宠物本体的源码：已按职责拆成 sprite.js 与 sprite-*.js，守卫要读全份。 */
+/** The source code of the renderer pet body: has been split into sprite.js and sprite -*.js according to responsibilities. Guards must read the entire copy. */
 const sprite = [
   readSource('../../runtime/electron-helper/sprite.js'),
   ...readdirSync(fileURLToPath(new URL('../../runtime/electron-helper/sprite/', import.meta.url))).map((name) =>
@@ -41,89 +44,95 @@ const sprite = [
 const appMain = readSource('../app/main.ts');
 const standaloneContext = readSource('../standalone/context.ts');
 
-describe('resolveOpenTarget：形态判定', () => {
-  test('Electron 宿主：无论地址指向哪里都是 desktop', () => {
+describe('resolveOpenTarget: Form determination', () => {
+  test('Electron host: No matter where the address points to, it is desktop', () => {
     assert.equal(resolveOpenTarget('http://127.0.0.1:3080/', true), 'desktop');
     assert.equal(
       resolveOpenTarget('http://127.0.0.1:31380/standalone-ai/#token=test-only', true),
       'desktop',
-      '桌面应用下不该因为设置页地址被误判成独立模式',
+      'In desktop applications, the setting page address should not be misjudged as independent mode.',
     );
   });
 
-  test('独立模式：地址落在本机设置页 → standalone', () => {
+  test('Standalone mode: The address falls on the local settings page → standalone', () => {
     assert.equal(resolveOpenTarget('http://127.0.0.1:31380/standalone-ai/#token=test-only', false), 'standalone');
   });
 
-  test('web 宿主：站点根地址 → web，不能被顺带判成独立模式', () => {
+  test('web host: site root address → web, cannot be incidentally judged to be in standalone mode', () => {
     assert.equal(
       resolveOpenTarget('http://127.0.0.1:3080/#token=test-only', false),
       'web',
-      'dsh web 打开的是 DSH 站点，菜单应显示「打开网站」',
+      'dsh web opens the DSH site, and the menu should display "Open website"',
     );
   });
 });
 
-describe('装配接线：宿主注入 → helper 解析 → 渲染端文案', () => {
-  test('宿主：桌面应用判定 + 三态注入', () => {
+describe('Assembly wiring: host injection → helper analysis → renderer text', () => {
+  test('host: desktop application determination + three-state injection', () => {
     assert.ok(
       /const isDesktopHost = \(\): boolean => Boolean\(process\.versions\.electron\)/.test(host),
-      '宿主必须用 process.versions.electron 判定形态（桌面应用以 ELECTRON_RUN_AS_NODE 跑，该字段仍在；dsh web 是纯 Node）',
+      'The host must use process.versions.electron to determine the state (desktop applications run as ELECTRON_RUN_AS_NODE, this field is still there; dsh web is pure Node)',
     );
     assert.ok(
       /DSH_PET_OPEN_TARGET: resolveOpenTarget\(siteUrl, isDesktopHost\(\)\)/.test(host),
-      'launchHelper 必须注入三态（只注入 desktop/site 会让 web 与独立模式共用一档）',
+      'launchHelper must be injected into tri-state (only injecting desktop/site will make web share the same level with independent mode)',
     );
   });
 
-  test('helper 主进程：三态解析，未注入回落 web（旧行为）', () => {
+  test('helper main process: three-state resolution, fallback web not injected (old behavior)', () => {
     assert.ok(
       /const OPEN_TARGET_RAW = process\.env\.DSH_PET_OPEN_TARGET;\s*const OPEN_TARGET = OPEN_TARGET_RAW === 'desktop' \|\| OPEN_TARGET_RAW === 'standalone' \? OPEN_TARGET_RAW : 'web'/.test(
         main,
       ),
-      "非 desktop/standalone 一律回落 'web'（手写 start-desktop 无该变量时行为不得变）",
+      "Non-desktop/standalone will always fallback ' web ' (the behavior of handwritten start-desktop without this variable shall not change)",
     );
-    assert.ok(/openTarget: OPEN_TARGET/.test(main), '形态要沿窗口 query 透到渲染端（文案在那里决定）');
-    assert.ok(/shell\.openExternal\('dsh:\/\/open'\)/.test(main), '桌面宿主必须走 dsh://open 唤起应用窗口');
+    assert.ok(
+      /openTarget: OPEN_TARGET/.test(main),
+      'The shape should be transmitted to the renderer along the window query (the copywriting is decided there)',
+    );
+    assert.ok(
+      /shell\.openExternal\('dsh:\/\/open'\)/.test(main),
+      'The desktop host must go to dsh :// open to wake up the application window.',
+    );
     assert.ok(
       /(?:OPEN_TARGET|openTarget) === 'desktop'\) \{[\s\S]*?openSite\(url\)/.test(main),
-      'dsh:// 失败要回落成打开站点（协议未注册时不能"点了没反应"）',
+      'dsh:// fails and needs to fallback to open the site (when the protocol is not registered, it cannot be "no response after clicking")',
     );
     assert.ok(
       /const openSite = \(url\) => \{[\s\S]*?shell\.openExternal\(target\)/.test(main),
-      'site 路径（含回落）必须仍是原来那条打开站点的实现',
+      'The site path (including fallback) must still be the original implementation of opening the site',
     );
     assert.ok(
       (main.match(/dsh:\/\/open/g) ?? []).length === 1,
-      'dsh://open 只允许出现在 desktop 分支里（standalone/web 不得被顺带改成唤起应用）',
+      'dsh :// open is only allowed to appear in the desktop branch (standalone/web cannot be changed to invoke the application incidentally)',
     );
   });
 
-  test('helper 渲染端：三态文案查表，动作名不变', () => {
+  test('helper renderer: Three-state text table lookup, the action name remains unchanged', () => {
     assert.ok(
       /const OPEN_TARGET_RAW = params\.get\('openTarget'\);\s*const OPEN_TARGET = OPEN_TARGET_RAW === 'desktop' \|\| OPEN_TARGET_RAW === 'standalone' \? OPEN_TARGET_RAW : 'web'/.test(
         constants,
       ),
-      "constants.js 必须从 query 读三态且默认 'web'",
+      "constants.js must read tri-state from query and defaults to 'web'",
     );
     assert.ok(
       /\{ desktop: '打开软件', standalone: '打开 AI 设置', web: '打开网站' \}/.test(sprite),
-      '三种形态必须有三种文案，web 不得再显示「打开 AI 设置」',
+      'Three forms must have three types of copywriting. web must no longer display "Open AI settings"',
     );
     assert.ok(
       /label: OPEN_LABEL\[OPEN_TARGET\],\s*action: 'open-site'/.test(sprite),
-      '文案由查表决定，但 action 仍是 open-site（另一端只认这个动作名；hint 只是视觉提示，允许夹在中间换行）',
+      'The copywriting is determined by looking up the table, but action is still open-site (the other end only recognizes this action name; hint is just a visual reminder, allowing line breaks to be sandwiched in the middle)',
     );
   });
 
-  test('独立模式：App 显式标 standalone，CLI 由地址判定，不另注入形态', () => {
+  test('Standalone mode: App explicitly marks standalone, CLI is determined by the address, and no additional form is injected.', () => {
     assert.ok(
       /process\.env\.DSH_PET_OPEN_TARGET = 'standalone'/.test(appMain),
-      '独立 App 不经 spawn，必须自己把形态标成 standalone（否则回落 web，文案又变回「打开网站」）',
+      'Independent App without passing through spawn, you must mark the form as standalone yourself (otherwise fallback web, the copy will change back to "Open the website")',
     );
     assert.ok(
       !/DSH_PET_OPEN_TARGET/.test(standaloneContext),
-      '独立模式伪 ctx 不注入形态：App 归 main.ts，CLI 归 spawn 的地址判定',
+      'Independent mode pseudo ctx non-injection form: App belongs to main.ts, CLI belongs to spawn address determination',
     );
   });
 });

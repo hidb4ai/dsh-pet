@@ -1,10 +1,13 @@
 /**
- * 「吃白饭」的演出导演：取锁 → 跑到底部 → 期待开饭 → 追着吃 → 收场。
+ * The "free rice" performance director: pick up the lock → run to the bottom → look forward to the meal → chase after
+ * eating → end.
  *
- * 一台单一状态机：相位、场次代次、锁与朝向都在同一份场次状态里，所以本文件不按行数再拆——
- * 播放、位移、相位三块共享同一份状态，切开只会让改一处仍要同时改另一处。
- * 不负责菜单与素材：菜单在 ../baifan.ts，米饭与分数在 ./scene，接口调用在 ./transport。
- * 所有等待都问回执或播放进度，不用「素材多长」的定时器——定时器在素材加载失败时照样会走到「播完」。
+ * A single state machine: phase, field generation, lock and orientation are all in the same field state, so this file
+ * is not split according to the number of lines - playback, displacement, and phase share the same state, and cutting
+ * it will only require changing one place to change the other at the same time. Not responsible for menus and assets:
+ * menus are in ../baifan.ts, rice and scores are in ./scene, and interface calls are in ./transport. All waits are
+ * related to receipts or playback progress. There is no timer for "how long is the asset" - the timer will still go to
+ * "playback is over" when the asset fails to load.
  * @module dsh-pet/src/client/baifan/show
  */
 import { CFG, LINES } from './constants.ts';
@@ -14,85 +17,85 @@ import { createLock, Halted, type Lock } from './lock.ts';
 import type { RiceItem, Scene } from './scene.ts';
 import type { Transport } from './transport.ts';
 
-/** 演出对外暴露的面：一个入口、一个收场。 */
+/** The externally exposed aspects of a performance: an entry point and an ending. */
 export interface Show {
-  /** 开一场；重复调用等于重开（先彻底收掉上一场）。 */
+  /** Open a game; repeated calls equal to restarting (completely close the previous game first). */
   start: (petId: string, assets: ActivityAssets) => void;
-  /** 收场：停一切、清干净、放锁。幂等。 */
+  /** Ending: Stop everything, clean up, and release the lock. Idempotent. */
   halt: (reason?: string) => Promise<void>;
-  /** 这一场是否在跑；菜单用它避免重复开演。 */
+  /** Is this scene running? The menu uses this to avoid repeated starts. */
   isRunning: () => boolean;
 }
 
-/** 建演出的依赖。 */
+/** Build performance dependencies. */
 export interface ShowDeps {
-  /** 接口调用与点播回执。 */
+  /** Interface call and playback request receipt. */
   transport: Transport;
-  /** 米饭、分数与提示条。 */
+  /** Rice, scores and reminder bars. */
   scene: Scene;
 }
 
-/** 相位：没开演 / 跑向底部 / 期待 / 追饭 / 吃。 */
+/** Phase: not starting / running to the bottom / looking forward to / chasing food / eating. */
 type Phase = 'idle' | 'walk' | 'expect' | 'chase' | 'eat';
 
-/** 侧身跑的接力令牌：每次换朝向、开始吃、收场都 +1，旧的那轮在下一个 await 后自弃。 */
+/** Relay token running sideways: +1 each time you change direction, start eating, and end. The old round will give up after the next await. */
 interface SideChain {
-  /** 当前令牌。 */
+  /** Current token. */
   token: number;
-  /** 接力是否还活着（吃、收场会停掉它，之后必须能重新拉起）。 */
+  /** Is the relay still alive (eating and finishing will stop it, and it must be able to be picked up again later). */
   active: boolean;
 }
 
 /**
- * 造演出导演。
+ * Create a show director.
  *
- * @param deps - 传输层与视觉层。
- * @returns 开演与收场。
+ * @param deps - Transport layer and visual layer.
+ * @returns opens and ends.
  */
 export function createShow(deps: ShowDeps): Show {
   const { transport, scene } = deps;
 
-  /** 当前指挥的宠物 id（由菜单点击带回来，不猜）。 */
+  /** The currently commanded pet is id (brought back by clicking on the menu, no guessing). */
   let petId = '';
-  /** 相位。 */
+  /** Phase. */
   let phase: Phase = 'idle';
-  /** 本场是否在跑。 */
+  /** Is this game running? */
   let running = false;
-  /** 插件是否已卸载。 */
+  /** Is the plugin unmounted? */
   let disposed = false;
-  /** 占用锁；null = 没锁。 */
+  /** Lock occupied; null = No lock. */
   let lock: Lock | null = null;
-  /** 已经吃了几份。 */
+  /** I’ve had a few servings. */
   let eaten = 0;
-  /** 当前朝向。 */
+  /** Current heading. */
   let facing: 'left' | 'right' = 'left';
-  /** 最近一次量到的精灵尺寸。 */
+  /** The last measured elf size. */
   let sprite: SpriteBox = { w: 0, h: 0 };
-  /** 地面上跑的目标垂直坐标（归一化，宠物中心）。 */
+  /** Vertical coordinates of the target running on the ground (normalized, pet center). */
   let groundNormY = 0.86;
-  /** 没饭可追时的溜达目标（像素）；null = 该重新抽一个。 */
+  /** Wandering target (pixels) when there is no food to chase; null = It’s time to draw another one. */
   let patrolX: number | null = null;
-  /** 侧身跑接力。 */
+  /** Sideways running relay. */
   const side: SideChain = { token: 0, active: false };
-  /** 吃满多少份吹一次牛。 */
+  /** You can brag once you eat as many servings as you like. */
   const FULL_EVERY = 5;
 
-  /** 本场代次：每次开演 +1，旧场收尾时不能动新的一场。 */
+  /** The generation of this show: +1 each time the show starts, and the new show cannot be moved when the old show is cleaned up. */
   let showGen = 0;
-  /** 这一场用的五段动画地址（按被点宠物所属条目的配置算出来）。 */
+  /** The five animation addresses used in this scene (calculated according to the configuration of the item to which the clicked pet belongs). */
   let current: ActivityAssets = { chase: '', descend: '', eatBall: '', eatBowl: '', expect: '' };
-  /** 掉饭定时器。 */
+  /** Meal timer. */
   let spawnTimer = 0;
-  /** 跑动动画看门狗。 */
+  /** Running animation watchdog. */
   let sideWatch = 0;
 
-  /** 行为是否还该继续。 */
+  /** Should the behavior continue? */
   const alive = (): boolean => running && !disposed && lock !== null && !lock.isLost();
   const enc = (s: string): string => encodeURIComponent(s);
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
   const pickLine = (pool: readonly string[]): string => pool[Math.floor(Math.random() * pool.length)] ?? '';
 
-  /** 让桌宠说一句：`anim: false` 必须给，否则渲染端会联动 whisper 动画把正在播的顶掉。 */
+  /** Let the desktop pet say: `anim: false` must be given, otherwise the renderer will link the whisper animation to top off what is being played. */
   function say(text: string, ms?: number): void {
     const lease = lock?.id() ?? null;
     if (!alive() || lease === null) return;
@@ -105,12 +108,12 @@ export function createShow(deps: ShowDeps): Show {
       .catch(() => {});
   }
 
-  /** 读一次实况；读不到返回 null。 */
+  /** Read the live data once; if unable to read, return null. */
   function pose(): Pose | null {
     return transport.pose(petId);
   }
 
-  /** 读实况并换算几何量；读不到返回 null。 */
+  /** Read live and convert geometric quantities; return null if unable to read. */
   function currentGeometry(): Geometry | null {
     const p = pose();
     if (p === null) return null;
@@ -118,13 +121,13 @@ export function createShow(deps: ShowDeps): Show {
     return geometry(p, box);
   }
 
-  /** 量精灵盒子（量到就更新缓存）。 */
+  /** Measure the elf box (update cache when measured). */
   function measure(p: Pose): SpriteBox {
     sprite = spriteBox(p.x * window.innerWidth, p.y * window.innerHeight, sprite);
     return sprite;
   }
 
-  /** 点播一段玩法动画（按名字）；返回点播编号。 */
+  /** playback request a gameplay animation (by name); return the playback request number. */
   async function playAnim(name: string, dir?: 'left' | 'right'): Promise<string | null> {
     const lease = lock?.id() ?? null;
     if (lease === null) throw new Halted();
@@ -133,12 +136,12 @@ export function createShow(deps: ShowDeps): Show {
     const r = await transport.call('POST', '/anim?pet=' + enc(petId) + '&surface=web&lock=' + enc(lease), body);
     if (r.ok !== true) {
       lock?.noteFailure(r.reason);
-      throw new Error('点播失败：' + String(r.reason ?? 'unknown'));
+      throw new Error('Playback request failed:' + String(r.reason ?? 'unknown'));
     }
     return typeof r.playbackId === 'string' ? r.playbackId : null;
   }
 
-  /** 读这次点播的真实片长（毫秒）；读不到用兜底。 */
+  /** Read the actual length (milliseconds) of this playback request; use fallback if you cannot read it. */
   async function clipMs(id: string | null): Promise<number> {
     if (id !== null) {
       for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -151,13 +154,15 @@ export function createShow(deps: ShowDeps): Show {
   }
 
   /**
-   * 守着一段正在播的素材，等它快到尾巴时返回 true。
+   * Guard an asset that is being played, and return true when it reaches the end.
    *
-   * 回执只说「结束了没有」，而 progress 有 currentTime / duration，能在还剩一点尾巴时就点下一段——
-   * 锁占用期间宠物自己是静止的，一段播完到下一段开始之间的空档就是「在滑但没有跑步动画」。
+   * The receipt only says "Is it over yet?", while progress has currentTime / duration, which allows you to click on
+   * the next segment when there is still a little tail left - the pet itself is stationary during the lock occupation,
+   * and the gap between the end of one segment and the start of the next segment is "sliding but no running
+   * animation".
    *
-   * @param id - 要守的那一次的 playbackId。
-   * @returns true = 该接下一段了；false = 这段已经不属于我们。
+   * @param id - playbackId to defend that time.
+   * @returns true = It’s time to take on the next paragraph; false = This paragraph no longer belongs to us.
    */
   async function keepWarm(id: string | null): Promise<boolean> {
     if (id === null) return false;
@@ -173,7 +178,7 @@ export function createShow(deps: ShowDeps): Show {
       } else if (seen) {
         return false;
       } else if (performance.now() - start > CFG.pollLatencyMs + 800) {
-        // 一直没轮到我们播（被 busy 吞了 / 还没换源）：交给调用方重点一次
+        // It has never been our turn to broadcast (swallowed by busy / the source has not been changed yet): Leave it to the caller to focus once
         return true;
       }
       if (performance.now() > deadline) return false;
@@ -181,7 +186,7 @@ export function createShow(deps: ShowDeps): Show {
     }
   }
 
-  /** 下发一次位置。 */
+  /** Send the location once. */
   async function movePet(xNorm: number, yNorm: number, mode: 'instant' | 'line', durationMs?: number): Promise<void> {
     const lease = lock?.id() ?? null;
     if (lease === null) return;
@@ -191,7 +196,7 @@ export function createShow(deps: ShowDeps): Show {
     if (r.ok !== true) lock?.noteFailure(r.reason);
   }
 
-  /** 等宠物走到某个位置；渲染端对 /state 是每秒轮询，所以只负责「等到它到」。 */
+  /** Wait for the pet to reach a certain position; the renderer polls / state every second, so it is only responsible for "waiting until it arrives". */
   async function waitArrive(goalX: number | null, goalY: number | null, budgetMs: number): Promise<void> {
     const deadline = performance.now() + budgetMs;
     for (;;) {
@@ -206,9 +211,10 @@ export function createShow(deps: ShowDeps): Show {
   }
 
   /**
-   * 把一段直线位移拆成几段依次下发。
+   * Divide a linear displacement into several segments and issue them one after another.
    *
-   * 目的不是画质，是抗单条指令失效：渲染端若把某一条 line 当成直接落位，拆开后那一下只丢 1/n 的距离。
+   * The purpose is not image quality, but to resist the failure of a single command: if the renderer treats a certain
+   * line as a direct position, it will only lose a distance of 1/ n after disassembling it.
    */
   async function glideTo(xNorm: number, yNorm: number, ms: number, steps: number): Promise<void> {
     const start = transport.pose(petId);
@@ -224,10 +230,12 @@ export function createShow(deps: ShowDeps): Show {
   }
 
   /**
-   * 原地挪 2 像素，把渲染端的「起点」喂给它。
+   * Move 2 pixels in place and feed it the "starting point" of the renderer.
    *
-   * 进入页面后的第一条位置指令不做插值——那一刻还没有「上一个位置」，于是直接落到目标点，
-   * 表现就是第一次点「吃白饭」时宠物瞬移到底部。先来一条几乎为零的位移把起点建立起来。
+   * The first position command after entering the page does not perform interpolation - there is no "previous
+   * position" at that moment, so it falls directly to the target point. The performance is that the pet teleports to
+   * the bottom when "Eat Rice" is clicked for the first time. First establish a starting point with an almost zero
+   * displacement.
    */
   async function warmPosition(): Promise<void> {
     const p = transport.pose(petId);
@@ -236,7 +244,7 @@ export function createShow(deps: ShowDeps): Show {
     await sleep(220);
   }
 
-  /** 让侧身跑接力下去；返回第一遍的 playbackId（永远会 settle）。 */
+  /** Let the sideways running relay continue; return playbackId for the first pass (it will always be settle). */
   function runSide(dir: 'left' | 'right'): Promise<string | null> {
     facing = dir;
     side.token += 1;
@@ -248,7 +256,7 @@ export function createShow(deps: ShowDeps): Show {
       for (;;) {
         if (token !== side.token || !alive()) return;
         if (id === null) {
-          // 被 busy 吞了 / 素材没拿到：缓一拍再点，别把节奏打散
+          // Swallowed by busy/The asset was not obtained: slow down and click again, don’t break up the rhythm
           await sleep(400);
           if (token !== side.token) return;
           id = await playAnim(current.chase, dir).catch(() => null);
@@ -265,13 +273,13 @@ export function createShow(deps: ShowDeps): Show {
     return started;
   }
 
-  /** 保证「往 dir 跑」这段动画在接力中；换朝向或接力断了都要重开。 */
+  /** Ensure that the animation "Run to dir" is in the relay; it must be restarted if the direction is changed or the relay is interrupted. */
   function ensureSide(dir: 'left' | 'right'): Promise<string | null> | null {
     if (dir === facing && side.active) return null;
     return runSide(dir);
   }
 
-  /** 等这段动画真的开始播；位移一定要等它，否则就是「人先滑出去，动画才跟上」。 */
+  /** Wait for this animation to actually start playing; the displacement must wait for it, otherwise it will be "the person slides out first, and the animation will follow." */
   async function waitPlayStarted(pending: Promise<string | null> | null, budgetMs: number): Promise<void> {
     if (pending === null) return;
     const id = await pending;
@@ -285,13 +293,13 @@ export function createShow(deps: ShowDeps): Show {
     }
   }
 
-  /** 前台现在播的是不是这一段侧身跑（兜底判据：位置写入会不会顶掉点播，文档没有保证）。 */
+  /** Is this segment of sideways running currently being played in the frontend (fallback criterion: will position writing override the playback request, the document does not guarantee this). */
   function sidePlaying(): boolean {
     const p = transport.progress(petId);
     return p !== null && typeof p.anim === 'string' && p.anim === current.chase;
   }
 
-  /** 追饭期间的看门狗：跑动动画掉了就补。 */
+  /** Watchdog during the meal chase: If the running animation drops, just make up for it. */
   function startSideWatch(): void {
     stopSideWatch();
     sideWatch = window.setInterval(() => {
@@ -306,7 +314,7 @@ export function createShow(deps: ShowDeps): Show {
     sideWatch = 0;
   }
 
-  /** 跑一段；返回是否真的发了一段位移（已在目标点时为 false）。 */
+  /** Run a section; return whether a section of displacement has really been sent (false when it is at the target point). */
   async function tripTo(goalPx: number, speed: number): Promise<boolean> {
     const p = transport.pose(petId);
     if (p === null) return false;
@@ -321,11 +329,11 @@ export function createShow(deps: ShowDeps): Show {
     return true;
   }
 
-  /** 一阶段：跑到底部。蓄力 → 直线跑到随机落点（每次都不一样，是第一眼观感）。 */
+  /** Stage 1: Run to the bottom. Charge → Run straight to a random landing point (it’s different every time, just the first impression). */
   async function phaseWalk(): Promise<void> {
     phase = 'walk';
     const geom = currentGeometry();
-    if (geom === null) throw new Error('这一页找不到这只宠物');
+    if (geom === null) throw new Error('This pet is not present on the current page');
     groundNormY = bottomNormY(geom);
     const margin = Math.max(60, geom.w / 2);
     const targetPx = margin + Math.random() * Math.max(10, window.innerWidth - margin * 2);
@@ -340,7 +348,7 @@ export function createShow(deps: ShowDeps): Show {
     if (!alive()) throw new Halted();
   }
 
-  /** 二阶段：期待开饭；尾巴上就开始接侧身跑，免得播完站在那儿等。 */
+  /** The second stage: Looking forward to the meal; starting to run sideways from the tail to avoid standing there waiting after the broadcast. */
   async function phaseExpect(): Promise<void> {
     phase = 'expect';
     say(pickLine(LINES.expect), 3000);
@@ -348,10 +356,10 @@ export function createShow(deps: ShowDeps): Show {
     if (!alive()) throw new Halted();
   }
 
-  /** 吃掉一份：飞到嘴边 → 随咀嚼变小 → 空碗落地 → 弹分数。 */
+  /** Eat one serving: fly to your mouth → get smaller as you chew → drop the empty bowl to the ground → play the score. */
   async function eatOne(item: RiceItem, geom: Geometry): Promise<void> {
     phase = 'eat';
-    // 先把侧身跑接力停掉，否则它会在吃动画开始时把这一段顶掉
+    // Stop the sideways running relay first, otherwise it will top off this section when the eating animation starts.
     side.token += 1;
     side.active = false;
     scene.detach(item);
@@ -364,7 +372,7 @@ export function createShow(deps: ShowDeps): Show {
     ]);
     const flyMs = await clipMs(playId);
 
-    // 动画已经开播，这一刻的位置才是嘴的位置
+    // The animation has started. The position at this moment is the position of the mouth.
     const settled = transport.pose(petId);
     const g = settled === null ? geom : geometry(settled, measure(settled));
     const mouthX = g.cx + CFG.mouthDx * g.w * (facing === 'right' ? -1 : 1);
@@ -378,12 +386,12 @@ export function createShow(deps: ShowDeps): Show {
     eaten += 1;
     scene.popScore(eaten, item.type, g);
     say(pickLine(isBowl ? LINES.bowl : LINES.ball), 2400);
-    // 吃到一定数量才吹牛，不然每口都来一句会烦
+    // Only brag after eating a certain amount, otherwise it will be annoying if you say it every time you take a bite
     if (eaten % FULL_EVERY === 0) window.setTimeout(() => say(pickLine(LINES.full), 2600), 1200);
     phase = 'chase';
   }
 
-  /** 开刷：先掉一份，之后按间隔继续；场上满了就自然停下。 */
+  /** Start brushing: drop one piece first, then continue according to intervals; it will stop naturally when the field is full. */
   function startSpawning(): void {
     if (spawnTimer !== 0) return;
     scene.spawn(scene.scaleOf(sprite.w));
@@ -395,7 +403,7 @@ export function createShow(deps: ShowDeps): Show {
     }, CFG.spawnMs);
   }
 
-  /** 三阶段：追饭。一段一段地跑，跑到了才做下一个决定。 */
+  /** Three stages: chasing rice. Run step by step, and only make the next decision when you reach the end. */
   async function phaseChase(gen: number): Promise<never> {
     phase = 'chase';
     startSpawning();
@@ -403,7 +411,7 @@ export function createShow(deps: ShowDeps): Show {
     say(pickLine(LINES.drop), 2200);
     while (alive() && gen === showGen) {
       const geom = currentGeometry();
-      if (geom === null) throw new Error('这一页找不到这只宠物');
+      if (geom === null) throw new Error('This pet is not present on the current page');
       groundNormY = bottomNormY(geom);
       const target = scene.nearest(geom.cx, facing);
       const eatPx = CFG.eatPx * (geom.w / CFG.refWidth);
@@ -413,13 +421,13 @@ export function createShow(deps: ShowDeps): Show {
       }
       const goalPx = target !== null ? target.x : patrolGoal(geom);
       const speed = target !== null ? CFG.runSpeed : CFG.runSpeed * CFG.patrolSpeedRatio;
-      // 已经在目标点上（没发指令）就歇一拍，否则这段循环会空转成死循环
+      // Take a break when you are already at the target point (no command is issued), otherwise this loop will become an endless loop.
       if (!(await tripTo(goalPx, speed))) await sleep(CFG.idleMs);
     }
     throw new Halted();
   }
 
-  /** 没饭可追时随便挑个地方跑过去，到了下一拍再挑。 */
+  /** When there is no food to chase, just pick a place and run there, and pick again at the next tick. */
   function patrolGoal(geom: Geometry): number {
     const margin = Math.max(80, geom.w * 0.4);
     const petPx = geom.cx;
@@ -429,7 +437,7 @@ export function createShow(deps: ShowDeps): Show {
     return patrolX;
   }
 
-  /** 跑完整场演出。 */
+  /** Run the entire show. */
   async function runShow(): Promise<void> {
     running = true;
     eaten = 0;
@@ -447,24 +455,24 @@ export function createShow(deps: ShowDeps): Show {
       await phaseChase(showGen);
     } catch (error) {
       if (error instanceof Halted) {
-        // 正常收场（丢锁 / 卸载）
+        // Normal ending (lock lost/unmount)
       } else if (lock?.isLost() === true) {
         scene.toast('锁丢了，表演结束');
       } else {
         scene.toast(error instanceof Error ? error.message : String(error));
-        console.warn('[dsh-pet] 吃白饭异常', error);
+        console.warn('[dsh-pet] Rice-eating interaction failed', error);
       }
     } finally {
       await halt(lock?.isLost() === true ? '用户接管，已收场' : '');
     }
   }
 
-  /** 收场：停一切、清干净、放锁；幂等，丢锁与卸载都会走到这儿。 */
+  /** Ending: stop everything, clean up, and release the lock; idempotent, lock loss and unmount will all go here. */
   async function halt(reason?: string): Promise<void> {
     const wasRunning = running;
     running = false;
     phase = 'idle';
-    // 把还挂在半路的请求切掉：不然它们会带着旧令牌回来继续动这只宠物
+    // Cut off pending requests: otherwise they will come back with the old token and continue to touch the pet
     transport.attach(null);
     if (spawnTimer !== 0) {
       window.clearInterval(spawnTimer);
@@ -480,7 +488,7 @@ export function createShow(deps: ShowDeps): Show {
     if (reason !== undefined && reason !== '' && (wasRunning || lease !== null)) scene.toast(reason);
   }
 
-  /** 开一场；先彻底收掉上一场（含放锁），再起新的。 */
+  /** Start a game; first completely close the previous game (including releasing the lock), and then start a new one. */
   function start(nextPetId: string, assets: ActivityAssets): void {
     if (running || lock?.id() != null) {
       void halt('重新开始').then(() => begin(nextPetId, assets));
@@ -489,7 +497,7 @@ export function createShow(deps: ShowDeps): Show {
     begin(nextPetId, assets);
   }
 
-  /** 真正开演：重建这一场的锁、取消信号与素材地址。 */
+  /** The real show starts: Rebuilding the lock, cancellation signal and asset address of this scene. */
   function begin(nextPetId: string, assets: ActivityAssets): void {
     petId = nextPetId;
     current = assets;
@@ -509,5 +517,5 @@ export function createShow(deps: ShowDeps): Show {
   };
 }
 
-/** 归一化坐标夹到 0–1。 */
+/** Normalized coordinates clamped to 0–1. */
 const clamp = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);

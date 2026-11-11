@@ -21,7 +21,7 @@ kind: package-reference
 
 独立模式需要 Node.js 22.12+，DSH 0.2.2-rc.1 CLI 需要 24.9+。在本目录执行 `pnpm install --frozen-lockfile`、`pnpm build`、`pnpm standalone --setup`。需要桌面窗口时，先用 `pnpm ensure:electron` 准备 Electron，再运行 `pnpm start:app`。DSH 用户可在「设置 → 桌宠配置 → 本机长期记忆」中安装、配置、暂停和恢复 PowerContext，聊天继续沿用 DSH 模型。源码与 `.tgz` 安装方式见[项目说明](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/README.zh.md)。
 
-模型设置支持 DeepSeek、OpenAI、通义千问、硅基流动、火山方舟、智谱、Kimi、Ollama 和可选的 LiteLLM 网关预设。聊天、记忆整理和向量服务可以独立配置，支持获取模型列表或手动填写；详见[项目指南](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/README.zh.md#选择模型服务)。
+模型设置支持 DeepSeek、OpenAI、通义千问、硅基流动、火山方舟、智谱、Kimi、Ollama 和可选的 LiteLLM 网关预设。聊天、记忆整理和向量服务可以独立配置，支持获取模型列表或手动填写；详见[项目指南](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/zh/guides/models.md)。
 
 <a id="implementation"></a>
 
@@ -64,4 +64,4 @@ kind: package-reference
 
 交付前执行 `pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm check:cycles`、`pnpm check:runtime`、`pnpm check:openapi`、`pnpm test`、`pnpm test:ui`、`pnpm build`。
 
-发布设置与操作见[发布说明](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/README.zh.md#发布-npm-包)。素材许可与署名随包附在 [ASSET-LICENSE.md](ASSET-LICENSE.md)。
+发布设置与操作见[发布说明](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/zh/guides/releases.md)。素材许可与署名随包附在 [ASSET-LICENSE.md](ASSET-LICENSE.md)。

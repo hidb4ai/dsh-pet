@@ -1,4 +1,4 @@
-/** 模型发现复用既有适配器；仅按完整地址复用凭据，发现过程不安装或修改配置。 */
+/** Model discovery reuses existing adapter; reuses credentials by full address only, discovery process does not install or modify configuration. */
 import { z } from 'zod';
 import { localModelKey, sameModelEndpoint } from '../shared/memory-presets.ts';
 import { DEFAULT_AI_SETTINGS } from './ai-config.ts';
@@ -15,7 +15,7 @@ const discoverySchema = z
   })
   .strict();
 
-/** 从当前角色的已保存连接取 Key，随后由适配器归一并过滤明确不匹配的能力。 */
+/** Taking Key from the current role's saved connection and then normalizing and filtering the unmatched capabilities by the adapter. */
 export async function discoverSetupModels(
   input: unknown,
   memory?: ManagedMemory,

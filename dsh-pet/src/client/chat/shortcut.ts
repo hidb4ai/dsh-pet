@@ -1,36 +1,40 @@
 /**
- * 「打开右侧栏桌宠对话」的快捷键。
+ * Shortcut key for "Open the desktop pet conversation in the right column".
  *
- * 注册后自动出现在 设置 → 通用 → 快捷键（可改绑、有冲突提示），
- * 侧栏 guide 卡片通过 `commandId` 显示键帽。服务缺失（旧宿主）只告警，不影响面板本身。
+ * After registering, it automatically appears in Settings → General → Shortcut Keys (can be changed, conflict prompts
+ * appear), and the guide card in the sidebar displays the keycaps through `commandId` . The missing service (old host)
+ * only generates an warning and does not affect the panel itself.
  * @module dsh-pet/src/client/chat/shortcut
  */
 import { keycapOf, readShortcutKeycap, registerAppShortcut, type ShortcutHost } from '../app-shortcut.ts';
 
-/** 命令 id：guide 卡片的 `commandId` 与注册都用它。 */
+/** Command id: Both `commandId` and register of guide card use it. */
 export const PET_CHAT_COMMAND_ID = 'pet-chat.open';
 
-/** 主修饰键 + Shift + P；Web 白名单允许「主键 + Shift/Alt + 字母」，所以两端同一个键。 */
+/** Primary modifier key + Shift + P; Web whitelist allows "primary key + Shift/Alt + letter", so it is the same key at both ends. */
 const BINDING = { code: 'KeyP', modifiers: ['primary', 'shift'] } as const;
 
 /**
- * 设置页显示的键帽：跟着用户改绑走。
+ * The keycaps displayed on the settings page: can be changed with the user.
  *
- * @param ctx - 客户端上下文。
- * @returns 键帽文案；还没登记、或宿主没有快捷键服务时退回默认组合。
+ * @param ctx - client context.
+ * @returns keycap text; return to the default combination when it has not been registered or the host does not
+ * have shortcut key service.
  */
 export function petChatShortcutKeycap(ctx: ShortcutHost): string {
   return readShortcutKeycap(ctx, PET_CHAT_COMMAND_ID) ?? keycapOf(BINDING);
 }
 
 /**
- * 注册「打开桌宠对话」。
+ * register "Open desktop pet dialog".
  *
- * @param ctx - 客户端上下文（只用到软取）。
- * @param label - 设置页里显示的标题；惰性求值，切语言后重算。
- * @param open - 触发时执行的动作（打开对话标签）。
- * @returns `registered` 表示命令是否真的登记成功；`dispose` 用于注销（失败时是空函数）。
- *   失败时调用方不能再把 `commandId` 交给侧栏——指向不存在的命令会让侧栏注册抛错。
+ * @param ctx - Client context (only soft fetches are used).
+ * @param label - The title displayed on the settings page; lazy evaluation, recalculated after switching languages.
+ * @param open - Action to perform when triggered (open conversation tab).
+ * @returns `registered` indicates whether the command is really registered successfully; `dispose` is used for logout
+ * (empty function when failed).
+ * The caller can no longer hand `commandId` to the sidebar on failure - pointing to a non-existent command will cause
+ * the sidebar register to throw an error.
  */
 export function registerPetChatShortcut(
   ctx: ShortcutHost,

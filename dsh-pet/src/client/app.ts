@@ -1,8 +1,8 @@
 /**
- * 浏览器半侧装配层：注入 react，组装宠物 overlay 与设置页，注册进 DSH 插槽。
- * 不负责页面业务：宠物页面在 pet.ts，设置页在 settings.ts。
- * 依赖 DSH 注入的 slots / locale / remote / commandUi 等 Cordis 服务。
- * 任何可选能力缺失都只降级功能，绝不让整个插件加载失败。
+ * Browser side assembly layer: inject react, assemble pet overlay and settings page, register into DSH slot. Not
+ * responsible for the page business: the pet page is at pet.ts and the settings page is at settings.ts. Cordis
+ * services such as slots / locale / remote / commandUi that rely on DSH injection. Any missing optional capabilities
+ * will only downgrade the functionality, never causing the entire plugin to fail to load.
  * @module dsh-pet/src/client/app
  */
 import { makePetUI } from './pet.ts';
@@ -23,8 +23,8 @@ import { registerPetCardShortcuts } from './pet/card/shortcut.ts';
 import type * as ReactNS from 'react';
 import type * as PrimitivesNS from '@deepseek-ai/dsh-client-ui-primitives';
 
-/** 创建 DSH 插件 factory，返回带 name / inject / apply 的模块。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH __ModuleLoader__ 契约（f(require) => module），外部无静态类型
+/** Create DSH plugin factory and return modules with name / inject / apply. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH __ModuleLoader__ uses the untyped f(require) => module contract.
 export function makeFactory(): (require: (mod: string) => any) => any {
   return (require) => {
     const module = { exports: {} };
@@ -33,16 +33,16 @@ export function makeFactory(): (require: (mod: string) => any) => any {
     const { useEffect, useRef, useState, useCallback } = react;
     const { jsx: h } = require('react/jsx-runtime');
 
-    // primitives 是平台种子模块；取不到只影响命令图标，不影响插件加载。
+    // primitives is the platform seed module; failure to obtain it only affects the command icon and does not affect plugin loading.
     let primitives: typeof PrimitivesNS | undefined;
     try {
       primitives = require('@deepseek-ai/dsh-client-ui-primitives');
     } catch (error) {
-      console.warn('[dsh-pet] 图标模块不可用：' + (error instanceof Error ? error.message : String(error)));
+      console.warn('[dsh-pet] Icon module unavailable:' + (error instanceof Error ? error.message : String(error)));
     }
 
-    // react-dom 也是平台种子模块，仅用于把图标同步渲成 SVG 供 CSS mask 使用。
-    // 取不到就退化成齿轮图标，不影响插件加载。
+    // react-dom is also a platform seed module, which is only used to synchronously render icons into SVG for use by
+    // CSS mask. If it cannot be retrieved, it will degenerate into a state icon, which will not affect plugin loading.
     let renderIconSvg: ((icon: ReactNS.ComponentType<PrimitivesNS.IconProps>) => string) | undefined;
     try {
       const { createRoot } = require('react-dom/client');
@@ -51,7 +51,7 @@ export function makeFactory(): (require: (mod: string) => any) => any {
         const holder = document.createElement('div');
         const root = createRoot(holder);
         try {
-          // flushSync：root.render 是异步调度，不同步刷一次拿不到 DOM。
+          // flushSync: root.render is asynchronously scheduled, and DOM cannot be obtained by brushing once without synchronization.
           flushSync(() => root.render(h(icon, { size: 16 })));
           return holder.innerHTML;
         } finally {
@@ -60,29 +60,33 @@ export function makeFactory(): (require: (mod: string) => any) => any {
       };
     } catch (error) {
       console.warn(
-        '[dsh-pet] 图标渲染器不可用（react-dom 缺失）：' + (error instanceof Error ? error.message : String(error)),
+        '[dsh-pet] Icon renderer unavailable (react-dom missing):' +
+          (error instanceof Error ? error.message : String(error)),
       );
     }
 
-    // 宠物 overlay 与设置页各自独立成文件，这里只组装和注册。
+    // Pet overlay and settings page are separate files, only assembly and register are done here.
     const PetMulti = makePetUI({ h, useState, useEffect, useRef });
 
     const name = 'pet';
-    // commandUi 声明为服务依赖，确保「/」命令服务就绪后才 apply，/pet 装饰必然注册成功。
+    // commandUi is declared as a service dependency. Make sure that the "/" command service is ready before apply. The / pet decoration must register successfully.
     const inject = ['slots', 'locale', 'connection', 'remote', 'remote.commands', 'commandUi'];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 注入的 ctx（locale/slots/webServer 等 service 无静态类型）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH-injected locale/slots/webServer services have no static types.
     function apply(ctx: any) {
-      // 设置页文案字典。
+      // Set page copy dictionary.
       ctx.effect(() => ctx.locale.register(NS, dicts), 'dsh-pet: dictionaries');
       const t = ctx.locale.bind(NS);
-      // 侧栏对话的文案独立成命名空间：只覆盖对话面板，不与设置页字典混在一起。
+      // The copy of the sidebar conversation is separated into a namespace: it only covers the conversation panel and is not mixed with the settings page dictionary.
       ctx.effect(() => ctx.locale.register(CHAT_NS, chatDicts), 'dsh-pet: chat dictionaries');
       const chatT = ctx.locale.bind(CHAT_NS);
 
-      // 同页第三方插件可通过 Cordis 服务 petApi7340 读取本页宠物的实况、播放进度、最近一拍状态与菜单点击。
-      // 只开读，控制仍走 HTTP，避免出现两条控制通道。
-      // 服务名带 7340 后缀避免与生态里的同名服务冲突；Cordis 同名 provide 会直接抛错。
-      // 消费者用 ctx.get('petApi7340') 探测，拿不到就是老版本；`getState` / `menuEvents` 也要单独探测（老版本没有它们）。
+      // The third-party plugin on the same page can use the Cordis service petApi7340 to read the live broadcast,
+      // playback progress, latest shot status and menu click of the pet on this page. Only reading is enabled, and the
+      // control still goes through HTTP to avoid two control channels. The service name has a 7340 suffix to avoid
+      // conflicts with services of the same name in the ecosystem; Cordis with the same name as provide will directly
+      // throw an error. Consumers use ctx.get (' petApi7340 ') to detect, and if they cannot get it, they have to use
+      // the old version; `getState` / `menuEvents` must also be detected separately (the old version does not have
+      // them).
       ctx.provide('petApi7340', {
         getState: getStateSnapshot,
         menuEvents: takeMenuEvents,
@@ -90,23 +94,24 @@ export function makeFactory(): (require: (mod: string) => any) => any {
         progress: readProgress,
       });
 
-      // 内置玩法「吃白饭」：覆盖层注册进 shell.overlay（与桌宠同槽），不自己挂 body——
-      // body 直接子级会命中宿主的 macOS no-drag 规则，还会越级盖住宿主模态框。
+      // The built-in gameplay is "free rice": the overlay register enters shell.overlay (the same slot as the desktop
+      // pet). If you don't hang body yourself - the direct child of body will hit the macOS no-drag rule of the host,
+      // and will also skip the level and cover the host modal box.
       const BaifanLayer = makeBaifanLayer({ h, useRef, useEffect }, (host) => mountBaifan(ctx, host));
       ctx.slots.inject('shell.overlay', function* () {
         yield ctx.slots.register({ name: 'shell.overlay', id: 'baifan', order: 1100 }, BaifanLayer);
       });
 
-      // 系统通知：host 把通知帧写进 /state 的 sections.notify，统一轮询发现变化后弹 toast。
+      // System notification: host writes the notification frame into sections.notify of / state, and then polls toast after discovering the change.
       ctx.effect(
         () =>
           initNotify({
-            // 惰性取服务：它可能晚于本插件注册；缺失时退化为只把窗口叫回前台。
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 注入服务无静态类型
+            // Resolve the service lazily because it may register later. If absent, only bring the window forward.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH-injected services have no static types.
             openSession: (sessionId: string) => (ctx as any).get?.('uiWorkspace')?.openSession?.(sessionId),
-            // 通知标题用会话名：会话列表里那一行的 title；空白会话 / 未命名会话取到空串就返回 undefined。
+            // The notification title uses the session name: title in that row in the session list; if a blank session/unnamed session gets an empty string, it returns undefined.
             sessionTitle: (sessionId: string) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 注入服务无静态类型
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH-injected services have no static types.
               const row = (ctx as any).get?.('sessions')?.list?.getSnapshot?.()?.byId?.[sessionId];
               const name = typeof row?.title === 'string' ? row.title.trim() : '';
               return name || undefined;
@@ -115,13 +120,15 @@ export function makeFactory(): (require: (mod: string) => any) => any {
         'dsh-pet: notifications',
       );
 
-      // /pet 选择框：选中后提交 /pet <id>，由 host 命令落地。
-      // commandUi 已是服务依赖，但仍保留缺失时的降级提示。
+      // / pet selection box: Select and submit / pet < id >, implemented by host command. commandUi is already a
+      // service dependency, but the downgrade prompt when missing is still retained.
       ctx.effect(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 注入服务无静态类型
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH-injected services have no static types.
         const commandUi = (ctx as any).get?.('commandUi');
         if (!commandUi || typeof commandUi.decorate !== 'function') {
-          console.warn('[dsh-pet] 命令选择框不可用：commandUi 服务缺失（/pet 仍可手输 id 或名字）');
+          console.warn(
+            '[dsh-pet] Command picker unavailable: commandUi service missing (/pet still accepts IDs or names)',
+          );
           return () => {};
         }
         return commandUi.decorate({
@@ -129,65 +136,66 @@ export function makeFactory(): (require: (mod: string) => any) => any {
           available: () => true,
           ui: {
             kind: 'popupSelect',
-            // 选项来自当前生效宠物列表，name 已兜底。
+            // The option comes from the currently active pet list, name has fallen back.
             options: async () =>
               petBridge.current.map((p) => ({
                 id: p.id,
                 label: p.name || p.id,
                 detail: (p.assetRoot && p.assetRoot !== p.id ? p.assetRoot + ' / ' : '') + p.id,
               })),
-            // 选中后提交 /pet <id>，由 host 校验并设置当前桌宠。
+            // Select and submit / pet < id >, and host will verify and set the current desktop pet.
             onSelect: async (option: { id: string }, session: { sessionId: string }) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- remote 无静态类型
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- remote has no static type.
               await (ctx as any).remote?.commands?.execute(session.sessionId, '/pet ' + option.id, []);
             },
           },
         });
       }, 'dsh-pet: /pet picker');
 
-      // 给 /chat /pet /balance 补上「/」菜单的行标题与图标。
-      // DSH 没有官方入口，这里包装 commandUi.candidates；命令本身的行为不受影响。
-      // 依据与降级策略见 command-faces.ts。
+      // Add the row title and icon of the "/" menu to / chat / pet / balance. DSH has no official entry point, and
+      // commandUi.candidates is wrapped here; the behavior of the command itself is not affected. See command-faces.ts
+      // for the basis and downgrade strategy.
       ctx.effect(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 注入服务无静态类型
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH-injected services have no static types.
         const commandUi = (ctx as any).get?.('commandUi') as CommandUiLike | undefined;
         const icons = primitives;
         if (commandUi === undefined || icons === undefined) {
-          console.warn('[dsh-pet] 命令图标不可用（命令本身仍可用，只是没有图标）');
+          console.warn('[dsh-pet] Command icon unavailable; the command remains usable');
           return () => {};
         }
         return installCommandFaces(
           commandUi,
           new Map<string, CommandFace>([
-            // 对话气泡：94 个内置图标里唯一的纯对话气泡。
+            // Dialogue bubble: The only pure dialogue bubble among the 94 built-in icons.
             ['chat', { label: () => t('cmd.chat'), icon: icons.IconQueueOutlineRegular }],
-            // 双人形：从多只桌宠里挑一只。
+            // Duo: Choose from multiple desktop pets.
             ['pet', { label: () => t('cmd.pet'), icon: icons.IconUsersOutlineRegular }],
-            // 仪表盘：额度与用量。
+            // Dashboard: quota and usage.
             ['balance', { label: () => t('cmd.balance'), icon: icons.IconGaugeOutlineRegular }],
           ]),
         );
       }, 'dsh-pet: command faces');
 
-      // 设置页导航「桌宠配置」的图标：DSH 只给白名单分区配图标，只能在 DOM 层补。
-      // 依据与降级策略见 nav-icon.ts。
+      // The icon of "desktop pet configuration" in the settings page navigation: DSH only assigns the icon to the
+      // whitelist partition, and can only be added at the DOM layer. See nav-icon.ts for the basis and downgrade
+      // strategy.
       ctx.effect(() => {
         const renderIcon = renderIconSvg;
         const icon = primitives?.IconSlidersTwoOutlineMedium;
         if (renderIcon === undefined || icon === undefined) {
-          console.warn('[dsh-pet] 设置页导航图标不可用（那一行仍是齿轮）');
+          console.warn('[dsh-pet] Settings navigation icon unavailable; retaining the default gear');
           return () => {};
         }
         return installSectionNavIcon({ label: () => t('nav'), renderSvg: () => renderIcon(icon) });
       }, 'dsh-pet: settings nav icon');
 
-      // 宠物 overlay：容器渲染多个 PetCard。
+      // Pet overlay: Container renders multiple PetCard .
       ctx.slots.inject('shell.overlay', function* () {
         yield ctx.slots.register({ name: 'shell.overlay', id: 'pet', order: 1000 }, () => h(PetMulti, {}));
       });
 
-      // 设置页「桌宠配置」：大小、位置、模型，保存即时生效。
-      // useRef 供「AI 模型」下拉的浮层定位与外部点击判定使用。
+      // Setting page "desktop pet configuration": size, position, model, save and take effect immediately. useRef is
+      // used for the floating layer positioning and external click determination of the "AI model" drop-down.
       const PetConfigSection = makePetConfigSection({ h, useState, useEffect, useRef, useCallback, t }, ctx);
       ctx.slots.inject('settings.section', function* () {
         yield ctx.slots.register(
@@ -196,8 +204,9 @@ export function makeFactory(): (require: (mod: string) => any) => any {
         );
       });
 
-      // 快捷键独立注册：不挂在侧栏注册里——侧栏服务缺失时侧栏没了，快捷键不该跟着没。
-      // 三条命令共用 app-shortcut 的注册壳，任何一条失败都只丢它自己。
+      // Independent register of shortcut keys: not hung in the sidebar register - when the sidebar service is missing,
+      // the sidebar disappears, and the shortcut keys should not disappear with it. The three commands share the
+      // app-shortcut register shell. If any one of them fails, it will only lose itself.
       let sidebarChatReady = false;
       ctx.effect(() => {
         const sidebarChat = registerPetChatShortcut(
@@ -214,9 +223,10 @@ export function makeFactory(): (require: (mod: string) => any) => any {
         };
       }, 'dsh-pet: shortcuts');
 
-      // 右侧栏「桌宠对话」：可选能力，服务缺失时只告警，不影响其它部位。
-      // 确认弹窗用平台原语（primitives 缺失时面板内部退化为内联确认条）。
-      // 整体再兜一层：任何注册异常都不许拖垮插件激活（否则整个 Web 端进不去）。
+      // "Desktop Pet Dialogue" in the right column: Optional capability. It only alerts when the service is missing
+      // and does not affect other parts. The confirmation pop-up window uses platform primitives (when primitives is
+      // missing, the interior of the panel degenerates into an inline confirmation bar). One more layer of detail: any
+      // register exception must not bring down plugin activation (otherwise the entire Web end cannot be accessed).
       ctx.effect(() => {
         try {
           return registerPetChatTab(
@@ -237,11 +247,11 @@ export function makeFactory(): (require: (mod: string) => any) => any {
                     },
                   }),
             },
-            // 命令没登记成功就不带 commandId：指向不存在的命令会让侧栏注册抛错
+            // commandId will not be included if the command is not successfully registered: pointing to a non-existent command will cause the sidebar register to throw an error
             sidebarChatReady ? { commandId: PET_CHAT_COMMAND_ID } : {},
           );
         } catch (error) {
-          console.error('[dsh-pet] 右侧栏对话面板注册失败（已忽略，不影响启动）：', error);
+          console.error('[dsh-pet] Chat sidebar registration failed; startup will continue:', error);
           return () => {};
         }
       }, 'dsh-pet: sidebar chat tab');

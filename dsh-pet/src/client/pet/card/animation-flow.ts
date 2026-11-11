@@ -1,8 +1,11 @@
 /**
- * 动画流：碎碎念联动、随机链掷骰、互动结束后恢复档位循环，以及播完判定的落地。
- * 不负责判定本身（播完分支在 animation/cues，选下一段在 animation/next-animation），也不持有动画链。
- * 依赖卡运行时与当前工作状态；工作状态用 ref 镜像，因为播完回调晚于状态更新。
- * 不变量：冻结期间随机链与档位恢复都不动手；换源后必须递增序号，否则同段重播不会生效。
+ * Animation flow: whisper linkage, random chain roll, recovery state cycle after interaction, and landing of judgment
+ * after broadcast. It is not responsible for the judgment itself (the branch after playing is at animation/cues, and
+ * the next segment is selected at animation/next-animation), nor does it hold the animation chain. Depends on the card
+ * runtime and current working status; the working status uses ref mirroring, because the callback is completed later
+ * than the status update. Invariant: During the freezing period, random chain and state recovery are not performed; the
+ * serial number must be incremented after changing the source, otherwise the replay of the same segment will not take
+ * effect.
  * @module dsh-pet/src/client/pet/card/animation-flow
  */
 import { pick, pickSlot, rollKind } from '../../../shared/pickers.ts';
@@ -15,70 +18,73 @@ import type { EndedCue } from '../animation/cues.ts';
 import type { WorkStatusSnapshot } from '../../../shared/work-status.ts';
 import type * as ReactNS from 'react';
 
-/** 动画流对外的动作面。 */
+/** The external action surface of animation flow. */
 export interface AnimationFlow {
-  /** 按播完判定改状态；回执与门禁已在动画链里处理过。 */
+  /** The status is changed according to the completion judgment; the receipt and validation check have been processed in the animation chain. */
   applyEndedCue(cue: EndedCue): void;
-  /** 按权重掷骰选下一段自播动画。 */
+  /** Roll the weighted dice to select the next self-playing animation. */
   pickNext(): void;
-  /** 非终态工作状态回到档位循环；没有可恢复状态时返回 false。 */
+  /** The non-final working state returns to the state cycle; when there is no recoverable state, it returns to false. */
   resumeWorkStatusAnim(): boolean;
-  /** 说一句：抽碎碎念动画并弹气泡，动画与气泡时长互相独立。 */
+  /** Say something: Whisper animation and bubble play. The animation and bubble duration are independent of each other. */
   speak(text: string, image?: string, url?: string, duration?: number, anim?: boolean): void;
-  /** 应用宿主写的睡觉状态：进入 → 播开始；退出 → 播起来。 */
+  /** The sleeping state written by the application host: enter → start playing; exit → start playing. */
   applySleep(state: SleepState): void;
-  /** 此刻是否在睡（含入睡与醒来两段过渡）。 */
+  /** Are you sleeping at this moment (including the transition between falling asleep and waking up). */
   sleeping(): boolean;
-  /** 当前睡觉阶段；醒着为 null。点击路径要区分「入睡过渡」与「真睡着」。 */
+  /** Current sleep stage; awake is null. Click on the path to distinguish between "fall asleep transition" and "real sleep". */
   sleepPhase(): 'start' | 'loop' | 'end' | null;
 }
 
-/** 注入的 react 能力。 */
+/** Injected react capability. */
 export interface AnimationFlowRuntime {
-  /** 引用；工作状态的镜像。 */
+  /** Reference; mirror of working state. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }
 
-/** 日志行的时刻前缀。 */
+/** Time prefix for log lines. */
 const stamp = (): string => new Date().toTimeString().slice(0, 8);
 
-/** 一行带时刻与宠物 id 的日志。 */
+/** A log with time and pet id. */
 const log = (petId: string, message: string): void => {
   console.log('[dsh-pet] ' + stamp() + ' pet=' + petId + ' ' + message);
 };
 
 /**
- * 制造动画流的 hook。
+ * hook making animation stream.
  *
- * @param rt - 注入的 react 能力。
- * @returns 接收运行时与工作状态的 hook；回调里读 ref，不会读到旧值。
+ * @param rt - Injected react capabilities.
+ * @returns receives hook in runtime and working status; ref is read in the callback, and the old value will not be
+ * read.
  */
 export function createAnimationFlow(rt: AnimationFlowRuntime) {
   const { useRef } = rt;
 
   return function useAnimationFlow(hub: CardHub, workStatus: WorkStatusSnapshot | null): AnimationFlow {
-    // 播完回调晚于状态更新：镜像当前值，避免闭包读到注册那一刻的状态。
+    // The callback is finished playing later than the status update: mirror the current value to avoid the status at the moment when the closure reads register.
     const workStatusRef = useRef(workStatus);
     workStatusRef.current = workStatus;
 
-    // 睡觉交给独立状态机：这里只装配并转发（pickNext 在下方定义，状态机只持有引用，调用发生在播完之后）。
-    // 必须放 ref：状态机持有「当前阶段」，放函数体局部变量会在每次渲染重建，睡觉状态当场丢失
-    // （视频还在睡姿、菜单却显示「睡觉」，点它也不叫醒）。
+    // Sleep is handed over to the independent state machine: here it is only assembled and forwarded (pickNext is
+    // defined below, the state machine only holds a reference, and the call occurs after the broadcast is completed).
+    // ref must be placed: the state machine holds the "current stage", and the local variables of the function body
+    // will be rebuilt every time it is rendered, and the sleeping state is lost on the spot (the video is still in the
+    // sleeping position, but the menu shows "sleeping", and clicking it does not wake it up).
     const machineRef = useRef<ReturnType<typeof createSleepMachine> | null>(null);
     const sleep = (): ReturnType<typeof createSleepMachine> =>
       (machineRef.current ??= createSleepMachine(hub, pickNext, log));
-    /** 此刻是否在睡（含两段过渡）。 */
+    /** Are you sleeping at this moment (including two transitions). */
     const sleeping = (): boolean => sleep().sleeping();
-    /** 当前睡觉阶段；醒着为 null。 */
+    /** Current sleep stage; waking up is null. */
     const sleepPhase = (): 'start' | 'loop' | 'end' | null => sleep().phase();
-    /** 应用宿主写的睡觉状态（转发给状态机）。 */
+    /** The sleeping state written by the application host (forwarded to the state machine). */
     const applySleep = (state: SleepState): void => sleep().apply(state);
-    /** 非终态工作状态回到档位循环；冻结、空闲与终态都返回 false。 */
+    /** Non-final working status returns to state cycle; frozen, idle and final status all return to false. */
     const resumeWorkStatusAnim = (): boolean => {
       const card = hub.card;
-      // 锁定期间不由这条路恢复档位动画；解冻路径会先解除冻结再调用。
+      // During the lock period, the state animation will not be restored from this road; the unfrozen path will be unfrozen first and then called.
       if (hub.ownAnim.isFrozen()) return false;
-      // 睡觉期间不恢复档位动画：工作状态照旧在跑，但睡着就是不看不听。
+      // The state animation is not restored during sleep: the working status is still running, but the animation will not be watched or heard while sleeping.
       if (sleeping()) return false;
       const ws = workStatusRef.current;
       if (!ws || !ws.state || ws.state === 'success' || ws.state === 'error') return false;
@@ -87,25 +93,25 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
       const idx = WORK_STATUS_INDEX[ws.state];
       const slot = pool[idx];
       if (slot === undefined) return false;
-      const name = pickSlot(slot, card.animRef.current); // 档内随机抽 1，并避开当前正播动画。
-      log(hub.cfg().id, '互动结束恢复状态动画: ' + name);
-      // 多候选档位恢复后同样走播完轮换；单候选维持无限循环。
+      const name = pickSlot(slot, card.animRef.current); // Randomly draw 1 in the file and avoid the currently playing animation.
+      log(hub.cfg().id, 'Restoring work-state animation after interaction: ' + name);
+      // After the multi-candidate state is restored, the rotation will still be completed; the single candidate will maintain an infinite loop.
       card.actions.setOnce(Array.isArray(slot) && slot.length > 1);
       card.actions.setAnim(name);
       return true;
     };
 
-    /** 按权重掷骰选择下一段自播动画。 */
+    /** Roll the weighted dice to select the next self-playing animation. */
     const pickNext = (): void => {
       const card = hub.card;
-      // 占用锁：随机链唯一入口不掷骰，随机动画、转向、走位一起停住。
+      // Occupied lock: The only entry point of the random chain does not roll dice, and the random animation, turning, and movement are stopped together.
       if (hub.ownAnim.isFrozen()) return;
-      // 睡觉：随机链彻底停住（不掷骰、不转向、不走位），醒来由 applySleep 的 end 段收尾
+      // Sleep: The random chain stops completely (no dice rolling, no turning, no moving), wake up by end segment cleanup of applySleep
       if (sleeping()) return;
       const roll = Math.random();
-      // 宠物固定时，掷骰把「转向/移动」权重按 0 算；菜单点播与显式点播不走这里。
+      // When the pet is fixed, the "turn/movement" weight is calculated as 0 when rolling the dice; the menu playback request and explicit playback request do not go here.
       const kind = rollKind(roll, hub.cfg().animationWeights, { fixed: hub.cfg().fixedEnabled });
-      // 只有掷到 move 档才试走位：占用中返回 true（已有移动在跑），无法移动返回 false。
+      // Only when the move state is thrown can the position be tried: when occupied, it will return to true (already moving), and if it cannot move, it will return to false.
       const move = kind === 'move' ? hub.tryWalk() : undefined;
       const decision = decideNextAnimation({
         kind,
@@ -123,21 +129,21 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
           ' -> [' +
           decision.kind +
           '] ' +
-          (decision.anim ?? '移动进行中(不重播)'),
+          (decision.anim ?? 'Movement in progress (do not replay)'),
       );
       if (decision.play && decision.anim !== null) card.actions.setAnim(decision.anim);
       card.actions.setOnce(true);
       card.actions.bumpSeq();
     };
 
-    /** 按播完判定改状态。 */
+    /** Click Finish to determine the status. */
     const applyEndedCue = (cue: EndedCue): void => {
       const card = hub.card;
-      // 睡觉的三段推进与「起来播完回随机链」都在状态机里：它说这次 ended 归它管就直接返回。
+      // The three stages of sleeping and "returning to the random chain after getting up" are both in the state machine: it says that ended is under its control this time and returns directly.
       if (sleep().consumeEnded()) return;
       if (cue.kind === 'ignore') return;
       if (cue.kind === 'work-rotate') {
-        card.actions.setOnce(true); // 保持 once=true，下一段播完再轮换。
+        card.actions.setOnce(true); // Keep once = true and rotate after the next segment is played.
         card.actions.setAnim(cue.anim);
         card.actions.bumpSeq();
         return;
@@ -148,7 +154,7 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
         return;
       }
       if (cue.kind === 'event-done') {
-        // 事件动画抢占播完后立即恢复档位循环，否则长事件期间会误入随机链。
+        // The state cycle is restored immediately after the event animation preemption is played, otherwise the random chain will be mistakenly entered during a long event.
         if (resumeWorkStatusAnim()) return;
         if (hub.anims().idle.length) card.actions.setAnim(pick(hub.anims().idle, card.animRef.current));
         card.actions.setOnce(true);
@@ -158,13 +164,14 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
       if (cue.kind === 'turn') {
         const next = card.state.facing === 'left' ? 'right' : 'left';
         card.actions.setFacing(next);
-        card.facingRef.current = next; // 立即同步：翻转后的掷骰用新朝向过滤。
-        // 翻面不改 anim/once/seq，换源 effect 不会重跑：不显式回链，随机链就此停在末帧。
+        card.facingRef.current = next; // Sync now: Rolls flipped are filtered with new orientation. anim/once/seq will not be changed when turned over, and
+        // effect will not be rerun when the source is changed: there is no explicit link back, and the random chain will stop
+        // at the last frame.
         pickNext();
         return;
       }
       if (cue.kind === 'interaction-done') {
-        // 互动动画播完：非终态恢复状态循环，否则回 idle。
+        // After the interactive animation is played: the non-final state returns to the state loop, otherwise it returns to idle.
         if (resumeWorkStatusAnim()) return;
         if (hub.anims().idle.length) card.actions.setAnim(pick(hub.anims().idle, card.animRef.current));
         card.actions.setOnce(true);
@@ -174,22 +181,25 @@ export function createAnimationFlow(rt: AnimationFlowRuntime) {
       pickNext();
     };
 
-    /** 说一句：抽碎碎念动画并弹气泡，两者独立。 */
+    /** Say something: Whisper animation and bubble play are independent. */
     const speak = (text: string, image?: string, url?: string, duration?: number, anim?: boolean): void => {
       const card = hub.card;
       let name: string | null = null;
-      // 睡着时只弹气泡、不换动画：梦话与命令气泡都要显示，但睡姿不能被打断
+      // Only bubbles are played and animation is not changed when sleeping: both sleep talking and command bubbles are displayed, but the sleeping position cannot be interrupted.
       if (anim !== false && !sleeping()) {
         const pool = hub.anims().events?.whisper;
         if (!pool || pool.length === 0) {
-          console.error('[dsh-pet] 配置缺少 animations.events.whisper，无法播放碎碎念动画');
+          console.error('[dsh-pet] Missing animations.events.whisper; whisper animations are unavailable');
           return;
         }
-        // 整池随机抽 1 槽并避开当前正播动画；槽位为数组时再在档内随机。
+        // Randomly draw 1 slot from the entire pool and avoid the currently playing animation; when the slot is an array, it will be randomly selected within the file.
         name = pickSlot(pick(pool, card.animRef.current), card.animRef.current);
       }
-      log(hub.cfg().id, 'whisper' + (name === null ? ' （不联动动画）' : ' -> [' + name + ']') + ' 「' + text + '」');
-      // 先起动画：动画与气泡时长是两个独立参数。
+      log(
+        hub.cfg().id,
+        'whisper' + (name === null ? ' (no linked animation)' : ' -> [' + name + ']') + ' 「' + text + '」',
+      );
+      // Start animation first: animation and bubble duration are two independent parameters.
       if (name !== null) {
         hub.stopMotion();
         card.actions.setOnce(true);

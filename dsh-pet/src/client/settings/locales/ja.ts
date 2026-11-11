@@ -1,5 +1,5 @@
 /**
- * 设置页日语文案；键集与 zh 完全一致。
+ * Japanese text on the settings page; the key set is exactly the same as zh.
  */
 import type { Key } from './zh.ts';
 
@@ -27,7 +27,7 @@ export const ja: Record<Key, string> = {
 
   nav: 'デスクトップペット設定',
   intro: '複数のペットを管理できます。ペットごとにサイズと位置を個別に設定できます（保存するとすぐに反映されます）。',
-  // 卡片标题与卡片级说明；说明统一进问号气泡。
+  // Card title and card-level description; descriptions are unified into question mark bubble.
   petCardTitle: 'ペットの設定',
   avatarLabel: 'アバター',
   avatarHint:
@@ -44,7 +44,7 @@ export const ja: Record<Key, string> = {
   cornerHint: 'ペットが画面のどの隅に貼り付くかを指定します（デスクトップでは各ディスプレイのワークエリア基準）。',
   marginXHint: '選択した隅からの水平距離（px）。任意の数値が使えます。',
   marginYHint: '選択した隅からの垂直距離（px）。任意の数値が使えます。',
-  // 「/」命令菜单的行标题（图标由 app.ts 经 command-faces.ts 补上）。
+  // The row title of the "/" command menu (the icon is added by app.ts via command-faces.ts).
   'cmd.chat': 'チャット',
   'cmd.pet': 'ペット',
   'cmd.balance': '残高',

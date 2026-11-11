@@ -1,9 +1,11 @@
 /**
- * 自播动画链：A/B 双缓冲换源、blob 生命周期、点播回执，以及「这一段播完之后该做什么」的判定。
+ * Self-broadcast animation chain: A/B double buffering source change, blob lifecycle, playback request receipt, and
+ * determination of "what to do after this segment is played."
  *
- * 只碰 video 元素与自己的内部状态；React 状态（anim / once / seq / 气泡 / 朝向）不在本模块里改，
- * 需要改的地方以 {@link EndedCue} / {@link FreezeCue} 的形式返回，由组件执行。
- * 必须始终成立：同一时刻只有一个 pending 换源（世代号丢弃迟到的加载），且回执先于任何 return 上报。
+ * Only touch the video element and its own internal state; the React state (anim / once / seq / bubble / orientation)
+ * is not changed in this module. The parts that need to be changed are returned in the form of {@link EndedCue} /
+ * {@link FreezeCue} and are executed by the component. This must always be true: there is only one pending source
+ * change at the same time (the generation number discards late loads), and the receipt is reported before any return.
  * @module dsh-pet/src/client/pet/animation/animation
  */
 import { isEventAnim } from '../../../shared/pickers.ts';
@@ -17,101 +19,101 @@ import { thumbExt } from './media.ts';
 
 export type { EndedCue, FreezeCue };
 
-/** 换源失败与打断的原因，落进回执的 `reason` 字段。 */
+/** The reason for source change failure and interruption falls into the `reason` field of the receipt. */
 const REASON_ASSET_LOAD = 'asset-load';
 const REASON_PLAY_REJECTED = 'play-rejected';
 const REASON_DECODE = 'decode-error';
 const REASON_SUPERSEDED = 'superseded';
 const REASON_FROZEN = 'frozen';
 
-/** 资源超时（ms）：DSH WebServer 偶发 stalled，超时就丢弃本次换源。 */
+/** Resource timeout (ms): DSH WebServer and occasionally stalled. If the resource times out, this source change will be discarded. */
 const ASSET_FETCH_TIMEOUT_MS = 10_000;
 
-/** 日志时间戳：与其余宠物日志同一格式，便于对照同一次事件。 */
+/** Log timestamp: The same format as other pet logs, making it easier to compare the same event. */
 const stamp = (petId: string): string => new Date().toTimeString().slice(0, 8) + ' pet=' + petId;
 
-/** 挂起的换源：世代号用于丢弃迟到的加载结果。 */
+/** Pending source swap: generation number used to discard late load results. */
 interface PendingSwap {
   anim: string;
   once: boolean;
   gen: number;
 }
 
-/** 动画链的依赖：全部用取值函数，避免捕获渲染期的快照。 */
+/** Animation chain dependencies: all use value functions to avoid capturing snapshots during the rendering period. */
 export interface OwnAnimationDeps {
-  /** A/B 双缓冲的 A 元素。 */
+  /** A/B double buffered A element. */
   videoA: () => HTMLVideoElement | null;
-  /** A/B 双缓冲的 B 元素。 */
+  /** A/B double-buffered B element. */
   videoB: () => HTMLVideoElement | null;
-  /** 该宠物的成品配置：素材根、id 与动画池都从它取。 */
+  /** The resolved configuration of this pet: asset root, id and animation pool are all taken from it. */
   cfg: () => { id: string; assetRoot?: string; animations: Animations };
-  /** 当前动画名。 */
+  /** Current animation name. */
   currentAnim: () => string;
-  /** 工作状态叶子；未启用联动时为空。 */
+  /** Working state leaf; empty when linkage is not enabled. */
   workStatus: () => WorkStatusSnapshot | null | undefined;
-  /** 当前朝向，决定镜像。 */
+  /** The current orientation determines the mirror image. */
   facing: () => 'left' | 'right';
-  /** 上报第三方点播的真实状态。 */
+  /** Report the true status of third-party playback request. */
   report: (playbackId: string, status: ReportableStatus, reason?: string) => void;
-  /** 消费掉点播编号（清 React 状态，避免 effect 再跑一趟）。 */
+  /** Consume the playback request number (clear the React status to avoid effect running again). */
   clearCuePlayback: () => void;
-  /** 新动画已就位：组件在这里补 Q 弹与走位驱动。 */
+  /** The new animation is in place: the components are here to add Q bounce and movement drivers. */
   onFrontReady: (el: HTMLVideoElement) => void;
-  /** 前台播完的判定结果；组件据此改 React 状态。 */
+  /** The judgment result of the foreground completion; the component changes the React state accordingly. */
   onEnded: (cue: EndedCue) => void;
-  /** 用户是否正按着宠物（拖拽期间不推进动画链）。 */
+  /** Whether the user is pressing the pet (the animation chain is not advanced during dragging). */
   isDragging: () => boolean;
-  /** 挂载那一刻是否已被锁冻住。 */
+  /** Is it locked and frozen at the moment of mounting? */
   initiallyFrozen: boolean;
-  /** 素材加载器；缺省用带超时的默认实现。 */
+  /** asset loader; default implementation with timeout is used. */
   loader?: AssetLoader;
 }
 
-/** 动画链对外能力。 */
+/** Animation chain’s external capabilities. */
 export interface OwnAnimation {
-  /** 换源播放；`cuePlaybackId` 非空表示这是一次第三方点播，要回执。 */
+  /** Change source playback; `cuePlaybackId` non-empty means this is a third-party playback request, and a receipt is required. */
   switchTo: (next: string, once: boolean, cuePlaybackId: string | null) => void;
-  /** 前台播完的判定；回执在这里上报，React 状态由组件按 cue 改。 */
+  /** Determination of the end of the foreground broadcast; the receipt is reported here, and the React status is changed by the component according to cue. */
   handleEnded: (event?: Event) => EndedCue;
-  /** 把前台的循环关掉并挂上 ended：正在循环的档位动画靠它播完即停。 */
+  /** Turn off the foreground loop and hang up ended: the looping state animation will stop after it finishes playing. */
   stopLoopingFront: () => void;
-  /** 交接下一次换源要用的完整地址（第三方点播的 url 形态）。 */
+  /** Transfer the complete address to be used for the next source change (url form of third-party playback request). */
   setCueUrl: (url: string) => void;
-  /** 冻结/解冻；只做播放控制与回执，气泡与动画选择交给组件。 */
+  /** Freeze/unfreeze; only playback control and receipt are done, bubble and animation selection are handed over to components. */
   setFrozen: (next: boolean) => FreezeCue | null;
-  /** 当前是否冻结（随机链与自动来源的门禁）。 */
+  /** Whether it is currently frozen (validation check of random chain and automatic source). */
   isFrozen: () => boolean;
-  /** 前台元素；进度服务读它。 */
+  /** Foreground element; progress service reads it. */
   frontVideo: () => HTMLVideoElement | null;
-  /** 正在播的点播编号；自播动画为 `null`。 */
+  /** The playback request number being played; the self-playing animation is `null`. */
   playingPlayback: () => string | null;
-  /** 卸载清理：中断在途请求、释放 blob，之后不可再用。 */
+  /** unmount cleanup: interrupt the request in transit, release blob, and cannot be used again. */
   dispose: () => void;
 }
 
 /**
- * 造动画链。
+ * Create an animation chain.
  *
- * @param deps - 元素、配置与回调。
- * @returns 换源、播完判定、冻结控制与清理。
+ * @param deps - elements, configurations and callbacks.
+ * @returns source change, broadcast completion determination, freeze control and cleaning.
  */
 export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
-  /** 当前前台槽位：0 = A，1 = B。 */
+  /** Current front desk slot: 0 = A, 1 = B. */
   let front = 0;
-  /** 挂起的换源；`null` = 没有换源在等首帧。 */
+  /** Pending source change; `null` = No source change waiting for the first frame. */
   let pending: PendingSwap | null = null;
-  /** 换源世代号，只增不减。 */
+  /** Change the source generation number, it will only increase but not decrease. */
   let gen = 0;
-  /** 待消费的点播地址，一次性取走。 */
+  /** The playback request address to be consumed is taken away at once. */
   let cueUrl: string | null = null;
-  /** 正在播的点播编号。 */
+  /** The playback request number being played. */
   let playing: string | null = null;
-  /** 冻结标志：只挡自动来源，显式指令照常。 */
+  /** Freeze flag: Only automatic sources are blocked, explicit commands are as normal. */
   let frozen = deps.initiallyFrozen;
-  /** 两个槽位各自的 blob 地址，换源时先释放旧的。 */
+  /** The blob addresses of the two slots respectively. When changing the source, release the old one first. */
   const blobUrl: { a: string | null; b: string | null } = { a: null, b: null };
   const loader = deps.loader ?? createAssetLoader(ASSET_FETCH_TIMEOUT_MS);
-  /** 挂载标志：卸载后迟到的加载结果直接丢弃。 */
+  /** Mount flag: Late loading results after unmount are discarded directly. */
   let mounted = true;
 
   const slotOf = (index: number): 'a' | 'b' => (index === 0 ? 'a' : 'b');
@@ -119,23 +121,24 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
 
   const frontVideo = (): HTMLVideoElement | null => elementOf(front);
 
-  /** 上报并清掉「正在播」的编号；`keep` 为真时不清（同一编号继续播）。 */
+  /** Report and clear the "now playing" number; it is unclear when `keep` is true (the same number continues to play). */
   const reportOnce = (playbackId: string, status: ReportableStatus, reason?: string): void => {
     if (playing === playbackId) playing = null;
     deps.report(playbackId, status, reason);
   };
 
   const switchTo = (next: string, nextOnce: boolean, cuePlaybackId: string | null): void => {
-    // 一次性消费点播编号：清空会再跑一趟 effect，那一趟落入防重分支。
+    // One-time consumption playback request number: clear will make another trip to effect, and that trip will fall into the anti-replication branch.
     if (cuePlaybackId !== null) deps.clearCuePlayback();
-    // url 交接位同样一次性取走，且必须早于任何 return：否则防重分支提前返回时，
-    // 它会留到下一次普通换源，把那个动画误播成这个地址。
+    // The url handover bit is also taken at once, and must be earlier than any return: otherwise when the
+    // anti-duplication branch returns early, it will be left until the next ordinary source change, and that animation
+    // will be broadcast to this address by mistake.
     const cfg = deps.cfg();
     const url = cueUrl;
     cueUrl = null;
     if (next === '') return;
     if (pending !== null && pending.anim === next && pending.once === nextOnce) {
-      // 防重命中仍要让点播有回执，避免调用方干等超时。
+      // To prevent re-hits, the playback request must have a receipt to avoid the caller waiting for timeout.
       if (cuePlaybackId !== null) {
         playing = cuePlaybackId;
         deps.report(cuePlaybackId, 'playing');
@@ -155,9 +158,9 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
     el.autoplay = true;
     el.playsInline = true;
     el.onended = nextOnce ? (event: Event) => deps.onEnded(handleEnded(event)) : null;
-    // 元素级解码失败只补一条回执，不改播放控制；换源时与 onended 一起清掉。
+    // If element-level decoding fails, only one receipt will be added, and the playback control will not be changed; it will be cleared together with onended when changing sources.
     el.onerror = cuePlaybackId === null ? null : () => reportOnce(cuePlaybackId, 'failed', REASON_DECODE);
-    // fetch + blob 一次拿全文件，绕开 video 流式加载在 DSH WebServer 上偶发的 stalled。
+    // fetch + blob takes the entire file at once, bypassing video streaming and loading the occasional stalled on DSH WebServer.
     const assetUrl = animationAssetUrl({
       cueUrl: url,
       assetRoot: cfg.assetRoot ?? '',
@@ -168,11 +171,11 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
     loader.load(assetUrl, {
       onObjectUrl: (objectUrl) => {
         if (!mounted) {
-          loader.release(objectUrl); // 已卸载：不留无人回收的地址。
+          loader.release(objectUrl); // Unmounted: No unclaimed addresses are left.
           return;
         }
         if (pending?.gen !== swapGen) {
-          loader.release(objectUrl); // 已被更新的切换覆盖：本次加载作废。
+          loader.release(objectUrl); // Overwritten by updated switch: this load is invalid.
           return;
         }
         const slot = slotOf(targetIndex);
@@ -183,18 +186,18 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
         el.load();
       },
       onError: (error) => {
-        if (!mounted) return; // 卸载后的 abort：静默。
-        if (pending?.gen !== swapGen) return; // 已被更新的切换覆盖。
-        pending = null; // 释放挂起的换源，避免后续点击困在防重循环里。
+        if (!mounted) return; // abort after unmount: silent.
+        if (pending?.gen !== swapGen) return; // Overwritten by updated switch.
+        pending = null; // Release pending source changes to prevent subsequent clicks from being trapped in the anti-reuse loop.
         if (cuePlaybackId !== null) reportOnce(cuePlaybackId, 'failed', REASON_ASSET_LOAD);
         console.warn(
-          '[dsh-pet] 素材加载失败 pet=' +
+          '[dsh-pet] Asset loading failed pet=' +
             cfg.id +
             ' anim=' +
             next +
             '：' +
             (error instanceof Error ? error.message : String(error)) +
-            '（已释放本次切换）',
+            '(source switch already disposed)',
         );
       },
     });
@@ -205,11 +208,11 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
       el.classList.add('is-front');
       if (outgoing !== null && outgoing !== el) {
         outgoing.classList.remove('is-front');
-        // 降级为背景的视频若继续播完，残留的 onended 会掐断当前前台动画：清 handler 并停播。
+        // If a video that has been downgraded to the background continues to play, the remaining onended will interrupt the current foreground animation: clear handler and stop playing.
         outgoing.onended = null;
         outgoing.onerror = null;
         outgoing.pause();
-        // 被换下的点播若没播完，如实回 cancelled（补的是点击、拖拽这类非点播打断）。
+        // If the replaced playback request has not finished playing, cancelled will be returned truthfully (the supplement is for non-playback request interruptions such as clicks and drags).
         if (playing !== null && playing !== cuePlaybackId) reportOnce(playing, 'cancelled', REASON_SUPERSEDED);
       }
       front = front === 0 ? 1 : 0;
@@ -218,7 +221,7 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
       el.style.transform = deps.facing() === 'right' ? 'scaleX(-1)' : '';
       el.play()
         .then(() => {
-          // 只有 play() 兑现才代表确实开始出画，loadeddata 只代表可解码。
+          // Only the cashing of play() means that the painting has actually started, and loadeddata only means that it can be decoded.
           if (cuePlaybackId !== null) deps.report(cuePlaybackId, 'playing');
         })
         .catch(() => {
@@ -230,17 +233,17 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
   };
 
   const handleEnded = (event?: Event): EndedCue => {
-    // 只认前台元素的 ended：后台即便有残留事件也丢弃，防止掐断当前动画。
+    // ended that only recognizes foreground elements: Even if there are residual events in the background, they will be discarded to prevent the current animation from being interrupted.
     const endedOn = event === undefined ? null : (event.currentTarget as HTMLVideoElement | null);
     if (endedOn !== null && !endedOn.classList.contains('is-front')) return { kind: 'ignore' };
-    // 回执放在拖拽守卫之前：「播完」是既成事实，不该受动画链推进逻辑影响。
+    // The receipt is placed before the drag guard: "End of playback" is a fait accompli and should not be affected by the animation chain advancement logic.
     const done = playing;
     if (done !== null) {
-      playing = null; // 先清再上报，后续换源不会把它当成被打断。
+      playing = null; // If you clear it first and then report it, subsequent source changes will not treat it as interrupted.
       deps.report(done, 'ended');
     }
     if (deps.isDragging()) return { kind: 'ignore' };
-    // 冻结时不推进：下面每条分支都会按当前工作状态换源，effect 的门禁拦不住。
+    // Not advancing when frozen: Each branch below will change sources according to the current working status, and the validation check of effect cannot stop it.
     if (frozen) return { kind: 'ignore' };
     const cue = decideEndedCue({
       animations: deps.cfg().animations,
@@ -249,11 +252,13 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
     });
     const petId = deps.cfg().id;
     if (cue.kind === 'work-rotate') {
-      console.log('[dsh-pet] ' + stamp(petId) + ' workStatus 档内轮换: ' + deps.currentAnim() + ' -> ' + cue.anim);
+      console.log(
+        '[dsh-pet] ' + stamp(petId) + ' workStatus animation rotation: ' + deps.currentAnim() + ' -> ' + cue.anim,
+      );
     } else if (cue.kind === 'work-replay') {
-      console.log('[dsh-pet] ' + stamp(petId) + ' workStatus 循环续播: ' + deps.currentAnim());
+      console.log('[dsh-pet] ' + stamp(petId) + ' Continuing workStatus loop: ' + deps.currentAnim());
     } else if (cue.kind === 'event-done') {
-      console.log('[dsh-pet] ' + stamp(petId) + ' 事件动画播完 ended anim=' + deps.currentAnim());
+      console.log('[dsh-pet] ' + stamp(petId) + ' Event animation ended anim=' + deps.currentAnim());
     }
     return cue;
   };
@@ -275,7 +280,7 @@ export function createOwnAnimation(deps: OwnAnimationDeps): OwnAnimation {
       frozen = next;
       if (next) {
         frontVideo()?.pause();
-        // 冻结打断了正在播的点播：解冻不会接回来，所以是 cancelled 而不是暂停。
+        // Freezing interrupted the playing playback request: unfreezing will not pick it up, so it is cancelled instead of paused.
         if (playing !== null) reportOnce(playing, 'cancelled', REASON_FROZEN);
         return { kind: 'frozen' };
       }

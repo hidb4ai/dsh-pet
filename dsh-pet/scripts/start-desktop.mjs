@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * 本地开发或手动启动桌面 Helper，不经宿主拉起。
+ * Local development or manual startup of desktop Helper without host pull up.
  *
- * 参数是一个成品配置地址，缺省指向本机 3080 端口的 /dsh-pet-7340/config；
- * 其余端点由渲染端从 configUrl 推导，本脚本只负责透传。
- * 不下载 Electron：找不到可执行文件即提示先跑 npm run ensure:electron。
- * 环境变量与宿主拉起时一致：配置地址、缩放倍数、Electron 路径。
- * 必须始终：删掉 ELECTRON_RUN_AS_NODE，并带上 DSH_PET_HOST_PID，让 Helper 在本进程退出后自行收尾。
+ * The parameter is a resolved configuration address, which by default points to the local port 3080 /
+ * dsh-pet-7340/config; the remaining endpoints are deduced from configUrl by the renderer, and this script is only
+ * responsible for transparent transmission. Do not download Electron: If the executable file cannot be found, you will
+ * be prompted to run npm run ensure:electron first. The environment variables are the same as when the host is pulled
+ * up: configuration address, scaling factor, and Electron path. Must always: delete ELECTRON_RUN_AS_NODE and bring
+ * DSH_PET_HOST_PID, let Helper cleanup itself after this process exits.
  * @module dsh-pet/scripts/start-desktop
  */
 import { spawn } from 'node:child_process';
@@ -19,7 +20,7 @@ const helperMain = resolve(here, '..', 'runtime', 'electron-helper', 'main.js');
 const defaultConfigUrl =
   process.env.DSH_PET_CONFIG_URL || process.argv[2] || 'http://127.0.0.1:3080/dsh-pet-7340/config';
 
-// Electron 可执行文件相对解压目录的路径（按平台）。
+// The path of the Electron executable file relative to the decompression directory (by platform).
 const PLAT = process.platform;
 const electronRel =
   PLAT === 'win32'
@@ -28,7 +29,7 @@ const electronRel =
       ? join('Electron.app', 'Contents', 'MacOS', 'Electron')
       : 'electron';
 
-// 解析 Electron 可执行文件；不自动下载，缺了就提示先跑 ensure:electron。
+// Parse the Electron executable file; it will not be downloaded automatically. If it is missing, you will be prompted to run ensure:electron first.
 const candidates = [
   process.env.DSH_PET_ELECTRON_PATH,
   process.env.ELECTRON_PATH,
@@ -50,13 +51,14 @@ const env = {
   ...process.env,
   DSH_PET_CONFIG_URL: defaultConfigUrl,
   DSH_PET_SCALE: process.env.DSH_PET_SCALE || '1',
-  // 开发流也要跟随：本脚本退出（含被强杀）后 Helper 必须自己收尾，不留一个没人管的后台窗口。
-  // Helper 侧 host-liveness.js 每 2s 探测一次本进程 pid，ESRCH 即自行退出。
+  // The development flow must also be followed: after this script exits (including being forcibly killed), Helper must
+  // cleanup itself, leaving no background window unattended. Helper side host-liveness.js detects this process pid
+  // every 2 s, and ESRCH will exit on its own.
   DSH_PET_HOST_PID: String(process.pid),
 };
-// 删掉会劫持 Electron 启动模式的变量：终端/宿主里若带着 ELECTRON_RUN_AS_NODE，
-// Electron 会以纯 Node 模式启动，main.js 顶部 require('electron') 直接 MODULE_NOT_FOUND。
-// 必须删键，不能设空串（实测空串会让 Electron 直接 abort）。
+// Delete variables that will hijack the Electron startup mode: if ELECTRON_RUN_AS_NODE is in the terminal/host,
+// Electron will start in pure Node mode, main.js on top of require (' electron ') directly MODULE_NOT_FOUND. The key
+// must be deleted and an empty string cannot be set (actually an empty string will make Electron directly abort).
 delete env.ELECTRON_RUN_AS_NODE;
 
 console.log(`[start-desktop] electron:   ${electron}`);

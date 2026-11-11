@@ -34,7 +34,7 @@ test('a pending external balance query times out and the next refresh can succee
     ok: false,
     provider: 'timeout-recovery',
     reason: 'fetch-error',
-    message: '余额查询超时（20 秒），请稍后重试',
+    message: 'Balance request timed out after 20 seconds. Try again later.',
   });
   assert.deepEqual(await queryBalance('timeout-recovery', async () => undefined), success('timeout-recovery'));
   assert.equal(calls, 2);

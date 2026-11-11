@@ -1,8 +1,9 @@
 /**
- * 一张宠物卡的响应式状态与写入口：动画、朝向、提示与自定义位置。
- * 不负责派生几何（geometry 负责）与驱动实例（由装配根持有），也不做任何判定。
- * 依赖注入的 react；状态只在卡内使用，跨卡不共享。
- * 不变量：anim / once / seq 三者共同决定是否换源，只改其中一个会走进防重分支。
+ * Responsive status and writing entry point of a pet card: animation, orientation, prompts and custom position. It is
+ * not responsible for derived geometry (geometry is responsible) and driver instances (held by the assembly root), nor
+ * does it make any decisions. Dependency injection react; the state is only used within the card and is not shared
+ * across cards. Invariants: anim / once / seq. The three jointly decide whether to change the source. Changing only
+ * one of them will lead to the anti-replication branch.
  * @module dsh-pet/src/client/pet/card/state
  */
 import type { Center } from '../motion/geometry.ts';
@@ -10,100 +11,101 @@ import type { Corner } from '../../../shared/types.ts';
 import type { PetFacing } from '../../../shared/state.ts';
 import type * as ReactNS from 'react';
 
-/** 一张宠物卡的状态。 */
+/** The status of a pet card. */
 export interface CardState {
-  /** 当前动画名，可能是一段绝对地址。 */
+  /** The current animation name may be an absolute address. */
   anim: string;
-  /** 这段只播一次；false 表示循环。 */
+  /** This section is played only once; false means loop. */
   once: boolean;
-  /** 换源序号：同一动画重播时靠它强制再走一遍换源。 */
+  /** Source changing serial number: Use this to force the source to be changed again when the same animation is replayed. */
   seq: number;
-  /** 点播编号，随 anim 下发给回执关联；自播换源时必须清空。 */
+  /** The playback request number is associated with the receipt issued by anim; it must be cleared when changing the source of the self-broadcast. */
   cuePlayback: string | null;
-  /** 朝向，决定镜像与走位方向。 */
+  /** Orientation, determines the mirroring and moving direction. */
   facing: PetFacing;
-  /** 悬浮提示显隐。 */
+  /** The floating prompt is shown and hidden. */
   tipOn: boolean;
-  /** 用户拖拽后的归一化中心；null 表示仍按角落定位。 */
+  /** Normalized center after user dragging; null means still positioned according to corners. */
   customPos: Center | null;
-  /** 宠物宽度（px）；配置镜像，设置页改尺寸时跟随。 */
+  /** Pet width (px); configure the mirror and set it to follow when the page changes size. */
   size: number;
-  /** 角落定位。 */
+  /** Corner positioning. */
   corner: Corner;
-  /** 角落边距（px）。 */
+  /** Corner margin (px). */
   margin: { x: number; y: number };
 }
 
-/** 状态写入口；只读的消费方拿 state 即可。 */
+/** The status is written as entry point; the read-only consumer can use state. */
 export interface CardStateActions {
-  /** 换成指定动画。 */
+  /** Change to the specified animation. */
   setAnim(anim: string): void;
-  /** 设置是否只播一次。 */
+  /** Set whether to play only once. */
   setOnce(once: boolean): void;
-  /** 递增换源序号，强制重播当前动画。 */
+  /** Increment the source sequence number and force replay of the current animation. */
   bumpSeq(): void;
-  /** 设置点播编号；自播换源传 null。 */
+  /** Set playback request number; self-broadcast source change null. */
   setCuePlayback(id: string | null): void;
-  /** 设置朝向。 */
+  /** Set orientation. */
   setFacing(facing: PetFacing): void;
-  /** 设置提示显隐。 */
+  /** Set the prompt to show or hide. */
   setTipOn(on: boolean): void;
-  /** 设置归一化中心；null 表示回到角落定位，也接受函数式更新以强制重排。 */
+  /** Set the normalization center; null means returning to the corner positioning, and also accepts functional updates to force rearrangement. */
   setCustomPos(pos: ReactNS.SetStateAction<Center | null>): void;
-  /** 设置宠物宽度。 */
+  /** Set pet width. */
   setSize(size: number): void;
-  /** 设置角落。 */
+  /** Set corners. */
   setCorner(corner: Corner): void;
-  /** 设置角落边距。 */
+  /** Set corner margins. */
   setMargin(margin: { x: number; y: number }): void;
   /**
-   * 一次换源：设置动画与播放方式，可选强制重播。
+   * One-time source change: set animation and playback methods, optional forced replay.
    *
-   * @param anim - 要播的动画名或绝对地址。
-   * @param opts - once 缺省 true；replay 为 true 时递增序号强制再走一遍；cue 为点播编号。
+   * @param anim - The name or absolute address of the animation to be played.
+   * @param opts - once defaults to true; when replay is true, the sequence number is incremented to force another
+   * pass; cue is the playback request number.
    */
   play(anim: string, opts?: { once?: boolean; replay?: boolean; cue?: string | null }): void;
 }
 
-/** 卡状态容器：状态、写入口与三个随状态同步的 ref。 */
+/** Card status container: status, write entry point and three ref synchronized with the status. */
 export interface CardStateApi {
-  /** 当帧状态。 */
+  /** When frame status. */
   state: CardState;
-  /** 写入口。 */
+  /** Write entry point. */
   actions: CardStateActions;
-  /** 当前动画名的最新值；驱动与回调读它，避免闭包读到旧值。 */
+  /** The latest value of the current animation name; the driver and callback read it to prevent the closure from reading the old value. */
   animRef: ReactNS.MutableRefObject<string>;
-  /** 朝向的最新值。 */
+  /** The latest value of orientation. */
   facingRef: ReactNS.MutableRefObject<PetFacing>;
-  /** 归一化中心的最新值。 */
+  /** Latest value of normalized center. */
   customPosRef: ReactNS.MutableRefObject<Center | null>;
 }
 
-/** 注入的 react 能力。 */
+/** Injected react capability. */
 export interface CardStateRuntime {
-  /** 状态。 */
+  /** Status. */
   useState: <T>(init: T) => [T, ReactNS.Dispatch<ReactNS.SetStateAction<T>>];
-  /** 引用。 */
+  /** Quote. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }
 
-/** 初始值：尺寸、首播动画、角落与边距都来自成品配置。 */
+/** Initial values: Dimensions, premiere animation, corners and margins are all from the finished configuration. */
 export interface CardStateInit {
-  /** 宠物宽度（px）。 */
+  /** Pet width (px). */
   size: number;
-  /** 首播动画名。 */
+  /** The name of the first animation. */
   anim: string;
-  /** 角落定位。 */
+  /** Corner positioning. */
   corner: Corner;
-  /** 角落边距（px）。 */
+  /** Corner margin (px). */
   margin: { x: number; y: number };
 }
 
 /**
- * 制造卡状态容器的 hook。
+ * hook making card status container.
  *
- * @param rt - 注入的 react 能力。
- * @returns 接收初始值的 hook；状态与 ref 在卡内跨渲染保留。
+ * @param rt - Injected react capabilities.
+ * @returns receives the initial value of hook; state with ref is retained across renders within the card.
  */
 export function createCardState(rt: CardStateRuntime) {
   const { useState, useRef } = rt;
@@ -120,7 +122,7 @@ export function createCardState(rt: CardStateRuntime) {
     const [corner, setCorner] = useState<Corner>(init.corner);
     const [margin, setMargin] = useState(init.margin);
 
-    // ref 是状态的镜像：驱动与事件回调在闭包外读它们，不能等到下一帧。
+    // ref is a mirror image of the state: the driver and event callback read them outside the closure and cannot wait for the next frame.
     const animRef = useRef(anim);
     animRef.current = anim;
     const facingRef = useRef(facing);

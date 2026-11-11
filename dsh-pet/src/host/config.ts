@@ -1,8 +1,9 @@
 /**
- * 配置层的公开出口：读取、校验、合并、写入的唯一入口。
+ * The public exit of the configuration layer: the only entry point for reading, verifying, merging, and writing.
  *
- * 只做再导出，不含逻辑；子模块按变化原因分居 ./config/。
- * 必须始终成立：模块外只经本文件使用配置能力，路径与合并规则不得旁路复制。
+ * Only re-export, no logic; sub-modules are separated according to the reason of change./config/. This must always be
+ * true: configuration capabilities are only used outside the module through this file, and paths and merge rules must
+ * not be copied by bypass.
  * @module dsh-pet/src/host/config
  */
 export { ID_FORBIDDEN, isValidPetId, MAX_PET_ID_LENGTH, PET_DISPLAY_SET } from './config/constants.ts';

@@ -1,110 +1,101 @@
-// dsh-pet 配置（JSONC：允许 // 和 /* */ 注释）
-// 说明：浏览器端启动时通过 /dsh-pet-7340/config 拉取（本文件名是 config.jsonc，宿主路由不带后缀）；字段缺失/写错会取内置默认值并告警
-//       （结构性缺失静默、显式写错告警），返回给消费端的永远是填满的成品。
-// 字段归属（三层，改配置前先看这里）：
-//   · 实例级（写在 pets[] 里，每只独立）：name / id / size / balanceEnabled / whisperEnabled /
-//     workStatusEnabled / fixedEnabled / display / position，外加可选的 whisperPrompt（人设）——
-//     写了就取代所属条目顶层那一份，留空则跟随条目（设置页有输入框）
-//   · 全局默认（本文件是默认值；用户在 main-config.jsonc 里写一次就对**所有宠物**生效，
-//     含 pet/<名>-config.json 定义的种类；种类文件自己写了则覆盖自己那份）：
-//     physics / font / confineToScreen / whisperImageEnabled / chatImageEnabled / chatAnimationEnabled /
-//     chatMemoryRounds / whisperModel / chatModel / eventsRefreshSec
-//   · 条目级（每个条目一份：main 一份、每个种类各一份；种类文件顶层可覆盖）：
-//     whisperPrompt / memes / workStatusTexts / animations / animationWeights
-//   · 只读 main（写了也只认 main 条目那份）：notificationsEnabled / eventsRefreshSec.balance
-// 合并口径：所有顶层字段都是**整段替换**——写了就整段用自己的，缺的子键不会从本文件补回来
-//   （消费端各自兜底：余额周期读不到按 1800、碎碎念按 300）。
+// dsh-pet configuration (JSONC supports line and block comments).
+// The browser reads the merged configuration from /dsh-pet-7340/config, without a filename extension.
+// Missing structural fields use defaults silently; explicitly invalid values produce warnings.
+// Field ownership:
+// - Per instance in pets[]: name, id, size, balanceEnabled, whisperEnabled, workStatusEnabled,
+//   fixedEnabled, display, position, and an optional whisperPrompt that replaces the entry's persona.
+// - Global defaults, overridable by each pet/<name>-config.json entry: physics, font, confineToScreen,
+//   whisperImageEnabled, chatImageEnabled, chatAnimationEnabled, chatMemoryRounds, whisperModel,
+//   chatModel, and eventsRefreshSec.
+// - Per entry (main or a custom pet type): whisperPrompt, memes, workStatusTexts, animations,
+//   and animationWeights.
+// - Read only from main: notificationsEnabled and eventsRefreshSec.balance.
+// Top-level objects are replaced as a whole, not merged recursively. Consumers apply their own
+// fallbacks for omitted nested keys (for example, 1,800 seconds for balance and 300 for whispers).
 {
-  // ===================== 碎碎念 / 对话的人设（系统提示词，条目级——每个种类一份；种类文件 pet/<名>-config.json 顶层可覆盖） =====================
-  // 宠物开启碎碎念（pets[].whisperEnabled = true）时，按 eventsRefreshSec.whisper 周期
-  // 用此提示词调用当前服务商生成一句话，气泡显示。说人话、不啰嗦、不解释自己、不提 AI。
-  // 这是**条目级默认值**：想让某只宠物有自己的性格，在它的 pets[] 条目里加一行
-  //   "whisperPrompt": "……"
-  // 写了就**取代**这里（不是拼接）；留空/不写则跟随本条目的这份。设置页「桌宠配置」里每只宠物
-  // 都有「人设」输入框，改那里等价（写的是用户层 main-config.jsonc 的 pets[].whisperPrompt）。
-  // 只写正文：实际发给模型的 system = 这段 + 自动追加的「你的名字是“<宠物名>”。」+ 当前时间背景
-  // （日期/星期/时刻/时段/工作日或周末/节日）——所以别在这里再写名字和日期。人设**没有长度上限**。
+  // Persona for whispers and chat (per entry; a custom pet file can override it).
+  // When pets[].whisperEnabled is true, the current provider generates a short bubble at the
+  // interval in eventsRefreshSec.whisper. A nonempty pets[].whisperPrompt replaces this default;
+  // an omitted or empty instance prompt inherits it. The settings page writes the same user-layer field.
+  // Write only the persona here. The model's system message also includes the pet's name and current
+  // time context (date, weekday, time of day, weekend/working day and holidays). There is no length cap.
   "whisperPrompt": "你是主人桌面上的Q版蓝发小女仆，会时不时碎碎念一句。说话要自然随意、短短一句（20字以内），温柔乖巧带点俏皮，说人话不啰嗦，不要解释你自己，不要提你是AI。",
-  // ===================== 说梦话（条目级——每个种类一份） =====================
-  // 睡觉期间按 eventsRefreshSec.sleepTalk 周期说一句梦话：发给模型的 system 就是上面的 whisperPrompt（人设）。
-  // 「你在睡觉、说梦话」这类功能指令写在代码里（与碎碎念的指令同一处），不在这里配；只弹气泡、不播动画、不念。
-  // ===================== 睡觉时被叫醒前的拒绝台词（条目级——每个种类一份） =====================
-  // 睡着期间用户或第三方想让它说话、聊天、查余额、播动画、弹气泡时，不执行，只随机挑一句下面的话弹气泡。
-  // 非空字符串数组；整段缺失/非法则用内置三句（「我在睡觉，别烦我……」之类）。
+  // Sleep talk uses this entry's whisperPrompt and runs at eventsRefreshSec.sleepTalk intervals.
+  // Sleep-specific instructions live in code. Sleep talk displays a bubble without animation or speech.
+  // Sleep refusal lines (per entry): while asleep, requests to speak, chat, check balance, play an
+  // animation or show a bubble are refused with a random line below. Use a nonempty string array;
+  // missing or invalid arrays fall back to the built-in refusal lines.
   "sleepRefuseTexts": [
     "我在睡觉，别烦我……",
     "唔……让我再睡一会儿。",
     "呼……呼……（装作没听见）"
   ],
-  // ===================== 入睡 / 醒来时说的话（条目级——每个种类一份） =====================
-  // 播「开始」时随机挑一句弹气泡，播「起来」时同理。与拒绝台词同一套规则：非空字符串数组，
-  // 整段缺失/非法则回落内置这份；台词只写在这里，代码里不再抄一份。
+  // Sleep/wake lines (per entry). Pick one bubble when the start or end animation runs.
+  // Use nonempty string arrays; missing or invalid arrays fall back to these built-in values.
+  // The lines are defined here rather than duplicated in code.
   "sleepStartTexts": ["好困……我先睡一会儿。", "那我去睡啦，晚安。"],
   "sleepEndTexts": ["唔……我醒了。", "睡饱啦，主人！"],
-  // ===================== 对话记忆轮数（全局默认；种类文件 pet/<名>-config.json 顶层可覆盖） =====================
-  // 右键菜单「对话」弹窗与桌宠聊天时，每次请求携带的最近历史轮数（1 轮 = 1 问 1 答）。
-  // memory.json 全存不删，此值只决定"每次请求截取多少进上下文"。非负数字；缺失默认 10，
-  // 写了非法（负数/非数字）即配置错误。回落链同 whisperPrompt：种类文件顶层 → 全局 → 默认 10。
-  // 设置页「AI 模型与对话上下文」区有数字输入框，改这里或那里等价（设置页写的是用户层）。
+  // Recent chat rounds (global default; custom pet entries can override it).
+  // One round is one user message and one reply. This limits the history sent with each request;
+  // it does not delete stored memory.json history. Use a nonnegative number; the default is 10.
+  // Resolution order: pet entry, global setting, built-in default. The model/context settings panel
+  // writes this field in the user configuration.
   "chatMemoryRounds": 10,
-  // ===================== 碎碎念模型（全局默认：用户层写了对所有宠物生效；种类文件 pet/<名>-config.json 顶层可覆盖） =====================
-  // 碎碎念用哪个服务商 + 模型生成。provider 与 model **都留空 = 跟随当前对话的模型**（默认，与旧行为一致）；
-  // 想给后台自动跑的碎碎念单独用便宜/快的模型就填上（设置页有下拉框，选项与 DSH 的模型选择器同源）。
-  // 只填一半（选了服务商没选模型，或反之）即配置错误 → 告警并取默认（跟随当前对话）。
+  // Whisper model (global default, overridable per entry).
+  // Leave both provider and model empty to follow the current conversation model. Set both to use
+  // a separate, cheaper or faster model for background whispers. Supplying only one is invalid:
+  // warn and fall back to the current conversation model. DSH settings use the host's model list.
   "whisperModel": { "provider": "", "model": "" },
-  // ===================== 对话模型（全局默认；同上，留空 = 跟随当前对话） =====================
-  // 右键菜单「对话」与桌宠聊天时用哪个服务商 + 模型。填了但调用失败（凭据被删 / 模型下架 /
-  // 该服务商没配 key）会**自动回落到当前对话的模型重试一次**，仍失败才按生成失败报错。
+  // Chat model (global default, overridable per entry).
+  // Leave both fields empty to follow the current conversation model. If the selected model fails
+  // (for example, missing credentials or a removed model), retry once with the current conversation
+  // model before reporting a generation failure.
   "chatModel": { "provider": "", "model": "" },
-  // ===================== 表情包：碎碎念配图开关（全局默认，所有宠物共用；种类文件顶层可覆盖） =====================
-  // 开启后，碎碎念每次生成时从 memes 图片池随机抽 1 张，连同那句话一起显示（气泡配图）。
-  // 碎碎念本身是"随口一句"，没有上下文可选，所以按随机抽（与对话的 AI 选图策略不同）。
-  // 必填布尔值；缺失即配置错误。改动后刷新或重启生效。
+  // Whisper images (global default, overridable per entry).
+  // Randomly choose one image from memes for each whisper; unlike chat, whispers do not select an
+  // image from conversation context. Required boolean; refresh or restart after changing it.
   "whisperImageEnabled": true,
-  // ===================== 表情包：对话配图开关（全局默认，所有宠物共用；种类文件顶层可覆盖） =====================
-  // 开启后，对话生成时把全部表情包（名称 + 描述）交给模型，由它按当前语境选 1 张；
-  // 模型不选或选了不存在的图则不配图（对话配图是可选点缀，不强制每句都带）。
-  // 必填布尔值；缺失即配置错误。改动后刷新或重启生效。
+  // Chat images (global default, overridable per entry).
+  // Give the model meme names and descriptions so it can choose an image for the current context.
+  // No selection or an unknown image produces a text-only reply. Required boolean; refresh or restart.
   "chatImageEnabled": true,
-  // ===================== 对话动作联动（全局默认，所有宠物共用；种类文件顶层可覆盖） =====================
-  // 开启后，对话时会把「可表演的动画清单」交给模型：模型认为这句话确实在演某个动作时，
-  // 回复里会带一个动作标记，宠物当场演出来；没有合适的就只回文字，不演。
-  // 联动范围 = animations.categories 下全部动作（不是全部动画：待机 / 转向 / 事件动画不在其中）。
-  // 必填布尔值；缺失即配置错误。改动后刷新或重启生效。
+  // Chat animation (global default, overridable per entry).
+  // Give the model the actions in animations.categories. A matching action marker in the reply
+  // triggers that animation; otherwise show text only. Idle, turn and event animations are excluded.
+  // Required boolean; refresh or restart after changing it.
   "chatAnimationEnabled": true,
-  // ===================== 表情包：对话配图张数上限（全局默认，所有宠物共用；种类文件顶层可覆盖） =====================
-  // 对话时发给模型的表情包清单**最多几张**（「前 N 张」= 配置里**写在前面的那 N 条**——
-  // 想让哪几张优先被发出去，把它们的顺序往前挪即可；本文件里的书写顺序就是生效顺序）。
-  // 为什么要它：这张清单是**每条消息都要附**的，token 随图片数量线性增长（本文件 27 张约 1.1k 字符 ≈ 650 token），
-  // 张数一多就是纯烧钱——限制成前 N 张，模型只从这几张里挑，费用上限立刻可控。
-  // 非负整数；**内置默认 20**（27 张的池子只砍掉 7 张，仍能压住每条消息的图 token）；0 = 不限制（全部发）。
-  // 只影响对话选图：碎碎念只带抽中的那一张，与本项无关。
+  // Maximum meme candidates sent with each chat request (global default, overridable per entry).
+  // Only the first N entries in configuration order are sent. Move preferred images earlier in memes.
+  // The list is repeated in every request, so fewer candidates reduce prompt size. This file's
+  // 27 candidates are roughly 1,100 characters (about 650 tokens; model tokenization varies).
+  // Use a nonnegative integer: default 20; 0 sends every candidate. This does not affect whispers,
+  // which include only the selected image description.
   "chatImageLimit": 20,
-  // ===================== 语音播报（全局默认；种类文件 pet/<名>-config.json 顶层可覆盖） =====================
-  // 手动播报：右键菜单、斜杠命令触发的碎碎念，以及对话回复，是否用语音念出来。默认关闭——不是所有人都希望桌宠出声。
-  // 只影响「说不说」：气泡、记忆与通知都不受影响。对话面板的喇叭按钮是单句点播，随时可点。
+  // Speech output (global default, overridable per entry).
+  // Read manual whispers (menu/slash command) and chat replies aloud. Disabled by default.
+  // Bubbles, memory and notifications are unaffected. The chat speaker button can always request
+  // playback of a single reply independently of this setting.
   "voiceEnabled": false,
-  // 用哪个音色念：必须是 /voice/voices 里的 id（四个中文音色的白名单）。
-  // 写错或留空即配置错误 → 告警并回落到默认 zh-CN-XiaoyiNeural（晓伊，女声·活泼）。
+  // Voice ID from /voice/voices (the supported Chinese voices).
+  // An empty or unknown ID produces a warning and falls back to zh-CN-XiaoyiNeural.
   "voiceName": "zh-CN-XiaoyiNeural",
-  // 播放音量（全局）：0–1 的小数，1 = 最大音量（100%），0 = 静音。四类语音共用这一个音量。
-  // 只改播放响度，不重新合成音频，所以调它不会多花一次 TTS 请求。
+  // Global playback volume: a number from 0 (muted) to 1 (full volume), shared by all speech categories.
+  // Changing volume affects playback only and does not trigger another TTS request.
   "voiceVolume": 1,
-  // 周期碎碎念要不要念出来（全局默认）。只影响「说不说」，气泡与碎碎念动画照常。
-  // 默认关闭——背景旁白不该默认出声。
+  // Read periodic whispers aloud (global default, off by default).
+  // Whisper bubbles and animations are unaffected.
   "voiceWhisperEnabled": false,
-  // 待办提醒要不要念出来（全局默认）。默认关闭，与碎碎念保持同一口径。
+  // Read to-do reminders aloud (global default, off by default).
   "voiceTodoEnabled": false,
-  // 工作状态播报要不要念出来（全局默认）。任务完成、出错、等你确认时念一句该档位配置的
-  // 工作状态文案；和系统通知同一取向——用户不在本页（切走、失焦、最小化）时才念，正看着
-  // 屏幕时不打扰。默认关闭。
+  // Read work-state messages aloud (global default, off by default).
+  // Use the configured line when a task finishes, fails or waits for approval. Like system
+  // notifications, speak only when the page is not focused or visible.
   "voiceNotifyEnabled": false,
-  // ===================== 表情包：图片映射（名称 → 描述，模型据此选图） =====================
-  // 键 = assets/memes/<键>.png 的文件名（不含扩展名）；值 = 该图内容的简要描述。
-  // 用途：碎碎念随机抽到某张图后，把该图描述注入提示词让模型配合画面说话；
-  //       对话则把整张表交给模型，由它挑一张最贴切当前语境的。
-  // 要求：键必须与 assets/memes 下的 png 文件名一一对应（文件缺失即该条失效并告警）；
-  //       值为非空字符串。想停用某张图就从对象里删掉该键，不用改图片文件。
+  // Meme image map: filename stem -> description used by the model.
+  // Each key must match assets/memes/<key>.png; a missing file disables the entry and produces a warning.
+  // Descriptions must be nonempty strings. Whispers receive the randomly chosen image's description;
+  // chat receives the candidate list and chooses a relevant image (subject to chatImageLimit).
+  // Remove a key to disable that image without deleting the file.
   "memes": {
     "吃白饭的大肥鱼": "躺平扒白饭，摆烂挨骂也无所谓，适合被吐槽/偷懒/吃白饭自嘲",
     "大的要来啦": "举喇叭大喊预警，适合有大事、大更新、大动作即将发生",
@@ -134,47 +125,38 @@
     "就一碗": "抱着超大碗说要来你家吃饭就一碗，适合蹭饭、饭量大、登门讨饭",
     "Ciallo": "比耶眨眼卖萌问候 Ciallo～，适合打招呼、元气开场、卖萌"
   },
-  // ===================== 系统通知总开关 =====================
-  // 对话完成 / 生成失败 / 输出截断 / 权限申请 / 用户选择 在窗口失焦时弹出系统级通知（桌面右下角）。
-  // 不需要时改为 false（修改后刷新或重启生效）。必填布尔值，缺失即配置错误；
-  // 也可在用户配置（main-config.jsonc）顶层覆盖，设置页保存宠物时会保留该字段。
+  // System notification switch (required boolean).
+  // Notify when the window is unfocused: completed chat, generation failure, truncated output,
+  // permission request or a request for user selection. Set false to disable notifications.
+  // main-config.jsonc can override this top-level field; saving pets in settings preserves it.
+  // Refresh or restart after changing it.
   "notificationsEnabled": true,
-  // ===================== 点击音效开关 =====================
-  // true（默认）= 点一下宠物播一声内置音效（assets/sound/click-duck.wav，音量固定 0.5；
-  //   100ms 内的连续点击只响一次，多开时也不会叠成一片）。
-  // false = 完全静音（设置页「全局开关」里的「点击音效」写的就是它）。
-  // 必填布尔值，缺失即配置错误；
-  // 也可在用户配置（main-config.jsonc）顶层覆盖，设置页「全局开关」里的开关写的就是它。
-  // 只读 main 条目这一份（pet pack 种类文件不单独覆盖），改动后保存即生效。
+  // Click sound (required boolean, default true).
+  // Play assets/sound/click-duck.wav at volume 0.5 when a pet is clicked. Clicks within 100 ms share
+  // one sound, including across pets. false mutes click sounds. The global settings switch writes
+  // this top-level field in main-config.jsonc.
   "clickSoundEnabled": true,
-  // ===================== 锁定在当前屏幕（根字段，不属于 physics） =====================
-  // 多屏用户：true = 宠物只在**当前所在那块屏幕**内活动——
-  //   抛掷：只在松手时所在那块屏内弹（屏缝当墙，不飞到隔壁屏）；
-  //   漫游：只在当前所在那块屏内走，越出屏缝的那一步直接取消（抛掷是逐帧物理边界，会撞回来；
-  //         漫游是一次性落点规划、没有反弹语义，走不过去就不发车）。
-  // false（默认）= 屏缝两侧都有屏时照常跨屏飞行 / 跨屏行走、落到隔壁屏（现状）。
-  // 放根字段而不塞进 physics：它不改手感参数（重力/恢复系数/力度那些），只改「宠物被允许去哪」。
-  // 必填布尔值，缺失即配置错误；也可在用户配置（main-config.jsonc）顶层覆盖，设置页开关写的就是它。
-  // 全局默认：用户层写一次对**所有宠物**生效（含种类）；种类文件 pet/<名>-config.json 顶层写了则用自己那份。
-  // 仅影响桌面模式（浏览器 overlay 本来就只在视口内活动）。改动后刷新或重启生效。
+  // Confine to the current monitor (root field, outside physics; desktop mode only).
+  // true: throws bounce within the release monitor; autonomous movement that would cross a monitor
+  // edge is cancelled. false (default): throws and movement may cross adjacent monitors.
+  // This controls allowed destinations, not gravity or motion parameters. Required boolean;
+  // main-config.jsonc sets the global default, and custom pet entries can override it.
+  // The browser overlay is already confined to its viewport. Refresh or restart after changing it.
   "confineToScreen": false,
-  // ===================== 系统托盘（仅桌面模式） =====================
-  // 桌面模式启动后在通知区域（Windows）/ 菜单栏（macOS）常驻一个图标：列出配置里的**全部**宠物，
-  // 勾选即可切换显示位置——包括 display 为 web / none（当前不在桌面、没有窗口可右键）的那些。
-  // false = 不建托盘：不想在系统托盘留下痕迹，或同时跑多个桌面端 DSH（各占一个位置）时用。
-  // 关掉的代价：桌面侧就没有「把不在桌面的宠物叫回桌面」的入口了，要开浏览器用设置页、
-  // 或在网页端那只宠物身上右键切换。
-  // 仅影响桌面模式（纯浏览器端本来就没有托盘）。必填布尔值，缺失即配置错误；
-  // 也可在用户配置（main-config.jsonc）顶层覆盖，设置页「全局开关」里的托盘开关写的就是它。
-  // 改动后保存即生效（宿主会重启桌面 Helper，桌面宠物窗口会重建一次）。
+  // System tray (desktop mode only; required boolean).
+  // List every configured pet, including those currently displayed on the web or hidden. The tray
+  // can bring these pets back to the desktop even when they have no desktop window to right-click.
+  // false removes the tray; use the browser settings or pet menu to restore desktop visibility.
+  // The global settings switch writes main-config.jsonc. Saving restarts the desktop helper and
+  // recreates its pet windows so the tray change takes effect.
   "trayEnabled": true,
-  // ===================== 工作状态联动文案（条目级，与 animations/physics 同级；种类文件 pet/<名>-config.json 顶层可覆盖） =====================
-  // 工作状态气泡文本（pets[].workStatusEnabled 开启时展示；仅在 events.workStatus 动画触发时弹）。
-  // 结构 = 二维数组，外层索引即档位（与 events.workStatus 动画索引一一对应，勿在中间插入新档）：
-  //   0 thinking（turn/start）/ 1 working（tool/call）/ 2 result（tool/result）/
-  //   3 waiting（approval/asked）/ 4 success（turn/end completed）/ 5 error（turn/end error/max-tokens）
-  // 每档内是多个备选句，播放时随机抽一句（想固定单句就只写一个；想换文案只改这里）。
-  // 省略整个字段 = 不弹工作状态气泡文本（仍播动画）；省略某档 = 该档不显示文本。
+  // Work-state bubble lines (per entry, overridable by a custom pet file).
+  // Shown with events.workStatus animations when pets[].workStatusEnabled is true.
+  // Outer indexes must match the animation states; do not insert a state in the middle:
+  // 0 thinking (turn/start), 1 working (tool/call), 2 result (tool/result),
+  // 3 waiting (approval/asked), 4 success (completed turn/end), 5 error (error/max-tokens turn/end).
+  // Choose a random line within each state. An omitted field or state suppresses its text,
+  // while the animation still plays.
   "workStatusTexts": [
     ["正在认真想下一步呢", "让我整理一下思路~", "正在梳理接下来要做什么"],
     ["正在处理任务呢", "这一步正在进行中哦", "正在继续干活呢，别打扰我~"],
@@ -183,24 +165,22 @@
     ["这一轮搞定啦，真棒！", "任务完成咯，可以摸鱼啦~"],
     ["这一步好像没跑通呢", "刚才的操作遇到点问题哦", "这里卡了一下，再等等你呢"]
   ],
-  // ===================== 宠物物理（拖拽抛掷手感，全局默认，所有宠物共用；种类文件顶层可覆盖） =====================
-  // gravity：抛掷下落/反弹的基础重力（px/s²）。默认 1400（数值越大落得越快）；0 = 无重力（合法，
-  //   抛掷后匀速直线飞行/永不回落，配合 restitution/groundFriction=0 即纯无重力漂浮）。
-  // restitution：碰壁反弹恢复系数，0~1（1 = 完全弹性，0 = 撞上即停；墙/地共用）。默认 0.78。
-  // groundFriction：落地时水平速度的衰减率（/s，0 = 无摩擦冰面）。默认 2.5。
-  // ceilingBounce：顶部是否反弹。true = 碰顶反弹（现状）；false = 顶部无边界，
-  //   抛掷可飞出屏幕顶部（超出可视区域，重力仍会拉回落）。默认 true。
-  // throwPower：总力度（拖拽/抛掷输出增益）。弹簧跟手（K/C）、甩抛初速与软上限 3600 整体 ×p：
-  //   1.0 = 现状；>1 = 跟手更贴、甩得更猛、可达到的上限更高；<1 = 松弛、更易温柔放下。必须 > 0。
-  // petCollision：多宠物互相碰撞开关。true（默认）= 飞行中被甩出的宠物撞到其它宠物时，
-  //   按动量守恒 + 恢复系数 0.995 弹开（质量 ∝ size²）；false = 互相穿过（设置页「物理」卡可关）。
-  // hapticEnabled：碰撞震动。true（默认）= 撞墙/落地/撞顶与宠物互撞时各震一下；
-  //   只在支持 Vibration API 的浏览器生效（安卓），iOS 与桌面端没有硬件，会静默跳过。
-  // tiltGravity：倾斜控制重力。true（默认）= 手机倾斜方向代替固定向下的重力（大小仍由 gravity 决定，
-  //   竖直时取满值；gravity=0 时无从取值，等同关闭）；false = 关闭。
-  // shakeThrow：摇一摇抛出。true（默认）= 摇一摇沿甩动方向把宠物甩出去（力度 = 基准 × throwPower），
-  //   与重力大小无关，gravity=0 时也能甩；false = 关闭。
-  //   两个体感开关都只在 HTTPS / localhost 下有效（传感器 API 只在安全上下文存在）。
+  // Pet physics (global default, overridable per entry).
+  // gravity: downward acceleration in px/s², default 1400. Zero disables gravity; with zero
+  //   restitution and groundFriction, a thrown pet can keep drifting without falling back.
+  // restitution: wall/floor rebound coefficient, 0..1 (0 stops, 1 is perfectly elastic), default 0.78.
+  // groundFriction: horizontal deceleration on the floor, per second; 0 is frictionless, default 2.5.
+  // ceilingBounce: true (default) rebounds at the top; false permits upward flight outside the screen.
+  //   Gravity still pulls the pet back down.
+  // throwPower: positive gain applied to spring K/C, release velocity and the 3600 soft speed cap.
+  //   1 is the default; larger values follow the pointer more closely and throw farther.
+  // petCollision: true (default) enables pet-to-pet flight collisions with restitution 0.995 and
+  //   mass proportional to size²; false lets pets pass through each other.
+  // hapticEnabled: true (default) vibrates on boundary/pet collisions where Vibration API is available.
+  //   Unsupported hardware/platforms silently skip vibration.
+  // tiltGravity: true (default) uses phone tilt as gravity direction, bounded by gravity; gravity=0
+  //   also disables this effect. shakeThrow: true (default) throws in the shake direction with
+  //   force scaled by throwPower, independently of gravity. Both sensors require HTTPS or localhost.
   "physics": {
     "gravity": 1400,
     "restitution": 0.78,
@@ -212,56 +192,47 @@
     "tiltGravity": true,
     "shakeThrow": true
   },
-  // ===================== 字体（全局默认，所有宠物共用；种类文件顶层可覆盖） =====================
-  // family：字体种类（预设 id，必须在白名单内，写错即配置错误 → 告警并取默认 candy）。
-  //   可选：candy=软糖体（内置，默认）/ yahei=微软雅黑·苹方 / youyuan=幼圆 / kaiti=楷体 /
-  //   simsun=宋体 / comic=漫画体 / system=系统默认。
-  //   作用范围：宠物气泡、悬浮提示、对话窗、得分弹窗（即现在用软糖体的全部地方）。
-  //   为什么只存 id 不存字体栈：字体栈是 CSS 片段，手改写错会把样式拼坏；id 有白名单可校验。
-  //   各 id 对应的实际字体栈见 src/shared/fonts.ts 的 FONT_PRESETS（系统字体没装时由兜底栈接住）。
-  // size：字号 px，**只影响气泡与悬浮提示**（对话窗与得分弹窗字号不变）。基准 = 气泡正文字号，
-  //   悬浮提示与气泡内小字按既有比例派生。范围 4~200，默认 21（= 462 宽宠物原本的气泡字号）。
-  // followPet：字号是否随宠物大小等比缩放。true（默认）= 按「实际 size ÷ 基准尺寸」缩放，
-  //   与接入本配置前的行为完全一致（宠物调大，字跟着大）；false = 恒为 size px，不随宠物大小变。
-  // 注意（对象字段都是整段替换）：要写就三个子键写全——只写一半会被判为整段非法，
-  //   告警后整段回退默认值。设置页「外观与字体」区改这三项会整段写回，不受此影响。
+  // Font (global default, overridable per entry).
+  // family must be a preset ID: candy (bundled default), yahei (Microsoft YaHei/PingFang), youyuan,
+  //   kaiti, simsun, comic or system. Unknown IDs warn and fall back to candy. Preset CSS font stacks
+  //   live in src/shared/fonts.ts; storing an allowlisted ID avoids injecting malformed CSS.
+  //   Applies to bubbles, tooltips, chat and score popups; missing system fonts use the fallback stack.
+  // size: 4..200 px, default 21. Affects bubble text and derived tooltip/small-text sizes only,
+  //   not chat or score-popup text.
+  // followPet: true (default) scales text by pet size relative to the base size; false uses size px.
+  // Write all three keys: objects are replaced as a whole, and an incomplete object warns and
+  // falls back to defaults. The settings page writes the complete object.
   "font": {
     "family": "candy",
     "size": 21,
     "followPet": true
   },
-  // ===================== 默认宠物列表（多开） =====================
-  // pets 数组定义默认宠物；「设置页 → 添加宠物」的默认模板取 pets[0]（main）。
-  // 每个宠物独立：name（显示名，可重复：悬浮提示 / AI 人设追加「你的名字是X」/ 未来命令行定位的
-  //   显示层。可省略——缺失或留空按该宠物 id 处理并告警，兼容旧配置）、
-  // id（唯一标识，程序定位用：素材/记忆/端点参数都按它，绝不重叠，冲突即配置错误）、
-  // size（宽度 px，高度自动 = size × 9/16）、
-  // balanceEnabled（是否启用余额功能：true=触发余额动画+显示余额气泡；false=该宠物完全禁用。
-  //   必填布尔值，缺失即配置错误）、display（显示位置，必填四值之一：
-  //   web=仅浏览器 overlay / desktop=仅桌面模式（Electron 透明窗）/ both=两者/ none=都不显示。
-  //   缺失按默认 both 处理并告警（兼容 ≤0.2.0 旧配置），写了非法值即配置错误；桌面模式渲染
-  //   display 含 desktop/both 的全部宠物，每只一个局部小窗）、
-  // position（corner: 四角之一；marginX/marginY: 距所属角落偏移 px）、
-  // whisperPrompt（可选：这只宠物自己的人设，写了取代条目顶层那份；不写/留空 = 跟随条目）
+  // Default pet instances. Adding a pet in settings uses pets[0] (main) as its template.
+  // name: display name (duplicates allowed); omitted/blank names warn and fall back to id.
+  // id: unique programmatic identity for assets, memories and endpoint targeting; collisions are errors.
+  // size: width in px; height is size * 9/16.
+  // balanceEnabled: required boolean controlling balance animation and bubbles for this pet.
+  // display: web, desktop, both or none. Missing values warn and default to both for old configurations;
+  //   explicitly invalid values are errors. Each desktop pet gets its own transparent Electron window.
+  // position: corner plus marginX/marginY offsets in px.
+  // whisperPrompt: optional per-instance persona; a nonempty value replaces the entry's default.
   "pets": [
     {
       "name": "蓝毛小女仆",
       "id": "main",
       "size": 462,
       "balanceEnabled": true,
-      // 碎碎念默认开启：每次生成都会调用当前对话的模型。本地 LLM 单并发时，
-      // 后台碎碎念会顶掉正在跑的任务的 KV cache（与 DSH 多子代理同因）。
-      // 不需要碎碎念的宠物改为 false（设置页也可开关）。
+      // Whispers are enabled by default and call the current conversation model unless overridden.
+      // On a local LLM with one concurrent request, background whispers can displace an active task's
+      // KV cache. Set false here or in settings to disable them for this pet.
       "whisperEnabled": true,
-      // 工作状态联动默认开启：监听 DSH 会话事件（工具调用等），按
-      // animations.events.workStatus 数组切档位动画 + 气泡（仅监听，不调用模型）。
+      // Work-state reactions are enabled by default. Listen to DSH session events (such as tool calls)
+      // and select an animations.events.workStatus animation and bubble; no model call is made.
       "workStatusEnabled": true,
-      // 宠物固定：true = 随机动画链不再抽「转向 / 移动」两档——宠物不自己翻朝向、也不自己
-      // 走开，只播原地待机与随机小动作（两档原本的权重自然并入随机小动作，见文件末尾
-      // animationWeights 的说明）。默认 false = 保持原行为（会自己走、会自己翻）。
-      // **只影响随机链**：右键菜单点播（含「转向 / 移动」两项）、/anim 接口与命令、
-      // 余额/碎碎念/工作状态事件动画、点击回应与拖拽一律照常——用户主动触发的不受此限制。
-      // 设置页有同名勾选框。改动后刷新或重启生效。
+      // Fixed position: true removes turn/move from the random animation chain. Their weights become
+      // random-action weight, leaving idle and stationary actions. Default false permits autonomous movement.
+      // Only the random chain is affected: menu playback, /anim, commands, balance/whisper/work events,
+      // click responses and dragging remain available. Refresh or restart after changing it.
       "fixedEnabled": false,
       "display": "both",
       "position": {
@@ -269,27 +240,26 @@
         "marginX": 24,
         "marginY": 100
       }
-      // 想让这只宠物有自己的性格，就取消下面这行的注释（留空/不写 = 跟随文件顶层的 whisperPrompt）
-      // "whisperPrompt": "你是主人桌面上的猫娘，说话简短、爱吐槽，20 字以内。"
+      // Uncomment to override this pet's persona; omitted/blank values inherit the entry's whisperPrompt.
+      // "whisperPrompt": "You are a playful cat companion. Keep replies short and natural."
     }
   ],
 
-  // ===================== 动作动画池配置 =====================
-  // 动画素材目录（用户自定义 / 覆盖包内素材）：
-  //   $DSH_HOME/dsh-pet/main-animation/webm/（如 C:\Users\<你>\.dsh\dsh-pet\main-animation\webm\）
-  //   —— 唯一格式 .webm，文件名必须与下面各池写定的动画名一致（不含扩展名，中文/空格都行）。
-  //   注意：素材要放在 main-animation\webm\ 子目录里，直接放 main-animation\ 下会查不到文件。
-  //   （症状：右键菜单照常显示名字——菜单来自本配置——但点击不播放，资源 404。）
-  //   素材归属：存在 pet/<素材根>-animation/ 的文件宠物只查自己的目录（绝不回落）；
-  //   主配置宠物（main 等）按 main-animation\webm 优先 → 包内 assets/webm 依次查找。
+  // Animation pools and user asset overrides.
+  // Place main-pet assets in $DSH_HOME/dsh-pet/main-animation/webm/ (for example,
+  // C:\Users\<user>\.dsh\dsh-pet\main-animation\webm\). Only .webm is supported here.
+  // Filename stems must match the animation names below; Chinese names and spaces are allowed.
+  // Files placed directly in main-animation/ are not found: menu names still appear, but playback gets 404.
+  // A custom pet with pet/<asset-root>-animation/ uses only its own directory. Main pets search
+  // main-animation/webm first, then the bundled assets/webm directory.
   "animations": {
-    // 待机动画池（数组，可放多个，等概率抽）
+    // Idle animation pool: choose uniformly from the array.
     "idle": ["待机呼吸休闲"],
-    // 转向动画池（数组；每一项都必须是“播完会翻转朝向”的动画，如东张西望）
+    // Turn animation pool: every animation must end with a facing-direction flip.
     "turn": ["东张西望"],
-    // 拖拽动画池（数组；每一项都必须是“被无形抓起悬空”的姿势）
+    // Drag animation pool: each pose should depict the pet being held in midair.
     "drag": ["被鼠标拖拽悬空反馈"],
-    // 点击回应动画池（点按宠物时触发，随机抽 1 个）
+    // Click-response pool: choose one animation at random when the pet is clicked.
     "clicks": [
       "点击回应-开心跃动",
       "点击回应-害羞惊讶",
@@ -297,10 +267,9 @@
       "点击回应-挠痒咯咯笑",
       "点击回应-元气挥手"
     ],
-    // 移动动画池：default 是每个动作都用的默认参数；actions 里每项可覆盖部分参数，
-    // 未写的字段取 default。minDist/maxDist=单次行进距离(px)——以「基准宠物宽 462px」为准，
-    //   运行时按 实际size/462 等比缩放（小宠物挪小步、大宠物挪大步，与人物大小匹配）；
-    // margin=贴边安全距(px，不随缩放)、leadSec/tailSec=动画首尾各多少秒原地不动。
+    // Movement pool: actions inherit unspecified parameters from default.
+    // minDist/maxDist: travel distance in px at the base pet width of 462; runtime scales by size/462.
+    // margin: edge safety distance in px, not scaled. leadSec/tailSec: stationary time at each end.
     "moves": {
       "default": { "minDist": 60, "maxDist": 240, "margin": 20, "leadSec": 2, "tailSec": 2 },
       "actions": [
@@ -309,9 +278,9 @@
         { "name": "原地左转奔跑", "params": { "minDist": 120, "maxDist": 320, "leadSec": 1.75, "tailSec": 4.8 } }
       ]
     },
-    // 随机动作：分类池。weight 为该分类出现权重；noMirror: true 表示“带文字、镜像会颠倒，
-    // 宠物面向右（被镜像）时不播放该类”。所有分类 weight 合计应与 animationWeights 里
-    // 顶层权重和的余量（100 − idle − turn − move）相等。
+    // Random-action categories. weight controls how often each category appears.
+    // noMirror: true excludes the category while facing right (mirrored), useful for text-bearing assets.
+    // Category weights must total 100 - animationWeights.idle - animationWeights.turn - animationWeights.move.
     "categories": [
       { "id": "小动作", "weight": 20, "actions": [
         "悠闲哼歌", "超大伸懒腰", "原地敲击桌面互动", "原地重力下蹲压缩", "哈欠连天",
@@ -339,14 +308,13 @@
         "是啊，吃什么", "深度思考碎碎念"
       ] }
     ],
-    // 事件动画：不进随机链（rollKind/pickNext 不会抽到），只由代码显式触发。
-    // events.<事件名> 为档位数组，按「事件档位」顺序排列（索引即档位）。
-    // 每个档位的值可以是：单个动画名（固定播，原行为）或候选数组（触发时档内随机抽 1，
-    // 尽量不连续重复——同一档位多候选时不会连抽同一个）。空字符串/空数组非法。
-    // balance（余额展示，按已用百分比分档，数组顺序 = 档位顺序）：
-    //   index = p === 100 ? 5 : Math.floor(p / 20)
-    //   即 index 0..4 覆盖 [0,20) [20,40) [40,60) [60,80) [80,100)，index 5 只在 p 恰为 100（全部用完）时播。
-    //   与提示词文件 prompts/桌面宠物 10 秒动作提示词.md 的 6 段动画一一对应。
+    // Event animations are triggered explicitly, never by rollKind/pickNext.
+    // events.<event> is an ordered array of states. Each slot is an animation name or a nonempty
+    // candidate array; choose randomly and avoid immediate repeats when multiple candidates exist.
+    // Empty names/arrays are invalid. Balance indexes follow used percentage p:
+    // index = p === 100 ? 5 : Math.floor(p / 20).
+    // Indexes 0..4 cover [0,20), [20,40), [40,60), [60,80), [80,100); index 5 means fully used.
+    // These correspond to the six balance animations in the original Chinese asset prompt document.
     "events": {
       "balance": [
         "余额-钱袋满溢",   // 0 ≤ p < 20（几乎未消耗）
@@ -356,20 +324,16 @@
         "余额-袋空如洗",   // 80 ≤ p < 100（告急）
         "余额-分文不剩"    // p === 100（全部用完，格外档）
       ],
-      // 碎碎念：到点随机抽 1 段播（等概率），与 eventsRefreshSec.whisper 周期对应
+      // Whispers choose one animation uniformly at the eventsRefreshSec.whisper interval.
       "whisper": [
         "碎碎念-擦桌碎碎念",
         "碎碎念-发呆碎碎念",
         "碎碎念-对屏碎碎念"
       ],
-      // 工作状态联动（pets[].workStatusEnabled 开启时）：按索引 = 状态档位，勿在中间插入新档
-      //（新档只可追加到末尾，否则已生效配置的档位含义错位）：
-      //   index 0 = thinking（turn/start 回合开）
-      //   index 1 = working（tool/call 工具调用）
-      //   index 2 = result（tool/result 工具完成回整理）
-      //   index 3 = waiting（approval/asked 等待批准）
-      //   index 4 = success（turn/end completed 完成）
-      //   index 5 = error（turn/end error/max-tokens 出错/达上限）
+      // Work-state animations, enabled by pets[].workStatusEnabled. Indexes are stable:
+      // 0 thinking (turn/start), 1 working (tool/call), 2 result (tool/result),
+      // 3 waiting (approval/asked), 4 success (completed turn/end), 5 error (error/max-tokens turn/end).
+      // Append new states only; inserting one changes the meaning of existing configurations.
       "workStatus": [
         "工作状态-思考冒泡",      // index 0 thinking（turn/start 回合开）
         "工作状态-忙碌点按",      // index 1 working（tool/call 工具调用）
@@ -379,11 +343,10 @@
         "工作状态-垂头叹气冒汗"   // index 5 error（turn/end error/max-tokens 出错/达上限）
       ]
     },
-    // 睡觉动作（可选）：外层是「套」——每次入睡随机挑一整套，start → loop → end 都从这套里取，
-    //   否则会出现「蹲着入睡、趴着醒来」。每套的三段各是候选数组，进入该段时随机挑一个
-    //   （避开刚播完的那个）。名字即素材文件名（不含扩展名），必须落在本条目能查到的素材目录里。
-    //   想扩展姿势（蹲着睡 / 趴着睡…），往外层数组再加一个对象即可。
-    //   不写 sleep = 该条目没有睡觉功能：右键菜单不显示「睡觉」，其余动画不受影响。
+    // Optional sleep sets. Choose one complete set per sleep cycle so start, loop and end poses match.
+    // Each phase is a candidate array; choose randomly, avoiding an immediate repeat when possible.
+    // Names are filename stems that must resolve in this entry's asset directories. Add another outer
+    // object for another pose. Omitting sleep removes the sleep menu without affecting other animations.
     "sleep": [
       {
         "start": ["睡觉-开始"],
@@ -391,31 +354,29 @@
         "end": ["睡觉-起来"]
       }
     ],
-    // 内置玩法「吃白饭」用的动画（可选）：键 baifan 就是玩法 id，值是**恰好 5 个**动画名，
-    //   按位置对应：跑向屏幕底部 / 追饭时的侧身跑 / 到位后等开饭 / 吃到碗饭 / 吃饭团。
-    //   名字即素材文件名（不含扩展名）。不写这一项 = 这只宠物没有这个玩法。
+    // Optional baifan (rice game) animations: exactly five filename stems in this order:
+    // run to the screen bottom, chase rice sideways, wait for food, eat a bowl, eat a rice ball.
+    // Omitting baifan disables this game for the pet.
     "baifan": ["开心小跑", "侧身急躁跑", "期待开饭", "吃饭·碗饭", "吃饭团"]
   },
 
-  // ===================== 事件触发周期（全局默认：用户层写一次对所有宠物生效，种类文件顶层可覆盖） =====================
-  // 事件名 → 刷新间隔（秒）。**整段替换**：写了就整段用自己的，缺的键不会从内置默认补回来。
-  //   · whisper：碎碎念周期，按宠物所属条目读（种类可覆盖）；读不到按 300 兜底。
-  //   · sleepTalk：睡觉时说梦话的周期，按宠物所属条目读（种类可覆盖）；读不到按 60 兜底。
-  //     只对正在睡的宠物生效，醒来立刻停。
-  //   · balance：余额数据刷新 + 余额动画触发的间隔，**消费端只读 main 条目**（余额数据一份、
-  //     host 只有一个定时器，给不了每个种类一个周期）；读不到按 1800 兜底。启动时立即触发一次。
-  // 非法数值（非正数/非数字）即整段配置错误 → 告警并回退内置默认。
+  // Event intervals in seconds (global default, overridable per entry).
+  // The entire object is replaced; omitted keys are not copied from this file.
+  // whisper: per-entry interval, fallback 300 seconds.
+  // sleepTalk: per-entry interval while asleep, fallback 60 seconds; stops immediately on waking.
+  // balance: read only from main because the host shares one balance timer; fallback 1800 seconds.
+  //   Refresh immediately on startup as well.
+  // Invalid values (nonpositive or nonnumeric) warn and replace the whole object with defaults.
   "eventsRefreshSec": {
     "balance": 1800,
     "whisper": 300,
     "sleepTalk": 60
   },
 
-  // ===================== 动画链顶层权重 =====================
-  // idle/turn/move 的权重 + 上面各分类 weight 合计 = 100
-  // 当前：10 + 5 + 5 + (20+20+16+14+10=80) = 100
-  // 注：宠物开了 pets[].fixedEnabled（宠物固定）时，turn/move 两档权重按 0 算（抽不到），
-  //     它们的份额自然落到「随机小动作」——即 idle 10 + 小动作 90，不必在这里另算。
+  // Top-level random animation weights. idle + turn + move + category weights must equal 100.
+  // Current totals: 10 + 5 + 5 + (20 + 20 + 16 + 14 + 10 = 80) = 100.
+  // With pets[].fixedEnabled, turn/move count as zero and their share becomes random actions:
+  // 10 idle + 90 random actions. No configuration rewrite is needed.
   "animationWeights": {
     "idle": 10,
     "turn": 5,

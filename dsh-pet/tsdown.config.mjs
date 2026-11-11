@@ -1,29 +1,31 @@
-// tsdown 配置（仿官方 DSH 客户端插件的构建方式：src → lib 产物）
-// 说明：DSH 浏览器插件生产出的 lib/client.js 必须是
-//       window.__ModuleLoader__.load({ id, factory }) 单文件形态；
-//       react / react/jsx-runtime / @deepseek-ai/* 保持外部 require（不打包）。
+// tsdown configuration (imitation of the construction method of the official DSH client plugin: src → lib product)
+// Note: lib/client.js produced by the DSH browser plugin must be
+// window.__ModuleLoader__.load ({ id , factory }) single file form; react / react/jsx-runtime / @deepseek - ai /* Keep
+// external require (not packaged).
 //
-// 三份配置：
-//   1) 浏览器半侧（client → lib/client.js）—— 与 DSH 内运行一致，@deepseek-ai/* 全部
-//      外部化（那些包由 DSH 宿主提供）；产物额外包一层 IIFE，理由见该份配置里的注释。
-//   2) 宿主半侧（index → lib/index.js）—— 保持 ESM，由 DSH 的 Loader import。
-//   3) 独立模式入口（standalone → lib/standalone.js）—— 它要跑在**没有 DSH** 的环境里
-//      （插件装进 profile 后直接 `node node_modules/dsh-pet/lib/standalone.js`），
-//      而宿主半边的模块图静态 import 了三个只在 DSH 里存在的包，那里解析不到。
-//      因此用 alias 把它们换成本地替身（src/standalone/shims/*）：替身只做
-//      "转调插件自己的同口径实现" 或 "明确降级"，没有任何生成/网络逻辑（细节见各文件头）。
-//      其余 @deepseek-ai/* 仍按外部处理（负向断言），避免哪天误把 DSH 代码打进产物。
+// Three configurations:
+// 1) Browser side (client → lib/client.js) - Same as running in DSH, @deepseek - ai /* all externalized (those
+// packages are provided by DSH host); the product additionally packages a layer of IIFE, for the reason, see the
+// explanation in this configuration.
+// 2) host side (index → lib/index.js) - keep ESM, Loader from DSH to import.
+// 3) Standalone mode entry point (standalone → lib/standalone.js) - it needs to run in an environment without DSH
+// (the plugin is loaded into profile and directly `node node_modules/dsh-pet/lib/standalone.js` ), and the module
+// diagram of the host half has three static imports, which are only in DSH The package that exists in cannot be parsed
+// there. Therefore use alias to replace them with local aliases (src/standalone/shims /*): the aliases only do
+// "transpose the plugin's own implementation of the same caliber" or "explicitly downgrade" without any
+// generation/network logic (see each file header for details). The remaining @deepseek - ai /* are still processed
+// externally (negative assertion) to avoid accidentally entering the DSH code into the product.
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'tsdown';
 
-/** 本配置文件所在目录（= 包根） */
+/** The directory where this configuration file is located (= package root) */
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 
-/** 替换包名用的绝对路径（rolldown 的 alias 收绝对路径最稳） */
+/** The absolute path used to replace the package name (the absolute path of rolldown and alias is the most stable) */
 const shim = (name) => join(packageRoot, 'src', 'standalone', 'shims', `${name}.ts`);
 
-/** 两份配置共用的编译口径 */
+/** Compilation caliber shared by two configurations */
 const shared = {
   format: ['esm'],
   platform: 'node',
@@ -40,19 +42,21 @@ export default defineConfig([
       client: 'src/client/index.ts',
     },
     external: [/^@deepseek-ai\//, /^@electron\//, /^node:/],
-    // 浏览器半侧必须能被**重复执行**：DSH 把 lib/client.js 当经典脚本加载，而 bundle
-    // 重建后（HMR 换 rev）或 combo 请求重试时，同一个文件会在同一页面里再执行一次。
-    // 经典脚本的顶层 const/let/function 落在页面的全局词法作用域，第二次解析直接
-    // SyntaxError（Identifier 'PET_DISPLAYS' has already been declared），entry 激活
-    // 失败 → 桌宠 overlay 与设置页插槽都不注册，只能刷新才恢复。因此整份产物包一层
-    // IIFE，让所有模块体声明留在函数作用域内；前导 ';' 抵消 combo 拼接（多个插件
-    // bundle 连成一个脚本）时的 ASI 歧义。
+    // The browser side must be **repeatedly executed**: DSH loads lib/client.js as a classic script, and after bundle
+    // is rebuilt (HMR is replaced by rev) or combo is requested to be retried, the same file will be executed again on
+    // the same page. The top level const/let/function of the classic script falls in the global lexical scope of the
+    // page. The second parsing is directly SyntaxError ( Identifier ' PET_DISPLAYS ' has already been declared ).
+    // entry activation fails → desktop pet overlay It is not registered with the settings page slot and can only be
+    // restored by refreshing. Therefore, the entire product includes a layer of IIFE, allowing all module body
+    // declarations to remain within the function scope; the leading ';' offsets the ASI ambiguity when combo is
+    // spliced (multiple plugins bundle are connected into one script).
     outputOptions: { banner: ';(()=>{', footer: '})();' },
   },
   {
     ...shared,
-    // 宿主半侧保持 ESM（由 DSH 的 Loader import），绝不能包 IIFE。
-    // Node 下限已高于 ES2022；保留类字段，避免降级时引入未声明的运行辅助包。
+    // The host side holds ESM (Loader from DSH to import) and must not include IIFE. The lower limit of Node is higher
+    // than ES2022; the class field is retained to avoid the introduction of undeclared running auxiliary packages
+    // during downgrade.
     target: 'es2022',
     entry: {
       index: 'src/host/index.ts',
@@ -61,19 +65,21 @@ export default defineConfig([
   },
   {
     ...shared,
-    // 独立模式只在 Node ≥ 22.12 上运行（package.json 的 engines 已声明），因此目标可以是 es2022：
-    // es2020 目标会把 class field 一类语法降级成 `_defineProperty(...)`，进而把
-    // `@oxc-project/runtime` 拖成一条裸 import —— 那个包不在本包依赖里，装好的用户跑起来会
-    // ERR_MODULE_NOT_FOUND。与 DSH 宿主入口一样保留类字段；浏览器入口仍使用 es2020。
+    // Standalone mode only runs on Node ≥ 22.12 (engines of package.json has been declared), so the target can be
+    // es2022: The es2020 target will downgrade class field to `_defineProperty(...)` , thereby dragging
+    // `@oxc-project/runtime` into a naked line import - That package is not included in this package's dependencies.
+    // Once installed, users will get ERR_MODULE_NOT_FOUND when they run it. The class field is retained like the DSH
+    // host entry point; the browser entry point still uses es2020.
     target: 'es2022',
     entry: {
       standalone: 'src/standalone/cli.ts',
     },
-    // tsdown 默认把 dependencies/peerDependencies 全部外部化（本包那三个 DSH 专有包正是
-    // peerDependencies），所以这里必须先 noExternal 把它们拉回打包图，下面的 alias 才轮得到生效；
-    // 否则产物里留下裸 import，在没有 DSH 的环境里 ERR_MODULE_NOT_FOUND。
+    // tsdown externalizes all dependencies/peerDependencies by default (the three DSH exclusive packages in this
+    // package are exactly peerDependencies), so here you must first noExternal to pull them back into the package
+    // diagram, and the following alias will take effect; otherwise, bare import will be left in the product, in an
+    // environment without DSH ERR_MODULE_NOT_FOUND.
     noExternal: [/^@deepseek-ai\/(?:dsh-home-paths|dsh-credentials|dsh-llm)$/],
-    // 除三个替身外，其余 @deepseek-ai/* 仍视为宿主提供（负向断言）
+    // Except for the three substitutes, the rest @deepseek - ai /* are still regarded as provided by the host (negative assertion)
     external: [/^@electron\//, /^node:/, /^@deepseek-ai\/(?!dsh-home-paths$|dsh-credentials$|dsh-llm$)/],
     alias: {
       '@deepseek-ai/dsh-home-paths': shim('dsh-home-paths'),
@@ -83,25 +89,28 @@ export default defineConfig([
   },
   {
     ...shared,
-    // 独立应用入口（`lib/app.js`）：一个 Electron 进程里跑「本机服务 + 插件宿主半边 + 桌面窗口」。
-    // 口径与 standalone 完全一致（三个 DSH 专有包同样换成替身），只多外部化 `electron` ——
-    // 它由 Electron 自己的模块加载器提供，进包反而会炸。
+    // Independent application entry point (`lib/app.js`): A Electron process runs "native service + plugin host half
+    // + desktop window". The caliber is exactly the same as that of standalone (the three DSH proprietary packages are
+    // also replaced with substitutes), only the external `electron` is provided - it is provided by Electron's own
+    // module loader, and it will explode when entering the package.
     target: 'es2022',
     entry: {
       app: 'src/app/main.ts',
     },
-    // zod 打进包：应用产物要做到「不依赖 node_modules」，而配置校验每次启动都要用。
-    // openai / @anthropic-ai/sdk 同样必须打进包：它们由 src/standalone/ai-transport.ts 顶层静态
-    // import，而 electron-builder 的 files 白名单不带 node_modules；留成外部裸 import 时，产物
-    // 一旦离开项目目录（例如解压到 Downloads）就会 ERR_MODULE_NOT_FOUND。
-    // @electron/get 与 @electron-internal/extract-zip 保持外部——它们只在「下载 Electron」时被
-    // 动态解析，应用模式永远不走那条路（见 src/host/helper-process.ts 的 import 注释）。
+    // zod is packaged: The application product must be "not dependent on node_modules", and the configuration
+    // verification must be used every time it is started. openai / @anthropic - ai/sdk must also be packaged: they
+    // consist of src/standalone/ai-transport.ts top-level static import , while electron-builder 's files whitelist
+    // does not have node_modules ; when left as external bare import , the product will be unpacked once it leaves the
+    // project directory (e.g. unzipped to Downloads ) ERR_MODULE_NOT_FOUND.
+    // @electron / get and @electron - internal/extract-zip remain external - they are only used when "Download
+    // Electron"
+    // Dynamic parsing, application patterns never go that route (see import comments for src/host/helper-process.ts).
     noExternal: [
       /^@deepseek-ai\/(?:dsh-home-paths|dsh-credentials|dsh-llm)$/,
       /^zod$/,
       /^openai$/,
       /^@anthropic-ai\/sdk$/,
-      // 语音合成：运行时才 import，但应用产物无 node_modules，必须内联（连它的 ws 一起）。
+      // Speech synthesis: import at runtime, but the application product does not have node_modules and must be inline (with its ws).
       /^@andresaya\/edge-tts$/,
     ],
     external: ['electron', /^@electron\//, /^node:/, /^@deepseek-ai\/(?!dsh-home-paths$|dsh-credentials$|dsh-llm$)/],
@@ -113,9 +122,10 @@ export default defineConfig([
   },
   {
     ...shared,
-    // 独立模式设置页里的对话面板（lib/chat-panel.js）：跑在浏览器里，既没有 DSH 注入也没有
-    // node_modules，所以 react / react-dom 必须打进产物——这与 client 那份正好相反（那边由宿主提供）。
-    // platform 覆盖成 browser，否则 tsdown 会按 node 口径解析并留下 node: 内置依赖。
+    // Dialog panel (lib/chat-panel.js) in the standalone mode settings page: When running in the browser, there is
+    // neither DSH injection nor node_modules, so react / react-dom must be imported into the product-this is exactly
+    // the opposite of client (which is provided by the host). platform is overwritten into browser, otherwise tsdown
+    // will be parsed according to node caliber and leave node: built-in dependency.
     platform: 'browser',
     target: 'es2020',
     entry: {
@@ -123,7 +133,7 @@ export default defineConfig([
     },
     noExternal: [/^react(\/|$)/, /^react-dom(\/|$)/],
     external: [/^node:/],
-    // 与 client 同理：设置页刷新会重跑脚本，包一层 IIFE 免得顶层声明重复触发 SyntaxError。
+    // Same as client: refreshing the settings page will rerun the script, including a layer of IIFE to prevent the top-level statement from triggering SyntaxError repeatedly.
     outputOptions: { banner: ';(()=>{', footer: '})();' },
   },
 ]);

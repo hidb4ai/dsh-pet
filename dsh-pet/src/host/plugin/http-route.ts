@@ -1,8 +1,10 @@
 /**
- * 路由装配：把装配期对象收成 PetRouteDeps，接上领域路由，并把处理函数挂到 webServer。
+ * Route assembly: Collect the assembly period object PetRouteDeps, connect it to the field route, and hang the
+ * processing function to webServer.
  *
- * 路由层只认这个 deps 表，不认识 apply 的闭包；素材路径与协议细节归 ../http.ts。
- * 必须始终成立：HTTP 前缀路由与桌面 Helper 管道消费同一个 handlePetRoute（两端行为严格一致）。
+ * The route layer only recognizes this deps table and does not recognize the closure of apply; the asset path and
+ * protocol details belong to ../http.ts. It must always be true: the HTTP prefix route consumes the same
+ * handlePetRoute as the desktop Helper pipe (the behavior of both ends is strictly consistent).
  * @module dsh-pet/src/host/plugin/http-route
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -14,7 +16,7 @@ import type { PetRouteDeps } from '../routes/types.ts';
 import type { HostContext } from './context.ts';
 import type { MemoryConfigStore } from './memory-binding.ts';
 
-/** 单次业务请求的处理函数：URL 已解析、方法已归一。 */
+/** The processing function of a single business request: URL has been parsed and the method has been normalized. */
 export type HttpRouteHandler = (
   url: string,
   method: string,
@@ -23,21 +25,25 @@ export type HttpRouteHandler = (
 ) => Promise<RouteResult>;
 
 /**
- * 由依赖表构造 HTTP 处理函数。
- * @param deps - 路由层依赖（store、路径、动作函数）。
- * @returns 按前缀分发到领域路由的处理函数。
+ * The HTTP processing function is constructed from the dependency table.
+ * @param deps - route layer dependency (store, path, action function).
+ * @returns is distributed to the processing function of the domain route by prefix.
  */
 export function createHttpRoute(deps: PetRouteDeps): {
   handlePetRoute: HttpRouteHandler;
   memoryConfig: MemoryConfigStore;
 } {
-  // 配置请求覆盖完整读改写：下一次更新必须读取前一次完成后的配置。
-  // GET /config 同样排队，避免写入尚未完成时读到空文件而回退内置默认。
+  // Configuration request covers complete read and write: the next update must read the configuration after the
+  // previous completion. GET /config are also queued to avoid reading an empty file when writing is not completed and
+  // falling back to the built-in default.
   let configQueue: Promise<void> = Promise.resolve();
 
-  /** 单次业务路由（HTTP 落盘与桌面 Helper 管道共用同一份实现）：输入 rawUrl + method + body 文本，
-   *  返回 RouteResult，消费方各自落盘——业务逻辑只有一份，两端天然一致。
-   *  signal 可选：调用方断开时中止挂起等待（只有 /playback 的 wait 分支会用到；管道侧不传）。 */
+  /**
+   * Single business route (HTTP persist to disk shares the same implementation as the desktop Helper pipeline): input
+   * rawUrl + method + body text, return RouteResult, each consumer persists to disk - there is only one copy of the
+   * business logic, and both ends are naturally consistent. signal Optional: Abort the pending wait when the caller is
+   * disconnected (only the wait branch of / playback will be used; the pipeline side will not be transmitted).
+   */
   const handlePetRoute = async (
     rawUrl: string,
     method: string,
@@ -47,9 +53,10 @@ export function createHttpRoute(deps: PetRouteDeps): {
     const url = new URL(rawUrl, 'http://localhost');
     const rest = decodeURIComponent(url.pathname.slice(ROUTE_SEGMENT.length + 1));
     const run = (): Promise<RouteResult> => dispatchPetRoute(url, rest, method, body, signal);
-    // 写配置的三条路径（PUT/POST /config、POST /pet-display、POST /pet-config）都是「读当前配置
-    // → 白名单重建整段 pets → 写盘」，并发交错会互相覆盖，必须共用一条串行队列；
-    // GET /config 同样排队，避免写入尚未完成时读到空文件而回退内置默认。
+    // The three paths for writing configuration (PUT/POST /config, POST /pet-display, POST /pet-config) are all
+    // "read current configuration → whitelist and rebuild the entire pets → write disk". The concurrency interleaving
+    // will cover each other and must share a serial queue; GET /config is also queued to avoid reading an empty file
+    // when writing is not completed and falling back to the built-in default.
     const isConfigQueue = rest === 'config' || ((rest === 'pet-display' || rest === 'pet-config') && method === 'POST');
     if (isConfigQueue) {
       const pending = configQueue.then(run, run);
@@ -62,7 +69,7 @@ export function createHttpRoute(deps: PetRouteDeps): {
     return run();
   };
 
-  // 路由层依赖表：显式传参取代闭包捕获，各领域模块因此可独立演进（见 ./routes/index.ts）
+  // route layer dependency table: explicit parameter passing replaces closure capture, so modules in each field can evolve independently (see ./routes/index.ts )
   const dispatchPetRoute = createPetRouter(deps);
 
   const configUrl = new URL(ROUTE_SEGMENT + '/config', 'http://localhost');
@@ -91,9 +98,9 @@ export function createHttpRoute(deps: PetRouteDeps): {
 }
 
 /**
- * 把前缀路由挂到宿主 webServer，随插件卸载自动摘除。
- * @param ctx - 宿主上下文。
- * @param handlePetRoute - 业务处理函数（桌面 Helper 管道复用同一个）。
+ * Hang the prefix route to host webServer and automatically remove it with the plugin unmount.
+ * @param ctx - host context.
+ * @param handlePetRoute - business processing function (the same one as desktop Helper pipeline reuse).
  */
 export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHandler): void {
   ctx.effect(
@@ -102,7 +109,7 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
         kind: 'prefix',
         path: ROUTE_SEGMENT,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
-          // 管理入口只接受 JSON；跨站表单不能触发下载、模型调用或进程启停。
+          // The management entry point only accepts JSON; cross-site forms cannot trigger downloads, model calls, or process start and stop.
           if (
             req.method === 'POST' &&
             new URL(req.url ?? '/', 'http://localhost').pathname === ROUTE_SEGMENT + '/powercontext/setup'
@@ -115,13 +122,14 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
               return;
             }
           }
-          // 挂起等待（/playback?wait=）期间调用方可能提前断开：据此中止等待，
-          // 否则那个等待者要一直留到超时才回收。'close' 在正常应答后也会触发，但那时监听已摘掉。
+          // During suspended waiting (/ playback ? wait =), the caller may be disconnected early: the waiting is
+          // terminated accordingly, otherwise the waiter will remain until timeout before recycling. 'close' will also
+          // be triggered after normal response, but the monitoring has been removed at that time.
           const abort = new AbortController();
           const onClose = (): void => abort.abort();
           res.on('close', onClose);
           try {
-            // PATCH 也带体（待办的部分更新）；GET / DELETE 不读，避免无谓地等一个不会来的结束事件。
+            // PATCH also carries the body (pending partial update); GET / DELETE is not read to avoid waiting needlessly for an end event that will never come.
             const readsBody = req.method === 'PUT' || req.method === 'POST' || req.method === 'PATCH';
             const body = readsBody ? await readBody(req) : undefined;
             const result = await handlePetRoute(req.url ?? '/', req.method ?? 'GET', body, abort.signal);
@@ -129,18 +137,18 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
             if (result.kind === 'json') sendJson(res, result.status, result.obj, result.headers);
             else if (result.kind === 'text') sendText(res, result.status, result.body);
             else if (result.kind === 'none') {
-              /* 调用方已断开：不再写（写了会抛） */
-            } else sendFile(req, res, result.file, result.contentType); // 非 async：流在 open 后自己 pipe，错误内部收口
+              /* caller has been disconnected: no longer written (will be thrown if written) */
+            } else sendFile(req, res, result.file, result.contentType); // non-async: stream in open after itself pipe, error inside centralize
           } catch (e) {
             res.off('close', onClose);
-            // 连接已断（挂起等待被中止后也可能撞上）→ 不再写，避免二次抛错
+            // The connection has been disconnected (it may also happen after the pending wait is aborted) → no more writing to avoid throwing errors again.
             if (!res.destroyed && !res.writableEnded) {
-              // 请求体超限与客户端中断是用户侧问题，不能报成 500；断连时连响应都写不出去。
+              // The request body exceeds the limit and the client is interrupted. This is a user-side problem and cannot be reported as 500; even the response cannot be written when the connection is disconnected.
               const code = (e as { code?: string }).code;
               if (code === 'body-too-large')
                 sendJson(res, 413, failureBody('payload-too-large', 'request body too large'));
               else if (code !== 'client-aborted') {
-                // 未预期异常：真实原因只进日志，响应里只回分类文案（可能含绝对路径，不外泄）
+                // Unexpected exception: only the true cause is entered in the log, and only the classified copy is returned in the response (may include absolute path, not leaked)
                 ctx.logger?.warn?.(`[dsh-pet] route failed: ${e instanceof Error ? e.message : String(e)}`);
                 sendJson(res, 500, failureBody('internal-error', 'dsh-pet: internal error'));
               }

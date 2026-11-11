@@ -1,7 +1,9 @@
 /**
- * 面板的工具栏与输入区节点：孤儿提示、多选开关、待发送预览、输入框与发送键。
+ * The toolbar and input area nodes of the panel: orphan prompts, multi-select switches, preview to be sent, input
+ * boxes and send keys.
  *
- * 消息与轮在 ./view-message；这里只放「面板外壳」的交互，`confirm` 留在此处描述点击语义。
+ * Messages and wheels are in ./view-message; only the interaction of "panel shell" is placed here, and `confirm` is
+ * left here to describe click semantics.
  * @module dsh-pet/src/client/chat/view-node
  */
 import { claimFileDragOver, claimFileDrop, markDropTarget, unmarkDropTarget } from '../file-drop.ts';
@@ -11,9 +13,10 @@ import type { ChatPanelRuntime } from './runtime.ts';
 import type { ChatPanelState, ConfirmKind, DraftKeyEvent } from './types.ts';
 
 /**
- * 已删宠物残留历史的提示条：显示数量并给一个「清理」。
+ * Prompt bar for deleted pet residual history: display the number and give a "Clean" message.
  *
- * 这类宠物已不在配置里，面板列表里根本看不到它——不在这里提示，用户就没有任何入口清掉。
+ * This type of pet is no longer in the configuration and cannot be seen in the panel list - without prompting here,
+ * the user will not have any entry points to clear.
  */
 export function orphansNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: ChatPanelState): unknown {
   if (state.orphans.length === 0) return null;
@@ -33,10 +36,10 @@ export function orphansNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], 
   });
 }
 
-/** 卷帘块与按钮共用的 id：`aria-controls` 要指向它。 */
+/** id shared by roller shutter block and button: `aria-controls` should point to it. */
 const PERSONA_PANEL_ID = 'pet-chat-persona';
 
-/** 「人设」按钮：点一下展开 / 收起工具栏下方那块卷帘。 */
+/** "persona" button: Click to expand/collapse the roller shutter below the toolbar. */
 function personaButton(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: ChatPanelState): unknown {
   return h('button', {
     type: 'button',
@@ -49,10 +52,11 @@ function personaButton(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state
 }
 
 /**
- * 人设卷帘：当前这只宠物实际在用的那段正文。
+ * persona roller blind: the text currently being used by this pet.
  *
- * 在正常流里展开，把消息列表顶下去——人设可以很长，浮在对话上会挡住内容。
- * 收起时保留 DOM 只把高度归零，否则没有展开过渡可播。
+ * Expand in the normal flow, push the message list down - the persona can be very long, and floating on the
+ * conversation will block the content. When collapsing, keep DOM and only reset the height to zero, otherwise there
+ * will be no expansion transition to play.
  */
 export function personaNode(h: ChatPanelRuntime['h'], state: ChatPanelState): unknown {
   return h('div', {
@@ -68,7 +72,7 @@ export function personaNode(h: ChatPanelRuntime['h'], state: ChatPanelState): un
   });
 }
 
-/** 工具栏：多选开关、删除选中（带数量）、记忆线定位、刷新与清空历史；删除都先走面板内确认条。 */
+/** Toolbar: multi-select switch, delete selected (with quantity), memory line positioning, refresh and clear history; to delete, go through the confirmation bar in the panel first. */
 export function toolsNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: ChatPanelState): unknown {
   return h('div', {
     className: 'pet-chat-tools',
@@ -93,14 +97,14 @@ export function toolsNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], st
                 : t('toolsDeleteSelectedN', { n: state.selected.length }),
           })
         : null,
-      // 配置里没有 chatMemoryRounds 时不画线，这个入口也就不该出现
+      // No line is drawn when there is no chatMemoryRounds in the configuration, so this entry point should not appear.
       state.memoryRounds === undefined
         ? null
         : h('button', {
             type: 'button',
             className: 'pet-chat-tool',
             disabled: !state.hasMemoryLine,
-            // 置灰时的原因只给读屏：可见文案与其它工具栏按钮一样保持干净
+            // The reason for being grayed out is only for reading the screen: the visible copy remains clean like other toolbar buttons.
             ...(state.hasMemoryLine ? {} : { 'aria-label': t('toolsMemoryLineHint') }),
             onClick: () => state.jumpToMemory(),
             children: t('toolsMemoryLine'),
@@ -121,7 +125,7 @@ export function toolsNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], st
   });
 }
 
-/** 待确认操作的文案键：每条都说清「删什么、不可恢复」。 */
+/** Copy key of the operation to be confirmed: each item clearly states "what is deleted and cannot be recovered". */
 const CONFIRM_TEXT: Record<ConfirmKind, Key> = {
   'delete-selected': 'confirmDeleteSelected',
   'clear-all': 'confirmClearAll',
@@ -129,9 +133,9 @@ const CONFIRM_TEXT: Record<ConfirmKind, Key> = {
 };
 
 /**
- * 面板内的确认条：代替浏览器原生 `confirm`，样子跟面板一致。
+ * The confirmation bar in the panel: replaces the browser's native `confirm` and looks the same as the panel.
  *
- * @returns 没有待确认操作时是 null。
+ * @returns is null when there is no pending operation.
  */
 export function confirmNode(rt: ChatPanelRuntime, state: ChatPanelState): unknown {
   if (state.pending === null) return null;
@@ -143,7 +147,7 @@ export function confirmNode(rt: ChatPanelRuntime, state: ChatPanelState): unknow
         ? t('confirmCountOrphans', { n: state.orphans.length })
         : '';
   const description = t(CONFIRM_TEXT[state.pending]) + count + t('confirmIrreversible') + ' ' + t('localDeleteOnly');
-  // 平台原语缺失（旧宿主）时退化为内联确认条，功能不丢、样式差一点
+  // When the platform primitive is missing (old host), it degenerates into an inline confirmation bar. The function is not lost, but the style is a little worse.
   if (ui === undefined) {
     return h('div', {
       className: 'pet-chat-confirm',
@@ -188,7 +192,7 @@ export function confirmNode(rt: ChatPanelRuntime, state: ChatPanelState): unknow
   });
 }
 
-/** 待发送图片的预览条。 */
+/** Preview bar of the picture to be sent. */
 function previewNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: ChatPanelState): unknown {
   if (state.attachment === undefined) return null;
   return h('div', {
@@ -209,7 +213,7 @@ function previewNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: 
   });
 }
 
-/** 发送键里的箭头：与 DSH 输入框一致的圆形按钮造型。 */
+/** The arrow in the send key: a round button shape consistent with the DSH input box. */
 function sendIcon(h: ChatPanelRuntime['h']): unknown {
   return h('svg', {
     viewBox: '0 0 24 24',
@@ -230,15 +234,15 @@ function sendIcon(h: ChatPanelRuntime['h']): unknown {
 }
 
 /**
- * 输入区：一体化圆角容器 —— 上面输入框，下面工具行（附图 / 发送）。
+ * Input area: integrated rounded corner container - upper input box, lower tool row (picture attached/sent).
  *
- * 造型对齐 DSH 自己的输入框；`focus-within` 让整个容器而不是内层框变色，
- * 因为内层 textarea 已经没有边框了。
+ * The shape aligns DSH's own input box; `focus-within` makes the entire container change color instead of the inner
+ * box, because the inner textarea has no border.
  */
 export function composerNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: ChatPanelState): unknown {
   return h('div', {
     className: 'pet-chat-composer' + (state.busy ? ' is-busy' : ''),
-    // 生成中整块压灰：读屏与视觉都据此说明「这条已经发出去了」
+    // The entire block is grayed out during generation: both screen reading and visual interpretation indicate that "this item has been sent."
     'aria-busy': state.busy ? 'true' : undefined,
     onDragEnter: markDropTarget,
     onDragLeave: unmarkDropTarget,
@@ -248,7 +252,7 @@ export function composerNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'],
     onDrop: (event: DropTargetLike) => {
       const file = claimFileDrop(event);
       if (file !== undefined) state.pickFile(file);
-      // 放下之后不会再收到 dragleave，这里主动撤高亮，否则边框一直亮着。
+      // dragleave will no longer be received after putting it down. The highlight is automatically removed here, otherwise the border will always be on.
       unmarkDropTarget(event);
     },
     children: [
@@ -262,7 +266,7 @@ export function composerNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'],
         onChange: (event: { target: { value: string } }) => state.setDraft(event.target.value),
         onPaste: (event: { clipboardData: DataTransfer | null; preventDefault: () => void }) => {
           const file = event.clipboardData?.files?.[0];
-          if (file === undefined) return; // 纯文本粘贴照旧
+          if (file === undefined) return; // Pasting plain text remains the same
           event.preventDefault();
           state.pickFile(file);
         },
@@ -297,7 +301,7 @@ export function composerNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'],
             'aria-label': state.busy ? t('composerSending') : t('composerSend'),
             onClick: () => state.send(),
             disabled: state.busy,
-            // 生成中换转圈：箭头留着会让人以为还能点（按钮此时是 disabled）
+            // Switching circles during generation: leaving the arrows on will make people think they can still click (the button is disabled at this time)
             children: state.busy
               ? h('span', { className: 'pet-chat-send-spinner', 'aria-hidden': 'true' })
               : sendIcon(h),

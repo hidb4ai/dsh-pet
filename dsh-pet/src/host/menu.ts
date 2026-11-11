@@ -1,47 +1,50 @@
 /**
- * 第三方右键菜单注册表（进程内存态，DSH 重启即清空，不落盘）。
+ * Third-party right-click menu register table (process memory state, DSH will clear when restarting, not persist to
+ * disk).
  *
- * 注册方用自己的 owner 注册菜单项，再用同一个 owner 查「我这一项被点了没有、在哪只宠物上点的」；
- * 不负责菜单渲染与点击命中（两端按 target 过滤后自己拼「更多」）。必须始终成立：注册是 owner 级的
- * 整体覆盖，菜单项生命周期与插件一致；点击是闩锁不是队列（连点两次只看到一次）；查询即清空（读取
- * 即消费，没确认也没重投）；一个 owner 只该有一个消费者，两个进程同时查会互抢。
- * 限额见下方常量；契约见 API.md 与 openapi.yaml。
+ * The register party uses its own owner register menu item, and then uses the same owner to check "whether my item has
+ * been clicked and on which pet it was clicked on"; it is not responsible for menu rendering and click hits (filter by
+ * target on both ends and then spell "more" by yourself). It must always be true: register is the overall coverage of
+ * the owner level, and the menu item lifecycle is consistent with the plugin; clicking is a latch, not a queue (you
+ * can only see it once after clicking twice); querying is clear (reading means consumption, no confirmation or
+ * re-investment); one owner should only have one consumer, and the two processes will check and compete for each other
+ * at the same time. See the constants below for limits; see API.md and openapi.yaml for contracts.
  * @module dsh-pet/src/host/menu
  */
 
-/** owner 长度上限。 */
+/** owner maximum length. */
 const OWNER_MAX = 64;
-/** 单个菜单项 label 长度上限（面板宽 150–240px，再长会被省略号截断）。 */
+/** The upper limit of the length of a single menu item label (panel width 150–240 px, any longer will be truncated by ellipses). */
 const LABEL_MAX = 32;
-/** 每 owner 菜单项上限。 */
+/** Upper limit of menu items per owner. */
 const ITEMS_MAX = 20;
-/** 全局 owner 上限。 */
+/** Global owner upper limit. */
 const OWNERS_MAX = 32;
-/** 长轮询等待上限（与 /state 同一量级：调用方一次最多挂这么久）。 */
+/** The upper limit of long polling wait (same magnitude as / state: the caller can hang for this long at most at one time). */
 export const MENU_WAIT_MAX_MS = 10_000;
 
-/** 控制字符（换行、制表等会把菜单布局搞炸，一律拒绝）。 */
-// eslint-disable-next-line no-control-regex -- 菜单文案必须拒绝 \x00-\x1f 与 \x7f 控制字符（会破坏布局），去掉匹配等于放行
+/** Control character (line breaks, tabs, etc. will mess up the menu layout and will be rejected). */
+// eslint-disable-next-line no-control-regex -- Reject ASCII controls and DEL in menu labels to protect layout.
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 
-/** 一条菜单项快照（写进 /state 的 sections.menu，两端据此拼「更多」）。 */
+/** A menu item snapshot (sections.menu written into / state, both ends spell "more" accordingly). */
 export interface MenuItemSnapshot {
   owner: string;
   label: string;
-  /** 这一项该出现在哪个端：两端各自按自己的端过滤（shared/menu 的 readMenuItems） */
+  /** On which end should this item appear: Each end is filtered according to its own end (shared/menu of readMenuItems) */
   target: MenuTarget;
 }
 
-/** 菜单项显示在哪个端。 */
+/** On which side the menu items are displayed. */
 export type MenuTarget = 'web' | 'desktop' | 'both';
 
-/** 合法的 target 取值。 */
+/** Valid target value. */
 const MENU_TARGETS: ReadonlySet<string> = new Set<string>(['web', 'desktop', 'both']);
 
-/** 缺省 target = 两端都显示（= 加这个字段之前的行为）。 */
+/** Default target = Display both ends (= behavior before adding this field). */
 const DEFAULT_TARGET: MenuTarget = 'both';
 
-/** 注册/清除失败的原因：原样进响应体的 `reason`，取值由路由层的失败实体约束。 */
+/** Reason for register/clear failure: `reason` is entered into the response body as it is, and the value is constrained by the failure entity of the route layer. */
 export type MenuFailure =
   | 'bad-request'
   | 'invalid-owner'
@@ -51,10 +54,10 @@ export type MenuFailure =
   | 'too-many-items'
   | 'too-many-owners';
 
-/** 注册结果：业务失败按插件口径回 `{ ok:false, reason, message }`（HTTP 200），不是 400。 */
+/** register result: business failure returns `{ ok:false, reason, message }` (HTTP 200) according to plugin conventions, not 400. */
 export type MenuRegisterResult = { ok: true } | { ok: false; reason: MenuFailure; message: string };
 
-/** 校验一个显示用字符串：必须是 string、trim 后非空、不超长、无控制字符。 */
+/** Verify a display character string: it must be string, trim followed by non-empty, not over-long, and no control character. */
 function displayText(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
   const text = value.trim();
@@ -62,13 +65,14 @@ function displayText(value: unknown, max: number): string | null {
   return text;
 }
 
-/** 第三方菜单项的进程内注册表：注册、清空、点击上报、长轮询查询。 */
+/** In-process register table of third-party menu items: register, clear, click to report, long polling query. */
 export class MenuRegistry {
-  // 用 declare + 构造器赋值（不用类字段初始化器）：类字段会降级出 @oxc-project/runtime 外部
-  // helper，而它是未声明的依赖，会被 prepack 门禁拦下（同 src/host/state.ts 的约定）。
-  /** owner → { target, items }；items = label → 触发它的 petId（null = 未触发） */
+  // Use declare + constructor assignment (without class field initializer): the class field will be downgraded to @oxc
+  // - project/runtime external helper, and it is an undeclared dependency and will be blocked by prepack validation
+  // check (same agreement with src/host/state.ts).
+  /** owner → { target , items }; items = label → trigger its petId ( null = not triggered) */
   declare private readonly owners: Map<string, { target: MenuTarget; items: Map<string, string | null> }>;
-  /** owner → 挂在该 owner 上的长轮询唤醒回调 */
+  /** owner → long polling wakeup callback hanging on the owner */
   declare private readonly waiters: Map<string, Set<() => void>>;
 
   constructor() {
@@ -77,10 +81,12 @@ export class MenuRegistry {
   }
 
   /**
-   * 注册（整体覆盖）：`{ owner, labels: string[], target?: 'web' | 'desktop' | 'both' }`。
+   * register (overall coverage): `{ owner, labels: string[], target?: 'web' | 'desktop' | 'both' }` .
    *
-   * 覆盖粒度是整个 owner：注册方每次用一份完整列表描述「我现在有什么」，不必关心上次注册了什么，
-   * 也不会留下已下线的僵尸项。`target` 选填、缺省 `both`（老调用方零改动），与 labels 一起被覆盖。
+   * The coverage granularity is the entire owner: the register side uses a complete list to describe "what I have now"
+   * every time. There is no need to care about what was registered last time, and no zombie items that have been
+   * offline will be left. `target` is optional, defaults to `both` (old caller has zero changes), and is overwritten
+   * together with labels.
    */
   register(raw: unknown): MenuRegisterResult {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -110,14 +116,15 @@ export class MenuRegistry {
           message: `每个 label 必须是 1–${LABEL_MAX} 字符的字符串（禁控制字符）`,
         };
       }
-      if (!labels.includes(label)) labels.push(label); // 同 owner 内去重（保留首次出现的位置）
+      if (!labels.includes(label)) labels.push(label); // Same as deduplicate in owner (retain the position of the first occurrence)
     }
 
     if (!this.owners.has(owner) && this.owners.size >= OWNERS_MAX) {
       return { ok: false, reason: 'too-many-owners', message: `最多 ${OWNERS_MAX} 个 owner` };
     }
-    // target 选填：不写 / null = both（老调用方只传 owner + labels 时一个字都不用改）；写了就必须
-    // 是三个字面量之一——非法值只报错、不猜，免得第三方以为注册成功却看不到菜单。
+    // target Optional: Do not write / null = both (the old caller does not need to change a word when it only passes
+    // owner + labels); if written, it must be one of the three literals - invalid values only report an error and do
+    // not guess, lest the third party thinks that the register is successful but cannot see the menu.
     const rawTarget = body.target;
     let target: MenuTarget = DEFAULT_TARGET;
     if (rawTarget !== undefined && rawTarget !== null) {
@@ -135,10 +142,11 @@ export class MenuRegistry {
   }
 
   /**
-   * 清掉一个 owner 的全部菜单项（连它上面未取走的触发标记一起丢）。
+   * Clear all the menu items of a owner (including the unremoved trigger mark on it).
    *
-   * 幂等：owner 本来就不存在 → `removed: 0`，仍算成功，调用方重试注销时不该看到错误。
-   * 挂在该 owner 上的长轮询会被叫醒，醒来后查不到 owner → 路由回 `unknown-owner`。
+   * Idempotent: owner does not exist → `removed: 0` , it is still considered successful, and the caller should not see
+   * errors when it retries to log out. The long polling hanging on the owner will be woken up, and owner cannot be
+   * found after waking up → route back to `unknown-owner` .
    */
   clear(rawOwner: unknown): { ok: true; removed: number } | { ok: false; reason: MenuFailure; message: string } {
     const owner = displayText(rawOwner, OWNER_MAX);
@@ -155,7 +163,7 @@ export class MenuRegistry {
     return { ok: true, removed };
   }
 
-  /** 全量快照（写进 state；顺序 = 注册顺序 + 列表顺序，两端渲染顺序与它一致）。 */
+  /** Full snapshot (written into state; order = register order + list order, the rendering order at both ends is consistent with it). */
   snapshot(): MenuItemSnapshot[] {
     const out: MenuItemSnapshot[] = [];
     for (const [owner, entry] of this.owners) {
@@ -165,10 +173,11 @@ export class MenuRegistry {
   }
 
   /**
-   * 渲染端上报一次点击：把该项标成「被 petId 点了」，并叫醒该 owner 上挂着的长轮询。
+   * renderer reports a click: mark the item as "clicked by petId" and wake up the long polling hanging on owner.
    *
-   * `delivered = false`（项不存在：菜单刚好被覆盖、还没注册）不算错误——渲染端拿的是上一拍
-   * /state 快照，这一拍菜单已经变了，属于正常竞态，路由仍回 200。
+   * `delivered = false` (item does not exist: the menu has just been overwritten and has not been registered yet) is
+   * not an error - the renderer takes the previous tick / state snapshot. The menu has changed at this time, which is
+   * a normal race condition, and the route still returns 200.
    */
   click(raw: unknown): { ok: true; delivered: boolean } {
     const body = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
@@ -184,10 +193,11 @@ export class MenuRegistry {
   }
 
   /**
-   * 查询触发：返回 `{ label: petId | null }` 全量映射，返回即清空这些标记。
+   * Query trigger: Return `{ label: petId | null }` full mapping, and return clear these marks.
    *
-   * `waitMs > 0` 且当下没有任何触发 → 挂起等待（被点、超时、被覆盖都会唤醒），超时后照常返回
-   * 全 null 的映射。owner 不存在 → null（路由回 404，调用方据此知道要重新注册）。
+   * `waitMs > 0` and there is no trigger at the moment → suspend and wait (it will wake up if it is clicked, times
+   * out, or overwritten). After timeout, it will return to the mapping of all null as usual. owner does not exist →
+   * null (route returns 404, and the caller knows to re-register accordingly).
    */
   async poll(owner: string, waitMs: number): Promise<Record<string, string | null> | null> {
     const entry = this.owners.get(owner);
@@ -212,19 +222,19 @@ export class MenuRegistry {
       });
     }
 
-    // 等待期间可能被整体覆盖（注册新的 labels）——重新取一次，别拿旧 Map 的结果
+    // It may be completely overwritten during the waiting period (register new labels) - retrieval, do not take the result of the old Map
     const current = this.owners.get(owner);
     if (!current) return null;
     const out: Record<string, string | null> = {};
     for (const [label, pet] of current.items) {
       out[label] = pet;
-      current.items.set(label, null); // 读取即消费
+      current.items.set(label, null); // Read and consume
     }
     return out;
   }
 }
 
-/** 该 owner 当前有没有任意一项被点过。 */
+/** Has any item in this owner been clicked currently? */
 function hasFired(items: Map<string, string | null>): boolean {
   for (const pet of items.values()) if (pet !== null) return true;
   return false;

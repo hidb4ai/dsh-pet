@@ -1,29 +1,31 @@
 /**
- * 桌面宠物判定：按成品配置回答「现在要不要桌面窗、托盘要不要、窗口列表是什么」。
- * 三个取值函数每次现读配置，不缓存判定结果——缓存后下游拿到的是解构那一刻的快照，会一直用旧结论。
- * 读配置失败一律保守降级：按没有桌面宠物处理，托盘按仍要处理。
- * 不拉进程、不管重启时序（归 ./spawn 与 ./sync）。
+ * Desktop Pet Judgment: Answer "Do you need a desktop window now, do you need a system tray, and what is the window
+ * list now" based on the resolved configuration. The three value functions read the configuration each time
+ * and do not cache the judgment results - after caching, the downstream gets the snapshot at the moment of
+ * destructuring, and the old conclusion will always be used. Failure to read the configuration will be downgraded
+ * conservatively: no desktop pets will be processed, and system tray will still be processed. The process is not
+ * pulled and the restart sequence is ignored (returned to ./spawn and ./sync).
  * @module dsh-pet/src/host/plugin/desktop/pets
  */
 import { flattenPetList, readAllConfig } from '../../config.ts';
 import type { ConfigPaths } from '../../config.ts';
 import type { DesktopHelperDeps } from './types.ts';
 
-/** DesktopPets的输入。 */
+/** Input of DesktopPets. */
 export type DesktopPetsInput = Pick<DesktopHelperDeps, 'configPaths' | 'effectivePetList' | 'log'>;
 
-/** 该宠物是否参与桌面模式（Electron 透明窗）。 */
+/** Whether this pet participates in desktop mode (Electron transparent window). */
 const isDesktopVisible = (display: unknown): boolean => display === 'desktop' || display === 'both';
 
-/** 一次现读的判定结果（`flattenPetList` 的元素形状由配置层决定，这里只关心数量与 display）。 */
+/** The judgment result of a current read (the element shape of `flattenPetList` is determined by the configuration layer, here we only care about the quantity and display). */
 interface DesktopDecision {
-  /** 配置里的全部宠物。 */
+  /** All pets in the configuration. */
   pets: Array<Record<string, unknown>>;
-  /** 参与桌面模式的宠物。 */
+  /** Pets participating in desktop mode. */
   desktopPets: Array<Record<string, unknown>>;
 }
 
-/** 现读配置并算出判定；读不出来时抛出，由各取值函数决定降级方式。 */
+/** Read the configuration now and calculate the judgment; it will be thrown when it cannot be read, and the degradation method is determined by each value function. */
 function readDecision(configPaths: ConfigPaths): DesktopDecision {
   const merged = readAllConfig(configPaths);
   const pets = flattenPetList(merged);
@@ -31,15 +33,15 @@ function readDecision(configPaths: ConfigPaths): DesktopDecision {
 }
 
 /**
- * 造桌面判定：三个取值函数 + 一行判定日志，都不持有状态。
+ * Create desktop judgment: three value functions + one line of judgment log, none of which holds status.
  *
- * @param deps - 配置路径、桌面窗用的宠物列表来源与日志。
- * @returns 取值函数与诊断日志入口。
+ * @param deps - Configure path, pet list source and log for desktop window.
+ * @returns value function and diagnostic log entry point.
  */
 export function createDesktopPets(deps: DesktopPetsInput) {
   const { configPaths, effectivePetList, log } = deps;
 
-  /** 现在有没有桌面宠物；读配置失败按「没有」处理——宁可不起 helper，也不起一个没有宠物的空进程。 */
+  /** Are there any desktop pets now? If the configuration fails, press "None" - it would be better to have helper than an empty process without pets. */
   const getHasDesktopPet = (): boolean => {
     try {
       return readDecision(configPaths).desktopPets.length > 0;
@@ -48,7 +50,7 @@ export function createDesktopPets(deps: DesktopPetsInput) {
     }
   };
 
-  /** 托盘开关的当前值；读失败按「仍要托盘」处理（保守保留常驻图标）。 */
+  /** The current value of the system tray switch; if the read fails, press "Still want system tray" (conservatively keep the resident icon). */
   const getTrayOn = (): boolean => {
     try {
       return readAllConfig(configPaths).main?.trayEnabled !== false;
@@ -57,7 +59,7 @@ export function createDesktopPets(deps: DesktopPetsInput) {
     }
   };
 
-  /** 参与桌面窗的宠物（给 helper 的启动参数）；读失败返回空列表。 */
+  /** Pets participating in the desktop window (startup parameters given to helper); read failure returns an empty list. */
   const desktopPetList = (): Array<{ id: string; size: number }> => {
     try {
       return effectivePetList()
@@ -68,26 +70,28 @@ export function createDesktopPets(deps: DesktopPetsInput) {
     }
   };
 
-  /** 打一行判定日志（诊断用）：设置页显示「仅桌面」却没有 helper 进程时，这行能分辨宿主读到的是 web 还是 desktop。 */
+  /** Enter a line in the judgment log (for diagnosis): When the settings page displays "Desktop Only" but there is no helper process, this line can tell whether the host reads web or desktop. */
   const logDesktopDecision = (): void => {
     try {
       const { pets, desktopPets } = readDecision(configPaths);
       const trayOn = readAllConfig(configPaths).main?.trayEnabled !== false;
       log.info(
-        `[dsh-pet] 桌面判定：pets=${pets.length}，桌面可见=${desktopPets.length}` +
-          `（${desktopPets.map((pet) => String(pet.id)).join(',') || '无'}）→` +
+        `[dsh-pet] Desktop selection: pets=${pets.length}, visible=${desktopPets.length}` +
+          `(${desktopPets.map((pet) => String(pet.id)).join(',') || 'none'}) ->` +
           ` hasDesktopPet=${desktopPets.length > 0} tray=${trayOn}`,
       );
     } catch (e) {
-      log.warn(`[dsh-pet] 宠物配置非法，桌面模式已跳过：${e instanceof Error ? e.message : String(e)}`);
+      log.warn(
+        `[dsh-pet] Invalid pet configuration; skipping desktop mode: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   };
 
-  // 装配时先打一行，便于对照「这次进程起来时判定成了什么」。
+  // When assembling, type a line first to facilitate comparison of "what will be determined when the process starts this time."
   logDesktopDecision();
 
   return { getHasDesktopPet, getTrayOn, desktopPetList, logDesktopDecision };
 }
 
-/** DesktopPets的产出。 */
+/** Output of DesktopPets. */
 export type DesktopPets = ReturnType<typeof createDesktopPets>;

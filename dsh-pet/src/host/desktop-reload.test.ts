@@ -1,35 +1,40 @@
 /**
- * 桌面端「重载配置」契约测试：右键菜单 → POST /dsh-pet-7340/reload → 宿主 syncDesktop()。
+ * Desktop "overload configuration" contract test: right-click menu → POST /dsh-pet-7340/reload → host syncDesktop().
  *
- * 背景：桌面宠物的配置只在 Helper 启动时拉一次（renderer.js 的 boot → GET /config），手改配置后
- * 桌面端不会自己跟上；菜单项「重载配置」把这条路径显式暴露出来（浏览器端刷新页面即可，故为桌面专属）。
+ * Background: The configuration of the desktop pet is only pulled once when Helper starts (boot of renderer.js → GET /
+ * config). After manually changing the configuration, the desktop will not keep up; the menu item "Reload
+ * Configuration" explicitly exposes this path (just refresh the page on the browser side, so it is exclusive to the
+ * desktop).
  *
- * 重载必须复用 syncDesktop()（串行队列 + 等旧进程真正退出），不得自己实现一套停/起：
- *   ① 每只桌面宠物一个窗口，是宿主启动时按 DSH_PET_PETS 建的——就地重拉改不了宠物数量 / display / size；
- *   ② 余额 / 触发计数 / 工作状态等全局轮询由 events.js 的 loopsStarted 一次性启动，就地重建 sprite 会漏启新循环或留下旧定时器。
+ * Reloading must reuse syncDesktop() (serial queue + wait for the old process to actually exit), and you must not
+ * implement a set of stop/start by yourself: ① Each desktop pet has a window, which is created by DSH_PET_PETS when
+ * the host starts - re-pushing in place cannot change the number of pets / display / size; ② Global polling such as
+ * balance / trigger count / working status is by events.js's loopsStarted one-time startup, rebuilding sprite in place
+ * will miss starting a new cycle or leave the old timer behind.
  *
- * 本文件钉住跨半侧契约（两半各自构建、无法互相 import，只能读源码断言）：
- *   ① 宿主有 POST /reload 路由，且它调用的正是 syncDesktop()，且不写任何配置文件；
- *   ② 桌面端菜单项与宿主路由名一致（从桌面源码抽出路由名再回查宿主：改名漏改一侧即失败）；
- *   ③ 浏览器端不得注入该项。
+ * This file verifies the cross-side contract (the two halves are built separately and cannot import each other, and
+ * can only read the source code assertion): ① The host has POST /reload route, and it calls syncDesktop() without
+ * writing any configuration file; ② The desktop menu item is consistent with the host route name (extract the route
+ * name from the desktop source code and check back the host : If the name is changed and one side is omitted, it will
+ * fail); ③ This item must not be injected on the browser side.
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-/** 包内文件源码（守卫用；相对 src/host/ 解析） */
+/** Source code of files in the package (for guarding; relative to src/host / parsing) */
 const readSource = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-/** 路由源码：扫整个目录而不是写死文件名——领域拆分与搬迁不该让守卫误报 */
+/** route source code: scan the entire directory instead of hard-coding the file name - domain splitting and relocation should not let the guard false positive */
 const routeSource = readdirSync(fileURLToPath(new URL('./routes/', import.meta.url)))
   .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
   .map((name) => readSource('./routes/' + name))
   .join('\n');
 const host = readSource('./index.ts') + '\n' + routeSource;
-/** 渲染端宠物本体的源码：已按职责拆成 sprite.js 与 sprite-*.js，守卫要读全份。 */
+/** The source code of the renderer pet body: has been split into sprite.js and sprite -*.js according to responsibilities. Guards must read the entire copy. */
 const sprite = [
   readSource('../../runtime/electron-helper/sprite.js'),
   ...readdirSync(fileURLToPath(new URL('../../runtime/electron-helper/sprite/', import.meta.url))).map((name) =>
@@ -39,38 +44,58 @@ const sprite = [
 const clientPet = readSource('../client/pet.ts');
 const menu = readSource('../shared/menu.ts') + readSource('../shared/menu/types.ts');
 
-describe('桌面端「重载配置」—— 菜单 → 宿主重启 Helper', () => {
-  test('宿主：POST /reload 复用 syncDesktop()，且只重启、不写配置文件', () => {
+describe('Desktop "Reload Configuration" - Menu → Host Restart Helper', () => {
+  test('host: POST /reload reuse syncDesktop(), and only restarts without writing the configuration file', () => {
     const block = /if \(rest === 'reload'\) \{([\s\S]*?)\n {2}\}/.exec(routeSource);
-    assert.ok(block, '宿主必须有 /reload 路由');
+    assert.ok(block, 'host must have / reload route');
     const body = block[1];
-    assert.ok(/method !== 'POST'/.test(body), 'reload 只接受 POST（重载是动作，不是可缓存的资源）');
-    assert.ok(/void requestRestart\(\)/.test(body), 'reload 必须复用 requestRestart()：与保存同一条重启路径');
+    assert.ok(
+      /method !== 'POST'/.test(body),
+      'reload only accepts POST (overloading is an action, not a cacheable resource)',
+    );
+    assert.ok(
+      /void requestRestart\(\)/.test(body),
+      'reload must reuse requestRestart (): the same restart path as saved',
+    );
     assert.ok(
       !/writeFile|saveUserConfig|syncUserConfigFromDefault/.test(body),
-      'reload 只重启 Helper，绝不碰配置文件（写盘是 PUT /config 的职责）',
+      'reload only restarts Helper and never touches the configuration file (writing to the disk is the responsibility of PUT / config)',
     );
   });
 
-  test('桌面端：菜单项存在、动作有分支，且请求的路由名与宿主一致', () => {
-    assert.ok(/label: '重载配置', action: 'reload'/.test(sprite), '桌面端右键菜单必须有「重载配置」项');
-    assert.ok(/leaf\.action === 'reload'/.test(sprite), 'onMenuAction 必须有 reload 分支（否则点了没反应）');
+  test('Desktop: The menu item exists, the action has branches, and the requested route name is consistent with the host.', () => {
+    assert.ok(
+      /label: '重载配置', action: 'reload'/.test(sprite),
+      'The desktop right-click menu must have the "Reload Configuration" item',
+    );
+    assert.ok(
+      /leaf\.action === 'reload'/.test(sprite),
+      'onMenuAction must have the reload branch (otherwise there will be no response when clicking)',
+    );
     const m = /fetch\(BASE \+ '\/([a-z-]+)', \{ method: 'POST' \}\)/.exec(sprite);
-    assert.ok(m, "reloadDesktop() 必须 POST 到 BASE + '/<路由名>'（bridge 已支持 POST，无需新增 IPC）");
+    assert.ok(
+      m,
+      "reloadDesktop () must be POST to BASE + '/<route name>' (bridge already supports POST, no need to add IPC)",
+    );
     const route = m[1];
     assert.ok(
       new RegExp(`rest === '${route}'`).test(host),
-      `桌面端请求的路由 /${route} 在宿主不存在（改名只改了一侧）`,
+      `The route / ${route} requested by the desktop does not exist in the host (only one side was changed when the name was changed)`,
     );
   });
 
-  test('浏览器端不注入该项：网页刷新即可，重载是桌面专属', () => {
-    assert.ok(!/action: 'reload'/.test(clientPet), '浏览器端不得有 reload 菜单项（它会重启整个桌面 Helper）');
+  test('This item is not injected on the browser side: just refresh the web page, reloading is exclusive to the desktop', () => {
+    assert.ok(
+      !/action: 'reload'/.test(clientPet),
+      'There must be no reload menu item on the browser side (it will restart the entire desktop Helper)',
+    );
   });
 
-  test('requestRestart 是唯一的重启入口：四个写接口与「重载配置」都走它', () => {
-    // 按模块断言「这条路由里有调用」，而不是数全仓调用点：以后新增写接口不该让用例变红，
-    // 而某个既有接口丢了重启必须红。调用点可能写作 `void requestRestart()` 或 `void deps.requestRestart()`。
+  test('requestRestart is the only restart entry point: all four write interfaces and "overload configuration" use it', () => {
+    // According to the module assertion "there are calls in this route", instead of counting the call points of the
+    // whole warehouse: new write interfaces in the future should not make the use case red, and if an existing
+    // interface is lost and restarted, it must be red. The call site might be written `void requestRestart()` or
+    // `void deps.requestRestart()` .
     const call = /void (?:deps\.)?requestRestart\(\)/;
     for (const rel of [
       './routes/config/save.ts',
@@ -82,7 +107,7 @@ describe('桌面端「重载配置」—— 菜单 → 宿主重启 Helper', () 
     }
   });
 
-  test('shared 菜单契约放行 reload（桌面壳注入该动作，类型必须包含它）', () => {
-    assert.ok(/'reload'/.test(menu), "shared/menu.ts 的 MenuLeaf.action 必须包含 'reload'");
+  test('shared menu contract release reload (desktop shell injects this action, the type must contain it)', () => {
+    assert.ok(/'reload'/.test(menu), "MenuLeaf.action of shared/menu.ts must contain ' reload '");
   });
 });

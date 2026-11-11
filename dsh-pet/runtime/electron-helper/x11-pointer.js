@@ -1,10 +1,11 @@
 'use strict';
 /**
- * Linux 专用：X11 指针位置查询（纯 Node，无原生模块、不依赖外部命令）。
- * 穿透窗收不到鼠标事件，而 Linux/X11 上 screen.getCursorScreenPoint() 返回的是 Chromium 缓存的最后一个
- * 鼠标事件位置——建窗后就冻结，兜底轮询拿着陈旧坐标算，宠物永远翻不成可交互。这里直接走 X11 协议：
- * 连接握手（Xauthority 的 MIT-MAGIC-COOKIE-1）与 QueryPointer，失败时 get() 返回 null 由调用方回退
- * 原生 API。QueryPointer 返回物理像素，缩放不为 1 时由调用方除以 scaleFactor。
+ * Linux exclusive: X11 pointer position query (pure Node, no native module, no reliance on external commands). The
+ * click-through window cannot receive mouse events, and screen.getCursorScreenPoint() on Linux/X11 returns the last
+ * mouse event position cached by Chromium - it freezes after the window is built. Fallback polling uses stale
+ * coordinates to count, and pets will never be able to interact. Here we go directly to the X11 protocol: connection
+ * handshake (Xauthority of MIT-MAGIC-COOKIE-1) with QueryPointer, on failure get() returns null and the caller falls
+ * back to the native API. QueryPointer returns physical pixels, divided by caller scaleFactor when scaling is not 1.
  * @module dsh-pet/runtime/electron-helper/x11-pointer
  */
 const net = require('node:net');
@@ -12,20 +13,22 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-/** X11 协议里屏幕根的 QueryPointer 请求（opcode 38） */
+/** QueryPointer request for screen root in X11 protocol (opcode 38) */
 const QUERY_POINTER = 38;
-/** QueryPointer 应答固定 32 字节 */
+/** QueryPointer response fixed 32 bytes */
 const REPLY_BYTES = 32;
 
 /**
- * 三处等待的超时上限（毫秒）。X 服务器就在本机，正常都在毫秒级；卡住只可能是 X 侧已死或套接字被挂起。
- * 超时必须丢掉整条连接重来：留在半死连接上，inFlight 会一直为真，宠物永久停在旧坐标。
+ * Maximum timeout limit for three waits (milliseconds). The X server is on this machine, and it is normally within
+ * milliseconds. The only possibility of being stuck is that the X side is dead or the socket is hung. If the timeout
+ * occurs, the entire connection must be discarded and restarted: if you stay on the half-dead connection, inFlight
+ * will always be true, and the pet will permanently stop at the old coordinates.
  */
 const CONNECT_TIMEOUT_MS = 500;
 const HANDSHAKE_TIMEOUT_MS = 1000;
 const QUERY_TIMEOUT_MS = 500;
 
-/** 从 Xauthority 里取本 display 的 MIT-MAGIC-COOKIE-1；没有则返回 null（匿名连接） */
+/** Get MIT-MAGIC-COOKIE-1 of display from Xauthority; if not, return null (anonymous connection) */
 function readCookie(display) {
   const file = process.env.XAUTHORITY || path.join(os.homedir(), '.Xauthority');
   let buf;
@@ -64,7 +67,7 @@ function readCookie(display) {
   return fallback;
 }
 
-/** 连接 X11 套接字：优先文件系统路径，其次 Linux 抽象命名空间（/tmp 被重映射时仍可用） */
+/** Connecting to X11 socket: file system path first, Linux abstract namespace second (/tmp still available when remapped) */
 function connect(display) {
   const num = (/^(?:[^:]*):(\d+)/.exec(display) || [])[1] || '0';
   const paths = [`/tmp/.X11-unix/X${num}`, `\u0000/tmp/.X11-unix/X${num}`];
@@ -81,7 +84,7 @@ function connect(display) {
         if (index < paths.length) attempt();
         else reject(error);
       };
-      // 只在连接阶段设超时：连上后必须置 0，否则空闲的轮询连接会被当成超时踢掉
+      // Set timeout only in the connection phase: it must be set to 0 after connecting, otherwise the idle polling connection will be kicked out as timeout
       socket.setTimeout(CONNECT_TIMEOUT_MS);
       socket.once('timeout', () => fail(new Error('X11 connect timeout')));
       socket.once('connect', () => {
@@ -95,7 +98,7 @@ function connect(display) {
   });
 }
 
-/** 在 setup 应答体里定位第一块屏幕的根窗口。偏移 0/16 两种都试：个别服务器多 16 字节前缀 */
+/** Locate the root window of the first screen in the setup response body. Offset 0/16 Try both: some servers have more than 16 bytes prefix */
 function parseRoot(body) {
   const pad = (n) => (4 - (n % 4)) % 4;
   for (const start of [0, 16]) {
@@ -115,7 +118,7 @@ function parseRoot(body) {
   throw new Error('cannot locate root window in X11 setup reply');
 }
 
-/** X11 连接握手；成功返回 { socket, root } */
+/** X11 connection handshake; successful return { socket , root } */
 function handshake(display) {
   return connect(display).then(
     (socket) =>
@@ -157,7 +160,7 @@ function handshake(display) {
           socket.destroy();
           reject(error);
         };
-        // 握手也是等待：X 侧不回 setup 应答时不能让 ensure() 永远挂着
+        // Handshaking is also waiting: X does not reply to setup. When responding, ensure() cannot be left hanging forever.
         const timeout = setTimeout(() => {
           cleanup();
           socket.destroy();
@@ -177,18 +180,19 @@ function handshake(display) {
 }
 
 /**
- * 创建一个轮询式的指针提供者。
+ * Create a polling-style pointer provider.
  *
- * @param options.intervalMs - 查询间隔（默认 60ms）。
- * @param options.display - X display（默认取 DISPLAY）。
- * @returns get 返回最近一次成功查询的坐标（物理像素，尚未成功过为 null），以及 start/stop/probe。
+ * @param options.intervalMs - query interval (default 60 ms).
+ * @param options.display - X display (default is DISPLAY).
+ * @returns get returns the coordinates (physical pixels) of the last successful query, which has not yet been
+ * successfully queried for null, and start/stop/probe.
  */
 function createLinuxPointer(options = {}) {
   const intervalMs = options.intervalMs ?? 60;
   const display = options.display || process.env.DISPLAY || ':0';
   let socket = null;
   let root = 0;
-  let pending = null; // 当前 QueryPointer 应答的 resolver
+  let pending = null; // resolver currently answered by QueryPointer
   let buffer = Buffer.alloc(0);
   let last = null;
   let timer = null;
@@ -222,7 +226,7 @@ function createLinuxPointer(options = {}) {
           buffer = buffer.subarray(REPLY_BYTES);
           const resolve = pending.resolve;
           pending = null;
-          // 应答首字节必须是 1（Reply），否则说明协议已经错位
+          // The first bytes of the response must be 1 (Reply), otherwise it means that the protocol has been misaligned
           if (reply[0] !== 1) {
             resolve(null);
             continue;
@@ -239,8 +243,9 @@ function createLinuxPointer(options = {}) {
     return ensure().then(
       () =>
         new Promise((resolve, reject) => {
-          // 应答可能永远不来（X 侧卡死）：超时即失败，由调用方 reset 掉整条连接。
-          // 迟到的应答会留在 buffer 里被下一次查询当成自己的结果，只能靠重连清掉。
+          // The response may never come (the X side is stuck): it will fail after timeout, and the entire connection
+          // will be dropped by the caller reset. Late responses will remain in buffer and will be regarded as their
+          // own results by the next query, and can only be cleared by reconnecting.
           const timer = setTimeout(() => {
             pending = null;
             reject(new Error('X11 QueryPointer timeout'));
@@ -294,7 +299,7 @@ function createLinuxPointer(options = {}) {
       timer = null;
       reset();
     },
-    /** 单次查询（自检/测试用） */
+    /** Single query (for self-test/test) */
     probe: () =>
       handshake(display).then(
         ({ socket: s, root: r }) =>

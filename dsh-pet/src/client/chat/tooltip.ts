@@ -1,32 +1,35 @@
 /**
- * 面板里的悬浮提示：替代原生 title（延迟、字体与样式都由浏览器决定，改不动）。
+ * The floating prompt in the panel: replace the native title (delay, font and style are all determined by the browser
+ * and cannot be changed).
  *
- * 气泡挂在 body 上、position:fixed 按光标摆位：消息列表是 overflow:auto 的滚动容器，
- * 挂在列表里的伪元素气泡会被裁掉（贴顶/贴底的消息看不到提示），所以不走设置页那套 data-tip::after。
- * 摆位复用 shared/tooltip 的 tooltipPlacement，外观在 ./panel-css 的 .pet-chat-tip。
+ * The bubble is hung on body, and position:fixed is positioned according to the cursor: the message list is a
+ * scrolling container of overflow:auto, and the pseudo-element bubble hanging in the list will be cropped (you will
+ * not see the prompt for messages posted to the top/bottom), so you do not use the data-tip :: after set on the
+ * settings page. The position reuse tooltipPlacement of shared/tooltip, the appearance is .pet-chat-tip of
+ * ./panel-css.
  * @module dsh-pet/src/client/chat/tooltip
  */
 import { tooltipPlacement } from '../../shared/tooltip.ts';
 import { px } from './metrics.ts';
 
-/** 气泡 class（外观见 ./panel-css）。 */
+/** bubble class (see ./panel-css for appearance). */
 export const TIP_CLASS = 'pet-chat-tip';
 
-/** 光标与气泡的间隙（px）：与设置页的 data-tip 气泡一致，视觉上不贴手。 */
+/** The gap between the cursor and the bubble (px): It is consistent with the data-tip bubble on the settings page and does not fit visually. */
 const TIP_GAP_PX = 10;
 
-/** 唯一的那个气泡；面板里悬停很频繁，反复建删会让气泡闪，所以复用。 */
+/** The only bubble; hovering is very frequent in the panel, and repeated creation and deletion will make the bubble flash, so reuse. */
 let tipEl: HTMLDivElement | undefined;
 
-/** 全局监听的解除函数；与气泡一起登记、一起回收。 */
+/** Release function of global monitoring; registered and recycled together with bubble. */
 let unwatch: (() => void) | undefined;
 
-/** 收起气泡：元素留着复用，只摘 `is-on`。 */
+/** Collapse bubble: Keep the reuse element and only pick `is-on`. */
 function hideTip(): void {
   tipEl?.classList.remove('is-on');
 }
 
-/** 取气泡元素，没有就建一个并挂到 body（挂 body 才不会被子孙的 overflow 裁掉）。 */
+/** Take the bubble element, if it is not available, create one and hang it to body (hanging body will not be cut off by the descendant overflow). */
 function ensureTip(): HTMLDivElement {
   if (tipEl !== undefined && tipEl.parentNode === document.body) return tipEl;
   const el = document.createElement('div');
@@ -34,10 +37,10 @@ function ensureTip(): HTMLDivElement {
   el.setAttribute('role', 'tooltip');
   document.body.appendChild(el);
   tipEl = el;
-  // 监听目标当场捕获：回收时全局可能已经不在（宿主换页、测试拆环境），不能回头再读 window
+  // The monitoring target is captured on the spot: the global situation may no longer be there during recycling (host page change, test disassembly environment), and you cannot go back and read again window
   const win = window;
   const root = document;
-  // 滚动或按下别处时气泡会僵在原地，立刻收掉；capture 才能收听到消息列表自身的滚动
+  // When scrolling or pressing elsewhere, the bubble will freeze in place and be closed immediately; only capture can hear the scrolling of the message list itself
   const close = (): void => hideTip();
   win.addEventListener('scroll', close, true);
   root.addEventListener('pointerdown', close, true);
@@ -50,15 +53,15 @@ function ensureTip(): HTMLDivElement {
 }
 
 /**
- * 在光标处显示气泡。
+ * Show bubble at cursor.
  *
- * @param text - 气泡正文；每次重设，同一个气泡服务所有触发元素。
- * @param cursor - 光标位置（视口坐标）。
+ * @param text - bubble text; each time it is reset, the same bubble serves all triggering elements.
+ * @param cursor - Cursor position (viewport coordinates).
  */
 function showTip(text: string, cursor: { x: number; y: number }): void {
   const el = ensureTip();
   el.textContent = text;
-  // 先归零再量：opacity:0 的元素已经能量到真实宽高，但位置不定，不归零会按上一处的坐标判断翻边
+  // Return to zero first and then measure: The elements of opacity:0 have reached the true width and height, but the position is uncertain. If not returned to zero, the flanging will be judged according to the coordinates of the previous place.
   el.style.left = px(0);
   el.style.top = px(0);
   const placed = tooltipPlacement(
@@ -73,12 +76,13 @@ function showTip(text: string, cursor: { x: number; y: number }): void {
 }
 
 /**
- * 触发元素的悬停属性：光标进入时在光标处出气泡，离开即收起。
+ * Trigger the hover attribute of the element: a bubble will appear at the cursor when the cursor enters, and it will
+ * collapse when it leaves.
  *
- * 不接 focus：点击按钮也会让它获得焦点，于是点图/点播放之后气泡会一直挂在屏幕上，
- * 键盘用户的可读名靠元素上的 `aria-label`。
+ * Not picking up focus: Clicking the button will also give it focus, so after clicking the image/playback request, the
+ * bubble will always hang on the screen. The readable name for keyboard users depends on `aria-label` on the element.
  *
- * @param text - 气泡正文（已翻译）。
+ * @param text - bubble text (translated).
  */
 export function tipAttrs(text: string): {
   onMouseEnter: (event: { clientX: number; clientY: number }) => void;
@@ -90,7 +94,7 @@ export function tipAttrs(text: string): {
   };
 }
 
-/** 卸载面板时回收气泡与全局监听；样式标签由 ./styles 释放。 */
+/** Recycle the bubble and global listener when unmounting the panel; the style label is released by ./styles. */
 export function disposeTip(): void {
   unwatch?.();
   tipEl?.remove();

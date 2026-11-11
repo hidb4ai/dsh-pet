@@ -78,7 +78,7 @@ export function managedMemoryEnvironment(directory: string, config: MemoryConfig
     POWERCONTEXT_SERVER_INFERENCE_GENERATION_MODEL: 'openai-chat:' + config.model,
     POWERCONTEXT_SERVER_INFERENCE_GENERATION_BASE_URL: config.baseUrl,
     POWERCONTEXT_SERVER_INFERENCE_GENERATION_HEADERS: JSON.stringify({ Authorization: 'Bearer ' + config.apiKey }),
-    // 后台抽取可能包含多步生成；与前台召回的 1.5 秒预算分开。
+    // Background retrieval may contain multi-step builds; separate from the 1.5 second budget of foreground recall.
     POWERCONTEXT_SERVER_INFERENCE_GENERATION_TIMEOUT_SECONDS: '120',
     POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_MODEL: 'openai:' + config.embeddingModel,
     POWERCONTEXT_SERVER_INFERENCE_EMBEDDING_BASE_URL: config.embeddingBaseUrl,
@@ -136,12 +136,12 @@ export class ManagedMemory {
   get running(): boolean {
     return !!this.child && this.child.exitCode === null && this.child.signalCode === null;
   }
-  /** 就绪必须来自最近一次健康检查；进程存活本身不代表模型与存储可用。 */
+  /** Readiness must come from the latest health check; process survival itself does not mean that the model and storage are available. */
   get ready(): boolean {
     return this.running && this.readyAt > 0 && Date.now() - this.readyAt < 30_000;
   }
 
-  /** 检查当前子进程，旧进程的迟到响应不能改变重启后的状态。 */
+  /** Check the current child process. The late response of the old process cannot change the state after restart. */
   async checkReady(signal: AbortSignal = AbortSignal.timeout(2000)): Promise<boolean> {
     const child = this.child;
     if (!child || !this.running || !this.config) return false;
@@ -155,7 +155,7 @@ export class ManagedMemory {
       const result = (await response.json()) as { status?: string };
       ready = response.ok && result.status === 'ready';
     } catch {
-      /* 健康探测失败要立即撤销就绪状态。 */
+      /* If the health detection fails, the ready state must be revoked immediately. */
     }
     if (this.child !== child) return false;
     this.readyAt = ready && this.running ? Date.now() : 0;
@@ -185,7 +185,7 @@ export class ManagedMemory {
       : undefined;
   }
 
-  /** 生成密钥只在原完整地址下复用，由服务端使用，不返回设置页。 */
+  /** The generated key is only reused under the original complete address and is used by the server without returning to the settings page. */
   generationKeyForEndpoint(url: string): string | undefined {
     return this.config?.baseUrl.replace(/\/+$/, '') === url.replace(/\/+$/, '') ? this.config.apiKey : undefined;
   }

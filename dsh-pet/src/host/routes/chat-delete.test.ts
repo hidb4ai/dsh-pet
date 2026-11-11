@@ -1,10 +1,11 @@
 /**
- * `DELETE /chat` 的契约测试：参数解析、方法白名单与「删除不走 surface 校验」。
+ * Contract test of `DELETE /chat` : parameter parsing, method whitelist and "surface verification without deletion".
  *
- * 直接测导出的路由处理函数，不启 HTTP 服务：删除的记忆读写行为由 chat-memory.test.ts 覆盖，
- * 这里只钉「路由把什么交给了服务层」——参数被解析成什么、什么情况一次都不该调用。
+ * Directly test the exported route processing function without starting the HTTP service: the deleted memory read and
+ * write behavior is covered by chat-memory.test.ts. Here we only specify "what route handed over to the service layer"
+ * - what the parameters are parsed into, and it should not be called under any circumstances.
  *
- * 跑法：node --experimental-strip-types --test src/host/routes/chat-delete.test.ts
+ * Running method: node --experimental-strip-types --test src/host/routes/chat-delete.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,10 +13,10 @@ import assert from 'node:assert/strict';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import { handleChatRoutes } from './chat.ts';
 
-/** 一次 deleteHistory 调用（用来断言路由透传了什么） */
+/** A deleteHistory call (what is used to transparently transmit assertion route) */
 type DeleteCall = { petId: string; ts?: readonly number[] };
 
-/** 造最小路由依赖；requirePet 固定回 main，deleteHistory 记录入参并回成功。 */
+/** Create the minimum route dependency; requirePet is fixed back to main, deleteHistory records the input parameters and returns successfully. */
 function makeDeps(): { deps: PetRouteDeps; calls: DeleteCall[] } {
   const calls: DeleteCall[] = [];
   const deps = {
@@ -35,7 +36,7 @@ function makeDeps(): { deps: PetRouteDeps; calls: DeleteCall[] } {
   return { deps, calls };
 }
 
-/** 一次 DELETE /chat；`query` 直接拼在 `?pet=main` 之后（如 `&ts=1&ts=2`）。 */
+/** DELETE /chat once; `query` is directly spelled after `?pet=main` (such as `&ts=1&ts=2`). */
 function del(query = '', surface = 'web'): RouteInput {
   return {
     url: new URL(`http://127.0.0.1/dsh-pet-7340/chat?pet=main&surface=${surface}${query}`),
@@ -44,51 +45,51 @@ function del(query = '', surface = 'web'): RouteInput {
   };
 }
 
-/** 取应答的 JSON 体。 */
+/** Get the JSON body of the response. */
 function body(result: Awaited<ReturnType<typeof handleChatRoutes>>): Record<string, unknown> {
   assert.equal(result?.kind, 'json');
   return (result as { obj: Record<string, unknown> }).obj;
 }
 
-describe('DELETE /chat —— 删除对话记忆', () => {
-  test('不带 ts → 清空整只（服务收到 undefined）', async () => {
+describe('DELETE /chat - Delete conversation memory', () => {
+  test('Without ts → clear the whole one (the service receives undefined)', async () => {
     const { deps, calls } = makeDeps();
     const b = body(await handleChatRoutes(deps, del()));
     assert.equal(b.ok, true);
-    assert.equal(b.removed, 2, '服务给的数量应原样带回');
+    assert.equal(b.removed, 2, 'The quantity given by the service should be brought back as is');
     assert.deepEqual(calls, [{ petId: 'main' }]);
   });
 
-  test('带多个 ts → 去重后下传', async () => {
+  test('With multiple ts → deduplicate and then download', async () => {
     const { deps, calls } = makeDeps();
     body(await handleChatRoutes(deps, del('&ts=1000&ts=2000&ts=1000')));
     assert.deepEqual(calls, [{ petId: 'main', ts: [1000, 2000] }]);
   });
 
-  test('ts 非法（负数 / 小数 / 非数字 / 空串）→ bad-request，且一次都不调用服务', async () => {
+  test('ts is invalid (negative number / decimal / non-digit / empty string) → bad-request, and the service is not called once', async () => {
     for (const bad of ['-1', '1.5', 'abc', '', '%20']) {
       const { deps, calls } = makeDeps();
       const b = body(await handleChatRoutes(deps, del(`&ts=${bad}`)));
       assert.equal(b.ok, false, bad);
       assert.equal(b.reason, 'bad-request', bad);
-      assert.deepEqual(calls, [], `非法 ts 必须在调用 deleteHistory 之前被拒：${bad}`);
+      assert.deepEqual(calls, [], `Illegal ts must be rejected before calling deleteHistory: ${bad}`);
     }
   });
 
-  test('PUT 等其它方法仍是 405（不因为新增了 DELETE 就放宽白名单）', async () => {
+  test('PUT and other methods are still 405 (the whitelist will not be relaxed just because DELETE is added)', async () => {
     const { deps } = makeDeps();
     const result = await handleChatRoutes(deps, { ...del(), method: 'PUT' });
     assert.equal((result as { status: number }).status, 405);
   });
 
-  test('不校验 surface：删除是存储管理，与宠物显示在哪一端无关', async () => {
+  test('No verification surface: Deletion is storage management and has nothing to do with which end the pet is displayed on.', async () => {
     const { deps, calls } = makeDeps();
     const b = body(await handleChatRoutes(deps, del('', 'nope')));
-    assert.equal(b.ok, true, '非法 surface 不该拦住删除');
+    assert.equal(b.ok, true, 'Illegal surface should not be blocked from deletion');
     assert.equal(calls.length, 1);
   });
 
-  test('宠物不存在 → 服务层的 unknown-pet 原样透传', async () => {
+  test('Pet does not exist → unknown-pet of the service layer is transparently transmitted as is', async () => {
     const { deps } = makeDeps();
     const failing = {
       ...deps,
@@ -100,28 +101,28 @@ describe('DELETE /chat —— 删除对话记忆', () => {
   });
 });
 
-describe('/chat/memory —— 已删宠物的残留历史', () => {
-  /** 一次 /chat/memory 请求；不需要 pet 参数。 */
+describe('/ chat/memory - The remaining history of deleted pets', () => {
+  /** One time / chat/memory request; no pet parameter required. */
   const memory = (method = 'GET'): RouteInput => ({
     url: new URL('http://127.0.0.1/dsh-pet-7340/chat/memory'),
     rest: 'chat/memory',
     method,
   });
 
-  test('GET 列出残留：只给条数与最后时间，不给正文', async () => {
+  test('GET List residuals: only the number and last time are given, but the text is not given', async () => {
     const { deps } = makeDeps();
     const b = body(await handleChatRoutes(deps, memory()));
     assert.equal(b.ok, true);
     assert.deepEqual(b.orphans, [{ entry: 'main', petId: 'gone', messages: 4, lastTs: 1000 }]);
   });
 
-  test('DELETE 一次清空全部残留，回删掉的宠物数与消息数', async () => {
+  test('DELETE clears once and all remains, and the number of deleted pets and messages will be restored.', async () => {
     const { deps } = makeDeps();
     const b = body(await handleChatRoutes(deps, memory('DELETE')));
     assert.deepEqual(b, { ok: true, pets: 1, messages: 4 });
   });
 
-  test('其它方法 → 405（这对端点只读列表与清空）', async () => {
+  test('Other methods → 405 (the pair of endpoints read-only list and clear )', async () => {
     const { deps } = makeDeps();
     const result = await handleChatRoutes(deps, memory('POST'));
     assert.equal((result as { status: number }).status, 405);

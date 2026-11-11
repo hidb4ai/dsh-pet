@@ -1,8 +1,9 @@
 /**
- * 轮询侧数据：/models 模型目录、/state 全局快照（支持 since/timeout 长轮询）、/work-status 工作状态写入。
+ * Polling side data: / models model directory, / state global snapshot (supports since/timeout long polling), /
+ * work-status working status writing.
  *
- * 不生成状态，只汇总 store 里的当前值。
- * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
+ * No status is generated, only the current values in store are summarized. Dependency (PetRouteDeps) is passed in
+ * explicitly, and the module does not read global information or create status.
  * @module dsh-pet/src/host/routes/state
  */
 import { parseStateWaitQuery } from '../state.ts';
@@ -11,14 +12,16 @@ import { HOST_WORK_STATUS_STATES, TASK_TEXT_MAX, type HostWorkStatusState } from
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import { failResult, invalidJson, methodNotAllowed, okResult, payloadTooLarge } from './result.ts';
 
-/** 轮询状态领域：未命中返回 undefined，命中返回应答。 */
+/** Polling status field: undefined is returned for misses and response is returned for hits. */
 export async function handleStateRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { EXTERNAL_WORK_SESSION, ctx, nextExternalWorkSeq, publishWorkStatus, state, workStatus } = deps;
   const { body, method, rest, signal, url } = input;
 
-  // 可选模型清单（设置页「AI 模型」下拉框数据源）：与 DSH 模型选择器同源，都来自宿主 llm 服务。
-  // 只读、无副作用；某个服务商列模型失败（适配器不支持 / 网络）只让它空着，不拖垮整张清单。
-  // 一个实时路由都没注册时回落到 listConfigurableProviders，免得下拉框空着。
+  // Optional model list (data source of the "AI Model" drop-down box on the settings page): It has the same origin as
+  // the DSH model selector, and both come from the host llm service. read-only, no side effect; if a certain service
+  // provider fails to list the model (the adapter does not support /network), it will just leave it empty without
+  // dragging down the entire list. When a real-time route is not registered, fallback to listConfigurableProviders to
+  // prevent the drop-down box from being empty.
   if (rest === 'models') {
     if (method !== 'GET') return methodNotAllowed();
     try {
@@ -47,51 +50,56 @@ export async function handleStateRoutes(deps: PetRouteDeps, input: RouteInput): 
             const list = await llm?.listModels?.(p.id);
             models = (Array.isArray(list) ? list : []).map((m) => named(m?.id, m?.name)).filter((m) => m.id);
           } catch {
-            /* 单个服务商列不出模型：留空即可（下拉框里该服务商只有「跟随当前对话」可选） */
+            /* A single service provider cannot list the model: just leave it blank (the service provider only has "Follow the current conversation" option in the drop-down box) */
           }
           return { ...p, models };
         }),
       );
       return okResult({ providers: catalog });
     } catch (e) {
-      // 模型目录取不到是依赖不可用（宿主没提供 llm 适配器 / 全部列模型失败），不是传输层故障
+      // The model directory cannot be retrieved because the dependency is unavailable (the host does not provide the llm adapter/all column models failed), and it is not a transport layer failure.
       return failResult('generate-error', e instanceof Error ? e.message : String(e));
     }
   }
 
-  // 轮询状态（/state，GET，no-cache）是前端轮询的唯一数据源：只读、纯内存、零副作用——
-  // 在这里触发外部调用或模型生成会把所有人的轮询拖死；也不碰磁盘（配置变更信号走 sections.config）。
+  // Polling status (/ state, GET, no-cache) is the only data source for front-end polling: read-only, pure memory,
+  // zero side effect - triggering external calls or model generation here will drag everyone's polling to death; it
+  // does not touch the disk (configuration change signal goes to sections.config).
   //
-  // 长轮询：带 `?since=&timeout=`（成对必填）时，版本与当前相同就挂起，直到任意叶子被写过或超时；
-  // 不带 = 立刻返回全量。等待语义与 GET /playback/{id} 的 wait 同一套（上限同值、断线同一个 signal）。
+  // Long polling: With `?since=&timeout=` (required in pairs), if the version is the same as the current one, it will
+  // be suspended until any leaf is written or times out; without =, the full amount will be returned immediately. The
+  // wait semantics are the same as wait of GET /playback /{ id } (the upper limit is the same and the disconnection
+  // is the same signal).
   if (rest === 'state') {
     if (method !== 'GET') return methodNotAllowed();
     const headers = { 'cache-control': 'no-cache, no-store' };
     const parsed = parseStateWaitQuery(url.searchParams.get('since'), url.searchParams.get('timeout'));
-    // since/timeout 是业务参数：给错了是调用方的问题，但仍属「请求已进处理器」
+    // since/timeout is a business parameter: if it is wrong, it is a problem with the caller, but it is still "the request has entered the processor"
     if (parsed.kind === 'error') return failResult('bad-request', parsed.error);
     const current = state.read();
-    // 两者都没传 → 立刻返回；已经有新东西 → 也立刻返回（别白等一整个 timeout）。
-    // timeout=0 走挂起分支，下一拍就醒，等价「立刻返回」，这里不特判。
+    // Neither is transmitted → return immediately; there is already something new → return immediately (don’t wait a
+    // whole timeout in vain).
+    // timeout =0 takes the hanging branch and wakes up at the next tick, which is equivalent to "return immediately".
+    // There is no special judgment here.
     if (parsed.kind === 'none' || current.counter !== parsed.since) {
       return okResult(current, headers);
     }
     const since = parsed.since;
     return await new Promise<RouteResult>((resolveWait) => {
       let settled = false;
-      /** 收尾：只认第一次（唤醒 / 超时 / 取消 / 调用方断开 都可能先后到达） */
+      /** cleanup: only recognizes the first time (wakeup/timeout/cancel/caller disconnection may all arrive one after another) */
       const settle = (result: RouteResult): void => {
         if (settled) return;
         settled = true;
         resolveWait(result);
       };
-      // 唤醒时才 read()：store 保证「叶子已写定」之后才叫醒，所以这里拿到的一定是新状态
+      // read() when waking up: store ensures that "the leaves have been written" before waking up, so what you get here must be the new state.
       const cancel = state.wait({
         since,
         timeoutMs: parsed.timeoutMs,
         onWake: () => settle(okResult(state.read(), headers)),
       });
-      // 调用方断开：取消等待者（清掉它的超时定时器），以「无需应答」收尾。
+      // caller disconnected: cancel the waiter (clear its timeout timer) to "no response" cleanup.
       const onAbort = (): void => {
         cancel();
         settle({ kind: 'none' });
@@ -104,9 +112,10 @@ export async function handleStateRoutes(deps: PetRouteDeps, input: RouteInput): 
     });
   }
 
-  // 外部写入工作状态：POST 设置固定外部槽 `api` 的档位（task 省略 = 保留，null = 清空），
-  // DELETE 清空回空闲（幂等）。只解决「外部程序把状态告诉桌宠」，不做多写者仲裁/租约/会话管理；
-  // 外部槽与会话一起参与现有优先级（waiting > error > working > thinking > result > success）。
+  // External write working status: POST sets the state of the fixed external slot `api` (task omitted = reserved, null
+  // = clear), DELETE clear returns to idle (idempotent). It only solves "the external program tells the desktop pet
+  // the status" and does not do multi-writer arbitration/lease/session management; the external slot participates in
+  // the existing priority together with the session (waiting > error > working > thinking > result > success).
   if (rest === 'work-status') {
     if (method === 'DELETE') {
       if (workStatus.clear(EXTERNAL_WORK_SESSION)) publishWorkStatus();

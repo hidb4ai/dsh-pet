@@ -1,7 +1,7 @@
 /**
- * 对话弹窗的对外出口：挂载、发送、样式与两个类型。
- * 拆成 styles / icons / send / image-pick / dom / dialog / hear-hold 后，本文件只做再导出，
- * 让 `shared/index.ts`（打包成 window.PetShared）与浏览器入口各取所需。
+ * The external exit of the dialog pop-up window: mount, send, style and two types. After splitting into styles / icons
+ * / send / image-pick / dom / dialog / hear-hold, this file is only exported again, so that `shared/index.ts`
+ * (packaged into window.PetShared) and the browser entry point can each take what they need.
  * @module dsh-pet/src/shared/chat
  */
 export type { ChatDialogMount, ChatDialogOptions } from './dialog.ts';

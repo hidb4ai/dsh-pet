@@ -1,18 +1,19 @@
 /**
- * 成品 → 渲染列表的契约测试：条目级字段只有一处填充点（flattenConfigPets）。
+ * Finished product → Contract test of rendering list: There is only one fill point for the entry-level field
+ * (flattenConfigPets).
  *
- * 背景：animations / animationWeights / eventsRefreshSec / physics / confineToScreen /
- * workStatusTexts / whisperModel / chatModel / memes / chatImageEnabled / chatAnimationEnabled /
- * chatImageLimit 这十二个
- * 条目级字段必须由 flattenConfigPets 从
- * 「条目」写进每只实例；客户端不得再有第二份填充（第二份会漏字段，例如 physics 缺失时
- * 拖拽第一帧读 cfg.physics.throwPower 直接抛错）。设置页现在用 host 写接口返回的成品聚合
- * 重新拍平。本文件把这条不变式钉住：
- *   ① 成品经 flattenConfigPets 后，每只实例的条目级字段齐全（用真实内置默认配置）；
- *   ② 客户端不得再出现"手抄条目级字段"的填充、host 写接口必须返回成品聚合（源码级守卫——
- *      src/client/pet.ts 依赖 React/DOM，无法在 node 中导入，只能读源码断言）。
+ * Background: animations / animationWeights / eventsRefreshSec / physics / confineToScreen / workStatusTexts /
+ * whisperModel / chatModel / memes / chatImageEnabled / chatAnimationEnabled / chatImageLimit These twelve entry-level
+ * fields must be composed of flattenConfigPets is written into each instance from the "entry"; the client must not
+ * have a second fill (the second copy will miss fields, for example, when physics is missing, drag the first frame to
+ * read cfg.physics.throwPower and directly throw an error). The settings page is now reflated with the finished
+ * aggregate returned by the host write interface. This document verifies this invariant: ① After the resolved value
+ * is processed by flattenConfigPets, the entry-level fields of each instance are complete (with the real built-in
+ * default configuration); ② The client must no longer fill in the "handwritten entry-level fields", and the host write
+ * interface must return the resolved configuration (source code level guard - src/client/pet.ts depends on
+ * React/DOM and cannot be used in node Imported in, only source code assertion can be read).
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +26,7 @@ import { flattenConfigPets } from './config.ts';
 import { readAllConfig } from '../host/config.ts';
 import type { Pet } from './types.ts';
 
-/** 条目级字段清单：客户端渲染直接消费，缺一不可 */
+/** List of entry-level fields: Client-side rendering consumes directly, all are indispensable */
 const ENTRY_FIELDS: Array<keyof Pet> = [
   'animations',
   'animationWeights',
@@ -41,37 +42,40 @@ const ENTRY_FIELDS: Array<keyof Pet> = [
   'chatImageLimit',
 ];
 
-/** 包内文件源码（守卫用；相对 src/shared/ 解析） */
+/** Source code of files in the package (for guarding; relative to src/shared / parsing) */
 const readSource = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-describe('flattenConfigPets —— 成品 → 渲染列表的唯一填充点', () => {
-  test('真实内置默认配置：每只实例的条目级字段齐全（含 physics.throwPower）', () => {
+describe('flattenConfigPets - Finished product → the only fill point in the render list', () => {
+  test('Real built-in default configuration: each instance has complete entry-level fields (including physics.throwPower)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-flatten-'));
     try {
       const merged = readAllConfig({
         defaultFile: fileURLToPath(new URL('../../assets/config.jsonc', import.meta.url)),
-        userFile: join(dir, 'main-config.jsonc'), // 不存在：只测内置默认
-        petDir: join(dir, 'pet'), // 不存在：不掺文件宠物
+        userFile: join(dir, 'main-config.jsonc'), // Does not exist: only test the built-in default
+        petDir: join(dir, 'pet'), // Does not exist: no file pets
       });
       const pets = flattenConfigPets(merged);
-      assert.ok(pets.length > 0, '内置默认配置应至少有一只宠物');
+      assert.ok(pets.length > 0, 'Built-in default configuration should have at least one pet');
       for (const p of pets) {
         for (const field of ENTRY_FIELDS) {
-          assert.ok(p[field] !== undefined, `宠物「${String(p.id)}」缺条目级字段 ${field}`);
+          assert.ok(p[field] !== undefined, `Pet " ${String(p.id)} " is missing the entry-level field ${field}`);
         }
-        // 拖拽跟手第一帧读的就是它；缺失即 TypeError（本文件存在的直接原因）
+        // The first frame read by drag and drop is it; the missing one is TypeError (the direct reason for the existence of this file)
         const physics = p.physics as { throwPower?: unknown };
-        assert.equal(typeof physics.throwPower, 'number', 'physics.throwPower 必须是数字');
-        // animations 是 { idle/turn/drag/clicks/moves/categories/events } 段：待机池必须非空
+        assert.equal(typeof physics.throwPower, 'number', 'physics.throwPower must be a number');
+        // animations is { idle/turn/drag/clicks/moves/categories/events } segment: the standby pool must not be empty
         const animations = p.animations as { idle?: unknown };
-        assert.ok(Array.isArray(animations.idle) && animations.idle.length > 0, 'animations.idle 应为非空待机动画池');
+        assert.ok(
+          Array.isArray(animations.idle) && animations.idle.length > 0,
+          'animations.idle should be a non-empty standby animation pool',
+        );
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('条目级字段的来源是「条目」而非实例：实例写同名值也不生效（唯一来源 = conf）', () => {
+  test('The source of the entry-level field is "entry" rather than the instance: writing a value with the same name to the instance does not take effect (unique source = conf)', () => {
     const merged = {
       main: {
         physics: { throwPower: 7 },
@@ -84,7 +88,7 @@ describe('flattenConfigPets —— 成品 → 渲染列表的唯一填充点', (
     assert.deepEqual(pet.animations, ['a.webm']);
   });
 
-  test('实例级人设 whisperPrompt：原样带出，不参与条目级覆盖（回落由 host 消费端做）', () => {
+  test('Instance-level persona whisperPrompt: brought out as is, not participating in entry-level coverage (fallback is done by host consumer)', () => {
     const merged = {
       main: {
         whisperPrompt: '条目人设',
@@ -92,16 +96,20 @@ describe('flattenConfigPets —— 成品 → 渲染列表的唯一填充点', (
       },
     };
     const [a, b] = flattenConfigPets(merged as Record<string, Record<string, unknown>>);
-    // 条目级字段是"实例写了也以 conf 为准"，人设是反例：实例那份必须留下来（它是覆盖）
+    // The entry-level field is "the instance is written in accordance with conf", persona is a counterexample: the instance part must be retained (it is overwritten)
     assert.equal(a.whisperPrompt, '实例人设');
-    assert.equal('whisperPrompt' in b, false, '没写就是没写——回落由 host 的 petPersona 做，这里不填生效值');
+    assert.equal(
+      'whisperPrompt' in b,
+      false,
+      'If it is not written, it is not written. The fallback is done by petPersona of host. The effective value is not filled in here.',
+    );
   });
 
-  test('源码守卫：客户端只有这一处填充，host 的写接口返回成品聚合', () => {
-    // 容器（拍平与渲染列表）在 pet/multi.ts，卡片在 pet.ts：两处一起读，守卫才不会被拆分绕过。
+  test('Source code guard: The client only fills this part, and the write interface of host returns the finished aggregate', () => {
+    // The container (flattening and rendering list) is in pet/multi.ts and the card is in pet.ts: read both places together so that the guard will not be bypassed by splitting.
     const clientPet = readSource('../client/pet.ts') + '\n' + readSource('../client/pet/multi.ts');
     const clientSettings = readSource('../client/settings.ts') + '\n' + readSource('../client/settings/config/http.ts');
-    // 写入分居 config/ 下的四个文件（分发 / 保存 / 单宠显示位置 / 整条目）：路径搬迁不该让守卫失效，故按文件全读进来。
+    // Write four files under separate config/ (distribute/save/single pet display position/entire entry): path relocation should not invalidate the guard, so read all files in.
     const host =
       readSource('../host/index.ts') +
       '\n' +
@@ -115,105 +123,127 @@ describe('flattenConfigPets —— 成品 → 渲染列表的唯一填充点', (
       '\n' +
       readSource('../host/routes/state.ts');
 
-    // ① 旧的手抄填充（mc.<字段> 映射）、以及"设置页回推列表"这条旁路，都不得复活
+    // ① The old handwritten filling (mc .<field> mapping) and the bypass "setting page pushback list" cannot be resurrected
     assert.ok(
       !/petBridge\.sync/.test(clientPet + clientSettings),
-      'petBridge.sync 已删除：设置页不得再把"可编辑的裸实例列表"回推给容器（那正是漏吹 physics 的来源）',
+      'petBridge.sync Deleted: The settings page must no longer push the "editable bare instance list" back to the container (that\'s where the physics leak comes from)',
     );
     for (const field of ENTRY_FIELDS) {
       assert.ok(
         !new RegExp(`${field}:\\s*mc\\.`).test(clientPet),
-        `客户端不得手抄条目级字段 ${field}——它只应由 flattenConfigPets 从成品吹入`,
+        `The client must obtain entry field ${field} through flattenConfigPets, without duplicating the field mapping`,
       );
     }
-    // ② 容器必须经 flattenConfigPets 拿条目级字段
-    assert.ok(/flattenConfigPets/.test(clientPet), '容器必须用 flattenConfigPets 拍平成品聚合');
-    // ③ host 的 GET / PUT / POST /config、POST /pet-display 与 POST /pet-config 都返回成品聚合——
-    //    调用方拿写接口的响应直接拍平，不自己拼字段，也不再补一次 GET（补拉的那一次可能拿到陈旧配置）。
-    //    这条只能读源码：源码形态下包内默认配置不可达，写路径的成功态构造不出来
-    //    （见 standalone/integration.test.ts 的「配置不可达」口径），属于登记在案的文本基线。
+    // ② The container must obtain the entry-level fields through flattenConfigPets
+    assert.ok(/flattenConfigPets/.test(clientPet), 'The container must be flattened with flattenConfigPets aggregate');
+    // ③ GET / PUT / POST /config, POST /pet-display and POST /pet-config of host all return the resolved value
+    // aggregate - the caller takes the response of the write interface and flattens it directly, without spelling the
+    // fields by itself, and does not add it again. GET (you may get the old configuration during the re-pull). This
+    // article can only read the source code: the default configuration in the package is unreachable in source code
+    // form, and the success state of the write path cannot be constructed (see the "Configuration Unreachable"
+    // conventions of standalone/integration.test.ts), which is a registered text baseline.
     const returns = host.match(/okResult\(readAllConfig\((?:deps\.)?configPaths\)/g) ?? [];
-    assert.equal(returns.length, 5, 'GET / PUT / POST /config、POST /pet-display 与 POST /pet-config 都应返回成品聚合');
-    // 只扫 /config 那一段：动作端点（POST /balance 等）返回 { ok: true } 是对的（动作不带数据，
-    // 数据只有 /state 一个出口），全文件扫描会把它们误判成"config 写接口返回了 ok:true"。
+    assert.equal(
+      returns.length,
+      5,
+      'GET / PUT / POST / config, POST / pet-display and POST / pet-config should all be returned to finished product aggregate',
+    );
+    // Only scan the / config section: the action endpoint (POST /balance, etc.) returns { ok : true }, which is
+    // correct (the action does not carry data, and the data only has one outlet / state). Full file scanning will
+    // misjudge them as "config write interface returned ok:true".
     const configBlock = /if \(input\.rest === 'config'\) \{([\s\S]*?)\n {2}\}/.exec(host)?.[1] ?? '';
-    assert.ok(configBlock.length > 0, '必须能定位到 /config 路由段（守卫失效即无意义）');
+    assert.ok(
+      configBlock.length > 0,
+      'The / config route segment must be located (it is meaningless if the guard fails)',
+    );
     assert.ok(
       !/obj: \{ ok: true \}/.test(configBlock),
-      'config 写接口不得再返回 { ok: true }：响应体必须是成品聚合（设置页即时生效靠它拍平）',
+      'The config write interface must no longer return { ok : true }: the response body must be the finished aggregate (the setting page takes immediate effect by flattening it)',
     );
-    // ④ 保存的「透传保留」必须用 JSONC 容忍解析器读用户层：用户层可能是「同步」写入的
-    //    带 // 注释的 config.jsonc 原文，严格 JSON.parse 会抛错并被 catch 吞掉 →
-    //    existing 变 undefined → 白名单重建 → 用户手改的高级字段（animations/physics/memes…）
-    //    全部丢失。这条回归必须钉住（同步写入用户层时不得丢高级字段）。
-    assert.ok(/readUserConfig\(configPaths\)/.test(host), 'PUT /config 必须用 readUserConfig 读用户层（JSONC 容忍）');
+    // ④ The saved "transparent transmission reservation" must use the JSONC tolerant parser to read the user layer:
+    // the user layer may be written "synchronously" config.jsonc original text with // annotation, strict JSON.parse
+    // will throw an error and be swallowed by catch → existing becomes undefined → Whitelist reconstruction → Advanced
+    // fields manually modified by the user ( animations/physics/memes…) All are lost. This regression must be verified
+    // (advanced fields must not be lost when writing to the user layer synchronously).
+    assert.ok(
+      /readUserConfig\(configPaths\)/.test(host),
+      'PUT / config must use readUserConfig to read the user layer (JSONC tolerated)',
+    );
     assert.ok(
       !/JSON\.parse\(await readFile\(userConfigPath/.test(host),
-      '不得用严格 JSON.parse 读用户层：带注释的配置会解析失败，保存时静默丢掉全部高级字段',
+      'Strict JSON.parse must not be used to read the user layer: the annotated configuration will fail to parse, and all advanced fields will be silently discarded when saving.',
     );
-    // ⑤ 保存前必须有损坏预检：用户层解析不了时先不写盘，回 409 让设置页弹窗
-    //    （取消 = 不动文件 / 确认 = 强行重建）。没有它就会出现"损坏 → 静默白名单重建 → 配置全丢"。
+    // ⑤ There must be a damage pre-check before saving: if the user layer cannot be parsed, do not write to the disk
+    // first, return to 409 and let the settings page pop up (Cancel = do not move the file / Confirm = forcibly
+    // rebuild). Without it, "corruption → silent whitelist reconstruction → all configuration lost" will occur.
     assert.ok(
       /userConfigUnparsable\(configPaths\)/.test(host),
-      'PUT /config 必须先做损坏预检（userConfigUnparsable），损坏时回 409 而不是静默重建',
+      'PUT / config must first perform damage pre-check (userConfigUnparsable). When damaged, 409 will be returned instead of silent rebuilding.',
     );
-    // ⑥ 前端不得把带默认参数的 handler 直接交给 React：`onClick: save` 会让 React 把
-    //    MouseEvent 当第一个实参传进去 → save(force) 里的 force 成了真值 → 每次保存都拼
-    //    ?force=1 → 宿主的损坏预检被绕过 → 静默白名单重建、字段全丢、永不弹窗（真实事故）。
-    //    所以：onClick 必须包一层，且 force 只认严格 true。
+    // ⑥ The front end must not directly pass handler with default parameters to React: `onClick: save` will let React
+    // pass MouseEvent as the first actual parameter → force in save ( force ) becomes a true value → Spell every time
+    // you save? force =1 → The host's damage pre-check is bypassed → Silent whitelist reconstruction, all fields are
+    // lost, and the window never pops up (real accident). Therefore: onClick must be covered by one layer, and force
+    // only recognizes true strictly.
     assert.ok(
       !/onClick:\s*save\b/.test(clientSettings),
-      '保存按钮必须写 onClick: () => void save()：直接把 save 交给 React 会把 MouseEvent 当 force',
+      'The save button must write onClick: () => void save (): Directly handing save to React will treat MouseEvent as force',
     );
     assert.ok(
       /force === true \? '\?force=1'/.test(clientSettings),
-      'force 必须严格比较 true（真值判断会让任何实参都开启强行覆盖）',
+      'force must be strictly compared to true (truth value judgment will enable forced override of any actual parameters)',
     );
-    // ⑦ 系统通知开关必须与其余三个全局开关同构：只改本地状态、随「保存」写入。
-    //    即时写盘（toggleNotify 里直接 PUT /config）会让宿主重启桌面 Helper（全部桌面宠物窗口重建：
-    //    拖拽落点清空、宠物跳回配置角落）——"改个通知开关，桌面被重置"，与其它开关行为不一致。
-    //    写盘只允许出现在 save() 里。
+    // ⑦ The system notification switch must be the same as the other three global switches: only change the local
+    // status and write with "Save". Instant disk writing (directly PUT /config in toggleNotify) will cause the host
+    // to restart the desktop Helper (all desktop pet windows are rebuilt: drag the drop point to clear, and the pet
+    // will jump back to the configuration corner) - "Change the notification switch and the desktop will be reset",
+    // which is inconsistent with the behavior of other switches. Writing to disk is only allowed in save().
     const toggle = /const toggleNotify = async[\s\S]*?\n {4}\};/.exec(clientSettings);
-    assert.ok(toggle, '设置页必须有 toggleNotify（系统通知开关）');
+    assert.ok(toggle, 'The settings page must have toggleNotify (system notification switch)');
     assert.ok(
       !/fetch\(|method: 'PUT'/.test(toggle[0]),
-      '系统通知开关不得即时写盘：切换只改本地状态，随「保存」写入（否则会重启桌面 Helper）',
+      'The system notification switch cannot write to the disk immediately: the switch only changes the local status and writes with "Save" (otherwise the desktop will be restarted Helper)',
     );
     assert.ok(
       /notificationsEnabled: notifyEnabled/.test(clientSettings),
-      '「保存」的请求体必须带上通知开关（否则切了开关点保存也不生效）',
+      'The "save" request body must have a notification switch (otherwise, even if the switch is turned on, the save will not take effect)',
     );
-    // ⑧ 物理参数（设置页「物理」区）必须真的提交：physics 必须在白名单里（只在 existing 里
-    //    透传时，前端就算把输入框画出来、改了值，写盘时也会被丢弃）。守卫两侧：
-    //    「保存」请求体必须带 physics；宿主必须用同一份 physicsValid 整段校验它。
-    //    取请求体字面量再找键（不写死 `physics: physics`：打包器会把同名简写压成 `physics,`）。
+    // ⑧ The physical parameters (the "Physical" area of the settings page) must be truly submitted: physics must be in
+    // the whitelist (only in existing during transparent transmission, even if the front-end draws the input box and
+    // changes the value, it will be discarded when writing to disk). Guard both sides: the "save" request body must
+    // contain physics; the host must use the same physicsValid to verify it. Get the request body literal and then
+    // find the key (don’t hardcode `physics: physics` : the packager will compress the abbreviation of the same name
+    // into `physics,` ).
     const saveBody = /export function buildSaveBody[\s\S]*?return \{([\s\S]*?)\n {2}\};/.exec(clientSettings);
-    assert.ok(saveBody, '设置页必须有「保存」的请求体字面量');
+    assert.ok(saveBody, 'The settings page must have a "save" request body literal');
     assert.ok(
       /(^|[^.\w])physics\b/.test(saveBody[1]),
-      '「保存」的请求体必须带上 physics（否则设置页改的物理参数不会落盘）',
+      'The "save" request body must carry physics (otherwise the physical parameters for setting page changes will not persist to disk)',
     );
     assert.ok(
       /physicsValid\(ph\)/.test(readSource('../host/config/save.ts')),
-      'saveUserConfig 必须用 physicsValid 校验 physics（与读取侧同一套规则）',
+      'saveUserConfig must use physicsValid to verify physics (the same set of rules as the reading side)',
     );
-    // ⑨ 模型选择（设置页「AI 模型」两个下拉框）必须真的提交：whisperModel / chatModel 若不在白名单里，
-    //    前端选了也写不进用户层（只会被 existing 的透传值盖回去）。守卫两侧：
-    //    「保存」请求体必须带它们；宿主必须用同一份 modelSelectionValid 整段校验。
+    // ⑨ The model selection (the two drop-down boxes of "AI Model" on the settings page) must be truly submitted:
+    // whisperModel / chatModel. If it is not in the whitelist, the front-end will not be able to write it into the
+    // user layer even if it is selected (it will only be covered by the transparent transmission value of existing).
+    // Guard both sides: the "save" request body must carry them; the host must use the same modelSelectionValid full
+    // segment check.
     assert.ok(
       /(^|[^.\w])whisperModel\b/.test(saveBody[1]) && /(^|[^.\w])chatModel\b/.test(saveBody[1]),
-      '「保存」的请求体必须带上 whisperModel / chatModel（否则设置页选的模型不会落盘）',
+      'The "save" request body must carry whisperModel / chatModel (otherwise the model selected on the page will not persist to disk)',
     );
     const hostConfig = readSource('../host/config/save.ts');
     assert.ok(
       /modelSelectionValid\(wm\)/.test(hostConfig) && /modelSelectionValid\(cm\)/.test(hostConfig),
-      'saveUserConfig 必须用 modelSelectionValid 校验 whisperModel / chatModel（与读取侧同一套规则）',
+      'saveUserConfig must use modelSelectionValid to verify whisperModel / chatModel (the same set of rules as the reading side)',
     );
-    // 下拉框的数据源必须与 DSH 的模型选择器同源：走宿主 llm 服务（listProviders / listModels），
-    // 不得另立一份手写的服务商清单——那会随 DSH 支持的服务商漂移。
+    // The data source of the drop-down box must have the same origin as the model selector of DSH: use the host llm
+    // service (listProviders / listModels), and do not create a separate handwritten service provider list - that will
+    // drift with the service providers supported by DSH.
     assert.ok(
       /listProviders/.test(host) && /listModels/.test(host),
-      'GET /models 必须取宿主 llm 服务的 listProviders / listModels（与 DSH 模型选择器同源）',
+      'GET / models must be listProviders / listModels served by host llm (same origin as DSH model selector)',
     );
   });
 });

@@ -1,7 +1,8 @@
 /**
- * 会话交互路由（src/host/routes/interaction.ts）中 /whisper 的契约测试：
- * ?image= 透传给生成函数、?surface= 落成 voiceTo、缺省不带、失败 reason 原样透出。
- * 锁 / 投喂 / 清气泡三个分支各有自己的覆盖，这里只钉住 /whisper 这一条链路。
+ * Contract test of / whisper in session interaction route (src/host/routes/interaction.ts): ? image = transparently
+ * passed to the generation function, ? surface = completed voiceTo, not provided by default, failed reason is exposed
+ * as is. The three branches of locking/feeding/clearing bubbles each have their own coverage. Here is only the link
+ * verify/whisper.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ import assert from 'node:assert/strict';
 import { handleInteractionRoutes } from './interaction.ts';
 import type { GeneratedReply, PetRouteDeps, RouteInput } from './types.ts';
 
-/** 造一份只满足 /whisper 分支的依赖：宠物定位恒命中，生成行为由调用方给。 */
+/** Create a dependency that only satisfies the /whisper branch: the pet positioning is always hit, and the generated behavior is given by the caller. */
 function harness(whisper: (petId: string, image?: string) => Promise<GeneratedReply>) {
   const calls: { petId: string; image?: string; voiceTo?: string }[] = [];
   const deps = {
@@ -28,8 +29,8 @@ function harness(whisper: (petId: string, image?: string) => Promise<GeneratedRe
   return { calls, call };
 }
 
-describe('handleInteractionRoutes —— /whisper 的 voiceTo（谁点的谁念）', () => {
-  test('surface=web / desktop 原样落到 voiceTo', async () => {
+describe('handleInteractionRoutes —— / voiceTo of whisper (whoever clicks it reads it)', () => {
+  test('surface = web / desktop falls to voiceTo as it is', async () => {
     const web = harness(async () => ({ ok: true, text: '好' }));
     await web.call('?pet=main&surface=web');
     assert.equal(web.calls[0]?.voiceTo, 'web');
@@ -39,39 +40,39 @@ describe('handleInteractionRoutes —— /whisper 的 voiceTo（谁点的谁念�
     assert.equal(desktop.calls[0]?.voiceTo, 'desktop');
   });
 
-  test('surface=both / any 不足以指定一端 → 不传，交给 display 推导', async () => {
+  test('surface = both / any is not enough to specify one end → do not pass, leave it to display for derivation', async () => {
     for (const want of ['both', 'any']) {
       const probe = harness(async () => ({ ok: true, text: '好' }));
       await probe.call('?pet=main&surface=' + want);
-      assert.equal(probe.calls[0]?.voiceTo, undefined, `surface=${want} 不该指定成一端`);
+      assert.equal(probe.calls[0]?.voiceTo, undefined, `surface = ${want} should not be specified as one end`);
     }
   });
 });
 
-describe('handleInteractionRoutes —— /whisper 的指定配图', () => {
-  test('带 ?image=：图名原样交给生成函数，成功应答照旧带回文本与图', async () => {
+describe('handleInteractionRoutes——/Specified picture of whisper', () => {
+  test('With ? image =: The picture name is handed over to the generation function as it is. A successful response will still bring back the text and picture.', async () => {
     const { calls, call } = harness(async (_petId, image) => ({ ok: true, text: '好呀', image }));
     const result = await call('?pet=main&image=' + encodeURIComponent('大的要来啦'));
     assert.deepEqual(
       calls,
       [{ petId: 'main', image: '大的要来啦', voiceTo: undefined }],
-      '图名必须原样透传，不解码错位',
+      'The picture title must be transparently transmitted as it is without decoding and misalignment.',
     );
     assert.equal((result as { obj: { image?: string } }).obj.image, '大的要来啦');
   });
 
-  test('不带 ?image=：生成函数收到 undefined（随机/纯文本那条老路径）', async () => {
+  test('Without ? image =: The generation function received undefined (the old path of random/plain text)', async () => {
     const { calls, call } = harness(async () => ({ ok: true, text: '好呀' }));
     await call('?pet=main');
     assert.deepEqual(calls, [{ petId: 'main', image: undefined, voiceTo: undefined }]);
   });
 
-  test('图不在池内：unknown-image 原样透出，不糊成 generate-error', async () => {
+  test('The picture is not in the pool: unknown-image is revealed as it is, not blurred into generate-error', async () => {
     const { call } = harness(async () => ({ ok: false, reason: 'unknown-image', message: '表情包不在池内：查无此图' }));
     const result = await call('?pet=main&image=' + encodeURIComponent('查无此图'));
     const body = (result as { status: number; obj: { ok: boolean; reason?: string } }).obj;
-    assert.equal((result as { status: number }).status, 200, '业务失败沿用「HTTP 200 + 失败实体」');
+    assert.equal((result as { status: number }).status, 200, 'Business failure uses "HTTP 200 + failed entity"');
     assert.equal(body.ok, false);
-    assert.equal(body.reason, 'unknown-image', '调用方按 reason 分支，不能被归一化掉');
+    assert.equal(body.reason, 'unknown-image', 'The caller branches according to reason and cannot be normalized.');
   });
 });

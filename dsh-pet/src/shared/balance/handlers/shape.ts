@@ -1,24 +1,26 @@
 /**
- * 一种展示形态需要提供的展示规则，由 handlers/index.ts 装配成 `Record<BalanceShape, ShapeHandler>`。
+ * A display form needs to provide display rules, which are assembled from handlers/index.ts into
+ * `Record<BalanceShape, ShapeHandler>` .
  *
- * 拆成 percent、rows、detail 与 views，是为了让一个形态的全部展示知识待在一个文件里：
- * 加形态只需写一个新 handler，不必在主流程里插分支。
+ * The purpose of splitting it into percent, rows, detail and views is to keep all the display knowledge of a form in
+ * one file: to add a form, you only need to write a new handler, and there is no need to insert a branch in the main
+ * process.
  *
  * @module dsh-pet/src/shared/balance/handlers/shape
  */
 
 import type { BalanceBubbleRow, BalanceView, CustomNode } from '../types.ts';
 
-/** 一种展示形态向两端的展示层提供的全部规则。 */
+/** All rules provided by a presentation form to the presentation layers at both ends. */
 export interface ShapeHandler {
-  /** 已用百分比，驱动宠物档位动画；undefined 表示该形态给不出百分比语义 */
+  /** Used percentage to drive pet state animation; undefined means that this form cannot provide percentage semantics */
   percent(v: BalanceView): number | undefined;
-  /** 收起态气泡行 */
+  /** Collapse bubble line */
   rows(v: BalanceView): BalanceBubbleRow[];
-  /** 展开态气泡行；缺省表示没有额外读数，调用方回落到 rows */
+  /** Expand bubble line; default means no additional readings, caller fallback to rows */
   detail?(v: BalanceView): BalanceBubbleRow[];
-  /** 第三页：区间累计用量；返回 undefined 表示该服务商没有这项数据，气泡只有两页 */
+  /** The third page: cumulative usage in the interval; returning undefined means that the service provider does not have this data, and bubble only has two pages. */
   usage?(v: BalanceView): BalanceBubbleRow[] | undefined;
-  /** custom：多页节点树，第一项为初始页；缺省表示该形态不走树 */
+  /** custom: Multi-page node tree, the first item is the initial page; the default means that this form does not go through the tree */
   views?(v: BalanceView): CustomNode[] | undefined;
 }

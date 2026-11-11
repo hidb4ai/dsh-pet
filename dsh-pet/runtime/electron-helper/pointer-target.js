@@ -1,29 +1,34 @@
 /**
- * 点击穿透兜底通道的纯判定（不 require electron，可被 node:test 直接加载）。
- * 窗口默认整窗穿透，常规链路只有 Electron 的 forward 鼠标钩子一个入口，而该钩子在 Windows 上会静默失效
- * ——失效后悬浮、拖拽、点击与右键全无反应。本模块只算「该不该可交互」，主进程负责取光标并翻转窗口；
- * 坐标一律 DIP（窗口矩形与光标同单位）。
+ * Click-through fallback channel pure judgment (not require electron, can be loaded directly by node:test). The window
+ * defaults to click-through for the whole window. The regular link only has an entry point for the forward mouse hook
+ * of Electron, and this hook will silently fail on Windows - after the failure, hovering, dragging, clicking and
+ * right-clicking will have no response. This module only counts "should it be interactive". The main process is
+ * responsible for taking the cursor and flipping the window; the coordinates are always DIP (the window rectangle and
+ * the cursor have the same unit).
  * @module dsh-pet/runtime/electron-helper/pointer-target
  */
 
 'use strict';
 
-/** 宠物身体命中区（画布坐标，与 src/shared/constants.ts 的 HIT_BOX 一致；守卫测试钉住二者同步） */
+/** Pet body hit area (canvas coordinates, consistent with HIT_BOX of src/shared/constants.ts; guard test verify both are synchronized) */
 const HIT_BOX = { x0: 200, y0: 50, x1: 440, y1: 335 };
-/** 动画画布尺寸：高取 shared 的 CANVAS_H，宽与 sprite.js / shared 一样用字面量 640（shared 未导出宽） */
+/** Animation canvas size: the height is CANVAS_H of shared, and the width is the same as sprite.js / shared using the literal value 640 (shared is not exported) */
 const CANVAS_H = 360;
 const STAGE_W = 640;
 const FEET_Y = 330;
 
 /**
- * 窗口矩形 → 宠物身体命中区的屏幕矩形（DIP）。
+ * Window rectangle → Screen rectangle of pet body hit area (DIP).
  *
- * 窗口 = 宠物包围盒 + 四周余量，而余量不再四边相等（上边距按气泡最大高度加高），所以不能按
- * 「窗口宽/4」反推，否则命中区整体偏移。左/上偏移由渲染端随 setBounds 上报，右侧由主进程按
- * 「窗口宽 − 本体宽 − 左偏移」算出——窗口被系统钳回工作区后本体在窗口内会向右偏，左右不再是同一个数。
+ * Window = pet bounding box + surrounding margin, and the margin is no longer equal to the four sides (the top margin
+ * is increased according to the maximum height of the bubble), so you cannot push back by "window width/4", otherwise
+ * the entire hit area will be offset. The left/top offset is reported by the renderer along with setBounds, and the
+ * right side is calculated by the main process according to "Window Width - Body Width - Left Offset" - after the
+ * window is clamped back to the workspace by the system, the body will be offset to the right in the window, and the
+ * left and right are no longer the same number.
  *
- * @param bounds - 窗口矩形（DIP）。
- * @param margins - 渲染端上报的左/上偏移（DIP），右侧可在 margins.r 给出。
+ * @param bounds - window rectangle (DIP).
+ * @param margins - The left/top offset reported by the renderer ( DIP ), the right side can be given in margins.r.
  */
 function spriteHitRect(bounds, margins) {
   const legacy = Math.round(bounds.width / 4);
@@ -41,21 +46,22 @@ function spriteHitRect(bounds, margins) {
   };
 }
 
-/** 判定轮询间隔（ms） */
+/** Determine polling interval (ms) */
 const POINTER_POLL_MS = 60;
 
-/** 光标停在窗口余量区（非 busy）的最长保持时间（ms）：超过即恢复穿透 */
+/** Maximum time in milliseconds to retain input while the pointer is in a non-busy window margin; restore click-through after this timeout. */
 const OFF_BODY_RELEASE_MS = 400;
 
 /**
- * 光标相对窗口的分区：'outside' | 'body' | 'margin'。
+ * The cursor is relative to the partition of the window: ' outside ' | ' body ' | ' margin '.
  *
- * 主进程除判定外还要按分区累计余量区停留时长；分区规则只在此处维护，避免两条通道漂移。
+ * In addition to judgment, the main process also needs to stay in the accumulated margin area according to the
+ * partition; the partition rules are only maintained here to avoid the drift of the two channels.
  *
- * @param bounds - 窗口矩形（DIP）。
- * @param point - 真实光标位置（DIP）。
- * @param margins - 渲染端上报的左/上偏移（DIP），见 spriteHitRect。
- * @returns 分区。
+ * @param bounds - window rectangle (DIP).
+ * @param point - the real cursor position ( DIP ).
+ * @param margins - Left/top offset reported by renderer ( DIP ), see spriteHitRect.
+ * @returns partition.
  */
 function pointerZone(bounds, point, margins) {
   const inWindow =
@@ -70,19 +76,21 @@ function pointerZone(bounds, point, margins) {
 }
 
 /**
- * 该不该让窗口保持穿透（setIgnoreMouseEvents 的第一个参数）。
- * busy 期间位置完全不参与：拖拽时宠物滞后于光标，位置判定会断掉正在用的 pointermove/pointerup。
+ * Should the window remain click-through (the first parameter of setIgnoreMouseEvents). The position is not involved
+ * at all during busy: the pet lags behind the cursor when dragging, and the position determination will interrupt the
+ * pointermove/pointerup being used.
  *
- * @param ignoring - 当前是否穿透（取自主进程镜像，避免与渲染端通道失步）。
- * @param busy - 渲染端是否正在使用本窗口的鼠标输入。
- * @param offBodyMs - 余量区（非 busy）的连续停留时长。
- * @param input - 渲染端上报的控件矩形与拖拽标记。
- * @param margins - 渲染端上报的左/上偏移（DIP）。
- * @returns 新的穿透状态。
+ * @param ignoring - Whether it is currently click-through (taken from the main process image to avoid losing
+ * synchronization with the renderer channel).
+ * @param busy - whether the renderer is using mouse input for this window.
+ * @param offBodyMs - The continuous stay time in the margin area (not busy).
+ * @param input - The control rectangle and drag mark reported by the renderer.
+ * @param margins - left/top offset reported by renderer ( DIP ).
+ * @returns New click-through state.
  */
 function decideWindowIgnore(bounds, point, ignoring, busy, offBodyMs = 0, input, margins) {
   if (busy) {
-    if (!input || input.dragging) return false; // 兼容旧渲染端；拖拽租约绝不被位置判定打断
+    if (!input || input.dragging) return false; // Compatible with old renderers; dragging leases are never interrupted by position determination
     const inControl = input.rects.some(
       (r) =>
         point.x >= bounds.x + r.x &&
@@ -93,10 +101,10 @@ function decideWindowIgnore(bounds, point, ignoring, busy, offBodyMs = 0, input,
     return !inControl && pointerZone(bounds, point, margins) !== 'body';
   }
   const zone = pointerZone(bounds, point, margins);
-  if (zone === 'outside') return true; // 窗外：恢复穿透
-  if (zone === 'body') return false; // 宠物身上：可交互
-  if (offBodyMs >= OFF_BODY_RELEASE_MS) return true; // 余量区停留超时：恢复穿透
-  return ignoring; // 余量区：保持（菜单/弹窗由 busy 覆盖）
+  if (zone === 'outside') return true; // Outside the window: restore click-through
+  if (zone === 'body') return false; // On pets: Interactive
+  if (offBodyMs >= OFF_BODY_RELEASE_MS) return true; // Remaining timeout in margin area: restore click-through
+  return ignoring; // Margin area: keep (menu/pop-up window is covered by busy)
 }
 
 module.exports = {

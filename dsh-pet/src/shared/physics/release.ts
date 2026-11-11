@@ -1,8 +1,10 @@
 /**
- * 甩抛初速估算：把一串指针采样折成起手速度，并给出弹弓拉距对应的力度。
+ * Estimation of initial velocity of throwing: convert a series of pointer samples into starting hand speed, and give
+ * the strength corresponding to the draw distance of the slingshot.
  *
- * 不做积分、不改位置；输出只作为 throwStep 的初值。
- * 必须始终成立：采样间隔超出窗口即视为松手，不得跨窗口拼接速度。
+ * No integration is performed and the position is not changed; the output is only used as the initial value of
+ * throwStep. This must always be true: sampling intervals outside the window are considered loose, and concatenate
+ * speeds across the window are not allowed.
  * @module dsh-pet/src/shared/physics/release
  */ import { type PhysicsParams } from '../types.ts';
 import type { DragSample } from './throw.ts';
@@ -23,7 +25,7 @@ import {
 } from './constants.ts';
 import { softClampSpeed } from './spring.ts';
 
-/** 剔除保留窗口外的旧采样；采样按时间追加，所以只需从头裁。 */
+/** Eliminate old samples outside the retention window; samples are appended by time, so you only need to cut from scratch. */
 export const trimTrail = (trail: DragSample[], now: number): DragSample[] => {
   const cutoff = now - TRAIL_KEEP_MS;
   let i = 0;
@@ -31,47 +33,54 @@ export const trimTrail = (trail: DragSample[], now: number): DragSample[] => {
   return i === 0 ? trail : trail.slice(i);
 };
 
-/** 抛掷指令（POST /throw 的 angle + power）→ 初速度 (vx, vy)，px/s。
- *  angle 单位度，0 = 正右、逆时针为正——屏幕 y 向下，所以 vy 取负（往上抛写 90，不是 270）。
- *  初速 = power × THROW_SPEED_ANCHOR 再过既有软上限，任意 power 都单调可区分且不超过 MAX_THROW_SPEED。
- *  两端共用本函数，保证接口抛掷的初速换算严格一致。 */
+/**
+ * Throwing instruction (POST /throw of angle + power) → initial velocity (vx, vy), px/s. angle unit degree, 0 = right
+ * and counterclockwise is positive - the screen y is downward, so vy is negative (throw it upward and write 90, not
+ * 270). Initial velocity = power × THROW_SPEED_ANCHOR. Beyond the existing soft upper limit, any power is
+ * monotonically distinguishable and does not exceed MAX_THROW_SPEED. Both ends share this function to ensure that the
+ * initial velocity conversion of the interface throw is strictly consistent.
+ */
 export const throwVelocity = (angleDeg: number, power: number): { vx: number; vy: number } => {
   const speed = softClampSpeed(power * THROW_SPEED_ANCHOR);
   const rad = (angleDeg * Math.PI) / 180;
   return { vx: Math.cos(rad) * speed, vy: -Math.sin(rad) * speed };
 };
 
-/** 「一倍力度」的参考拉距（px），随宠物尺寸缩放——小宠物不必拖同样远才炸。 */
+/** The reference draw distance of "double strength" (px) scales with the size of the pet - small pets do not have to be dragged the same distance to explode. */
 export const slingshotRefDist = (size: number): number => (size > 0 ? size * SLINGSHOT_REF_RATIO : 0);
 
-/** 拉距 → 力度倍率（px / 参考拉距）：线性、单调、不夹取；0 拉距 = 0 力度。 */
+/** Draw length → Strength magnification (px / reference draw length): linear, monotonic, no clamping; 0 draw length = 0 strength. */
 export const slingshotPower = (dist: number, size: number): number => {
   const ref = slingshotRefDist(size);
   if (!(ref > 0) || !(dist > 0) || !Number.isFinite(dist)) return 0;
   return dist / ref;
 };
 
-/** 拉向量（起点 → 松手点，屏幕坐标，y 向下）→ 弹射角度（度）：弹的是拉的反方向，角度约定同 throwVelocity。 */
+/** Pull vector (starting point → release point, screen coordinates, y downward) → ejection angle (degrees): The bounce is in the opposite direction of the pull, and the angle agreement is the same as throwVelocity. */
 export const pullAngle = (pullX: number, pullY: number): number => (Math.atan2(pullY, -pullX) * 180) / Math.PI;
 
-/** 弹弓初速：角度约定与力度锚点同 throwVelocity，但没有软上限（任意 power 都单调可区分）。 */
+/** Slingshot initial velocity: The angle convention is the same as the force anchor point throwVelocity, but there is no soft upper limit (any power is monotonically distinguishable). */
 export const slingshotVelocity = (
   angleDeg: number,
   power: number,
   throwPower: number = DEFAULT_THROW_POWER,
 ): { vx: number; vy: number } => {
   const speed = THROW_SPEED_ANCHOR * Math.max(0, power) * Math.max(0, throwPower);
-  // 0 力度直接给 0（而不是算出来 cos/sin 的 -0）：叶子里的速度要能当普通数字比较
+  // 0 velocity is given directly to 0 (instead of -0 calculated as cos/sin): the speed in the leaves must be compared with ordinary numbers
   if (speed === 0) return { vx: 0, vy: 0 };
   const rad = (angleDeg * Math.PI) / 180;
   return { vx: Math.cos(rad) * speed, vy: -Math.sin(rad) * speed };
 };
 
-/** 由拖拽轨迹估算松手初速 (vx, vy)，px/s。
- *  方向取窗口首末端点的位移（抗抖）；大小 = 端点平均与窗口峰值按 PEAK_WEIGHT 加权，
- *  末段仍在加速时按 ACCEL_REF 给增益（最多 ACCEL_GAIN_MAX），再过软钳速。
- *  软钳速之后整体乘 physics.throwPower，让初速与死区判定一起线性缩放。
- *  返回 null = 温柔放下（轨迹为空 / 停留过久 / 窗口太短 / 峰值低于死区），调用方不抛。 */
+/**
+ * Estimating the initial release velocity (vx, vy), px/s from the drag trajectory. The direction takes the
+ * displacement of the first and end points of the window (anti-shake); the size = the end point average and the window
+ * peak value are weighted by PEAK_WEIGHT. When the end section is still accelerating, press ACCEL_REF to give the gain
+ * (up to ACCEL_GAIN_MAX), and then pass the soft clamp speed. After the soft clamp speed is multiplied by
+ * physics.throwPower as a whole, the initial velocity and dead zone determination are linearly scaled together. Return
+ * null = gentle release (the trajectory is empty/stayed too long/the window is too short/the peak value is lower than
+ * the dead zone), the caller is not thrown.
+ */
 export const estimateReleaseVelocity = (
   trail: DragSample[],
   now: number,
@@ -93,8 +102,8 @@ export const estimateReleaseVelocity = (
   const baseVx = ((x1 - x0) / spanMs) * 1000;
   const baseVy = ((y1 - y0) / spanMs) * 1000;
   const baseSpeed = Math.hypot(baseVx, baseVy);
-  if (baseSpeed < 1e-6) return null; // 窗口内几乎纯抖动：没有可靠方向，按原地放下处理
-  // 分段速度（过密采样向前合并，dt 下限 SEG_MIN_DT_MS）
+  if (baseSpeed < 1e-6) return null; // Almost pure jitter in the window: there is no reliable direction, and the processing is put down in place. Segmented
+  // speed (over-density sampling is merged forward, dt lower limit SEG_MIN_DT_MS)
   const segSpeeds: { speed: number; tEnd: number }[] = [];
   let px = x0;
   let py = y0;
@@ -109,7 +118,7 @@ export const estimateReleaseVelocity = (
     }
   }
   const peakSpeed = segSpeeds.length ? Math.max(...segSpeeds.map((v) => v.speed)) : baseSpeed;
-  // 末段加速度：末段峰值速度相对首段的斜率，仍在加速的甩动据此放大初速
+  // Terminal acceleration: The slope of the peak velocity at the end relative to the first stage. The initial velocity is amplified by the swing that is still accelerating.
   let accel = 0;
   if (segSpeeds.length >= 2) {
     const lastSeg = segSpeeds[segSpeeds.length - 1];

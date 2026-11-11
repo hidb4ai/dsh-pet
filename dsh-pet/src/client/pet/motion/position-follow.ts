@@ -1,60 +1,63 @@
 /**
- * 位置跟随：把位置指令（归一化中心）变成一次落位动画——instant 一帧到位、line 直线补间、spring 过阻尼跟随。
- * 三种模式都只在像素空间插值：按归一化比例插值会把斜线走歪，也会让不同视口下的速度不一致。
- * 一次只跑一条：新指令取消旧的，世代号让迟到的帧自弃；用户按下宠物时整拍让位（交互优先）。
+ * Position following: Turn the position command (normalized center) into a positioning animation - instant one frame
+ * in place, line linear tweening, spring over-damping following. All three modes only interpolate in pixel space:
+ * interpolation according to the normalized ratio will distort the diagonal line, and will also make the speed
+ * inconsistent under different viewports. Only run one at a time: the new command cancels the old one, the generation
+ * number causes the late frame to discard itself; the whole frame gives way when the user presses the pet (interaction
+ * priority).
  * @module dsh-pet/src/client/pet/motion/position-follow
  */
 import { springStep } from '../../../shared/physics.ts';
 import type { PositionMode } from '../../../shared/state.ts';
 import { centerToBox, type BoxPoint, type Center, type HalfSize, type Viewport } from './geometry.ts';
 
-/** 位置跟随的依赖：全部用取值函数，避免捕获渲染期的快照。 */
+/** Dependence on position following: all use value functions to avoid capturing snapshots during rendering. */
 export interface PositionFollowDeps {
-  /** 宠物根节点；`null` 表示还没挂载。 */
+  /** Pet root node; `null` means it has not been mounted yet. */
   root: () => HTMLDivElement | null;
-  /** 当前包围盒位置（px）；`null` = 还没落过位。 */
+  /** Current bounding box position (px); `null` = Not in position yet. */
   box: () => BoxPoint | null;
-  /** 写回包围盒位置（每帧调用）。 */
+  /** Write back the bounding box position (called every frame). */
   setBox: (box: BoxPoint) => void;
-  /** 落位后提交归一化中心，交给 React 重排。 */
+  /** After placement, submit to the normalization center and hand it over to React for rearrangement. */
   commit: (center: Center) => void;
-  /** 当前视口尺寸。 */
+  /** Current viewport size. */
   viewport: () => Viewport;
-  /** 盒的半宽半高。 */
+  /** Half width and half height of the box. */
   half: () => HalfSize;
-  /** 弹簧刚度（取成品配置的 `physics.throwPower`）。 */
+  /** Spring stiffness (take `physics.throwPower` of resolved configuration). */
   spring: () => number;
-  /** 用户是否正按着宠物：按着时整拍丢弃。 */
+  /** Whether the user is pressing the pet: when pressing, the whole shot is discarded. */
   isDragging: () => boolean;
-  /** 接管前先停掉飞行与走位。 */
+  /** Stop flying and moving before taking over. */
   takeOver: () => void;
 }
 
-/** 位置跟随驱动：一个宠物一个实例。 */
+/** Position following driver: one instance per pet. */
 export interface PositionFollow {
   /**
-   * 执行一次位置指令。
+   * Execute a position command.
    *
-   * @param rx - 目标中心相对视口的横向比例。
-   * @param ry - 目标中心相对视口的纵向比例。
-   * @param mode - 落位方式。
-   * @param duration - `line` 模式的时长（ms）；`<= 0` 视同 instant。
+   * @param rx - The horizontal scale of the target center relative to the viewport.
+   * @param ry - The vertical ratio of the target center relative to the viewport.
+   * @param mode - Positioning method.
+   * @param duration - `line` mode duration (ms); `<= 0` is regarded as instant.
    */
   apply: (rx: number, ry: number, mode: PositionMode, duration: number) => void;
-  /** 放弃进行中的跟随（走位或新的接管会用到）。 */
+  /** Give up the follow-up in progress (used for positioning or new takeover). */
   stop: () => void;
 }
 
 /**
- * 造位置跟随驱动。
+ * Create position following driver.
  *
- * @param deps - 取位置、写位置与接管回调。
- * @returns 可反复调用的驱动。
+ * @param deps - Get position, write position and take over callback.
+ * @returns driver that can be called repeatedly.
  */
 export function createPositionFollow(deps: PositionFollowDeps): PositionFollow {
-  /** 进行中的 rAF；`null` = 没有跟随在跑。 */
+  /** rAF in progress; `null` = running without following. */
   let frame: number | null = null;
-  /** 世代号：每次开始或停止 +1，迟到的帧据此自弃。 */
+  /** Generation number: +1 for each start or stop, and late frames will be discarded accordingly. */
   let token = 0;
 
   const stop = (): void => {
@@ -65,7 +68,7 @@ export function createPositionFollow(deps: PositionFollowDeps): PositionFollow {
     }
   };
 
-  /** 写包围盒与四个 style，弹簧和直线两条路共用。 */
+  /** The writing bounding box is shared with four style, spring and straight lines. */
   const paint = (el: HTMLDivElement, x: number, y: number): void => {
     deps.setBox({ x, y });
     el.style.left = x + 'px';
@@ -76,7 +79,7 @@ export function createPositionFollow(deps: PositionFollowDeps): PositionFollow {
 
   const apply = (rx: number, ry: number, mode: PositionMode, duration: number): void => {
     if (deps.isDragging()) return;
-    // 先显式接管：停掉飞行与走位，走位顺带停掉上一次的跟随。
+    // Take over explicitly first: stop flying and moving, and stop the last following while moving.
     deps.takeOver();
     const target = centerToBox({ rx, ry }, deps.viewport(), deps.half());
     const el = deps.root();
@@ -89,14 +92,14 @@ export function createPositionFollow(deps: PositionFollowDeps): PositionFollow {
     token = current;
     if (frame !== null) cancelAnimationFrame(frame);
     if (mode === 'line') {
-      if (duration <= 0) return; // 上面已经拦掉，这里只让类型收窄。
+      if (duration <= 0) return; // It has been blocked above, and only the type is narrowed here.
       const from = deps.box() ?? target;
       const t0 = performance.now();
       const step = (): void => {
         if (token !== current) return;
         const p = Math.min((performance.now() - t0) / duration, 1);
         if (p >= 1) {
-          // 精确落位，终点不留残余偏差。
+          // Accurate positioning, leaving no residual deviation at the end point.
           paint(el, target.x, target.y);
           frame = null;
           deps.commit({ rx, ry });
@@ -108,7 +111,7 @@ export function createPositionFollow(deps: PositionFollowDeps): PositionFollow {
       frame = requestAnimationFrame(step);
       return;
     }
-    // spring：过阻尼弹簧跟随，没有行程时间，靠收敛判定自己收尾。
+    // spring: Over-damping spring follows, no travel time, and relies on convergence to determine its own cleanup.
     let last = performance.now();
     const vel = { vx: 0, vy: 0 };
     const step = (): void => {
@@ -123,7 +126,7 @@ export function createPositionFollow(deps: PositionFollowDeps): PositionFollow {
       x += vel.vx * dt;
       y += vel.vy * dt;
       paint(el, x, y);
-      // 收敛判定：足够近且足够慢时精确落位并提交。
+      // Convergence judgment: Accurately position and submit when close enough and slow enough.
       if (
         Math.abs(target.x - x) < 0.5 &&
         Math.abs(target.y - y) < 0.5 &&

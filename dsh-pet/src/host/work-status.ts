@@ -1,24 +1,26 @@
 /**
- * 工作状态联动（host 半侧，自包含，不 import src/shared）。
+ * Working status linkage (host side, self-contained, not import src/shared).
  *
- * 负责监听 DSH 的 session/event，把会话事件压缩成「当前活动工作状态」并按会话聚合，
- * 由调用方写进 sections.workStatus，两端轮询 /state 后按 counter 变化渲染。
- * 只做聚合与去重：状态无变化不产生新输出（签名比对防刷屏），不调用任何模型。
- * 依赖会话事件与调用方维护的 turn 上下文；不负责档位文案与动画，那些在两端消费侧。
- * 始终成立：档位顺序与 animations.events.workStatus 数组索引严格一致，不在中间插入。
- * 契约见 API.md 与 openapi.yaml。
+ * session/event, which is responsible for monitoring DSH, compresses the session events into "current active working
+ * status" and aggregates them according to the session. The caller writes sections.workStatus. After polling / state
+ * at both ends, counter changes the rendering. Only aggregate and deduplicate are used: there is no change in status,
+ * no new output is generated (signature comparison prevents screen refresh), and no model is called. Relies on session
+ * events and the turn context maintained by the caller; it is not responsible for the stall copy and animation, which
+ * are on the consumer side at both ends. Always true: the state sequence is strictly consistent with the
+ * animations.events.workStatus array index, and no intermediate insertion is performed. See API.md and openapi.yaml
+ * for contracts.
  *
  * @module dsh-pet/src/host/work-status
  */
 
-/** 工作状态档位（数组索引 = events.workStatus 档位；顺序与 shared/work-status.ts 一致）。 */
+/** Working status state (array index = events.workStatus state; the order is consistent with shared/work-status.ts). */
 export const HOST_WORK_STATUS_STATES = ['thinking', 'working', 'result', 'waiting', 'success', 'error'] as const;
 export type HostWorkStatusState = (typeof HOST_WORK_STATUS_STATES)[number];
 
 /**
- * 回合结束原因 → 档位：completed → success，错误系（error / max-tokens / timeout）→ error，
- * blocked → waiting；其余（aborted 等）→ null，由调用方清理会话回空闲——残留上一档会让回合被
- * 打断后永远卡在 working。
+ * Reason for end of round → Gear: completed → success, error system (error / max-tokens / timeout) → error, blocked →
+ * waiting; the rest (aborted, etc.) → null, by caller Clean up the session and return it to idle - the remaining
+ * previous state will cause the round to be stuck at working forever after it is interrupted.
  */
 function turnEndState(kind: string): HostWorkStatusState | null {
   if (kind === 'completed') return 'success';
@@ -27,36 +29,37 @@ function turnEndState(kind: string): HostWorkStatusState | null {
   return null;
 }
 
-/** ask_user_question 工具名：模型在等用户选择题答复 → 归为 waiting（等待确认）而非普通工作。 */
+/** ask_user_question Tool name: The model is waiting for user multiple-choice answers → classified as waiting (waiting for confirmation) instead of ordinary work. */
 const USER_QUESTION_TOOL = 'ask_user_question';
 
-/** update_goal 工具名：目标工具，action=complete/blocked = 本轮是该目标任务的收尾轮。 */
+/** update_goal tool name: target tool, action = complete/blocked = This round is the cleanup round of the target task. */
 export const GOAL_UPDATE_TOOL = 'update_goal';
 
-/** 本 turn 的 turn 级标志（goal 续跑轮判定；不参与展示，由调用方维护）。 */
+/** The turn level mark of this turn (goal continuation wheel determination; does not participate in the display and is maintained by the caller). */
 export interface WorkStatusTurnContext {
-  /** 本轮是否为自动目标续跑轮（user/message source.kind==='goal' 时置位，turn/start 清零）。 */
+  /** Whether this round is an automatic target continuation round (set when user/message source.kind ===' goal ', cleared when turn/start). */
   goalRound?: boolean;
-  /** 本轮是否调用过 update_goal 收尾（'complete' | 'blocked'；undefined/null = 未收尾）。 */
+  /** Has update_goal cleanup been called this round (' complete ' | ' blocked '; undefined/null = not cleanup). */
   closing?: 'complete' | 'blocked' | null;
 }
 
-/** 解析 update_goal 的 arguments（原始 JSON 字符串）→ 收尾动作；解析失败 / 非收尾动作返回 null。 */
+/** Parse arguments (original JSON character string) of update_goal → cleanup action; parsing failure/non-cleanup action returns null. */
 export function goalUpdateAction(args: string): 'complete' | 'blocked' | null {
   try {
     const o = JSON.parse(args) as { action?: unknown } | null;
     const action = String(o?.action ?? '');
     if (action === 'complete' || action === 'blocked') return action;
   } catch {
-    /* 非法 JSON：按未收尾处理 */
+    /* Invalid JSON: treated as not cleanup */
   }
   return null;
 }
 
 /**
- * turn/end completed 的终局判定：非 goal 轮直接 success；自动续跑轮的中间轮 → result（本轮完成
- * 不等于整个任务完成，不庆祝）；收尾轮 complete → success，blocked → error（目标被阻塞结束，
- * 诚实地表沮丧而非庆祝）。
+ * The final judgment of turn/end completed: non-goal round directly success; the middle round of the automatic
+ * continuation round → result (completion of this round does not mean the completion of the entire task, no
+ * celebration); cleanup round complete → success, blocked → error (Goal blocked, honest expression of frustration
+ * rather than celebration).
  */
 export function completedState(turn: WorkStatusTurnContext | undefined): HostWorkStatusState {
   if (!turn?.goalRound) return 'success';
@@ -65,8 +68,10 @@ export function completedState(turn: WorkStatusTurnContext | undefined): HostWor
   return 'result';
 }
 
-/** 从会话事件压缩出工作状态；无变化 / 不关心返回 null。
- *  turn 为当前回合上下文（goal 续跑轮判定），只影响 turn/end completed 的终局语义。 */
+/**
+ * Compressing working status from session events; no change/don't care returns null. turn is the current round context
+ * (goal continuation round determination), which only affects the final semantics of turn/end completed.
+ */
 export function reduceWorkStatus(
   event: {
     type?: string;
@@ -78,7 +83,7 @@ export function reduceWorkStatus(
     case 'turn/start':
       return 'thinking';
     case 'tool/call': {
-      // 问用户问题的工具（选择题弹窗）＝ 等用户答复，不是普通干活
+      // Tool for asking users questions (multiple choice pop-up window) = waiting for users to reply, not ordinary work
       if (String(event?.data?.name ?? '') === USER_QUESTION_TOOL) return 'waiting';
       return 'working';
     }
@@ -87,29 +92,32 @@ export function reduceWorkStatus(
     case 'approval/asked':
       return 'waiting';
     case 'turn/end': {
-      // completed→success、错误系→error、blocked→waiting；其余（aborted 等）→null＝清该会话回空闲
+      // completed → success, error system → error, blocked → waiting; the rest (aborted, etc.) → null = Clear the session and return it to idle
       const reason = turnEndState(String(event?.data?.reason?.kind ?? ''));
-      // 本轮完成是否等于整个任务完成交给 completedState（goal 续跑轮的中间轮不庆祝）
+      // Does the completion of this round mean that the entire task is completed and handed over to completedState (goal does not celebrate the middle round of the continuation round)
       if (reason === 'success') return completedState(turn);
       return reason;
     }
     default:
-      return null; // todo/write 等：不切动画（详情文案由调用方另行处理）
+      return null; // todo/write, etc.: no animation (details will be handled separately by the caller)
   }
 }
 
 /**
- * 任务详情文案长度上限（按码点计，超出截断加省略号）：气泡最大宽度只有 0.5×宠物宽
- * （默认 size 462 时约 231px，字号 21px 约一行 11 个汉字），而清单原文动辄几十字，不截断会把
- * 气泡撑成好几行、盖住宠物。截断放在 host 这一处，两端天然一致。
+ * The upper limit of the length of the task details copy (in terms of code points, truncation and ellipses will be
+ * added if it exceeds truncation): the maximum width of the bubble is only 0.5 × pet width (default size 462 is about
+ * 231 px, font size 21 px is about 11 Chinese characters per line), and the original text of the list often contains
+ * several digits, and if it is not truncated, the bubble will be Spread into several rows and cover pets. The
+ * truncation is placed at host, and the two ends are naturally consistent.
  */
 export const TASK_TEXT_MAX = 40;
 
 /**
- * todo/write 的 in_progress/pending 项文本 → 任务详情；null = 清单已全部完成。
+ * in_progress/pending item text of todo/write → Task details; null = List is fully completed.
  *
- * 取最后一个 in_progress 而不是第一个：agent 常把新步骤标成 in_progress 却忘了把上一步标
- * completed，取第一个会永远停在最早那步。没有进行中的项时回落到第一个 pending（下一步要做的）。
+ * Take the last in_progress instead of the first one: agent. We often mark the new step as in_progress but forget to
+ * mark the previous step as completed. Taking the first one will always stop at the earliest step. When there are no
+ * items in progress, fallback to the first pending (what to do next).
  */
 export function currentTaskFromTodo(event: {
   data?: { todos?: Array<{ status?: string; content?: string }> };
@@ -122,34 +130,37 @@ export function currentTaskFromTodo(event: {
   if (!current) current = todos.find((t) => t?.status === 'pending');
   const content = String(current?.content ?? '').trim();
   if (!content) return null;
-  // 按码点切，避免把代理对（emoji 等）截成半个字符
+  // Cut by code point to avoid cutting proxy pairs (emoji, etc.) into half characters
   const points = Array.from(content);
   return points.length > TASK_TEXT_MAX ? `${points.slice(0, TASK_TEXT_MAX).join('')}…` : content;
 }
 
-/** 工作状态快照（= /state 里 sections.workStatus 的 data）：state 为主状态；task 为 todo 详情（可 null）。 */
+/** Working status snapshot (= data of sections.workStatus in / state): state is the main status; task is the details of todo (can be null). */
 export interface WorkStatusSnapshot {
-  state: HostWorkStatusState | null; // null = 尚无会话活动（空闲）
-  task: string | null; // 当前任务详情（todo/write 提供，可 null）
-  /** 当前展示条目所属会话；空闲或外部槽（`api`）时为 null，客户端据此决定气泡能不能点。 */
+  state: HostWorkStatusState | null; // null = No session activity yet (idle)
+  task: string | null; // Current task details (provided by todo/write, available at null)
+  /** The session to which the current display entry belongs; when it is idle or in an external slot (`api`), it is null. The client determines whether the bubble can be clicked accordingly. */
   sessionId: string | null;
-  ts: number; // 最近一次变化的时间戳（轮询侧据此检测变化）
+  ts: number; // The timestamp of the latest change (the polling side detects changes based on this)
 }
 
-/** 每会话聚合条目。 */
+/** Aggregate entries per session. */
 export interface SessionWorkEntry {
-  /** 该会话当前档位。 */
+  /** The current state of this session. */
   state: HostWorkStatusState;
-  /** 该会话最近事件的序号，同档位时按它取最近。 */
+  /** The serial number of the most recent event in this session. When in the same state, press it to get the latest one. */
   seq: number;
-  /** 任务详情文案；null = 该会话没有清单。 */
+  /** Task details copy; null = There is no checklist for this session. */
   task: string | null;
-  /** 该条目所属会话；`pickDisplayed` 只遍历 values，所以带着它才能知道展示的是哪一条。 */
+  /** The session to which this entry belongs; `pickDisplayed` only traverses values, so you can only know which one is displayed with it. */
   sessionId: string;
 }
 
-/** 展示优先级：waiting > error > working > thinking > result > success。
- *  result 高于 success：任何会话的进行中过渡态都不被别处已完成态压过，防中途庆祝；同档按最近更新优先。 */
+/**
+ * Display priority: waiting > error > working > thinking > result > success. result is higher than success: the
+ * in-progress transition state of any session will not be overridden by the completed state elsewhere to prevent
+ * midway celebrations; the latest update of the same file will be given priority.
+ */
 export const WORK_STATUS_PRIORITY: Record<HostWorkStatusState, number> = {
   waiting: 60,
   error: 50,
@@ -159,7 +170,7 @@ export const WORK_STATUS_PRIORITY: Record<HostWorkStatusState, number> = {
   success: 20,
 };
 
-/** 展示用条目：所有会话里优先级最高者（同优先级取 seq 更大者）；无会话返回 undefined。 */
+/** Display entry: the one with the highest priority among all sessions (with the same priority, seq is greater); if there is no session, undefined is returned. */
 export function pickDisplayed(entries: Iterable<SessionWorkEntry>): SessionWorkEntry | undefined {
   let best: SessionWorkEntry | undefined;
   for (const entry of entries) {
@@ -175,17 +186,21 @@ export function pickDisplayed(entries: Iterable<SessionWorkEntry>): SessionWorkE
 }
 
 /**
- * 工作状态聚合（纯逻辑，可单测）：按会话维护 state / task，对外只暴露一个展示快照。
+ * Working status aggregate (pure logic, single testable): Maintain state / task by session, and only expose one
+ * display snapshot to the outside world.
  *
- * task 必须挂在会话条目上：挂成全局单值就没有独立于 todo/write 的生命周期，写过一次会跟着此后
- * 所有会话活动一直显示，连配置里的 workStatusTexts 档位文案也被永久屏蔽。挂进条目后文案与它的
- * 会话同生共死：条目被清、新一轮 turn/start、清单里再无进行中项，文案都会消失。
- * 展示时 state 与 task 取自同一个 best 会话，因此不会出现 A 会话的状态配 B 会话的文案。
+ * task must be hung on the session entry: if it is hung as a global single value, there will be no lifecycle
+ * independent of todo/write. Once written once, all session activities will be displayed all the time, and even the
+ * workStatusTexts file text in the configuration will be permanently blocked. After the entry is inserted, the copy
+ * and its session live and die together: when the entry is cleared, a new round of turn/start occurs, and there are no
+ * more ongoing items in the list, the copy will disappear. When displayed, state and task are taken from the same best
+ * session, so the status of the A session and the copy of the B session will not appear.
  */
 export class WorkStatusStore {
-  // 类字段一律 declare + 构造器赋值：带初始化器的类字段在 target es2020 下要被降级，
-  // 降级产物会 import 未声明的 @oxc-project/runtime helper——宿主加载插件树时直接
-  // ERR_MODULE_NOT_FOUND，整个 profile 起不来（scripts/prepack-check.js 第 8 项守着这条）。
+  // Class fields are always declare + constructor assignment: Class fields with initializers will be downgraded under
+  // target es2020, and the downgraded products will be import, undeclared @oxc - project/runtime helper - directly
+  // ERR_MODULE_NOT_FOUND when the host loads the plugin tree, and the entire profile Can't get up
+  // (scripts/prepack-check.js item 8 guard this).
   declare private readonly sessions: Map<string, SessionWorkEntry>;
   declare private readonly snap: WorkStatusSnapshot;
 
@@ -194,22 +209,22 @@ export class WorkStatusStore {
     this.snap = { state: null, task: null, sessionId: null, ts: 0 };
   }
 
-  /** 该会话当前是否有活动条目（决定 todo/write 是否还值得更新它的文案）。 */
+  /** Whether there are currently active entries for this conversation (deciding whether todo/write is still worth updating its copy). */
   has(sessionId: string): boolean {
     return this.sessions.has(sessionId);
   }
 
-  /** 该会话当前档位（无条目 / 已清返回 undefined）。 */
+  /** The current state of this session (no entry/cleared return undefined). */
   stateOf(sessionId: string): HostWorkStatusState | undefined {
     return this.sessions.get(sessionId)?.state;
   }
 
-  /** 该会话当前任务详情（无条目返回 null）。 */
+  /** Current task details of this session (no entry returns null). */
   taskOf(sessionId: string): string | null {
     return this.sessions.get(sessionId)?.task ?? null;
   }
 
-  /** 写会话状态（保留该会话已有的 task）；同状态且 seq 不更新则不写并返回 false（防刷屏）。 */
+  /** Write session status (retain the existing task of the session); if the status is the same and seq is not updated, do not write and return false (anti-swipe screen). */
   setState(sessionId: string, state: HostWorkStatusState, seq = 0): boolean {
     const prev = this.sessions.get(sessionId);
     if (prev?.state === state && prev.seq >= seq) return false;
@@ -218,7 +233,7 @@ export class WorkStatusStore {
     return true;
   }
 
-  /** 写该会话的任务详情（null = 清空）；会话无活动条目 → 不动（它不会被展示）。 */
+  /** Write the task details of the session (null = clear); the session has no active entries → not moving (it will not be displayed). */
   setTask(sessionId: string, task: string | null): boolean {
     const prev = this.sessions.get(sessionId);
     if (!prev || prev.task === task) return false;
@@ -227,19 +242,19 @@ export class WorkStatusStore {
     return true;
   }
 
-  /** 清掉某会话（回合结束 / 终态过期）：它的 task 一并消失，不会残留到后续活动里。 */
+  /** Clear a session (end of round/expiration of final state): Its task will disappear together and will not remain in subsequent activities. */
   clear(sessionId: string): boolean {
     if (!this.sessions.delete(sessionId)) return false;
     this.refresh();
     return true;
   }
 
-  /** 展示快照（对象引用稳定，供 /work-status 直接序列化）。 */
+  /** Display snapshot (object reference is stable, for direct serialization by / work-status). */
   snapshot(): WorkStatusSnapshot {
     return this.snap;
   }
 
-  /** 重算展示：state / task / sessionId 任一变化才更新 ts（轮询侧据此触发，两端都靠它刷新）。 */
+  /** Recalculation display: state / task / sessionId only updates ts after any change (the polling side is triggered accordingly, and both ends are refreshed by it). */
   private refresh(): void {
     const best = pickDisplayed(this.sessions.values());
     const nextState = best?.state ?? null;

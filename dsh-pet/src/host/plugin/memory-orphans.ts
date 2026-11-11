@@ -1,17 +1,18 @@
 /**
- * 已删宠物残留历史的查询与清理。
+ * Query and clean up the remaining history of deleted pets.
  *
- * 宠物从配置里删掉后，`memory.json` 里的分桶仍在，而 `GET /chat` 要求宠物存在——
- * 这类历史只能从这里看到与清掉。读写锁与文件句柄仍归 ./chat-memory（它持有串行队列）。
+ * After the pet is deleted from the configuration, the buckets in `memory.json` are still there, but `GET /chat`
+ * requires the pet to exist - this kind of history can only be seen and cleared from here. The read-write lock and
+ * file handle are still owned by ./chat-memory (it holds the serial queue).
  * @module dsh-pet/src/host/plugin/memory-orphans
  */
 import type { ChatMemoryMessage } from '../chat.ts';
 import { findPetInstance, readAllConfig, type ConfigPaths } from '../config.ts';
 
-/** 记忆文件的形状（与 chat-memory 的读写一致）。 */
+/** Memory file shape (consistent with chat-memory reading and writing). */
 type MemoryFile = Record<string, Record<string, { messages: ChatMemoryMessage[] }>>;
 
-/** 一个残留分桶的摘要（不含正文）。 */
+/** Summary of a residual bucket (without text). */
 export interface OrphanBucket {
   readonly entry: string;
   readonly petId: string;
@@ -19,25 +20,25 @@ export interface OrphanBucket {
   readonly lastTs: number;
 }
 
-/** 依赖：配置路径、记忆读写、串行队列与日志出口。 */
+/** Depends on: configuration path, memory reading and writing, serial queue and log export. */
 export interface OrphanDeps {
   readonly configPaths: ConfigPaths;
   readonly readMemory: () => Promise<MemoryFile>;
   readonly writeMemory: (mem: MemoryFile) => Promise<void>;
   readonly withLock: <T>(fn: () => Promise<T>) => Promise<T>;
-  /** 只记数量，不记正文。 */
+  /** Only the quantity is recorded, not the text. */
   readonly log: { info(message: string): void };
 }
 
 /**
- * 造残留历史的查询与清理。
+ * Query and clean up residual history.
  *
- * @param deps - 配置路径、记忆读写与串行队列。
- * @returns 查询（只读）与清理（锁内读改写）。
+ * @param deps - Configure paths, memory reads and writes, and serial queues.
+ * @returns query (read-only) and cleanup (read, modify and write within the lock).
  */
 export function createMemoryOrphans(deps: OrphanDeps) {
   const { configPaths, readMemory, writeMemory, withLock } = deps;
-  /** 读出配置里已不存在的宠物分桶；只看条数与最后时间，不带正文。 */
+  /** Read the pet buckets that no longer exist in the configuration; only read the number and last time, without the text. */
   const orphanHistory = async (): Promise<OrphanBucket[]> => {
     const cfg = readAllConfig(configPaths);
     const mem = await readMemory();
@@ -53,7 +54,7 @@ export function createMemoryOrphans(deps: OrphanDeps) {
     return out;
   };
 
-  /** 清掉所有残留分桶；空条目一并摘除。 */
+  /** Clear all remaining buckets; remove empty entries as well. */
   const deleteOrphans = async (): Promise<{ ok: true; pets: number; messages: number }> =>
     withLock(async () => {
       const cfg = readAllConfig(configPaths);
@@ -71,7 +72,7 @@ export function createMemoryOrphans(deps: OrphanDeps) {
         if (Object.keys(byPet).length === 0) delete mem[entry];
       }
       if (pets > 0) await writeMemory(mem);
-      deps.log.info(`[dsh-pet] 清理已删宠物的历史 pets=${pets}，messages=${messages}`);
+      deps.log.info(`[dsh-pet] Removed history for deleted pets: pets=${pets}, messages=${messages}`);
       return { ok: true as const, pets, messages };
     });
 

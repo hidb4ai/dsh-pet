@@ -1,10 +1,12 @@
 /**
- * 碎碎念共享契约测试 —— 钉住「文本 + 可选配图」的解析语义与两端共用的配图渲染：
- * - image 缺失/空白/非字符串 → 不产出该字段（老行为：纯文本碎碎念）；
- * - 名称含中文时 URL 必须编码（host 侧 decodeURIComponent 后按文件名匹配）；
- * - 配图节点与样式由本模块统一提供，浏览器 React 壳与桌面 DOM 壳各引用同一常量。
+ * Whisper sharing contract test - verify the parsing semantics of "text + optional image" and the rendering of images
+ * shared by both ends:
+ * - image missing/blank/non-character string → do not generate this field (old behavior: plain text whisper);
+ * - When the name contains Chinese, URL must be encoded (host side decodeURIComponent followed by file name matching);
+ * - Picture nodes and styles are provided by this module. The browser React shell and the desktop DOM shell each
+ * reference the same constant.
  *
- * 跑法：node --experimental-strip-types --test src/shared/whisper.test.ts
+ * Running method: node --experimental-strip-types --test src/shared/whisper.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,8 +20,8 @@ import {
   memeImageUrl,
 } from './whisper.ts';
 
-describe('memeImageUrl —— 表情包图片地址', () => {
-  test('中文名被 URL 编码（路由段只认编码后的形态）', () => {
+describe('memeImageUrl —— emoticon picture address', () => {
+  test('The Chinese name is encoded by URL (the route section only recognizes the encoded form)', () => {
     assert.equal(
       memeImageUrl('鱼片有资源吗'),
       '/dsh-pet-7340/pic/memes/' + encodeURIComponent('鱼片有资源吗') + '.png',
@@ -27,31 +29,31 @@ describe('memeImageUrl —— 表情包图片地址', () => {
     assert.ok(!memeImageUrl('鱼片有资源吗').includes('鱼片'));
   });
 
-  test('纯 ASCII 名原样保留，便于肉眼排查', () => {
+  test('Leave the pure ASCII name as it is to facilitate visual inspection.', () => {
     assert.equal(memeImageUrl('Ciallo'), '/dsh-pet-7340/pic/memes/Ciallo.png');
   });
 
-  test('走到 pic/memes 前缀下（host 路由按该前缀映射 assets/memes）', () => {
+  test('Go to the pic/memes prefix (host route maps assets/memes according to this prefix)', () => {
     assert.ok(memeImageUrl('可爱').startsWith('/dsh-pet-7340/pic/memes/'));
     assert.ok(memeImageUrl('可爱').endsWith('.png'));
   });
 
-  test('base 语义 = 已含 /dsh-pet-7340 的宿主基址（与视频 assetBase 一致）', () => {
-    // 桌面 bridge 模式：传 BASE 本身（它已含 /dsh-pet-7340），不得再拼一次
+  test('base semantics = already contains/host base address of dsh-pet-7340 (consistent with video assetBase)', () => {
+    // Desktop bridge mode: pass BASE itself (it already contains / dsh-pet-7340), and must not be spelled again
     assert.equal(
       memeImageUrl('可爱', 'dsh-pet-bridge://dsh-pet/dsh-pet-7340'),
       'dsh-pet-bridge://dsh-pet/dsh-pet-7340/pic/memes/' + encodeURIComponent('可爱') + '.png',
     );
-    // 桌面 HTTP 直连模式：同上
+    // Desktop HTTP direct connection mode: Same as above
     assert.equal(
       memeImageUrl('可爱', 'http://127.0.0.1:8080/dsh-pet-7340'),
       'http://127.0.0.1:8080/dsh-pet-7340/pic/memes/' + encodeURIComponent('可爱') + '.png',
     );
-    // 浏览器缺省：相对路径（页面自身就在宿主 origin 上）
+    // Browser default: relative path (the page itself is on host origin)
     assert.equal(memeImageUrl('可爱'), '/dsh-pet-7340/pic/memes/' + encodeURIComponent('可爱') + '.png');
   });
 
-  test('不得出现重复的 /dsh-pet-7340 段（桌面端图裂的成因）', () => {
+  test('Duplicate / dsh-pet-7340 segments are not allowed (the cause of desktop image cracks)', () => {
     for (const base of ['dsh-pet-bridge://dsh-pet/dsh-pet-7340', 'http://127.0.0.1:8080/dsh-pet-7340']) {
       const url = memeImageUrl('可爱', base);
       assert.equal(url.split('/dsh-pet-7340').length - 1, 1, url);
@@ -59,17 +61,17 @@ describe('memeImageUrl —— 表情包图片地址', () => {
     assert.equal(memeImageUrl('可爱').split('/dsh-pet-7340').length - 1, 1);
   });
 
-  test('带素材根 → 多一段 <素材根>（配图归属与动画同一套：按素材根取目录链）', () => {
+  test('With asset root → one more section <asset root> (the picture belongs to the same set as the animation: press the asset root to get the directory chain)', () => {
     assert.equal(
       memeImageUrl('可爱', '/dsh-pet-7340', 'test1'),
       '/dsh-pet-7340/pic/memes/test1/' + encodeURIComponent('可爱') + '.png',
     );
-    // 中文素材根同样编码
+    // Chinese asset roots have the same encoding
     assert.equal(
       memeImageUrl('可爱', '/dsh-pet-7340', '小不点'),
       '/dsh-pet-7340/pic/memes/' + encodeURIComponent('小不点') + '/' + encodeURIComponent('可爱') + '.png',
     );
-    // 桌面端：base 已含前缀，素材根只加一段
+    // Desktop: base already contains the prefix, only add one paragraph to the asset root
     assert.equal(
       memeImageUrl('可爱', 'http://127.0.0.1:8080/dsh-pet-7340', 'pack1'),
       'http://127.0.0.1:8080/dsh-pet-7340/pic/memes/pack1/' + encodeURIComponent('可爱') + '.png',
@@ -77,7 +79,7 @@ describe('memeImageUrl —— 表情包图片地址', () => {
     assert.equal(memeImageUrl('可爱', '/dsh-pet-7340', 'pack1').split('/dsh-pet-7340').length - 1, 1);
   });
 
-  test('素材根缺省/空白 → 退回旧的两段形式（= 素材根 main 的目录链，不至于图裂）', () => {
+  test('asset root default/blank → return to the old two-segment form (= directory chain of asset root main, so as not to break the picture)', () => {
     const flat = memeImageUrl('可爱');
     for (const root of ['', '   ', undefined]) {
       assert.equal(memeImageUrl('可爱', '/dsh-pet-7340', root), flat);
@@ -89,8 +91,8 @@ describe('memeImageUrl —— 表情包图片地址', () => {
   });
 });
 
-describe('createMemeImage —— 两端共用的配图节点', () => {
-  /** 最小 DOM 桩：共用函数只用到 document.createElement（Node 里没有 DOM） */
+describe('createMemeImage - Graphic node shared by both ends', () => {
+  /** Minimum DOM pile: the shared function only uses document.createElement (there is no DOM in Node) */
   function stubDocument(): { created: { tag: string; props: Record<string, string> }[]; restore: () => void } {
     const created: { tag: string; props: Record<string, string> }[] = [];
     const g = globalThis as { document?: unknown };
@@ -113,7 +115,7 @@ describe('createMemeImage —— 两端共用的配图节点', () => {
           },
         };
       },
-      querySelector: () => null, // 视为未注入过样式 → 走注入分支
+      querySelector: () => null, // It is considered that the style has not been injected → take the injection branch
       head: { appendChild: () => {} },
     };
     return {
@@ -124,13 +126,13 @@ describe('createMemeImage —— 两端共用的配图节点', () => {
     };
   }
 
-  test('名称缺失/空白 → null（调用方据此走纯文本路径）', () => {
+  test('Name is missing/blank → null (the caller takes the plain text path accordingly)', () => {
     for (const v of [undefined, '', '   ']) {
       assert.equal(createMemeImage(v), null);
     }
   });
 
-  test('有名称 → 产出 img，class/src/alt 齐全', () => {
+  test('has name → outputs img, class/src/alt complete', () => {
     const doc = stubDocument();
     try {
       createMemeImage('死掉了');
@@ -144,7 +146,7 @@ describe('createMemeImage —— 两端共用的配图节点', () => {
     }
   });
 
-  test('桌面传 BASE → src 为绝对地址（file:// 页面必须绝对，且与视频同规则）', () => {
+  test('Desktop transfer BASE → src is an absolute address (file:// page must be absolute and have the same rules as the video)', () => {
     const doc = stubDocument();
     const base = 'http://127.0.0.1:8080/dsh-pet-7340';
     try {
@@ -160,7 +162,7 @@ describe('createMemeImage —— 两端共用的配图节点', () => {
     }
   });
 
-  test('createMemeImage 透传素材根（桌面端按宠物取自己的表情包目录）', () => {
+  test('createMemeImage transparently transmits the asset root (on the desktop, press the pet to get your own meme directory)', () => {
     const doc = stubDocument();
     try {
       createMemeImage('可爱', 'http://127.0.0.1:8080/dsh-pet-7340', 'pack1');
@@ -171,13 +173,13 @@ describe('createMemeImage —— 两端共用的配图节点', () => {
     }
   });
 
-  test('createMemeImageFromUrl —— url 形态直接用那个完整地址（不拼表情包路径，也不需要 BASE）', () => {
+  test('createMemeImageFromUrl - url form directly uses the complete address (no spelling of the meme path, no need for BASE)', () => {
     const doc = stubDocument();
     try {
       createMemeImageFromUrl('https://cdn.example.com/拒绝换壁纸.png');
       assert.equal(doc.created.filter((c) => c.tag === 'img').length, 1);
       const img = doc.created.find((c) => c.tag === 'img');
-      // 与名称形态共用同一份样式 class（气泡靠它取消 min-width）
+      // Shares the same style as the name form class (the bubble is canceled by it min-width)
       assert.equal(img?.props.className, MEME_IMG_CLASS);
       assert.equal(img?.props.src, 'https://cdn.example.com/拒绝换壁纸.png');
     } finally {
@@ -185,13 +187,13 @@ describe('createMemeImage —— 两端共用的配图节点', () => {
     }
   });
 
-  test('createMemeImageFromUrl —— 地址缺失/空白 → null（调用方据此走纯文本路径）', () => {
+  test('createMemeImageFromUrl ——The address is missing/blank → null (the caller takes the plain text path accordingly)', () => {
     for (const v of [undefined, '', '   ']) {
       assert.equal(createMemeImageFromUrl(v), null);
     }
   });
 
-  test('两种形态互不干扰：url 形态绝不拼 /pic/memes（哪怕地址里带着同名文件名）', () => {
+  test('The two forms do not interfere with each other: url form will never spell / pic/memes (even if the address contains the same file name)', () => {
     const doc = stubDocument();
     try {
       createMemeImageFromUrl('https://cdn.example.com/可爱.png');
@@ -202,10 +204,10 @@ describe('createMemeImage —— 两端共用的配图节点', () => {
     }
   });
 
-  test('两端选择器/变量都写在 shared 里（避免浏览器与桌面各写一份走样）', () => {
+  test('Selectors/variables at both ends are written in shared (to avoid aliasing in the browser and desktop)', () => {
     assert.ok(MEME_BUBBLE_CSS.includes('.' + MEME_IMG_CLASS));
     assert.ok(MEME_BUBBLE_CSS.includes('.' + MEME_BUBBLE_CLASS));
-    // 尺寸同时兼容两端变量名：浏览器 --dsh-pet-size、桌面 --pet-size
+    // The size is compatible with variable names at both ends: browser --dsh-pet-size, desktop --pet-size
     assert.ok(MEME_BUBBLE_CSS.includes('--dsh-pet-size'));
     assert.ok(MEME_BUBBLE_CSS.includes('--pet-size'));
   });

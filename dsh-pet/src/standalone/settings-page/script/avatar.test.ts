@@ -1,9 +1,11 @@
 /**
- * 头像片段的契约测试：跑的是生成出来的那段脚本，不是源码文本。
+ * The contract test of the avatar fragment: the generated script is run, not the source text.
  *
- * 用 vm 提供最小 DOM 替身（make/FileReader/canvas/createImageBitmap/URL），断言「请求了什么、发到哪、失败怎么显示」。
- * 头像不能直接塞进 img src（同源 img 不带 Origin 会被判成文件来源），所以这里也钉住「先带令牌 fetch 再转 blob」。
- * 跑法：node --experimental-strip-types --test src/standalone/settings-page/script/avatar.test.ts
+ * Use vm to provide the smallest DOM stand-in (make/FileReader/canvas/createImageBitmap/URL), assertion "what is
+ * requested, where to send it, and how to display failure". The avatar cannot be directly inserted into img src (the
+ * same source as img without Origin will be judged as the file source), so here we also verify "first bring the token
+ * fetch and then transfer to blob". Running method: node --experimental-strip-types --test
+ * src/standalone/settings-page/script/avatar.test.ts
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -32,7 +34,7 @@ type FakeNode = {
   click(): void;
 };
 
-/** 与页面里的 make 同语义的最小替身：只实现这个片段用到的属性。 */
+/** Minimal stand-in with the same semantics as make in the page: only implements the attributes used in this fragment. */
 function make(tag: string, props?: Record<string, unknown>, kids?: FakeNode[]): FakeNode {
   const node: FakeNode = {
     tag,
@@ -67,10 +69,10 @@ function make(tag: string, props?: Record<string, unknown>, kids?: FakeNode[]): 
   return node;
 }
 
-/** 记录到的一条请求。 */
+/** A recorded request. */
 type Recorded = { url: string; method: string; headers: Record<string, string>; body: string };
 
-/** 造一个可驱动的上下文；fetch 记录请求，GET 回头像字节、POST 按给定应答返回。 */
+/** Create a driveable context; fetch records the request, GET returns the bytes, and POST returns the given response. */
 function harness(options: { width?: number; height?: number; reply?: unknown } = {}) {
   const requests: Recorded[] = [];
   const reply = options.reply ?? { ok: true };
@@ -128,74 +130,90 @@ function harness(options: { width?: number; height?: number; reply?: unknown } =
   return { context, requests };
 }
 
-/** 等两轮事件循环：预览取图与上传都是异步的。 */
+/** Wait for two rounds of event loops: preview capture and upload are both asynchronous. */
 async function settle(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-/** 从行里取出隐藏的 file input（它在 .avatarBox 里，不在行根上）。 */
+/** Remove the hidden file input from the row (it is in . avatarBox, not at the row root). */
 function fileInput(row: FakeNode): FakeNode {
   const box = row.children.find((child) => child.props.class === 'avatarBox');
   const input = box?.children.find((child) => child.props.type === 'file');
-  assert.ok(input, '可换头像的条目必须带隐藏的 file input');
+  assert.ok(input, 'Entries with changeable avatars must contain hidden file input');
   return input;
 }
 
-/** 触发一次选图并等上传落定。 */
+/** Trigger image selection once and wait for the upload to be finalized. */
 async function pick(input: FakeNode, file: unknown): Promise<void> {
   input.files = [file];
   input.listeners.change?.();
   await settle();
 }
 
-test('内置条目：照样显示预览，但没有上传按钮', async () => {
+test('Built-in entry: Preview is still displayed, but there is no upload button', async () => {
   const { context, requests } = harness();
   (context.state as { entry: string }).entry = 'main';
   const row = (context.avatarRow as (pet: Record<string, never>) => FakeNode)({});
   await settle();
-  assert.match(requests[0].url, /^\/dsh-pet-7340\/logo\?v=\d+$/, '内置条目取包内 logo，不带 root');
-  assert.equal(requests[0].headers['X-DSH-Pet-Token'], 'test-token', '取图必须带令牌，否则打包版 403');
-  assert.match(row.children[0].src, /^blob:avatar-/, '预览走 blob，不把地址直接塞进 img src');
+  assert.match(
+    requests[0].url,
+    /^\/dsh-pet-7340\/logo\?v=\d+$/,
+    'The built-in entry is logo in the package, without root',
+  );
+  assert.equal(
+    requests[0].headers['X-DSH-Pet-Token'],
+    'test-token',
+    'You must bring a token when taking pictures, otherwise the packaged version will be 403',
+  );
+  assert.match(
+    row.children[0].src,
+    /^blob:avatar-/,
+    'Preview blob without inserting the address directly into img src',
+  );
   const box = row.children.find((child) => child.props.class === 'avatarBox');
   assert.ok(box);
   assert.equal(
     box.children.some((child) => child.props.type === 'file'),
     false,
-    '内置条目不得出现文件选择框',
+    'File selection box must not appear for built-in entries',
   );
   assert.equal(
     box.children.some((child) => child.textContent === '上传头像'),
     false,
-    '内置条目不得出现上传按钮',
+    'The upload button must not appear for built-in entries',
   );
 });
 
-test('素材根条目：条目名就是素材根，取图地址带 root 与版本号', async () => {
+test('Asset root entry: The entry name is the asset root, and the image acquisition address contains root and version number.', async () => {
   const { context, requests } = harness();
   (context.avatarRow as (pet: Record<string, never>) => FakeNode)({});
   await settle();
-  assert.match(requests[0].url, /^\/dsh-pet-7340\/logo\?root=shuai&v=\d+$/, '/config 里没有 assetRoot 时按条目名取');
+  assert.match(
+    requests[0].url,
+    /^\/dsh-pet-7340\/logo\?root=shuai&v=\d+$/,
+    'When there is no assetRoot in / config, use the entry name',
+  );
 });
 
-test('长边在上限内：原样上传原图字节，请求带令牌，成功后重取预览', async () => {
+test('The long side is within the upper limit: Upload the original image bytes as it is, request with a token, and retrieve the preview after success.', async () => {
   const { context, requests } = harness({ width: 400, height: 300 });
   const row = (context.avatarRow as (pet: Record<string, never>) => FakeNode)({});
   await settle();
   const before = requests[0].url;
   await pick(fileInput(row), { base64: 'ORIGINAL' });
   const upload = requests.find((request) => request.url.includes('/pet-avatar?'));
-  assert.ok(upload, '必须发出上传请求');
+  assert.ok(upload, 'An upload request must be issued');
   assert.equal(upload.method, 'POST');
-  assert.equal(upload.url, API + '/pet-avatar?root=shuai', '上传参数是 root（素材根），不是 pet');
+  assert.equal(upload.url, API + '/pet-avatar?root=shuai', 'The upload parameter is root (asset root), not pet');
   assert.equal(upload.headers['X-DSH-Pet-Token'], 'test-token');
   assert.deepEqual(JSON.parse(upload.body), { base64: 'ORIGINAL' });
   const refetch = requests.filter((request) => request.url.startsWith(LOGO)).pop();
-  assert.ok(refetch, '上传成功后必须重新取图');
-  assert.notEqual(refetch.url, before, '重取时必须换版本号');
+  assert.ok(refetch, 'Image must be taken again after uploading successfully');
+  assert.notEqual(refetch.url, before, 'The version number must be changed when re-fetching');
 });
 
-test('超过长边上限：先缩边再上传 PNG', async () => {
+test('Exceeding the upper limit of the long side: shrink the side first and then upload PNG', async () => {
   const { context, requests } = harness({ width: 1200, height: 800 });
   const row = (context.avatarRow as (pet: Record<string, never>) => FakeNode)({});
   await settle();
@@ -205,7 +223,7 @@ test('超过长边上限：先缩边再上传 PNG', async () => {
   assert.deepEqual(JSON.parse(upload.body), { base64: 'SCALED' });
 });
 
-test('服务端拒绝：把它的文案原样显示出来', async () => {
+test('Server rejection: display its copy as is', async () => {
   const { context } = harness({ reply: { ok: false, message: '只支持 PNG / JPEG / WebP / GIF' } });
   const row = (context.avatarRow as (pet: Record<string, never>) => FakeNode)({});
   await settle();
@@ -217,6 +235,10 @@ test('服务端拒绝：把它的文案原样显示出来', async () => {
   assert.equal(status.dataset.kind, 'error');
 });
 
-test('页面注入的长边上限与插件客户端保持一致', () => {
-  assert.equal(AVATAR_MAX_SIDE_PX, CLIENT_AVATAR_MAX_SIDE_PX, '两处上限不一致会让页面缩得比后端允许多或少');
+test('The long side limit of page injection is consistent with the plugin client', () => {
+  assert.equal(
+    AVATAR_MAX_SIDE_PX,
+    CLIENT_AVATAR_MAX_SIDE_PX,
+    'Inconsistency between the two upper limits will cause the page to shrink more or less than the backend allows.',
+  );
 });

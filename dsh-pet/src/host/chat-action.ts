@@ -1,18 +1,21 @@
 /**
- * 对话动作联动的纯逻辑：可表演的动作名单、注入提示词的指令、回复里动作标记的解析。
+ * Pure logic of dialogue action linkage: list of actions that can be performed, instructions for injecting prompt
+ * words, and analysis of action tags in replies.
  *
- * 不做生成与落盘（归 ./chat 与 ./plugin/chat-memory），也不写 S；名单与 animations.categories 同源。
- * 与 ./anim 分开：那边回答「/anim 该不该播、播哪个」，这边只服务对话这一条触发路径。
+ * Do not generate and persist to disk (return to ./chat and ./plugin/chat-memory), nor write S; the list has the
+ * same origin as animations.categories. Separate from ./anim: The other side answers "Should / anim be played and
+ * which one should be played?", while this side only serves the trigger path of the dialogue.
  * @module dsh-pet/src/host/chat-action
  */
 
 /**
- * 对话联动可用的动作：`animations.categories` 下全部动作（去重，保持配置顺序）。
+ * Actions available for dialogue linkage: All actions under `animations.categories` (deduplicate, keep the
+ * configuration order).
  *
- * 与 animationNames 分开：待机 / 转向 / 拖拽 / 点击 / 移动 / 事件动画不参与对话联动。
+ * Separate from animationNames: standby/turn/drag/click/move/event animations do not participate in dialogue linkage.
  *
- * @param animations - 成品配置的 animations 段（形状非法 → 空名单）。
- * @returns 按配置顺序排列的动作名；没配 categories 时是空数组。
+ * @param animations - animations segment of finished configuration (invalid shape → empty list).
+ * @returns Action names arranged in configuration order; when categories is not configured, it is an empty array.
  */
 export function chatActionNames(animations: unknown): string[] {
   const a = (animations && typeof animations === 'object' ? animations : {}) as Record<string, unknown>;
@@ -23,7 +26,7 @@ export function chatActionNames(animations: unknown): string[] {
     const actions = (category as { actions?: unknown }).actions;
     if (!Array.isArray(actions)) continue;
     for (const name of actions) {
-      // 与 animationNames 同一口径：非字符串与空串一律丢弃
+      // Same conventions as animationNames: non-character strings and empty strings are discarded
       if (typeof name !== 'string' || name === '') continue;
       if (!out.includes(name)) out.push(name);
     }
@@ -32,11 +35,13 @@ export function chatActionNames(animations: unknown): string[] {
 }
 
 /**
- * 动作指令：与配图指令并列附在 user 正文之后。
+ * Action command: attached to the user text in parallel with the picture command.
  *
- * 句式照配图那句写（省略主语、说「做」而不是「让宠物表演」）：模型自己就是宠物，旁白口吻它不会照做。
+ * The sentence pattern is the same as the one in the picture (omitting the subject, saying "do it" instead of "let the
+ * pet perform"): the model itself is the pet, and the narrator says it will not do it.
  *
- * @param names - 可表演的动作名（{@link chatActionNames} 的结果）；空名单由调用方直接跳过。
+ * @param names - the name of the action that can be performed (result of {@link chatActionNames} ); the empty list is
+ * skipped directly by the caller.
  */
 export function actionInstruction(names: readonly string[]): string {
   return (
@@ -47,17 +52,19 @@ export function actionInstruction(names: readonly string[]): string {
 }
 
 /**
- * 从模型回复里取动作（对话联动的解析半侧）。
+ * Get actions from model responses (parsing side of dialogue linkage).
  *
- * 所有动作标记都会被剥掉（无效名称也剥——标记不属于用户可见文本），只在命中白名单时采纳第一个。
- * 剥完没有正文时返回空串，由调用方决定不弹气泡。
+ * All action tags are stripped (invalid names are also stripped - the tag does not belong to user-visible text), and
+ * only the first whitelist hit is taken. When there is no text after stripping, an empty string is returned, and the
+ * caller decides not to pop the bubble.
  *
- * @param text - 模型回复原文。
- * @param names - 白名单（{@link chatActionNames}）；空名单 = 开关关闭，标记照剥但不采纳。
- * @returns 剥掉标记后的正文，以及命中白名单的第一个动作名。
+ * @param text - Model replies to the original text.
+ * @param names - white list ({@link chatActionNames}); empty list = switch is off, the mark is stripped but not
+ * adopted.
+ * @returns The text after stripping off the mark, and the first action name that hits the whitelist.
  */
 export function extractChatAction(text: string, names: readonly string[]): { text: string; action?: string } {
-  // 全局正则带 lastIndex，复用会漏匹配：每次新建一个。
+  // The global regular pattern has lastIndex, and reuse will miss matches: create a new one each time.
   const tag = /\[动作[:：]\s*([^\]\n]+?)\s*\]/g;
   let action: string | undefined;
   let tagged = false;
@@ -68,7 +75,7 @@ export function extractChatAction(text: string, names: readonly string[]): { tex
     return '';
   });
   if (!tagged) return { text };
-  // 标记通常独占一行：剥完会留下空行，压掉它，否则气泡顶部多一截空白。
+  // The mark usually occupies its own line: after peeling, a blank line will be left, so press it, otherwise there will be an extra blank space at the top of the bubble.
   const body = cleaned
     .replace(/[ \t]+$/gm, '')
     .replace(/\n{2,}/g, '\n')

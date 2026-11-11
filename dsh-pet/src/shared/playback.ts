@@ -1,18 +1,19 @@
 /**
- * 播放状态词汇表：宿主受理（`accepted`）、渲染端可上报的四种状态，以及哪些是终态。
- * 两端共用同一份定义：宿主的状态机与浏览器侧的回执都从这取，避免各写一套字面量最后对不上。
- * 不是状态机：转移规则在宿主 `playback` 里，这里只有词汇。
+ * Glossary of playback status: host acceptance (`accepted`), the four statuses that renderer can report, and which are
+ * the final statuses. Both ends share the same definition: the state machine of the host and the receipt on the
+ * browser side are taken from this, to avoid writing a set of literals each and ending up mismatching. Not a state
+ * machine: the transition rules are in host `playback` , where there are only words.
  * @module dsh-pet/src/shared/playback
  */
 
-/** 播放状态：`accepted` 由宿主写入，其余由渲染端上报。 */
+/** Playback status: `accepted` is written by the host, and the rest is reported by the renderer. */
 export type PlaybackStatus = 'accepted' | 'playing' | 'ended' | 'failed' | 'cancelled';
 
-/** 渲染端允许上报的状态（`accepted` 是宿主受理态，渲染端不许写）。 */
+/** The renderer is allowed to report status (`accepted` is the host acceptance status, and the renderer is not allowed to write). */
 export type ReportableStatus = 'playing' | 'ended' | 'failed' | 'cancelled';
 
-/** 终态：到达后不可再变。 */
+/** Final state: cannot be changed after reaching it. */
 export const TERMINAL_STATUSES: readonly PlaybackStatus[] = ['ended', 'failed', 'cancelled'];
 
-/** 渲染端可上报的状态集合。 */
+/** The set of statuses that renderer can report. */
 export const REPORTABLE_STATUSES: readonly ReportableStatus[] = ['playing', 'ended', 'failed', 'cancelled'];

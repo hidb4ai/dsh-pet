@@ -1,8 +1,10 @@
 /**
- * 形态到展示规则的分发表，也是余额展示按形态分发的唯一入口。
+ * The distribution table from form to display rule is also the only entry point for balance display distribution by
+ * form.
  *
- * 刻意写成 `Record<BalanceShape, ShapeHandler>` 而不是若干 if/switch：给 BalanceShape 加形态却
- * 忘了补 handler 时，类型检查会直接报缺少属性，而不是静默走进别的分支。
+ * Deliberately written as `Record<BalanceShape, ShapeHandler>` instead of several if/switch: When adding a shape to
+ * BalanceShape but forgetting to add handler, the type check will directly report the missing attribute instead of
+ * silently going to another branch.
  *
  * @module dsh-pet/src/shared/balance/handlers/index
  */
@@ -14,7 +16,7 @@ import { pointsHandler } from './points.ts';
 import type { ShapeHandler } from './shape.ts';
 import { windowsHandler } from './windows.ts';
 
-/** 每种形态的展示规则；新增形态必须在此补齐，否则类型检查报错。 */
+/** Display rules for each form; new forms must be completed here, otherwise the type check will report an error. */
 export const HANDLERS: Record<BalanceShape, ShapeHandler> = {
   windows: windowsHandler,
   money: moneyHandler,

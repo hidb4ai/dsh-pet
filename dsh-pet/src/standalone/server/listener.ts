@@ -1,8 +1,8 @@
 /**
- * 请求分发与监听器创建：按路由表顺序匹配，未命中回 404。
+ * Request distribution and listener creation: match in route table order, and return 404 if not matched.
  *
- * 不做业务判断；处理器返回什么就写什么。
- * 必须始终成立：处理器抛错一律归一成 500，绝不把栈信息回给客户端。
+ * No business judgment is made; whatever the processor returns is written. This must always be true: processor errors
+ * will always be normalized to 500 and stack information will never be returned to the client.
  * @module dsh-pet/src/standalone/server/listener
  */
 import { createRequestSecurity, rejectRequest, secureResponse, type RequestSecurity } from '../request-security.ts';
@@ -18,7 +18,7 @@ import type { StandaloneServer, StandaloneServerOptions } from './options.ts';
 import { balanceHandler, modelsHandler, settingsHandler, testHandler, setupHandler } from './handlers.ts';
 import { fail, matches, sendAsset, sendIcon, sendJson } from './respond.ts';
 
-/** 组装请求分发器：先处理探针、设置页与停机，再交给插件路由。 */
+/** Assemble the request dispatcher: first handle the probe, settings page and shutdown, and then hand it over to the plugin route. */
 function dispatch(
   options: StandaloneServerOptions,
   shutdownSecurity?: RequestSecurity,
@@ -37,7 +37,7 @@ function dispatch(
     }
     if (pathname === '/' || pathname === '/health') {
       if (method !== 'GET' && method !== 'HEAD') {
-        rejectRequest(res, 405, '仅支持 GET');
+        rejectRequest(res, 405, 'GET required');
         return;
       }
       sendJson(res, 200, options.status?.() ?? { name: 'dsh-pet-standalone' }, true);
@@ -45,7 +45,7 @@ function dispatch(
     }
     if (pathname === '/shutdown') {
       if (method !== 'POST') {
-        rejectRequest(res, 405, '停机请使用 POST');
+        rejectRequest(res, 405, 'Use POST to shut down');
         return;
       }
       if (shutdownSecurity) {
@@ -55,7 +55,7 @@ function dispatch(
           !/^[A-Za-z0-9_-]{43}$/.test(supplied) ||
           !timingSafeEqual(Buffer.from(supplied), Buffer.from(shutdownSecurity.token))
         ) {
-          rejectRequest(res, 403, '停机需要提供令牌');
+          rejectRequest(res, 403, 'A token is required to shut down');
           return;
         }
       }
@@ -70,12 +70,12 @@ function dispatch(
     };
     if (pathname === '/standalone-ai/icon.png') {
       if (method !== 'GET' && method !== 'HEAD') {
-        rejectRequest(res, 405, '仅支持 GET');
+        rejectRequest(res, 405, 'GET required');
         return;
       }
       const icon = readSettingsIcon();
       if (!icon) {
-        rejectRequest(res, 404, '图标缺失');
+        rejectRequest(res, 404, 'Icon not found');
         return;
       }
       sendIcon(res, icon);
@@ -83,13 +83,13 @@ function dispatch(
     }
     if (pathname === '/standalone-ai/chat-panel.js') {
       if (method !== 'GET' && method !== 'HEAD') {
-        rejectRequest(res, 405, '仅支持 GET');
+        rejectRequest(res, 405, 'GET required');
         return;
       }
-      // 构建产物随包发布；缺失只可能是没跑 bundle，明确回 404 而不是给空脚本。
+      // The build output is released with the package; the lack of it can only be caused by not running bundle, and explicitly returning 404 instead of giving an empty script.
       const chatPanel = readChatPanelScript();
       if (chatPanel === undefined) {
-        rejectRequest(res, 404, '对话面板脚本缺失，请重新构建（npm run bundle）');
+        rejectRequest(res, 404, 'Chat panel bundle missing; rebuild with npm run bundle');
         return;
       }
       sendAsset(res, chatPanel, 'text/javascript');
@@ -98,7 +98,7 @@ function dispatch(
     const asset = assets[pathname];
     if (asset) {
       if (method !== 'GET' && method !== 'HEAD') {
-        rejectRequest(res, 405, '仅支持 GET');
+        rejectRequest(res, 405, 'GET required');
         return;
       }
       sendAsset(res, asset[0], asset[1]);
@@ -128,7 +128,7 @@ function dispatch(
     if (!route) {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end(
-        `dsh-pet-standalone: 没有匹配的路由（已注册：${options.routes.map((item) => item.path).join(', ') || '无'}）`,
+        `dsh-pet-standalone: No matching route (registered: ${options.routes.map((item) => item.path).join(', ') || 'none'})`,
       );
       return;
     }
@@ -141,10 +141,10 @@ function dispatch(
 }
 
 /**
- * 创建 HTTP 请求监听器。
- * @param options - 启动选项。
- * @param injectedSecurity - 注入的访问校验。
- * @returns 监听器。
+ * Create HTTP request listener.
+ * @param options - Boot options.
+ * @param injectedSecurity - Injected access check.
+ * @returns listener.
  */
 export function createRequestListener(
   options: StandaloneServerOptions,
@@ -157,16 +157,16 @@ export function createRequestListener(
     try {
       pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
     } catch {
-      rejectRequest(res, 400, '请求地址无效');
+      rejectRequest(res, 400, 'Invalid request URL');
       return;
     }
     secureResponse(res, pathname);
     if (security && !security.authorize(req, res)) return;
-    // 不记录路径、片段、查询、正文与鉴权头，避免把令牌写进日志。
-    options.logger.debug('收到本机 HTTP 请求');
+    // Do not record the path, fragment, query, body and authentication header to avoid writing the token into the log.
+    options.logger.debug('Received a local HTTP request');
     const hasBody = req.headers['transfer-encoding'] !== undefined || Number(req.headers['content-length'] ?? 0) > 0;
     const bodyMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method ?? '');
-    // 有正文或写方法都要先走有界读取，避免插件自己无限读。
+    // If there is a text or write method, bounded reading must be done first to prevent the plugin from reading infinitely.
     if ((hasBody || bodyMethod) && typeof req.on === 'function') {
       const limit = ['/standalone-ai/settings', '/standalone-ai/setup'].includes(pathname)
         ? MAX_SETTINGS_BYTES
@@ -180,7 +180,7 @@ export function createRequestListener(
   };
 }
 
-/** 从首选端口起逐个尝试，只接受 EADDRINUSE 后继续。 */
+/** Try one by one starting from the preferred port, only accept EADDRINUSE before continuing. */
 async function bindFirstFree(server: HttpServer, preferred: number, logger: StandaloneLogger): Promise<number> {
   for (let port = preferred; port < preferred + PORT_SCAN_LIMIT; port += 1) {
     try {
@@ -199,21 +199,21 @@ async function bindFirstFree(server: HttpServer, preferred: number, logger: Stan
       });
       const address = server.address();
       const bound = typeof address === 'object' && address !== null ? address.port : port;
-      // 端口顺延时提示一次，读者才知道最终地址与请求的不同。
-      if (preferred > 0 && bound !== preferred) logger.warn(`端口 ${preferred} 被占用，改用 ${bound}`);
+      // When the port is delayed, the reader will know that the final address is different from the requested one.
+      if (preferred > 0 && bound !== preferred) logger.warn(`Port ${preferred} is busy; using ${bound}`);
       return bound;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
     }
   }
-  throw new Error(`从 ${preferred} 起连续 ${PORT_SCAN_LIMIT} 个端口都被占用`);
+  throw new Error(`Starting at ${preferred}, all ${PORT_SCAN_LIMIT} consecutive ports are busy`);
 }
 
 /**
- * 创建并启动本机服务。
- * @param options - 启动选项。
- * @returns 已监听的服务。
- * @throws 连续多个端口都被占用时抛出。
+ * Create and start native services.
+ * @param options - Boot options.
+ * @returns monitored service.
+ * @throws Thrown when multiple consecutive ports are occupied.
  */
 export async function listenStandaloneServer(options: StandaloneServerOptions): Promise<StandaloneServer> {
   const security = options.security;
@@ -222,7 +222,7 @@ export async function listenStandaloneServer(options: StandaloneServerOptions): 
   server.headersTimeout = 10000;
   server.on('clientError', (_error, socket) => socket.destroy());
   const port = await bindFirstFree(server, options.port ?? DEFAULT_STANDALONE_PORT, options.logger);
-  options.logger.info(`独立模式服务已监听 http://127.0.0.1:${port}/`);
+  options.logger.info(`Standalone server listening at http://127.0.0.1:${port}/`);
   return {
     port,
     security: security ?? createRequestSecurity(),

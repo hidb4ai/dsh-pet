@@ -1,71 +1,73 @@
 /**
- * 对话图片的压缩与编码：把一张文件或一块画布压进宿主可接受的预算，产出可发送的 base64。
- * 纯计算（尺寸换算、字节反推）与 DOM（解码、canvas）分开，前者可单测。
- * 预算依据：宿主按 1 MiB 请求体拒绝，base64 膨胀 4/3，所以解码后上限取 640 KiB。
- * 解码与 base64 编码两个小件（{@link loadImage}、{@link bytesToBase64}）也供设置页的头像上传感复用——
- * 头像的预算与质量阶梯不同，但「怎么把文件读成图、怎么读成规范 base64」只有这一份实现。
+ * Compression and encoding of conversation pictures: Press a file or canvas into the budget acceptable to the host,
+ * and output base64 that can be sent. Pure calculation (size conversion, bytes inversion) is separated from DOM
+ * (decoding, canvas), and the former can be measured alone. Budget basis: The host rejects the request body with 1
+ * MiB, and base64 is expanded by 4/3, so the upper limit after decoding is 640 KiB. The two small pieces of decoding
+ * and base64 encoding ({@link loadImage}, {@link bytesToBase64} ) are also used for uploading the avatar on the
+ * settings page. The budget and quality ladder of the avatar are different, but "how to read the file into a picture,
+ * how to read into the standard base64" is the only implementation.
  * @module dsh-pet/src/shared/chat/encode
  */
 import { type PetImageMediaType, imageMediaTypeOf } from './image-pick.ts';
 
-/** 单张图片的字节上限（解码后）。 */
+/** The upper limit of bytes for a single image (after decoding). */
 export const IMAGE_MAX_BYTES = 640 * 1024;
-/** 长边上限：再大对"看清报错文字"没有收益，只会挤占请求体。 */
+/** The upper limit of the long side: No matter how large it is, there is no benefit to "seeing the error text clearly" and it will only occupy the request body. */
 export const IMAGE_MAX_SIDE = 2048;
-/** 质量阶梯：从高到低，第一档进预算就停。 */
+/** Quality ladder: from high to low, stop at the first level when budget is reached. */
 export const IMAGE_QUALITIES = [0.85, 0.75, 0.65, 0.55] as const;
-/** 预览缩略图的长边（像素）：只用于弹窗里那枚 24×24。 */
+/** The long side (pixels) of the preview thumbnail: only used for the 24×24 in the pop-up window. */
 const PREVIEW_SIDE = 96;
 
-/** 按 base64 长度反推字节数（不重新解码）。 */
+/** Reverse the number of bytes according to the length of base64 (without re-decoding). */
 export function attachmentBytes(base64: string): number {
   const pad = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
   return Math.floor((base64.length * 3) / 4) - pad;
 }
 
-/** 缩到长边上限后的目标尺寸；不放大。 */
+/** Shrink to the target size after the upper limit of the long side; do not enlarge. */
 export function targetSize(width: number, height: number, maxSide = IMAGE_MAX_SIDE): { width: number; height: number } {
   const scale = Math.min(1, maxSide / Math.max(width, height));
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
-/** 编码结果：`base64` 是要发出去的载荷，`previewUrl` 只给缩略图用。 */
+/** Encoding result: `base64` is the payload to be sent, `previewUrl` is only used for thumbnails. */
 export interface EncodedImage {
   readonly base64: string;
   readonly mediaType: PetImageMediaType;
   readonly bytes: number;
   readonly width: number;
   readonly height: number;
-  /** 是否重新编码过（原图超限，或来源本来就是画布）。 */
+  /** Has it been re-encoded (the original image exceeds the limit, or the source is originally a canvas). */
   readonly resized: boolean;
-  /** 小尺寸预览（几十 KB 以内），避免把整张图的 data URL 挂在 DOM 上。 */
+  /** Small size preview (within tens of KB), avoid hanging the data URL of the entire picture on DOM. */
   readonly previewUrl: string;
 }
 
 /**
- * 把文件解码成 `<img>`。
+ * Decode the file into `<img>` .
  *
- * 用 `FileReader` 的 data URL 而不是 `URL.createObjectURL`：桌面 helper 的 CSP 是
- * `img-src 'self' http: https: data:`，不含 `blob:`，objectURL 在那边会被拦成 onerror
- * （表现为"这个文件解不出图片"，而浏览器端正常）。
+ * Use data URL of `FileReader` instead of `URL.createObjectURL` : CSP of helper on the desktop is
+ * `img-src 'self' http: https: data:` , excluding `blob:` . objectURL will be blocked there as onerror (shown as "this
+ * file cannot decode the picture", but the browser side is normal).
  *
- * @param file - 用户选中的图片文件。
- * @returns 解码完成的图片元素。
- * @throws 文件读不出来或解不出图片时。
+ * @param file - the picture file selected by the user.
+ * @returns decoded picture element.
+ * When the @throws file cannot be read or the picture cannot be decoded.
  */
 export function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('这个文件读不出来'));
+    reader.onerror = () => reject(new Error('Could not read this file'));
     reader.onload = () => {
       const url = typeof reader.result === 'string' ? reader.result : '';
       if (!url) {
-        reject(new Error('这个文件读不出来'));
+        reject(new Error('Could not read this file'));
         return;
       }
       const img = new Image();
       img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('这个文件解不出图片'));
+      img.onerror = () => reject(new Error('Could not decode this image'));
       img.src = url;
     };
     reader.readAsDataURL(file);
@@ -73,10 +75,10 @@ export function loadImage(file: File): Promise<HTMLImageElement> {
 }
 
 /**
- * 字节 → 规范 base64（分块，避免 String.fromCharCode 参数过多爆栈）。
+ * bytes → standard base64 (blocked to avoid excessive String.fromCharCode parameters bursting the stack).
  *
- * @param bytes - 已读进内存的原始字节。
- * @returns 不带 data: 前缀的规范 base64。
+ * @param bytes - the raw bytes read into memory.
+ * @returns without the data : specification of the prefix base64 .
  */
 export function bytesToBase64(bytes: Uint8Array): string {
   let bin = '';
@@ -87,7 +89,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-/** 把源按目标尺寸画进一张新画布。 */
+/** Draw the source into a new canvas according to the target size. */
 function drawToCanvas(source: CanvasImageSource, size: { width: number; height: number }): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = size.width;
@@ -96,16 +98,16 @@ function drawToCanvas(source: CanvasImageSource, size: { width: number; height: 
   return canvas;
 }
 
-/** 缩略图：96px、JPEG 0.72，几 KB 就够 24×24 显示。 */
+/** Thumbnails: 96 px, JPEG 0.72, a few KB are enough for 24×24 display. */
 function previewOf(source: CanvasImageSource, width: number, height: number): string {
   return drawToCanvas(source, targetSize(width, height, PREVIEW_SIDE)).toDataURL('image/jpeg', 0.72);
 }
 
 /**
- * 把一块画布压进预算：按质量阶梯转 JPEG，第一档进预算就停。
+ * Press a canvas into the budget: press the quality ladder to JPEG, and stop when the first level is in the budget.
  *
- * @param canvas - 已按目标尺寸画好的画布（文件与截屏共用这条）。
- * @returns 载荷与预览；压不进预算时抛错。
+ * @param canvas - The canvas has been drawn according to the target size (this file and screenshot share this).
+ * @returns payload and preview; error thrown when budget cannot be met.
  */
 export function encodeCanvas(canvas: HTMLCanvasElement): EncodedImage {
   const { width, height } = canvas;
@@ -119,21 +121,23 @@ export function encodeCanvas(canvas: HTMLCanvasElement): EncodedImage {
       return { base64, mediaType: 'image/jpeg', bytes, width, height, resized: true, previewUrl };
     }
   }
-  throw new Error('无法压到预算内');
+  throw new Error('Could not compress the image within the size budget');
 }
 
 /**
- * 把一张图片文件编码成可发送的附件。
+ * Encode an image file into a sendable attachment.
  *
- * 原图够小就原样发送（不重编码：JPEG 再压一次会掉画质，动图也能保住）；
- * 超限才缩到长边上限、按质量阶梯逐档压到预算内。
+ * If the original image is small enough, send it as it is (no re-encoding: JPEG. If you compress it again, the image
+ * quality will be lost, but the animated image will be preserved); if it exceeds the limit, reduce it to the upper
+ * limit of the long side, and press it step by step according to the quality ladder until it is within the budget.
  *
- * @param file - 已通过 `isImageFile` 的文件。
- * @returns 载荷与预览；压不进预算时抛错（调用方提示用户换图）。
+ * @param file - File passed `isImageFile` .
+ * @returns load and preview; an error is thrown when the budget cannot be met (the caller prompts the user to change
+ * pictures).
  */
 export async function encodeImageFile(file: File): Promise<EncodedImage> {
   const mediaType = imageMediaTypeOf(file);
-  if (!mediaType) throw new Error('不是可发送的图片');
+  if (!mediaType) throw new Error('This image cannot be sent');
   const img = await loadImage(file);
   const width = img.naturalWidth || img.width;
   const height = img.naturalHeight || img.height;

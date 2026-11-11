@@ -1,32 +1,34 @@
 /**
- * 对话发送：把一句输入交给宿主 `POST /chat`，只回执成败。
- * 正文展示不走这里——回复统一从 `/state` 的 `pets.<id>.say` 读。
+ * Conversation sending: Give the input sentence to host `POST /chat` , and only the success or failure will be
+ * acknowledged. The text display does not go here - the replies are all read from `/state` and `pets.<id>.say` .
  * @module dsh-pet/src/shared/chat/send
  */
 
-/** 随消息发送的一张图片：`data` 是规范 base64（不带 data: 前缀）。 */
+/** An image sent with the message: `data` is canonical base64 (without the data : prefix). */
 export interface ChatAttachment {
   readonly mediaType: string;
   readonly data: string;
 }
 
-/** 发送回执：本类型只声明消费方用到的 ok，正文展示一律走 /state 的 pets.<id>.say。 */
+/** Send receipt: This type only declares ok used by the consumer, and the text display will always be pets.<id>.say/state. */
 export type ChatSendState =
   | { ok: true }
   | { ok: false; reason: 'provider-missing' | 'generate-error' | 'config-error' | 'bad-request'; message?: string };
 
-/** 对话要等 LLM 生成回复，比碎碎念（30s）放宽一倍 */
+/** The conversation must wait for LLM to generate a reply, which is twice as relaxed as whisper (30 s) */
 const SEND_TIMEOUT_MS = 60_000;
 
 /**
- * 发送一句对话（携带记忆去宿主生成回复并写入记忆）。
- * 网络或解析失败显式抛错，调用方决定报错方式，绝不静默伪造回复。
+ * Send a conversation (carry the memory to the host to generate a reply and write it into the memory). If the network
+ * or parsing fails, an error will be explicitly thrown. The caller determines the error reporting method and will
+ * never forge a silent reply.
  *
- * @param baseUrl - 已含 `?pet=&surface=` 的完整对话地址。
- * @param text - 用户输入正文（宿主会 trim 并校验 2000 字上限）。
- * @param attachment - 可选的一张图片；不传时请求体只有 `text`，与旧版逐字一致。
- * @returns 成功，或归一化后的失败原因与文案。
- * @throws 响应不是 JSON 对象时。
+ * @param baseUrl - The complete conversation address of `?pet=&surface=` is included.
+ * @param text - User input text (the host will trim and verify the upper limit of 2000 words).
+ * @param attachment - an optional picture; when not transmitted, the request body is only `text` , which is
+ * word-for-word consistent with the old version.
+ * @returns success, or failure reason and copy after normalization.
+ * When the @throws response is not a JSON object.
  */
 export async function sendChat(baseUrl: string, text: string, attachment?: ChatAttachment): Promise<ChatSendState> {
   const res = await fetch(baseUrl, {
@@ -37,7 +39,7 @@ export async function sendChat(baseUrl: string, text: string, attachment?: ChatA
   });
   const raw: unknown = await res.json().catch(() => null);
   if (!raw || typeof raw !== 'object') {
-    throw new Error('dsh-pet: 对话响应非法');
+    throw new Error('dsh-pet: invalid chat response');
   }
   const o = raw as Record<string, unknown>;
   if (o.ok !== true) {

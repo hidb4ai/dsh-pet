@@ -1,8 +1,9 @@
 /**
- * 余额不可用时「要不要弹文字说明」的判定。
+ * Determination of "whether to pop up a text explanation" when the balance is unavailable.
  *
- * 判定本身无状态：只比对传入的 lastKey，调用方负责保存返回的 key。
- * 两端（浏览器 overlay 与桌面外壳）必须走同一份判定，各写一份必然漂移。
+ * The judgment itself is stateless: it only compares the incoming lastKey, and the caller is responsible for saving
+ * the returned key. Both ends (browser overlay and desktop shell) must use the same judgment, and writing one copy
+ * each will inevitably drift.
  *
  * @module dsh-pet/src/shared/balance/notice
  */
@@ -10,15 +11,17 @@
 import type { BalanceNoticeDecision, BalanceState } from './types.ts';
 
 /**
- * 判定本次是否弹气泡，并给出供下次比较的原因 key。
+ * Determine whether the bubble is played this time, and give the reason key for next comparison.
  *
- * 显式请求（`/balance` 命令、桌面「查看余额」菜单）一律弹：用户问了就该有答复，包括「不支持」这件事；
- * 自动轮询只在原因（含服务商）变化时弹一次，首次检测到也算变化，否则每 30 分钟刷同一句话。
+ * Explicit requests (`/balance` command, desktop "View Balance" menu) will always pop up: the user should get a reply
+ * when asking, including "not supported"; automatic polling will only pop up once when the reason (including service
+ * provider) changes, and the first detection counts as a change, otherwise the same sentence will pop up every 30
+ * minutes.
  *
- * @param state - 当前余额状态；只读，本函数不修改它。
- * @param lastKey - 上次提示的原因 key，null 表示尚未提示过。
- * @param explicit - 是否由用户显式请求触发。
- * @returns 是否弹，以及本次要存下的 key（ok 状态为 null）。
+ * @param state - Current balance status; read-only, this function does not modify it.
+ * @param lastKey - The reason for the last prompt key, null means it has not been prompted yet.
+ * @param explicit - Whether triggered by an explicit user request.
+ * Whether @returns is bombed, and the key to be saved this time (the status of ok is null).
  */
 export function decideBalanceNotice(
   state: BalanceState,

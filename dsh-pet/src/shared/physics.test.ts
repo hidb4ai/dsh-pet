@@ -1,13 +1,15 @@
 /**
- * 抛掷指令的初速换算单元测试 —— 钉住 `POST /throw` 文档里那张表。
+ * Muzzle velocity conversion unit test of throw command - verify the table in the `POST /throw` document.
  *
- * 为什么单独钉：契约里写死了两件容易被无声改掉的事——
- *   1. 角度方向：`0` = 正右、逆时针为正（屏幕坐标 y 向下，所以 `vy` 取负号）。
- *      搞反了第三方会发现"往上抛"变成了往下砸，而代码本身不会报任何错；
- *   2. 力度锚点：`power = 1.0` 对应软钳速前的 1200 px/s，实际初速约 1021 px/s。
- *      调一下锚点或限速公式，文档里的数字就成假话了。
+ * Why nail it alone: There are two things written into the contract that can easily be changed silently——
+ * 1. Angle direction: `0` = straight right, counterclockwise is positive (screen coordinate y is downward, so `vy`
+ * takes a negative sign). If it is reversed, the third party will find that "throwing it up" turns into throwing it
+ * down, and the code itself will not report any errors;
+ * 2. Strength anchor point: `power = 1.0` corresponds to 1200 px/s before soft clamp speed, and the actual initial
+ * velocity is about 1021 px/s. Adjust the anchor point or the speed limit formula, and the numbers in the document
+ * will become lies.
  *
- * 跑法：node --experimental-strip-types --test src/shared/physics.test.ts
+ * Running method: node --experimental-strip-types --test src/shared/physics.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,63 +29,72 @@ import {
   throwVelocity,
 } from './physics.ts';
 
-/** 初速大小（throwVelocity 的模长） */
+/** Initial velocity (module length of throwVelocity) */
 const speedOf = (angle: number, power: number): number => {
   const v = throwVelocity(angle, power);
   return Math.hypot(v.vx, v.vy);
 };
 
-describe('throwVelocity —— 角度方向（0 = 正右，逆时针为正）', () => {
-  test('0° 正右：vx > 0 且 vy ≈ 0', () => {
+describe('throwVelocity - Angle direction (0 = right, counterclockwise is positive)', () => {
+  test('0° right: vx > 0 and vy ≈ 0', () => {
     const v = throwVelocity(0, 1);
-    assert.ok(v.vx > 0, 'vx 应为正');
-    assert.ok(Math.abs(v.vy) < 1e-9, 'vy 应为 0');
+    assert.ok(v.vx > 0, 'vx should be positive');
+    assert.ok(Math.abs(v.vy) < 1e-9, 'vy should be 0');
   });
 
-  test('90° 正上：vy < 0（屏幕坐标 y 向下，故取负号）且 vx ≈ 0', () => {
+  test('90° straight up: vy < 0 (screen coordinate y is downward, so take a negative sign) and vx ≈ 0', () => {
     const v = throwVelocity(90, 1);
-    assert.ok(v.vy < 0, '90° 必须是往上抛——vy 为负');
-    assert.ok(Math.abs(v.vx) < 1e-9, 'vx 应为 0');
+    assert.ok(v.vy < 0, '90° must be thrown upward——vy is negative');
+    assert.ok(Math.abs(v.vx) < 1e-9, 'vx should be 0');
   });
 
-  test('-90° 正下：vy > 0', () => {
+  test('-90° Directly below: vy > 0', () => {
     assert.ok(throwVelocity(-90, 1).vy > 0);
   });
 
-  test('180° 正左：vx < 0', () => {
+  test('180° right left: vx < 0', () => {
     assert.ok(throwVelocity(180, 1).vx < 0);
   });
 
-  test('任意实数角度都成立（超出 0~360 按周期折算，调用方不必自己归一化）', () => {
+  test('Any real number angle is valid (any angle beyond 0~360 is converted according to the period, the caller does not need to normalize itself)', () => {
     const a = throwVelocity(450, 1);
     const b = throwVelocity(90, 1);
-    assert.ok(Math.abs(a.vx - b.vx) < 1e-9 && Math.abs(a.vy - b.vy) < 1e-9, '450° 应等价于 90°');
+    assert.ok(Math.abs(a.vx - b.vx) < 1e-9 && Math.abs(a.vy - b.vy) < 1e-9, '450° should be equivalent to 90°');
   });
 });
 
-describe('throwVelocity —— 力度锚点与软上限', () => {
-  test('power = 1.0 的实际初速 ≈ 1021 px/s（软钳速前是 1200）', () => {
+describe('throwVelocity - Velocity anchor point and soft upper limit', () => {
+  test('The actual initial velocity of power = 1.0 ≈ 1021 px/s (before soft clamp speed is 1200)', () => {
     const speed = speedOf(0, 1);
-    assert.ok(Math.abs(speed - 1020.5) < 1, `实际初速应约 1020.5，得到 ${speed}`);
-    assert.ok(speed < THROW_SPEED_ANCHOR, '软上限必须真的压低了它——否则文档那张表是错的');
+    assert.ok(Math.abs(speed - 1020.5) < 1, `Initial speed should be about 1020.5; got ${speed}`);
+    assert.ok(
+      speed < THROW_SPEED_ANCHOR,
+      'The soft cap must really be lowered - otherwise the table in the document is wrong',
+    );
   });
 
-  test('power = 3.0 的实际初速 ≈ 2276 px/s', () => {
+  test('Actual muzzle velocity of power = 3.0 ≈ 2276 px/s', () => {
     assert.ok(Math.abs(speedOf(0, 3) - 2275.6) < 1);
   });
 
-  test('随 power 单调递增，且恒不超过 MAX_THROW_SPEED', () => {
+  test('monotonically increases with power, and never exceeds MAX_THROW_SPEED', () => {
     let prev = 0;
     for (const p of [0.001, 0.1, 0.5, 1, 2, 3, 5, 10, 100, 1e6]) {
       const s = speedOf(45, p);
-      assert.ok(s > prev, `power=${p} 的初速应严格大于更小的 power（单调可区分）`);
-      assert.ok(s <= MAX_THROW_SPEED, `power=${p} 的初速不得超过软上限`);
+      assert.ok(
+        s > prev,
+        `The initial velocity of power = ${p} should be strictly greater than the smaller power (monotone distinguishable)`,
+      );
+      assert.ok(s <= MAX_THROW_SPEED, `The initial velocity of power = ${p} must not exceed the soft upper limit`);
       prev = s;
     }
-    assert.ok(speedOf(45, 1e6) > MAX_THROW_SPEED * 0.99, '极大 power 应渐近软上限');
+    assert.ok(
+      speedOf(45, 1e6) > MAX_THROW_SPEED * 0.99,
+      'Extremely large power should asymptotically approach the soft upper limit',
+    );
   });
 
-  test('方向与力度解耦：任意角度下模长只由 power 决定', () => {
+  test('Decoupling of direction and force: the mold length at any angle is only determined by power', () => {
     const want = speedOf(0, 2);
     for (const angle of [0, 37, 90, -123, 271]) {
       assert.ok(Math.abs(speedOf(angle, 2) - want) < 1e-9, `angle=${angle}`);
@@ -91,116 +102,125 @@ describe('throwVelocity —— 力度锚点与软上限', () => {
   });
 });
 
-describe('softClampSpeed —— 抛掷指令与拖拽甩抛共用同一条限速', () => {
-  test('非正数 → 0（不产生反向速度）', () => {
+describe('softClampSpeed —— Throwing command and dragging and throwing share the same speed limit', () => {
+  test('Non-positive number → 0 (no reverse speed is generated)', () => {
     assert.equal(softClampSpeed(0), 0);
     assert.equal(softClampSpeed(-100), 0);
   });
 
-  test('渐近不超过 MAX_THROW_SPEED（极大输入下取等号，不是超过）', () => {
+  test('Asymptotically does not exceed MAX_THROW_SPEED (take the equal sign for extremely large input, not exceed)', () => {
     assert.ok(softClampSpeed(MAX_THROW_SPEED) < MAX_THROW_SPEED);
-    // exp(-1000) 在 float64 下下溢成 0，所以这里会恰好取到上限——契约是"不超过"，取等合法
+    // exp (-1000) underflows to 0 under float64, so the upper limit will be obtained exactly here - the contract is "not to exceed", and equalization is valid.
     assert.equal(softClampSpeed(MAX_THROW_SPEED * 1000), MAX_THROW_SPEED);
   });
 });
 
-describe('pullAngle —— 弹射方向是拉的**反方向**', () => {
-  test('往左拉 → 正右（0°，与 throwVelocity 的「0 = 正右」同一套）', () => {
+describe('pullAngle ——The ejection direction is the **opposite direction** of pulling', () => {
+  test('Pull to the left → Right (0°, the same set as "0 = Right" of throwVelocity)', () => {
     assert.equal(pullAngle(-100, 0), 0);
     assert.ok(slingshotVelocity(pullAngle(-100, 0), 1).vx > 0);
   });
 
-  test('往上拉 → 向下落（-90°，vy 为正 = 屏幕向下）', () => {
+  test('Pull up → drop down (-90°, vy is positive = screen down)', () => {
     const angle = pullAngle(0, -100);
-    assert.ok(Math.abs(angle + 90) < 1e-9, `角度应为 -90°，得到 ${angle}`);
-    assert.ok(slingshotVelocity(angle, 1).vy > 0, '往上拉必须往下落（反方向）');
+    assert.ok(Math.abs(angle + 90) < 1e-9, `The angle should be -90°, getting ${angle}`);
+    assert.ok(slingshotVelocity(angle, 1).vy > 0, 'To pull up, you must pull down (reverse direction)');
   });
 
-  test('往下拉 → 向上弹（90°，vy 为负）', () => {
+  test('Pull down → bounce up (90°, vy is negative)', () => {
     const angle = pullAngle(0, 100);
     assert.ok(Math.abs(angle - 90) < 1e-9);
     assert.ok(slingshotVelocity(angle, 1).vy < 0);
   });
 
-  test('往右拉 → 向左弹（180°）', () => {
+  test('Pull to the right → flick to the left (180°)', () => {
     assert.ok(Math.abs(Math.abs(pullAngle(100, 0)) - 180) < 1e-9);
     assert.ok(slingshotVelocity(pullAngle(100, 0), 1).vx < 0);
   });
 
-  test('斜向左下拉 → 向右上弹（vx > 0 且 vy < 0）', () => {
+  test('Pull down diagonally to the left → pop up right (vx > 0 and vy < 0)', () => {
     const v = slingshotVelocity(pullAngle(-100, 100), 1);
-    assert.ok(v.vx > 0, '往左拉要往右弹');
-    assert.ok(v.vy < 0, '往下拉要往上弹');
+    assert.ok(v.vx > 0, 'Pull to the left and flick to the right');
+    assert.ok(v.vy < 0, 'Pull down to pop up');
   });
 });
 
-describe('slingshotPower —— 距离即力度：线性、单调、无上限', () => {
+describe('slingshotPower ——Distance is intensity: linear, monotonic, no upper limit', () => {
   const SIZE = 462;
 
-  test('拉距 = 参考距离 → 恰好 1 倍力度', () => {
+  test('Draw distance = reference distance → exactly 1 times the force', () => {
     assert.equal(slingshotPower(slingshotRefDist(SIZE), SIZE), 1);
   });
 
-  test('线性：2 倍 / 10 倍拉距 = 2 倍 / 10 倍力度', () => {
+  test('Linear: 2x / 10x draw length = 2x / 10x force', () => {
     const ref = slingshotRefDist(SIZE);
     assert.equal(slingshotPower(ref * 2, SIZE), 2);
     assert.equal(slingshotPower(ref * 10, SIZE), 10);
   });
 
-  test('没有上界：再远的拉距也不会被夹到 1（这正是「按距离给力度」的意义）', () => {
+  test('There is no upper bound: no matter how far the draw distance is, it will not be clamped to 1 (this is exactly the meaning of "give strength according to distance")', () => {
     let prev = 0;
     for (const dist of [1, 10, 100, 1000, 10000, 100000]) {
       const p = slingshotPower(dist, SIZE);
-      assert.ok(p > prev, `拉距 ${dist} 的力度必须严格大于更近的拉距`);
+      assert.ok(
+        p > prev,
+        `The strength of the draw distance ${dist} must be strictly greater than that of the closer draw distance`,
+      );
       prev = p;
     }
-    assert.ok(slingshotPower(slingshotRefDist(SIZE) * 100, SIZE) === 100, '100 倍拉距就该是 100 倍力度');
+    assert.ok(
+      slingshotPower(slingshotRefDist(SIZE) * 100, SIZE) === 100,
+      '100 times the draw distance should be 100 times the strength',
+    );
   });
 
-  test('0 / 负数 / 非有限 / 尺寸非法 → 0（不产生反向或 NaN 力度）', () => {
+  test('0 / negative number / non-finite / invalid size → 0 (no reverse or NaN velocity generated)', () => {
     for (const dist of [0, -50, NaN, Infinity]) {
       assert.equal(slingshotPower(dist, SIZE), 0, `dist=${dist}`);
     }
-    assert.equal(slingshotPower(100, 0), 0, 'size=0 不该除出 Infinity');
+    assert.equal(slingshotPower(100, 0), 0, 'size =0 Infinity should not be removed');
   });
 
-  test('参考距离随尺寸缩放：同样拉距，小宠物力度更大', () => {
+  test('The reference distance scales with size: the same draw distance, the small pet is stronger', () => {
     assert.ok(slingshotPower(200, 300) > slingshotPower(200, 600));
   });
 });
 
-describe('slingshotVelocity —— 同一力度锚点，但不吃软上限', () => {
-  test('power = 1 就是 1200 px/s（THROW_SPEED_ANCHOR，不被软钳速压到 1021）', () => {
+describe('slingshotVelocity - the same strength anchor point, but does not take the soft upper limit', () => {
+  test('power = 1 is 1200 px/s (THROW_SPEED_ANCHOR, not pressed to 1021 by the soft clamp)', () => {
     const v = slingshotVelocity(0, 1);
     assert.ok(Math.abs(Math.hypot(v.vx, v.vy) - THROW_SPEED_ANCHOR) < 1e-9);
     assert.ok(Math.abs(v.vx - THROW_SPEED_ANCHOR) < 1e-9);
   });
 
-  test('power = 5 → 6000 px/s，可以超过 MAX_THROW_SPEED（弹弓无上限）', () => {
+  test('power = 5 → 6000 px/s, which can exceed MAX_THROW_SPEED (no upper limit for slingshot)', () => {
     const speed = Math.hypot(slingshotVelocity(0, 5).vx, slingshotVelocity(0, 5).vy);
     assert.equal(speed, THROW_SPEED_ANCHOR * 5);
-    assert.ok(speed > MAX_THROW_SPEED, '必须真的突破软钳速——否则「无上限」是假的');
+    assert.ok(
+      speed > MAX_THROW_SPEED,
+      'The soft clamp speed must really be exceeded - otherwise "no upper limit" is false',
+    );
   });
 
-  test('同一 power 下 throwVelocity 被压住、slingshotVelocity 不被压', () => {
+  test('Under the same power, throwVelocity is suppressed, but slingshotVelocity is not suppressed.', () => {
     const clamped = Math.hypot(throwVelocity(0, 10).vx, throwVelocity(0, 10).vy);
     const raw = Math.hypot(slingshotVelocity(0, 10).vx, slingshotVelocity(0, 10).vy);
     assert.ok(clamped < raw);
     assert.ok(Math.abs(raw - THROW_SPEED_ANCHOR * 10) < 1e-9);
   });
 
-  test('physics.throwPower（总力度）线性生效：与拖拽甩抛共用同一个配置', () => {
+  test('physics.throwPower (total strength) linear effect: shares the same configuration with drag and throw', () => {
     const base = Math.hypot(slingshotVelocity(30, 2).vx, slingshotVelocity(30, 2).vy);
     const strong = Math.hypot(slingshotVelocity(30, 2, 2).vx, slingshotVelocity(30, 2, 2).vy);
     assert.equal(strong, base * 2);
   });
 
-  test('负的 power / throwPower 一律按 0 处理，不反向', () => {
+  test('Negative power / throwPower are always treated as 0 and are not reversed.', () => {
     assert.deepEqual(slingshotVelocity(45, -3), { vx: 0, vy: 0 });
     assert.deepEqual(slingshotVelocity(45, 1, -2), { vx: 0, vy: 0 });
   });
 
-  test('方向与力度解耦：任意角度下模长只由 power 决定', () => {
+  test('Decoupling of direction and force: the mold length at any angle is only determined by power', () => {
     const want = Math.hypot(slingshotVelocity(0, 3).vx, slingshotVelocity(0, 3).vy);
     for (const angle of [0, 37, 90, -123, 271]) {
       const v = slingshotVelocity(angle, 3);
@@ -209,26 +229,26 @@ describe('slingshotVelocity —— 同一力度锚点，但不吃软上限', () 
   });
 });
 
-describe('throwSubsteps —— 细分是积分精度，不是力度上限', () => {
-  test('普通甩抛（每帧位移 ≤ 8px）→ 1 步，与旧的单步积分逐位相同', () => {
-    assert.equal(throwSubsteps(300, 0, 1 / 60), 1); // 5px/帧
-    assert.equal(throwSubsteps(0, 0, 1 / 60), 1); // 静止也是 1 步（不能除 0）
+describe('throwSubsteps ——The subdivision is the integration accuracy, not the upper limit of the intensity.', () => {
+  test('Ordinary throwing (displacement per frame ≤ 8 px) → 1 step, bit by bit the same as the old single-step integration', () => {
+    assert.equal(throwSubsteps(300, 0, 1 / 60), 1); // 5 px/frame
+    assert.equal(throwSubsteps(0, 0, 1 / 60), 1); // Stationary is also 1 step (cannot divide by 0)
   });
 
-  test('高速弹射按单步位移上限拆步', () => {
+  test('High-speed ejection is divided into steps according to the upper limit of single-step displacement.', () => {
     const dt = 1 / 60;
     const speed = 8000;
     assert.equal(throwSubsteps(speed, 0, dt), Math.ceil((speed * dt) / SUBSTEP_PX));
-    // 拆完每一步都不超过上限
+    // Each step of dismantling does not exceed the upper limit.
     const n = throwSubsteps(speed, 0, dt);
     assert.ok((speed * dt) / n <= SUBSTEP_PX);
   });
 
-  test('步数上限 SUBSTEP_MAX 兜底（极端速度不会把一帧拖成几百次积分）', () => {
+  test('Upper limit of steps SUBSTEP_MAX fallback (extreme speed will not drag one frame into hundreds of points)', () => {
     assert.equal(throwSubsteps(1e6, 0, 1 / 60), SUBSTEP_MAX);
   });
 
-  test('dt 按 MAX_STEP_DT 夹取：巨帧与上限帧算出同样的步数', () => {
+  test('dt press MAX_STEP_DT to pinch: giant frame and upper limit frame calculate the same number of steps', () => {
     assert.equal(throwSubsteps(1000, 0, 10), throwSubsteps(1000, 0, MAX_STEP_DT));
   });
 });

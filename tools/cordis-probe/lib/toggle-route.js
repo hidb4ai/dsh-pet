@@ -1,28 +1,29 @@
 /**
- * 开关路由：`GET` 读当前状态、`POST` 翻转。
+ * Switch routing: `GET` reads the current status, `POST` flips.
  *
- * 语音合成、语音识别与记忆各有一个开关，三者的路由行为完全一样、只有路径不同，
- * 所以这里按路径造 handler，不各写一份。
- * 存在的理由：注册在宿主（Node），按钮在页面——两半没有直接通道，只能由宿主开一个最小路由。
- * 只服务本示例，不进 dsh-pet 的接口面。
+ * Speech synthesis, speech recognition and memory each have a switch. The routing behavior of the three is exactly the
+ * same, only the paths are different, so here we create handler according to the path without writing one copy for
+ * each. Reason for existence: registered on host (Node), button on page - there is no direct channel between the two
+ * halves, only a minimum route can be opened by host. Only serves this example and does not enter the interface of
+ * dsh-pet.
  * @module dsh-cordis-probe/toggle-route
  */
 
-/** 语音合成开关的路径（与 dsh-pet 的 `/dsh-pet-7340` 并列，互不干扰）。 */
+/** The path of the voice synthesis switch (parallel with `/dsh-pet-7340` of dsh-pet, without interfering with each other). */
 export const VOICE_ROUTE = '/cordis-probe-voice';
-/** 语音识别开关的路径。 */
+/** Path to speech recognition switch. */
 export const SPEECH_ROUTE = '/cordis-probe-speech';
-/** 记忆开关的路径。 */
+/** Path to memory switch. */
 export const MEMORY_ROUTE = '/cordis-probe-memory';
 
 /**
- * 造一个开关处理器。
+ * Build a switch processor.
  *
- * @param control - 读写开关的两个函数；`setOn` 返回生效后的状态。
- * @returns 可直接交给 `webServer.register` 的 handler。
+ * @param control - two functions of read and write switches; `setOn` returns the status after taking effect.
+ * @returns can be directly passed to handler of `webServer.register` .
  */
 export function createToggleHandler(control) {
-  /** 附加状态（如记忆的 capture 计数）；没实现就返回空对象。 */
+  /** Additional status (such as the remembered capture count); if not implemented, an empty object is returned. */
   const extra = () => (typeof control.extra === 'function' ? control.extra() : {});
   return (req, res) => {
     if (req.method === 'GET') {
@@ -33,13 +34,13 @@ export function createToggleHandler(control) {
       respond(res, 405, { ok: false, reason: 'method-not-allowed' });
       return;
     }
-    // 不带请求体：点一次就是翻转一次，省掉解析与校验
+    // Without request body: clicking once means flipping once, eliminating parsing and verification.
     const on = control.setOn(!control.isOn());
     respond(res, 200, { ok: true, on, ...extra() });
   };
 }
 
-/** 写一个 JSON 响应。 */
+/** Write a JSON response. */
 function respond(res, status, body) {
   const text = JSON.stringify(body);
   res.writeHead(status, {

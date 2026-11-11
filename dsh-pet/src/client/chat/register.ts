@@ -1,8 +1,9 @@
 /**
- * 把「桌宠对话」注册成 DSH 右侧栏的一种标签页。
+ * Register "desktop pet conversation" as a tab in the right column of DSH.
  *
- * 右侧栏在 DSH 里是可选能力：缺 `sidebarRightTabs` 服务时只告警、不注册，
- * 宠物 overlay 与设置页照常工作——一个可选面板失败不该让整个插件加载失败。
+ * The right column is an optional capability in DSH: when the `sidebarRightTabs` service is missing, it only alerts
+ * and does not register. The pet overlay and the settings page work as usual - the failure of one optional panel
+ * should not cause the entire plugin to fail to load.
  * @module dsh-pet/src/client/chat/register
  */
 import { LOGO_URL } from './api.ts';
@@ -10,12 +11,12 @@ import { makePetChatPanel, type ChatPanelRuntime } from './panel.ts';
 import { injectPanelCss } from './styles.ts';
 import { disposeTip } from './tooltip.ts';
 
-/** 标签实现身份；同时也是正文与标题插槽的 key。 */
+/** Tag implements identity; also key for body and title slots. */
 const TAB_ID = 'dsh-pet-chat';
-/** 标签类型；`openTab` 按它打开。 */
+/** Label type; `openTab` Press it to open. */
 const TAB_KIND = 'pet-chat';
 
-/** 右侧栏标签注册表的最小形状（按用到的成员声明，不引整包类型）。 */
+/** The minimum shape of the right column label register table (declared according to the members used, without citing the entire package type). */
 interface SidebarTabRegistry {
   register(definition: {
     readonly id: string;
@@ -27,39 +28,41 @@ interface SidebarTabRegistry {
       order: number;
       title: () => string;
       description?: () => string;
-      /** 指南页卡片左侧的图标组件；不给时框架画一个立方体占位。 */
+      /** The icon component on the left side of the guide page card; does not draw a cube placeholder for the time frame. */
       icon?: () => unknown;
-      /** 该入口对应的快捷键命令 id：给了就在卡片右侧显示键帽。 */
+      /** The shortcut key command corresponding to this entry point is id: If given, the keycap will be displayed on the right side of the card. */
       commandId?: string;
     }[];
   }): () => void;
 }
 
-/** 注册对话标签需要的最小上下文。 */
+/** Minimum context required to register dialog tags. */
 export interface PetChatTabHost {
-  /** Cordis 的软取服务：拿不到返回 undefined。 */
+  /** Cordis’s soft retrieval service: Unable to obtain undefined. */
   get?(name: string): unknown;
-  /** 插槽注册表。 */
+  /** Slot register table. */
   slots: {
-    /** 等到某个插槽被声明后再执行注册（与 shell.overlay 同一套等待方式）。 */
+    /** Wait until a slot is declared before executing register (the same waiting method as shell.overlay). */
     inject(name: string, generator: () => Generator<unknown, void, unknown>): void;
     /**
-     * 注册一个挂载点。
+     * register a mount point.
      *
-     * keyed 插槽按 `key` 分派（值即标签类型定义的 `id`）；写成 `id` 会让侧栏查不到正文，
-     * 落到「这类内容还没有可用的查看方式」的兜底文案。
+     * The keyed slot is assigned as `key` (the value is `id` defined by the tag type); writing it as `id` will make
+     * the main text unavailable in the sidebar, and fallback to the fallback text of "There is no available
+     * viewing method for this type of content."
      */
     register(registration: { name: string; key: string; order: number }, component: () => unknown): () => void;
   };
 }
 
 /**
- * 打开右侧栏的对话标签。
+ * Open the conversation tab in the right column.
  *
- * 侧栏导航面可能比注册表晚到，取不到就什么都不做。快捷键的触发动作走这里，
- * 这样「标签类型」这个事实仍只在 registerPetChatTab 里出现一次。
+ * The sidebar navigation surface may arrive later than the register table, and nothing will be done if it is not
+ * available. The triggering action of the shortcut key goes here, so that the fact of "label type" still only appears
+ * once in registerPetChatTab.
  *
- * @param ctx - 客户端上下文（只用到软取）。
+ * @param ctx - client context (only soft fetches are used).
  */
 export function openPetChatTab(ctx: PetChatTabHost): void {
   const controller = ctx.get?.('sidebarRight') as { openTab?(kind: string): void } | undefined;
@@ -67,12 +70,14 @@ export function openPetChatTab(ctx: PetChatTabHost): void {
 }
 
 /**
- * 注册对话标签（标签类型 + 正文插槽 + 样式）。
+ * register dialog tag (tag type + body slot + style).
  *
- * @param ctx - 客户端上下文。
- * @param rt - 注入的 react 能力。
- * @param options.commandId - 快捷键命令 id；只有命令真的登记成功才传，指向不存在的命令会让侧栏抛错。
- * @returns 注销标签类型并释放样式的函数；正文插槽交给 slots.inject 的作用域随插件卸载。
+ * @param ctx - client context.
+ * @param rt - Injected react capabilities.
+ * @param options.commandId - shortcut key command id; only the command is successfully registered. Pointing to a
+ * non-existent command will cause an error in the sidebar.
+ * @returns Unregisters the function of the label type and releases the style; the body slot is handed over to the
+ * scope of slots.inject with the plugin unmount.
  */
 export function registerPetChatTab(
   ctx: PetChatTabHost,
@@ -81,12 +86,12 @@ export function registerPetChatTab(
 ): () => void {
   const tabs = ctx.get?.('sidebarRightTabs') as SidebarTabRegistry | undefined;
   if (tabs === undefined || typeof tabs.register !== 'function') {
-    console.warn('[dsh-pet] 右侧栏不可用：没有 sidebarRightTabs 服务，桌宠对话标签未注册');
+    console.warn('[dsh-pet] Chat tab not registered: sidebarRightTabs service unavailable');
     return () => {};
   }
   const disposeCss = injectPanelCss();
   const Panel = makePetChatPanel(rt);
-  /** 指南页卡片的图标：插件 logo；框架给的位置只有 16px 左右，靠 CSS 铺满。 */
+  /** The icon of the guide page card: plugin logo; the position given by the frame is only about 16 px, which is filled with CSS. */
   const GuideIcon = () => rt.h('img', { className: 'pet-chat-guide-icon', src: LOGO_URL, alt: '', loading: 'lazy' });
 
   const commandId = options.commandId;
@@ -94,7 +99,7 @@ export function registerPetChatTab(
   const disposeType = tabs.register({
     id: TAB_ID,
     kind: TAB_KIND,
-    // extension 是外部插件最高优先带：不与内置类型抢地址，但可以覆盖同名 kind
+    // extension is the highest priority band of external plugins: it does not compete with the built-in type for addresses, but it can cover kind with the same name.
     priority: 'extension',
     title: () => rt.t('tabTitle'),
     guide: [
@@ -108,7 +113,7 @@ export function registerPetChatTab(
       },
     ],
   });
-  // 右侧栏可能晚于本插件挂载：等插槽声明后再注册，避免「打开标签却空白」
+  // The right column may be mounted later than this plugin: wait for the slot to be declared before registering to avoid "opening the label but blank"
   ctx.slots.inject('sidebar.right.pane.tab', function* () {
     yield ctx.slots.register({ name: 'sidebar.right.pane.tab', key: TAB_ID, order: 100 }, () => rt.h(Panel, {}));
   });

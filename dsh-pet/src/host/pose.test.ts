@@ -1,27 +1,29 @@
 /**
- * 桌面端实况快照（src/host/pose.ts）的单测 —— issue #122 第 1 条。
+ * Single test of desktop live snapshot (src/host/pose.ts) - issue #122 Article 1.
  *
- * 契约：
- *   1. 入参收窄：非有限数字（NaN / Infinity / 字符串）与非法朝向一律 `bad-request`；
- *   2. 越界坐标照收：实况是"报什么就是什么"，不做夹取（宠物贴边时中心点本来就可能略出界）；
- *   3. 快照后写覆盖，同一只宠物只有一份，`updatedAt` 来自可注入的时钟。
+ * Contract:
+ * 1. Input parameters are narrowed: non-limited numbers (NaN / Infinity / character string) and invalid directions are
+ * all `bad-request` ;
+ * 2. Out-of-bounds coordinates are still accepted: the actual situation is "whatever is reported is what is reported",
+ * no clamping is performed (the center point may be slightly out of bounds when the pet is close to the edge);
+ * 3. Post-snapshot write overwrite, there is only one copy of the same pet, `updatedAt` from the injectable clock.
  *
- * 用 Node 内置 test runner，不引入任何 npm 依赖。
+ * Use Node to build test runner without introducing any npm dependencies.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PoseStore, normalizePoseInput } from './pose.ts';
 
-describe('normalizePoseInput —— 上报原值收窄', () => {
-  test('合法 → 原样收窄', () => {
+describe('normalizePoseInput ——The original value reported has narrowed', () => {
+  test('Valid → narrowed as is', () => {
     assert.deepEqual(normalizePoseInput({ x: 0.25, y: 1, facing: 'right' }), {
       ok: true,
       pose: { x: 0.25, y: 1, facing: 'right' },
     });
   });
 
-  test('越界坐标照收（不夹取：实况要能对得上眼睛）', () => {
+  test('Out-of-bounds coordinates will be accepted (no clamping: the live scene must be eye-catching)', () => {
     for (const x of [-0.03, 1.02]) {
       const r = normalizePoseInput({ x, y: 0.5, facing: 'left' });
       assert.equal(r.ok, true, 'x=' + x + ' 应通过');
@@ -29,19 +31,19 @@ describe('normalizePoseInput —— 上报原值收窄', () => {
     }
   });
 
-  test('非对象 / 缺字段 / 非有限数字 / 非法朝向 → bad-request', () => {
+  test('Non-object/missing field/non-finite number/invalid orientation → bad-request', () => {
     const bad: unknown[] = [
       null,
       undefined,
       42,
       'x',
       [],
-      { y: 0.5, facing: 'left' }, // 缺 x
-      { x: 0.5, facing: 'left' }, // 缺 y
+      { y: 0.5, facing: 'left' }, // Missing x
+      { x: 0.5, facing: 'left' }, // Missing y
       { x: NaN, y: 0.5, facing: 'left' },
       { x: Infinity, y: 0.5, facing: 'left' },
       { x: '0.5', y: 0.5, facing: 'left' },
-      { x: 0.5, y: 0.5 }, // 缺 facing
+      { x: 0.5, y: 0.5 }, // Missing facing
       { x: 0.5, y: 0.5, facing: 'RIGHT' },
       { x: 0.5, y: 0.5, facing: 'up' },
     ];
@@ -53,8 +55,8 @@ describe('normalizePoseInput —— 上报原值收窄', () => {
   });
 });
 
-describe('PoseStore —— 快照覆盖', () => {
-  test('从没有 → undefined；set 后可读，updatedAt 来自注入的时钟', () => {
+describe('PoseStore - Snapshot overwrite', () => {
+  test('never → undefined; readable after set, updatedAt from injected clock', () => {
     let now = 1000;
     const store = new PoseStore({ now: () => now });
     assert.equal(store.get('main'), undefined);
@@ -66,11 +68,11 @@ describe('PoseStore —— 快照覆盖', () => {
     });
     now = 2000;
     store.set('main', { x: 0.1, y: 0.2, facing: 'right' });
-    assert.deepEqual(store.get('main'), { x: 0.1, y: 0.2, facing: 'right', updatedAt: 2000 }, '后写覆盖');
-    assert.equal(store.count(), 1, '同一只宠物只有一份');
+    assert.deepEqual(store.get('main'), { x: 0.1, y: 0.2, facing: 'right', updatedAt: 2000 }, 'Write-behind overwrite');
+    assert.equal(store.count(), 1, 'There is only one copy of the same pet');
   });
 
-  test('多只宠物互不干扰', () => {
+  test('Multiple pets do not interfere with each other', () => {
     const store = new PoseStore({ now: () => 1 });
     store.set('a', { x: 0, y: 0, facing: 'left' });
     store.set('b', { x: 1, y: 1, facing: 'right' });

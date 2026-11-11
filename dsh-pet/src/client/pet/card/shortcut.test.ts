@@ -1,11 +1,13 @@
 /**
- * 三条浮动对话命令的契约：命令 id、键位，以及触发后是否真的落到登记的那只宠物上。
+ * The contract of three floating dialogue commands: command id, key position, and whether it actually falls on the
+ * registered pet after triggering.
  *
- * 键位值得钉：T 被浏览器占着，这里用的是 L（对话）、M（录音）、S（截图）；改错一个字母用户就按不出来，
- * 而「按不出来」在现场只会被当成快捷键没做出来。
- * 开关语义同样值得钉：同一个键第二次按必须是关，不是「把焦点塞回输入框」。
+ * The key positions are worth fixing: T is occupied by the browser, here we use L (conversation), M (recording), S
+ * (screenshot); if you change a wrong letter, the user will not be able to press it, and "cannot press it" will only
+ * be regarded as a shortcut key that has not been made on site. The switch semantics are also worthy of criticism: the
+ * second press of the same key must be off, not "put the focus back into the input box".
  *
- * 跑法：node --experimental-strip-types --test src/client/pet/card/shortcut.test.ts
+ * Running method: node --experimental-strip-types --test src/client/pet/card/shortcut.test.ts
  */
 import { afterEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +23,7 @@ import {
   registerPetCardShortcuts,
 } from './shortcut.ts';
 
-/** 一次注册的完整命令（断言用）。 */
+/** A complete command of register (for assertion). */
 interface Registered {
   id: string;
   label: () => string;
@@ -29,10 +31,10 @@ interface Registered {
   resolve: () => { status: string; run?: () => void };
 }
 
-/** 目录行：服务按平台展开好的键帽片段。 */
+/** Directory line: service expanded keycap fragment by platform. */
 type Row = { id: string; keys: string[] };
 
-/** 假上下文：把注册过的命令按 id 收起来，并可选地暴露一份目录。 */
+/** Fake context: Collect registered commands as id and optionally expose a directory. */
 function makeHost(rows: Row[] = []): { host: ShortcutHost; commands: Map<string, Registered> } {
   const commands = new Map<string, Registered>();
   const host: ShortcutHost = {
@@ -49,7 +51,7 @@ function makeHost(rows: Row[] = []): { host: ShortcutHost; commands: Map<string,
   return { host, commands };
 }
 
-/** 造一个只记调用的句柄；`hearing` 可中途改，模拟正在录音。 */
+/** Create a handle that only remembers calls; `hearing` can be changed midway to simulate recording. */
 function makeHandle(calls: string[], hearing = false) {
   const handle = {
     hearing,
@@ -71,7 +73,7 @@ function makeHandle(calls: string[], hearing = false) {
   return handle;
 }
 
-/** 主配置第一只宠物的形状；测试只关心 id。 */
+/** The main configuration is the shape of the first pet; the test only cares about id. */
 const asPet = (id: string): NonNullable<typeof petBridge.template> =>
   ({ id }) as unknown as NonNullable<typeof petBridge.template>;
 
@@ -82,11 +84,11 @@ afterEach(() => {
   petBridge.template = undefined;
 });
 
-/** 默认组合，与源码里的绑定同源；测试只用于断言兜底文案。 */
+/** The default combination has the same origin as the binding in the source code; the test is only used for assertion fallback text. */
 const FLOAT_DEFAULT_KEYCAP = keycapOf({ code: 'KeyL', modifiers: ['primary', 'shift'] });
 
-describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
-  test('注册三条命令，键位分别是 Ctrl+Shift+L / M / S', () => {
+describe('registerPetCardShortcuts - Three commands for floating dialogue', () => {
+  test('register three commands, the key positions are Ctrl + Shift + L / M / S', () => {
     const { host, commands } = makeHost();
     registerPetCardShortcuts(host, (key) => key);
     assert.deepEqual(
@@ -107,7 +109,7 @@ describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
     });
   });
 
-  test('标题取的是传进来的翻译键', () => {
+  test('The title is based on the translation key passed in.', () => {
     const { host, commands } = makeHost();
     registerPetCardShortcuts(host, (key) => 'T:' + key);
     assert.equal(commands.get(PET_FLOAT_COMMAND_ID)?.label(), 'T:shortcut.chat');
@@ -115,7 +117,7 @@ describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
     assert.equal(commands.get(PET_CAPTURE_COMMAND_ID)?.label(), 'T:shortcut.capture');
   });
 
-  test('按「打开对话」→ 作用在登记的那只宠物上', () => {
+  test('Click "Open Conversation" → Act on the registered pet', () => {
     const { host, commands } = makeHost();
     const calls: string[] = [];
     disposers.push(registerPetChatHandle('main', makeHandle(calls)));
@@ -125,7 +127,7 @@ describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
     assert.deepEqual(calls, ['open']);
   });
 
-  test('再按一次「打开对话」→ 关掉，而不是再开一个', () => {
+  test('Click "Open Conversation" again → close it instead of opening another one', () => {
     const { host, commands } = makeHost();
     const calls: string[] = [];
     disposers.push(registerPetChatHandle('main', makeHandle(calls)));
@@ -139,7 +141,7 @@ describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
     assert.deepEqual(calls, ['open', 'close']);
   });
 
-  test('按「语音输入」→ 没在录就开录，在录就收尾', () => {
+  test('Press "Voice Input" → Start recording when not recording, cleanup when recording', () => {
     const calls: string[] = [];
     const handle = makeHandle(calls);
     disposers.push(registerPetChatHandle('main', handle));
@@ -155,7 +157,7 @@ describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
     assert.deepEqual(calls, ['start', 'stop']);
   });
 
-  test('按「截图」→ 落到登记的那只宠物上', () => {
+  test('Click "Screenshot" → fall on the registered pet', () => {
     const { host, commands } = makeHost();
     const calls: string[] = [];
     disposers.push(registerPetChatHandle('main', makeHandle(calls)));
@@ -165,7 +167,7 @@ describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
     assert.deepEqual(calls, ['screenshot']);
   });
 
-  test('一只宠物都没有 → 触发也不抛', () => {
+  test('Not a single pet → Triggered and not thrown', () => {
     const { host, commands } = makeHost();
     registerPetCardShortcuts(host, (key) => key);
     assert.doesNotThrow(() => commands.get(PET_FLOAT_COMMAND_ID)?.resolve().run?.());
@@ -174,18 +176,18 @@ describe('registerPetCardShortcuts —— 浮动对话的三条命令', () => {
   });
 });
 
-describe('petShortcutKeycap —— 设置页显示的键帽', () => {
-  test('用户改绑后显示改绑后的键，不再念默认值', () => {
+describe('petShortcutKeycap ——The keycap displayed on the settings page', () => {
+  test('After the user changes the binding, the changed key is displayed and the default value is no longer read.', () => {
     const { host } = makeHost([{ id: PET_FLOAT_COMMAND_ID, keys: ['Ctrl', '+', 'Alt', '+', 'K'] }]);
     assert.equal(petShortcutKeycap(host, 'chat'), 'Ctrl+Alt+K');
   });
 
-  test('目录里没有这一条 → 退回默认组合', () => {
+  test('There is no such item in the directory → Return to the default combination', () => {
     const { host } = makeHost();
     assert.equal(petShortcutKeycap(host, 'chat'), FLOAT_DEFAULT_KEYCAP);
   });
 
-  test('宿主没有快捷键服务 → 退回默认组合，不抛', () => {
+  test('The host has no shortcut key service → Return to the default combination without throwing', () => {
     assert.equal(petShortcutKeycap({ get: () => undefined }, 'chat'), FLOAT_DEFAULT_KEYCAP);
   });
 });

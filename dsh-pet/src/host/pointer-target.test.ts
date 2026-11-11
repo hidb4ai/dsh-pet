@@ -1,17 +1,21 @@
 /**
- * 桌面 helper「点击穿透兜底通道」的判定测试（采纳 issue #55 报告者的补丁）。
+ * Desktop helper "click-through fallback channel" judgment test (adopting the patch from the reporter of issue #55).
  *
- * 背景：窗口默认整窗点击穿透，只靠 Electron 的 forward 低级鼠标钩子把 mousemove 转发进渲染端做命中
- * 判定——整条链路只有一个入口。该钩子在 Windows 上会静默失效（回调超时被系统摘掉 / 被别的软件
- * 的钩子干扰），失效后没有任何退路：光标悬浮不触发手套光标、拖不动、点击与右键全无反应。
- * 报告者的修法：主进程按真实光标位置独立判定并翻转，不依赖那条转发链路。
+ * Background: The window defaults to click-through for the entire window, and only relies on the forward low-level
+ * mouse hook of Electron to forward mousemove to the renderer for hit determination - the entire link has only one
+ * entry point. This hook will fail silently on Windows (the callback timeout is removed by the system/interferenced by
+ * hooks from other software), and there is no way out after the failure: the cursor does not trigger the glove cursor
+ * when it is hovering, it cannot be dragged, and there is no response when clicking or right-clicking. The reporter's
+ * modification: The main process independently determines and flips the real cursor position, without relying on that
+ * forwarding link.
  *
- * 本文件把三件事钉住：
- *   ① 判定规则（宠物身上=可交互；窗口余量区=保持当前，菜单/弹窗才点得到；窗外=穿透）；
- *   ② 几何：窗口矩形 → 宠物身体命中区（必须与渲染端 sprite.js 的命中判定同源，否则两条通道打架）；
- *   ③ 源码守卫：helper 的 main.js 里必须有兜底显示与兜底轮询（Electron 起不来，只能读源码断言）。
+ * This file verifies three things: ① Judgment rules (on pet = interactive; window margin area = keep current,
+ * menu/pop-up window can be clicked; outside the window = click-through); ② Geometry: window rectangle → pet body hit
+ * area (must have the same origin as the hit determination of renderer sprite.js, otherwise the two channels
+ * conflict); ③ Source code guard: There must be a fallback in main.js of helper Display and fallback polling (Electron
+ * cannot get up, can only read source code assertion).
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,10 +37,10 @@ const {
   decideWindowIgnore,
 } = require(helper + 'pointer-target.js');
 
-/** 包内文件源码（守卫用；相对 src/host/ 解析） */
+/** Source code of files in the package (for guarding; relative to src/host / parsing) */
 const readSource = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-/** 渲染端宠物本体的源码：已按职责拆成 sprite.js 与 sprite-*.js，守卫要读全份。 */
+/** The source code of the renderer pet body: has been split into sprite.js and sprite -*.js according to responsibilities. Guards must read the entire copy. */
 const spriteSource = (): string =>
   [
     readSource(helper + 'sprite.js'),
@@ -45,59 +49,75 @@ const spriteSource = (): string =>
     ),
   ].join('\n');
 
-/** 真实窗口矩形（DIP）：宠物 size 462 → 窗口 = 462 + 两侧各 231 = 924；高度 = 画布 + bottomPad + 两侧余量 */
+/** Real window rectangle ( DIP ): pet size 462 → window = 462 + 231 on each side = 924; height = canvas + bottomPad + margin on both sides */
 const bounds = { x: 1000, y: 500, width: 924, height: 743 };
 
-describe('decideWindowIgnore —— 兜底通道的判定规则（issue #55 报告者实测表）', () => {
-  test('光标在宠物身体上 → 不穿透（可交互）', () => {
+describe('decideWindowIgnore - Determination rules for fallback channel (issue #55 Reporter’s actual measurement table)', () => {
+  test('The cursor is on the pet body → not click-through (interactive)', () => {
     const r = spriteHitRect(bounds);
     const center = { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
     assert.equal(decideWindowIgnore(bounds, center, true), false);
     assert.equal(decideWindowIgnore(bounds, center, false), false);
   });
 
-  test('窗口余量区保持当前状态：当前可交互则维持（自绘菜单/弹窗点得到）、当前穿透则维持穿透', () => {
-    const margin = { x: bounds.x + 20, y: bounds.y + 20 }; // 窗口左上角余量区（宠物外）
-    assert.equal(decideWindowIgnore(bounds, margin, false), false, '菜单打开时鼠标移到余量区不得翻回穿透');
-    assert.equal(decideWindowIgnore(bounds, margin, true), true, '没交互时余量区必须保持穿透，不挡桌面图标');
+  test('The window margin area maintains the current state: if it is currently interactive, it will be maintained (obtained from the self-drawn menu/pop-up window point), if it is currently click-through, it will be maintained click-through.', () => {
+    const margin = { x: bounds.x + 20, y: bounds.y + 20 }; // Margin area in the upper left corner of the window (outside pets)
+    assert.equal(
+      decideWindowIgnore(bounds, margin, false),
+      false,
+      'When the menu is opened, the mouse cannot be moved back to the margin area click-through',
+    );
+    assert.equal(
+      decideWindowIgnore(bounds, margin, true),
+      true,
+      'When there is no interaction, the margin area must remain click-through and do not block desktop icons.',
+    );
   });
 
-  test('余量区停留超时 → 恢复穿透；未到点仍保持当前状态', () => {
+  test('Stay timeout in the margin area → restore click-through; the current state will remain until the point is reached', () => {
     const margin = { x: bounds.x + 20, y: bounds.y + 20 };
     assert.equal(
       decideWindowIgnore(bounds, margin, false, false, OFF_BODY_RELEASE_MS - 1),
       false,
-      '未到点：保持可交互',
+      'Not yet reached: remain interactive',
     );
-    assert.equal(decideWindowIgnore(bounds, margin, false, false, OFF_BODY_RELEASE_MS), true, '到点：恢复穿透');
-    assert.equal(decideWindowIgnore(bounds, margin, true, false, OFF_BODY_RELEASE_MS), true, '已穿透：维持穿透');
+    assert.equal(
+      decideWindowIgnore(bounds, margin, false, false, OFF_BODY_RELEASE_MS),
+      true,
+      'To point: restore click-through',
+    );
+    assert.equal(
+      decideWindowIgnore(bounds, margin, true, false, OFF_BODY_RELEASE_MS),
+      true,
+      'click-through: maintain click-through',
+    );
   });
 
-  test('busy 仍优先于超时：租约期内不得因超时翻回穿透', () => {
+  test('busy still takes precedence over timeout: click-through cannot be rolled back due to timeout during the lease period', () => {
     const margin = { x: bounds.x + 20, y: bounds.y + 20 };
     assert.equal(decideWindowIgnore(bounds, margin, false, true, OFF_BODY_RELEASE_MS * 100), false);
     assert.equal(decideWindowIgnore(bounds, margin, true, true, OFF_BODY_RELEASE_MS * 100), false);
   });
 
-  test('超时不越界：身体上不因超时穿透，窗外不因零时长保持可交互', () => {
+  test('Timeout does not cross the boundary: the body does not click-through due to timeout, and the window does not remain interactive due to zero duration.', () => {
     const r = spriteHitRect(bounds);
     const center = { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
     assert.equal(decideWindowIgnore(bounds, center, false, false, OFF_BODY_RELEASE_MS * 100), false);
     assert.equal(decideWindowIgnore(bounds, { x: bounds.x - 1, y: bounds.y + 100 }, false, false, 0), true);
   });
 
-  test('pointerZone：窗口分区的唯一来源', () => {
+  test('pointerZone: The only source of window partitions', () => {
     const r = spriteHitRect(bounds);
     assert.equal(pointerZone(bounds, { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 }), 'body');
     assert.equal(pointerZone(bounds, { x: bounds.x + 2, y: bounds.y + 2 }), 'margin');
     assert.equal(pointerZone(bounds, { x: bounds.x - 1, y: bounds.y + 100 }), 'outside');
   });
 
-  test('余量区释放阈值是命名常量（400ms）', () => {
+  test('The margin area release threshold is a named constant (400 ms)', () => {
     assert.equal(OFF_BODY_RELEASE_MS, 400);
   });
 
-  test('光标在窗口外 → 恢复穿透（四个方向）', () => {
+  test('Cursor outside window → restore click-through (four directions)', () => {
     const cases = [
       { x: bounds.x - 1, y: bounds.y + 100 },
       { x: bounds.x + bounds.width, y: bounds.y + 100 },
@@ -107,7 +127,7 @@ describe('decideWindowIgnore —— 兜底通道的判定规则（issue #55 报�
     for (const p of cases) assert.equal(decideWindowIgnore(bounds, p, false), true, JSON.stringify(p));
   });
 
-  test('边界取整：窗口左上角算窗口内、右下角算窗口外', () => {
+  test('Boundary rounding: the upper left corner of the window is counted as inside the window, and the lower right corner is counted as outside the window.', () => {
     assert.equal(decideWindowIgnore(bounds, { x: bounds.x, y: bounds.y }, false), false);
     assert.equal(
       decideWindowIgnore(bounds, { x: bounds.x + bounds.width - 1, y: bounds.y + bounds.height - 1 }, false),
@@ -115,39 +135,39 @@ describe('decideWindowIgnore —— 兜底通道的判定规则（issue #55 报�
     );
   });
 
-  test('窗口尺寸未落定（renderer 首帧上报前）不误判：极小矩形内不产生"可交互"', () => {
+  test('The window size has not been settled (renderer before the first frame is reported). No misjudgment: no "interactive" is generated in a very small rectangle.', () => {
     const tiny = { x: 0, y: 0, width: 4, height: 4 };
     assert.equal(decideWindowIgnore(tiny, { x: 0, y: 0 }, true), true);
   });
 });
 
-describe('输入租约（busy）—— 0.2.10「甩快了即使没松手也会飞出去」的修复', () => {
-  /** 拖拽中宠物滞后于光标：光标跑到窗口矩形外（甩得快时必然出现，滞后量 > 半只宠物） */
+describe('Enter the lease (busy) - 0.2.10 "If you throw it too fast, it will fly out even if you don\'t let go" fix', () => {
+  /** The pet lags behind the cursor during dragging: the cursor runs outside the window rectangle (it will definitely happen when you drag it fast, the amount of lag is > half the pet) */
   const ahead = { x: bounds.x + bounds.width + 120, y: bounds.y + 300 };
 
-  test('busy=false：位置规则原样生效（0.2.10 的判定不变）', () => {
-    assert.equal(decideWindowIgnore(bounds, ahead, false, false), true, '窗外→穿透');
+  test('busy = false: The position rule takes effect as it is (the judgment of 0.2.10 remains unchanged)', () => {
+    assert.equal(decideWindowIgnore(bounds, ahead, false, false), true, 'Outside the window → click-through');
     assert.equal(
       decideWindowIgnore(bounds, { x: bounds.x + 20, y: bounds.y + 20 }, false, false),
       false,
-      '余量区→保持当前（可交互）',
+      'Margin area→keep current (interactive)',
     );
     assert.equal(
       decideWindowIgnore(bounds, { x: bounds.x + 20, y: bounds.y + 20 }, true, false),
       true,
-      '余量区→保持透视',
+      'Margin area→Keep perspective',
     );
   });
 
-  test('busy=true：光标在窗口外也**不得**翻回穿透——这是本次回归的正面断言', () => {
+  test('busy = true: The cursor cannot be click-through even if it is outside the window - this is the positive assertion of this return', () => {
     assert.equal(
       decideWindowIgnore(bounds, ahead, true, true),
       false,
-      '这一拍翻回穿透，拖拽的 window 级事件链就断了：指针还按着，宠物却按旧速度飞出去',
+      'When this click returns to click-through, the dragging window level event chain is broken: the pointer is still pressed, but the pet flies out at the old speed.',
     );
   });
 
-  test('busy=true：无论光标在多远、当前是什么状态，一律保持可交互（位置完全不参与）', () => {
+  test('busy = true: No matter how far away the cursor is or what its current status is, it will always remain interactive (the position is not involved at all)', () => {
     const spots = [
       { x: bounds.x - 900, y: bounds.y - 900 },
       { x: bounds.x + bounds.width + 3000, y: bounds.y + 10 },
@@ -160,26 +180,30 @@ describe('输入租约（busy）—— 0.2.10「甩快了即使没松手也会�
     }
   });
 
-  test('busy 是**否决权**：它压过位置判定（任何"离得近才算"的阈值都会重新引入滞后量条件）', () => {
-    // 反证：即使光标离窗口十万八千里，busy 期间也只能是可交互
+  test('busy is a veto: it overrides the position determination (any "near as close" threshold will reintroduce the hysteresis condition)', () => {
+    // Counter-evidence: Even if the cursor is far away from the window, it can only be interactive during busy
     const veryFar = { x: bounds.x + 99999, y: bounds.y };
     assert.equal(decideWindowIgnore(bounds, veryFar, true, true), false);
   });
 
-  test('busy 释放后立刻回到位置规则（松手/关菜单/关弹窗都不留下粘性）', () => {
-    assert.equal(decideWindowIgnore(bounds, ahead, false, true), false, 'busy 期间：可交互');
-    assert.equal(decideWindowIgnore(bounds, ahead, false, false), true, 'busy 释放：同一位置立刻恢复穿透');
+  test('busy returns to the position immediately after release (no stickiness left when letting go/closing the menu/closing the pop-up window)', () => {
+    assert.equal(decideWindowIgnore(bounds, ahead, false, true), false, 'busy period: interactive');
+    assert.equal(
+      decideWindowIgnore(bounds, ahead, false, false),
+      true,
+      'busy release: restore immediately at the same position click-through',
+    );
   });
 
-  test('轮询间隔仍在（60ms，issue #55 报告者实测值）', () => {
+  test('The polling interval is still there (60 ms, issue #55 reporter measured value)', () => {
     assert.equal(POINTER_POLL_MS, 60);
   });
 });
 
-describe('spriteHitRect —— 与渲染端命中判定同源（否则两条通道会互相翻回来）', () => {
-  test('size 462 的真实窗口：命中区落在身体矩形内，且中心 = 窗口中心（真机实测一致）', () => {
+describe('spriteHitRect - has the same origin as renderer hit determination (otherwise the two channels will flip back to each other)', () => {
+  test('The real window of size 462: the hit area falls within the body rectangle, and the center = the center of the window (the actual measurement of the real machine is consistent)', () => {
     const r = spriteHitRect(bounds);
-    // 窗口 = 画布 + 两侧各 margin(231)；画布 462×260，身体命中区取画布 640×360 的 200..440 / 50..335
+    // Window = canvas + margin (231) on both sides; canvas 462×260, body hit area is 200..440 / 50..335 of canvas 640×360
     const margin = 231;
     const stageH = (462 * CANVAS_H) / STAGE_W;
     const bottomPad = (stageH * (CANVAS_H - FEET_Y)) / CANVAS_H;
@@ -188,42 +212,52 @@ describe('spriteHitRect —— 与渲染端命中判定同源（否则两条通�
     assert.ok(near(r.right, bounds.x + margin + (440 / STAGE_W) * 462), 'right=' + r.right);
     assert.ok(near(r.top, bounds.y + margin + bottomPad + (50 / CANVAS_H) * stageH), 'top=' + r.top);
     assert.ok(near(r.bottom, bounds.y + margin + bottomPad + (335 / CANVAS_H) * stageH), 'bottom=' + r.bottom);
-    // 命中区必须完全落在窗口内（否则永远不会触发 + 会误判窗外）
+    // The hit area must fall completely within the window (otherwise it will never trigger + it will misjudge the window)
     assert.ok(r.left > bounds.x && r.right < bounds.x + bounds.width);
     assert.ok(r.top > bounds.y && r.bottom < bounds.y + bounds.height);
-    // 与真机实测的落点一致：我把光标注入到窗口中心时，命中区中心正是窗口中心
+    // It is consistent with the measured landing point on the real machine: when I inject the cursor into the center of the window, the center of the hit area is exactly the center of the window.
     assert.ok(Math.abs((r.left + r.right) / 2 - (bounds.x + bounds.width / 2)) < 0.01);
   });
 
-  test('命中区随窗口尺寸等比缩放（宠物放大/缩小后仍对得上）', () => {
-    const small = { x: 0, y: 0, width: 600, height: 482 }; // size 300：300 + 两侧各 150
+  test('The hit area scales proportionally with the window size (the pet still fits after zooming in/out)', () => {
+    const small = { x: 0, y: 0, width: 600, height: 482 }; // size 300: 300 + 150 on each side
     const r = spriteHitRect(small);
     assert.ok(r.left > 150 && r.left < 300);
     assert.ok(r.right > 300 && r.right < 450);
   });
 
-  test('本体在窗口内偏移（X11 把窗口钳回工作区之后） → 命中区整体跟着偏移，左右不再对称', () => {
-    // issue #274 的实测窗口：880×782，本体 440 宽。贴右下角时窗口被钳到 (1040,258)，
-    // 本体偏移变成左 416 / 上 524.5，右侧只剩 880 − 416 − 440 = 24
+  test('The body is offset within the window (X11 after clamping the window back to the workspace) → The entire hit area is offset and the left and right are no longer symmetrical.', () => {
+    // The measured window of issue #274: 880×782, body 440 wide. When attaching the lower right corner, the window is
+    // clamped to (1040,258), the body offset becomes left 416 / upper 524.5, and only 880 − 416 − 440 = 24 is left on
+    // the right
     const clamped = { x: 1040, y: 258, width: 880, height: 782 };
     const r = spriteHitRect(clamped, { l: 416, t: 524.5, r: 24 });
-    // 期望值写死，不重算被测公式：命中区按本体宽 440 的比例落在窗口内，左缘 200/640×440 = 137.5、右缘 440/640×440 = 302.5
-    assert.ok(Math.abs(r.left - 1593.5) < 0.01, `命中区左缘应为 1593.5，实得 ${r.left}`);
-    assert.ok(Math.abs(r.right - 1758.5) < 0.01, `命中区右缘应为 1758.5，实得 ${r.right}`);
-    assert.ok(r.left > spriteHitRect(clamped).left, '偏移后命中区必须整体右移，不能仍按「窗口宽/4」算');
-    assert.ok(r.right <= clamped.x + clamped.width, '命中区不得越出窗口右缘');
-    assert.ok(r.bottom <= clamped.y + clamped.height, '命中区不得越出窗口下缘');
+    // The expected value is hard-coded and the measured formula is not recalculated: the hit area falls within the window in proportion to the body width 440, with the left edge 200/640×440 = 137.5 and the right edge 440/640×440 = 302.5
+    assert.ok(
+      Math.abs(r.left - 1593.5) < 0.01,
+      `The left edge of the hit area should be 1593.5, and the actual value is ${r.left}`,
+    );
+    assert.ok(
+      Math.abs(r.right - 1758.5) < 0.01,
+      `The right edge of the hit area should be 1758.5, and the actual value is ${r.right}`,
+    );
+    assert.ok(
+      r.left > spriteHitRect(clamped).left,
+      'After offset, the hit area must be moved to the right as a whole, and cannot still be calculated according to "window width/4"',
+    );
+    assert.ok(r.right <= clamped.x + clamped.width, 'The hit area must not exceed the right edge of the window');
+    assert.ok(r.bottom <= clamped.y + clamped.height, 'The hit area must not exceed the lower edge of the window');
   });
 });
 
-describe('菜单/聊天框只占控件矩形，不吞掉其它应用点击', () => {
+describe('The menu/chat box only occupies the control rectangle and does not swallow up other application clicks.', () => {
   const input = { dragging: false, rects: [{ x: 10, y: 10, width: 150, height: 200 }] };
-  test('控件内保持交互，透明余量立即穿透，即使 busy=true', () => {
+  test('Maintain interaction within the control, transparent margin immediately click-through, even if busy = true', () => {
     assert.equal(decideWindowIgnore(bounds, { x: 1020, y: 520 }, true, true, 0, input), false);
     assert.equal(decideWindowIgnore(bounds, { x: 1200, y: 520 }, false, true, 0, input), true);
     assert.equal(decideWindowIgnore(bounds, { x: 0, y: 0 }, false, true, 0, input), true);
   });
-  test('菜单开着也能点击身体；拖拽跨出窗口仍保留输入', () => {
+  test('You can click on the body even when the menu is open; dragging across the window still retains the input', () => {
     const r = spriteHitRect(bounds);
     assert.equal(decideWindowIgnore(bounds, { x: r.left + 1, y: r.top + 1 }, true, true, 0, input), false);
     assert.equal(
@@ -231,15 +265,15 @@ describe('菜单/聊天框只占控件矩形，不吞掉其它应用点击', () 
       false,
     );
   });
-  test('多级菜单的每个面板都可交互，面板间的透明间隙保持穿透', () => {
+  test('Each panel of a multi-level menu is interactive, and the transparent gaps between panels remain click-through', () => {
     const cascade = { dragging: false, rects: [...input.rects, { x: 180, y: 10, width: 150, height: 300 }] };
     assert.equal(decideWindowIgnore(bounds, { x: 1190, y: 520 }, true, true, 0, cascade), false);
     assert.equal(decideWindowIgnore(bounds, { x: 1170, y: 520 }, false, true, 0, cascade), true);
   });
 });
 
-describe('源码守卫 —— helper 的两个兜底必须在位', () => {
-  /** 主进程源码：main.js 是装配根，行为散在 main/ 下的模块里，守卫要读全份。 */
+describe('Source code guard - the two fallbacks of helper must be in place', () => {
+  /** main process source code: main.js is the assembly root, and the behaviors are scattered in modules under main /. The guard must read the entire copy. */
   const mainSource = (dir: string): string =>
     [
       readSource(dir + 'main.js'),
@@ -249,57 +283,73 @@ describe('源码守卫 —— helper 的两个兜底必须在位', () => {
     ].join('\n');
   const main = mainSource(helper);
 
-  test('#55-1 兜底显示：ready-to-show 之外还要有"加载完成后仍未显示就 show"', () => {
-    // 回调可能是单行 `() => win.showInactive()`，也可能多行（多行时先 keepOffTaskbar 再 show）：
-    // 只约束"回调内部最终用 showInactive、不抢焦点"，不约束写法本身。
-    assert.ok(/once\('ready-to-show', \(\) => \{?[\s\S]*?win\.showInactive\(\)/.test(main), '显示不得抢其它应用焦点');
+  test('#55-1 fallback displays: In addition to ready-to-show, there is also "show if it is not displayed after loading is completed"', () => {
+    // The callback may be a single line `() => win.showInactive()` , or it may be multiple lines (when there are
+    // multiple lines, first keepOffTaskbar and then show): It only restricts "the final use of showInactive inside the
+    // callback and does not grab the focus", and does not restrict the writing method itself.
+    assert.ok(
+      /once\('ready-to-show', \(\) => \{?[\s\S]*?win\.showInactive\(\)/.test(main),
+      'The display must not steal the focus from other applications.',
+    );
     assert.ok(
       /once\('did-finish-load'/.test(main),
-      '必须有 did-finish-load 兜底（paintWhenInitiallyHidden:false 时 ready-to-show 永不触发）',
+      'There must be did-finish-load fallback (ready-to-show will never trigger when paintWhenInitiallyHidden:false)',
     );
     assert.ok(
       /!win\.isDestroyed\(\) && !win\.isVisible\(\)\) win\.showInactive\(\)/.test(main),
-      '兜底必须在"仍未显示"时才 show',
+      'fallback must be when "still not shown" show',
     );
   });
 
-  test('#55-2 兜底轮询：主进程按真实光标独立判定，且与渲染端通道共用同一出口', () => {
-    assert.ok(/decideWindowIgnore\(/.test(main), '必须调用纯判定（不依赖 forward 鼠标钩子）');
-    assert.ok(/screen\.getCursorScreenPoint\(\)/.test(main), '必须读真实光标位置');
-    assert.ok(/POINTER_POLL_MS/.test(main), '轮询间隔必须是命名常量（60ms）');
+  test('#55-2 fallback polling: The main process is determined independently based on the real cursor, and shares the same outlet with the renderer channel', () => {
+    assert.ok(/decideWindowIgnore\(/.test(main), 'Pure judgment must be called (does not rely on forward mouse hook)');
+    assert.ok(/screen\.getCursorScreenPoint\(\)/.test(main), 'The real cursor position must be read');
+    assert.ok(/POINTER_POLL_MS/.test(main), 'polling interval must be a named constant (60 ms)');
     assert.ok(
       (main.match(/setWindowIgnore\(/g) ?? []).length >= 3,
-      '所有翻转必须走 setWindowIgnore（创建 / IPC / 兜底轮询），镜像状态才不失步',
+      'All flips must go through setWindowIgnore (create / IPC / fallback polling) so that the mirroring state does not lose synchronization',
     );
     assert.ok(
       !/win\.setIgnoreMouseEvents\(/.test(main.replace(/function setWindowIgnore[\s\S]*?\n}/, '')),
-      '不得再有绕过出口的直接调用',
+      'No more direct calls bypassing the exit',
     );
-    assert.ok(/clearInterval\(pointerTimer\)/.test(main), '窗口关闭时必须停掉轮询');
+    assert.ok(/clearInterval\(pointerTimer\)/.test(main), 'Polling must be stopped when the window is closed');
   });
 
-  test('输入租约闭环：渲染端上报 busy，主进程据此判定，且只走唯一出口', () => {
-    assert.ok(/const inputBusy = new Map\(\)/.test(main), '必须有每窗口的 busy 标记表');
-    assert.ok(/ipcMain\.on\('pet:input-busy'/.test(main), 'busy 上报必须被接收');
-    // 兜底轮询必须把 busy 与余量区停留时长一起带进判定（按语义断言，不钉死调用行的字面量）
+  test('Input lease closed loop: renderer reports busy, main process determines accordingly, and only takes the only exit', () => {
+    assert.ok(/const inputBusy = new Map\(\)/.test(main), 'Must have per-window busy tag table');
+    assert.ok(/ipcMain\.on\('pet:input-busy'/.test(main), 'busy report must be accepted');
+    // fallback polling must bring busy and the length of stay in the margin area into the judgment (according to semantic assertion, the literal value of the calling line is not nailed)
     const poll = /setInterval\(\(\) => \{([\s\S]*?)\}, POINTER_POLL_MS\);/.exec(main);
-    assert.ok(poll, '找不到兜底轮询体');
-    assert.ok(/decideWindowIgnore\(/.test(poll[1]), '轮询必须调用纯判定（不依赖 forward 鼠标钩子）');
-    assert.ok(/inputBusy\.get\(win\.id\) === true/.test(poll[1]), '必须把 busy 带进判定');
-    assert.ok(/offBodyMs\.get\(win\.id\)/.test(poll[1]), '必须把余量区停留时长带进判定');
-    assert.ok(/inputBusy\.delete\(win\.id\)/.test(main), '窗口关闭时必须清掉 busy 标记（防 id 复用串味）');
-    assert.ok(/offBodyMs\.delete\(win\.id\)/.test(main), '窗口关闭时必须清掉停留计时（防 id 复用串味）');
-    // busy 只能经兜底轮询生效，不得在 IPC 里直接翻窗口——否则两条通道抢着翻同一个窗口
+    assert.ok(poll, 'fallback polling body not found');
+    assert.ok(
+      /decideWindowIgnore\(/.test(poll[1]),
+      'polling must call pure judgment (does not rely on forward mouse hook)',
+    );
+    assert.ok(/inputBusy\.get\(win\.id\) === true/.test(poll[1]), 'busy must be brought into the judgment');
+    assert.ok(
+      /offBodyMs\.get\(win\.id\)/.test(poll[1]),
+      'The length of stay in the margin area must be brought into the judgment',
+    );
+    assert.ok(
+      /inputBusy\.delete\(win\.id\)/.test(main),
+      'The busy mark must be cleared when the window is closed (to prevent id reuse odor)',
+    );
+    assert.ok(
+      /offBodyMs\.delete\(win\.id\)/.test(main),
+      'The dwell timer must be cleared when the window is closed (to prevent id reuse odor)',
+    );
+    // busy can only take effect through fallback polling, and the window cannot be opened directly in IPC - otherwise the two channels will rush to open the same window.
     assert.ok(
       !/ipcMain\.on\('pet:input-busy'[\s\S]{0,400}?setWindowIgnore\(/.test(main),
-      'busy 处理器不得直接 setWindowIgnore（唯一出口在轮询里，按完整规则判定）',
+      'busy processor must not directly setWindowIgnore (the only exit is in polling, determined according to complete rules)',
     );
-    assert.ok(/inputBusy\.set\(win\.id, !!busy\)/.test(main), 'busy 只做标记，由下一拍轮询统一决策');
+    assert.ok(/inputBusy\.set\(win\.id, !!busy\)/.test(main), 'busy only marks, and is decided by next tick polling.');
   });
 });
 
-describe('守卫：主进程镜像的命中盒常量不得与 src/shared/constants.ts 漂移', () => {
-  test('HIT_BOX / CANVAS_H 与 shared 常量一致，画布宽沿用同一约定（字面量 640）', () => {
+describe('Guard: The hitbox constant of the main process image must not drift with src/shared/constants.ts', () => {
+  test('HIT_BOX / CANVAS_H are consistent with shared constants, and the canvas width follows the same convention (literal value 640)', () => {
     const shared = readSource('../shared/constants.ts');
     const num = (name: string): number => {
       const m = new RegExp(String.raw`export const ${name} = (\d+)`).exec(shared);
@@ -309,72 +359,85 @@ describe('守卫：主进程镜像的命中盒常量不得与 src/shared/constan
     assert.equal(CANVAS_H, num('CANVAS_H'));
     assert.equal(FEET_Y, num('FEET_Y'));
     const hit = /export const HIT_BOX = \{ x0: (\d+), y0: (\d+), x1: (\d+), y1: (\d+) \}/.exec(shared);
-    assert.ok(hit, 'shared 里的 HIT_BOX 形状变了，请同步 pointer-target.js');
+    assert.ok(hit, 'The shape of HIT_BOX in shared has changed, please synchronize pointer-target.js');
     assert.deepEqual(HIT_BOX, { x0: Number(hit[1]), y0: Number(hit[2]), x1: Number(hit[3]), y1: Number(hit[4]) });
-    // 画布宽 shared 没有导出（各处都用字面量 640）：这里断言渲染端也是同一约定，避免我们把宽写成别的值
+    // The canvas width shared is not exported (literal 640 is used everywhere): The assertion renderer here also has the same convention to prevent us from writing the width as another value
     assert.equal(STAGE_W, 640);
-    assert.ok(/S\.HIT_BOX\.x0 \/ 640/.test(spriteSource()), 'sprite.js 的命中判定用 640 作画布宽——两边必须同一约定');
+    assert.ok(
+      /S\.HIT_BOX\.x0 \/ 640/.test(spriteSource()),
+      'The hit determination of sprite.js uses 640 as the canvas width - both sides must be the same agreement',
+    );
   });
 });
 
-describe('守卫：渲染端的输入租约必须在位（helper 随包发行，只能读源码断言）', () => {
-  const sprite = spriteSource();
+describe('Guard: The input lease of the renderer must be in place (helper is distributed with the package, only the source code assertion can be read)', () => {
+  // Ignore standalone comment lines so prose length cannot break the bounded source guards.
+  const sprite = spriteSource().replace(/^[ \t]*\/\/[^\n]*\n/gm, '');
 
-  test('租约来源必须**正好**是那三个"正在用窗口输入"的状态', () => {
+  test('The lease source must **exactly** be in the three "Inputting with window" status', () => {
     const m = /inputBusy\(\)\s*\{([\s\S]*?)\n {2}\}/.exec(sprite);
-    assert.ok(m, 'sprite.js 里找不到 inputBusy()');
+    assert.ok(m, 'inputBusy () cannot be found in sprite.js');
     const body = m[1];
     for (const flag of ['dragState.active', 'menuOpen', 'chatOpen']) {
-      assert.ok(body.includes(flag), `租约必须包含 ${flag}`);
+      assert.ok(body.includes(flag), `The lease must contain ${flag}`);
     }
   });
 
-  test('建立点：拖拽成立 / 菜单开 / 弹窗开都上报', () => {
-    // 拖拽：onPointerDown 里立刻上报（不等过阈值——按下瞬间窗口就已经必须保持可交互）
+  test('Establishment point: Drag and drop to establish/menu open/pop-up window to report.', () => {
+    // Drag and drop: Report immediately in onPointerDown (without crossing the threshold - the window must remain interactive the moment it is pressed)
     assert.ok(
       /setPointerCapture[\s\S]{0,600}?this\.syncInputBusy\(\)/.test(sprite),
-      'onPointerDown 必须在建立拖拽状态后上报 busy',
+      'onPointerDown must report busy after establishing drag state',
     );
     assert.ok(
       /d\.dragging = true;[\s\S]{0,400}?this\.syncInputBusy\(\)/.test(sprite),
-      '真正开始拖拽时也要上报（此时可能尚未上报过）',
+      'It must also be reported when dragging actually starts (it may not have been reported at this time)',
     );
-    assert.ok(/this\.menuOpen = true;[\s\S]{0,300}?this\.syncInputBusy\(\)/.test(sprite), '菜单打开必须上报');
-    assert.ok(/this\.chatOpen = true;[\s\S]{0,300}?this\.syncInputBusy\(\)/.test(sprite), '对话弹窗打开必须上报');
+    assert.ok(
+      /this\.menuOpen = true;[\s\S]{0,300}?this\.syncInputBusy\(\)/.test(sprite),
+      'Menu opening must be reported',
+    );
+    assert.ok(
+      /this\.chatOpen = true;[\s\S]{0,300}?this\.syncInputBusy\(\)/.test(sprite),
+      'When a dialogue pop-up window opens, it must be reported',
+    );
   });
 
-  test('解除点：松手 / closeMenu / 菜单 onClose / 弹窗 onClose 每一处都上报', () => {
-    assert.ok(/this\.syncInputBusy\(\)/.test(sprite), '必须存在上报方法');
-    // 松手（onPointerUp）
+  test('Release point: Let go / closeMenu / Menu onClose / Pop-up window onClose Report everywhere', () => {
+    assert.ok(/this\.syncInputBusy\(\)/.test(sprite), 'There must be a reporting method');
+    // Let go (onPointerUp)
     assert.ok(
       /onPointerUp\(e\) \{[\s\S]{0,400}?this\.syncInputBusy\(\)/.test(sprite),
-      '松手/取消必须上报（否则窗口粘在可交互）',
+      'Letting go/cancellation must be reported (otherwise the window is stuck and interactive)',
     );
-    // closeMenu 一处覆盖：菜单项的 onAction、mouseleave、destroy
+    // closeMenu covers in one place: onAction, mouseleave, destroy of menu items
     assert.ok(
       /closeMenu\(\) \{[\s\S]{0,400}?this\.syncInputBusy\(\)/.test(sprite),
-      'closeMenu 必须上报（菜单的四条关闭路径都走它）',
+      'closeMenu must be reported (all four closing paths of the menu should be taken)',
     );
-    // 菜单被点外/Esc 关闭：走的是 mountContextMenu 的 onClose，不经 closeMenu
+    // The menu is clicked out/Esc is closed: mountContextMenu's onClose is used, without closeMenu
     assert.ok(
       /onClose: \(\) => \{\s*this\.menuOpen = false;[\s\S]{0,200}?this\.syncInputBusy\(\)/.test(sprite),
-      '菜单 onClose（点外/Esc）必须上报——这条路径不经 closeMenu',
+      'Menu onClose (outside point/Esc) must be reported - this path does not go through closeMenu',
     );
-    // 对话弹窗关闭
-    assert.ok(/this\.chatOpen = false;[\s\S]{0,300}?this\.syncInputBusy\(\)/.test(sprite), '对话弹窗关闭必须上报');
+    // The dialogue pop-up window is closed
+    assert.ok(
+      /this\.chatOpen = false;[\s\S]{0,300}?this\.syncInputBusy\(\)/.test(sprite),
+      'The closing of the dialogue pop-up window must be reported',
+    );
   });
 
-  test('上报是幂等的、只走 petBridge.setInputBusy（不逐帧刷 IPC）', () => {
+  test('The report is idempotent, only petBridge.setInputBusy is used (IPC is not refreshed frame by frame)', () => {
     assert.ok(
       /if \(busy === this\._inputBusy\) return;/.test(sprite),
-      '值未变必须直接返回（拖拽中 mouseleave 等高频路径会反复调用）',
+      'If the value does not change, it must be returned directly (high-frequency paths such as mouseleave will be called repeatedly during dragging)',
     );
-    assert.ok(/window\.petBridge\.setInputBusy\(busy\)/.test(sprite), '必须经 petBridge 上报');
+    assert.ok(/window\.petBridge\.setInputBusy\(busy\)/.test(sprite), 'Must be reported via petBridge');
   });
 
-  test('preload 暴露 setInputBusy（方法名必须与 sprite.js 调用的一致）', () => {
+  test('preload exposes setInputBusy (the method name must be consistent with the one called by sprite.js)', () => {
     const preload = readSource(helper + 'preload.js');
-    assert.ok(/setInputBusy\(busy\)/.test(preload), 'preload 必须有 setInputBusy');
-    assert.ok(/'pet:input-busy'/.test(preload), 'IPC 频道名必须与 main.js 一致');
+    assert.ok(/setInputBusy\(busy\)/.test(preload), 'preload must have setInputBusy');
+    assert.ok(/'pet:input-busy'/.test(preload), 'IPC channel name must be consistent with main.js');
   });
 });

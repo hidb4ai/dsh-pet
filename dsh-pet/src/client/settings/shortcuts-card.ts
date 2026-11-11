@@ -1,11 +1,14 @@
 /**
- * 快捷键卡：把键分成两组——宠物自己的悬停键，与 DSH 分发的全局快捷键。
+ * Shortcut key card: Split the keys into two groups - the pet's own hover keys, and the global shortcut keys
+ * distributed by DSH.
  *
- * 悬停键是插件自己的监听，直接读各模块常量；全局快捷键的键位可以被用户改绑，
- * 必须问 DSH 要当前值——否则改完绑，这张卡还在念默认组合。
- * 分组不是排版偏好：两组键由不同代码派发、生效条件也不同（悬停 vs 页面任意位置），
- * 混在一张表里读者分不清按了没反应是哪种原因。
- * 与页尾其它参考卡一样默认收起；纯展示，开合态只活在组件里。
+ * The hover key is the plugin's own monitoring, and it directly reads the constants of each module; the key position
+ * of the global shortcut key can be changed by the user, and you must ask DSH for the current value - otherwise, after
+ * changing the binding, the card will still read the default combination. Grouping is not a typesetting preference:
+ * the two sets of keys are dispatched by different codes and have different validity conditions (hover vs anywhere on
+ * the page). They are mixed in one table and the reader cannot tell the reason why there is no response after pressing
+ * them. Like other reference cards at the end of the page, they are collapsed by default; purely for display, the open
+ * and closed state only lives in the component.
  * @module dsh-pet/src/client/settings/shortcuts-card
  */
 import type { FunctionComponent } from 'react';
@@ -20,25 +23,25 @@ import { petShortcutKeycap } from '../pet/card/shortcut.ts';
 import type { SettingsRuntime } from './runtime.ts';
 import { makeUiKit } from './ui.ts';
 
-/** 折叠正文的 id：与标题按钮的 `aria-controls` 成对。 */
+/** id for collapsed text: paired with `aria-controls` for title button. */
 const BODY_ID = 'pet-cfg-shortcuts';
 
-/** 粘贴不是我们注册的命令，键帽按平台推导（macOS 是 ⌘V），不写死字符串。 */
+/** Paste is not our register command. The keycaps are derived according to the platform (macOS is ⌘ V), and the character string is not hard-coded. */
 const PASTE_KEYCAP = keycapOf({ code: 'KeyV', modifiers: ['primary'] });
 
-/** 三条可改绑命令的当前键帽；悬停键不在这里——它们不能改绑。 */
+/** The current keycaps for the three rebindable commands; the hover keys are not here - they cannot be rebinded. */
 interface GlobalKeycaps {
-  /** 开关浮动对话。 */
+  /** Switch floating dialog. */
   readonly open: string;
-  /** 开关录音。 */
+  /** Switch recording on and off. */
   readonly hear: string;
-  /** 截图。 */
+  /** Screenshot. */
   readonly capture: string;
-  /** 打开右侧栏对话面板。 */
+  /** Open the right column dialogue panel. */
   readonly sidebar: string;
 }
 
-/** 现读一遍三条全局命令的键帽。 */
+/** Now read the keycaps of three global commands. */
 function readKeycaps(ctx: ShortcutHost): GlobalKeycaps {
   return {
     open: petShortcutKeycap(ctx, 'chat'),
@@ -49,11 +52,11 @@ function readKeycaps(ctx: ShortcutHost): GlobalKeycaps {
 }
 
 /**
- * 造快捷键卡。
+ * Create a shortcut key card.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @param ctx - 客户端上下文：读改绑后的键位。
- * @returns 卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @param ctx - Client context: read and change the bound key position.
+ * @returns card assembly.
  */
 export function makeShortcutsCard(rt: SettingsRuntime, ctx: ShortcutHost): FunctionComponent {
   const { h, t, useState, useEffect } = rt;
@@ -61,11 +64,11 @@ export function makeShortcutsCard(rt: SettingsRuntime, ctx: ShortcutHost): Funct
 
   return function ShortcutsCard() {
     const [open, setOpen] = useState(false);
-    // 每次渲染现读一遍：目录只是几十行数组，读它比维护一份缓存更省事。
+    // Read it once every time you render: the directory is just an array of dozens of lines, and reading it is easier than maintaining a cache.
     const [keycaps, setKeycaps] = useState<GlobalKeycaps>(readKeycaps(ctx));
-    // 改绑发生在「设置 → 快捷键」那一页，切回来时必须重新读一次。
+    // The binding change occurs on the "Settings → Shortcut Keys" page, and you must read it again when you switch back.
     useEffect(() => subscribeShortcutKeycaps(ctx, () => setKeycaps(readKeycaps(ctx))), []);
-    /** 一行：左边动作名，右边键帽。 */
+    /** One line: action name on the left, keycap on the right. */
     const row = (label: string, keys: string) =>
       h('div', {
         className: 'dsh-pet-cfg__field',

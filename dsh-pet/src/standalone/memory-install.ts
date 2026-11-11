@@ -51,7 +51,7 @@ export function memoryProcessEnv(directory: string): NodeJS.ProcessEnv {
   ]) {
     if (process.env[key]) env[key] = process.env[key];
   }
-  // DSH 添加的 [::1] 会被 HTTPX 当成非法端口；裸 IPv6 同样适用于 curl/uv。
+  // [::1] added by DSH will be regarded as an invalid port by HTTPX; bare IPv6 also applies to curl/uv.
   for (const key of ['NO_PROXY', 'no_proxy']) {
     if (env[key])
       env[key] = env[key]

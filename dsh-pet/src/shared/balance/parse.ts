@@ -1,25 +1,29 @@
 /**
- * 解析层：把 host 写进 /state 叶子的原始响应裁成客户端视图。
+ * Parsing layer: Cut the raw response of the host write/state leaf into client view.
  *
- * 白名单透传——字段逐个挑选，没写进来的静默丢弃（新增字段必须在这里补上）；形状不认识或字段
- * 非法返回 null，让调用方跳过这一拍。绝不抛异常：1s 轮询里抛一次会打断整拍，其余叶子也不渲染。
+ * Whitelist transparent transmission - fields are selected one by one, and the unwritten fields are silently discarded
+ * (new fields must be added here); the shape is not recognized or the field is invalid and null is returned, allowing
+ * the caller to skip this beat. Never throw an exception: 1 Throwing once in s polling will interrupt the whole shot,
+ * and the other leaves will not be rendered.
  *
  * @module dsh-pet/src/shared/balance/parse
  */
 
 import type { BalanceState, BalanceUsage, CustomNode, CustomTag, MoneyWalletView, RawBalanceResult } from './types.ts';
 
-// 自定义气泡节点树的白名单：第三方交来的树是外部输入，解析层负责裁进「一个气泡能画出来」的
-// 范围，渲染器只画不再校验。
+// Customize the white list of the bubble node tree: The tree handed over by the third party is external input, and the
+// parsing layer is responsible for cutting it into the range of "a bubble can be drawn". The renderer only draws it
+// and does not verify it.
 
-/** 合法 tag：只开放排版布局需要的几个；`script`、`style`、`iframe`、`svg` 之类一律不认，非法 tag 整树作废。 */
+/** Valid tag: Only the few needed for typesetting and layout are open; `script`, `style`, `iframe`, `svg` and the like will not be recognized, and the invalid tag tree will be invalidated. */
 export const CUSTOM_TAGS: readonly CustomTag[] = ['div', 'span', 'i', 'b', 'strong', 'em', 'img'];
 
 /**
- * 合法内联样式键（camelCase，与 React style 对象同形）：覆盖 flex 布局、盒模型、文字、圆角与背景。
+ * Valid inline style key (camelCase, same shape as React style object): covers flex layout, box model, text, rounded
+ * corners and background.
  *
- * 刻意不含 position、zIndex、transform 与 inset：气泡悬在宠物头顶，那几样会让内容跑出气泡、
- * 盖住宠物本体或宿主页面。
+ * Deliberately does not include position, zIndex, transform and inset: the bubble hangs above the pet's head, which
+ * will cause the content to escape from the bubble, cover the pet body or the host page.
  */
 export const CUSTOM_STYLE_KEYS: ReadonlySet<string> = new Set([
   'display',
@@ -68,41 +72,44 @@ export const CUSTOM_STYLE_KEYS: ReadonlySet<string> = new Set([
   'opacity',
 ]);
 
-/** 样式值里一律禁止的片段：外部资源、表达式、注释截断。要图请用 `img` 节点（地址另有限制）。 */
+/** Fragments that are always prohibited in style values: external resources, expressions, and comment truncation. Please use the `img` node if you want a diagram (the address is subject to other restrictions). */
 const BANNED_STYLE_VALUE = /url\(|expression|javascript:|vbscript:|@import|\\|\/\*/i;
 
 /**
- * 节点树的容量上限：气泡宽度只有约 155px，且悬在宠物头顶。
+ * The maximum capacity of the node tree: the bubble width is only about 155 px, and it hangs above the pet's head.
  *
- * 超限分两种处理：文本截断（内容还能看）与整树作废（少画一块会得到一棵骗人的树，不如这一拍不显示）。
+ * There are two types of processing for exceeding the limit: text truncation (the content can still be read) and
+ * invalidation of the entire tree (if you draw less one piece, you will get a deceptive tree. It is better not to
+ * display this shot).
  */
 export const CUSTOM_LIMITS = {
-  /** 深度上限，根为 0，超出整树作废 */
+  /** The upper limit of depth, the root is 0, if it exceeds the depth limit, the entire tree will be discarded. */
   maxDepth: 6,
-  /** 全树节点数上限，超出整树作废 */
+  /** The upper limit of the number of nodes in the whole tree. If it exceeds the upper limit, the whole tree will be invalid. */
   maxNodes: 200,
-  /** 单节点子节点数上限，超出整树作废 */
+  /** The upper limit of the number of child nodes of a single node is exceeded. If the number of child nodes exceeds the limit, the entire tree will be invalid. */
   maxChildren: 24,
-  /** 单段文本上限，超出截断 */
+  /** The upper limit of a single paragraph of text exceeds the truncation limit */
   maxText: 120,
-  /** 单条样式值上限，超出只丢该属性 */
+  /** The upper limit of a single style value. If it exceeds the upper limit, only the attribute will be lost. */
   maxStyleValue: 64,
-  /** img 地址上限，含 scheme */
+  /** img address upper limit, including scheme */
   maxSrc: 512,
-  /** 多页页数上限：页多了点不过来，也容易撑破气泡容量 */
+  /** Maximum number of multi-page pages: Too many pages can easily burst the bubble capacity. */
   maxViews: 4,
 } as const;
 
 /**
- * 递归解析并校验一个节点，把外部输入转成视图树。
+ * Recursively parse and verify a node and convert external input into a view tree.
  *
- * 任一节点不合法即整树返回 null：部分渲染会得到一棵缺了一块的气泡，比这一拍不显示更误导人；
- * 单个样式属性非法只丢那一条，不值得为此整树作废。
+ * If any node is invalid, the entire tree will return null: Partial rendering will result in a bubble with a missing
+ * piece, which is more misleading than not displaying it at all; if a single style attribute is invalid, only that one
+ * will be lost, and it is not worth invalidating the entire tree.
  *
- * @param raw - 外部节点；类型未知，逐层校验后才进入视图树。
- * @param depth - 当前深度，根为 0。
- * @param budget - 全树节点计数，跨递归共享。
- * @returns 合法节点；不合法返回 null，调用方据此跳过这一拍。
+ * @param raw - external node; the type is unknown, and it is checked layer by layer before entering the view tree.
+ * @param depth - Current depth, root at 0.
+ * @param budget - Full tree node count, shared across recursions.
+ * @returns is a valid node; if it is invalid, it returns null, and the caller skips this beat accordingly.
  */
 function parseCustomNode(raw: unknown, depth: number, budget: { nodes: number }): CustomNode | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -116,17 +123,17 @@ function parseCustomNode(raw: unknown, depth: number, budget: { nodes: number })
 
   const node: CustomNode = { tag: tag as CustomTag };
 
-  // 文本超长截断而不作废：第三方写得长很常见，截断后气泡仍然可读。
+  // Text that is too long is truncated without being invalidated: It is very common for third parties to write long text, and the bubble is still readable after truncation.
   if (typeof n.text === 'string' && n.text.length > 0) node.text = n.text.slice(0, CUSTOM_LIMITS.maxText);
 
-  // img 地址只认 http 与 https：`file:` 会让渲染进程读到本地任意文件。
+  // The img address only recognizes http and https: `file:` will cause the rendering process to read any local file.
   if (tag === 'img') {
     const src = typeof n.src === 'string' ? n.src.trim() : '';
     if (!/^https?:\/\//i.test(src) || src.length > CUSTOM_LIMITS.maxSrc) return null;
     node.src = src;
   }
 
-  // 样式键走白名单，值逐条过滤：超长、含外部资源引用或为空只丢这一条。
+  // Style keys are whitelisted, and values are filtered one by one: if they are too long, contain references to external resources, or are empty, only this one will be discarded.
   if (n.style && typeof n.style === 'object' && !Array.isArray(n.style)) {
     const style: Record<string, string> = {};
     for (const [k, v] of Object.entries(n.style as Record<string, unknown>)) {
@@ -154,7 +161,7 @@ function parseCustomNode(raw: unknown, depth: number, budget: { nodes: number })
   return node;
 }
 
-/** 可选数字：缺省返回 undefined，出现但非法返回 null，调用方据此跳过这一拍而不是把坏数字送进展示层。 */
+/** Optional number: undefined is returned by default, null is returned if it occurs but is invalid, so the caller skips this beat instead of sending the bad number to the display layer. */
 function optNum(value: unknown): number | undefined | null {
   if (value === undefined || value === null) return undefined;
   const n = Number(value);
@@ -162,9 +169,11 @@ function optNum(value: unknown): number | undefined | null {
 }
 
 /**
- * 解析区间累计用量：缺省返回 undefined（服务商没有这项数据），出现但不完整或非法返回 null。
+ * Accumulated usage in the parsing interval: undefined is returned by default (the service provider does not have this
+ * data), null is returned if it is incomplete or invalid.
  *
- * 五个数字缺一不可——少一个就拼不出一页可信的用量，宁可这一拍整片不显示，也不拿 0 顶替。
+ * Five numbers are indispensable - if one is missing, it will not be possible to construct a credible usage on the
+ * page. It would rather not be displayed in the entire film than to be replaced by 0.
  */
 function parseUsage(raw: unknown): BalanceUsage | undefined | null {
   if (raw === undefined) return undefined;
@@ -177,10 +186,11 @@ function parseUsage(raw: unknown): BalanceUsage | undefined | null {
 }
 
 /**
- * 把 host 的余额原始响应（`sections.balance` 叶子）转成客户端视图。
+ * Convert the original response of the balance of host (`sections.balance` leaf) into the client view.
  *
- * 形状非法或 shape 不认识返回 null，消费端据此跳过这一拍；这里不抛异常，理由见模块头。
- * 取数失败不在这里发生：host 取数失败会以 `ok:false` 写进状态，这里正常映射成不可用视图。
+ * If the shape is invalid or shape is not recognized, null is returned, and the consumer skips this beat accordingly;
+ * no exception is thrown here, the reason is shown in the module header. Fetching failure does not occur here: host
+ * fetching failure will write the status as `ok:false` , which is normally mapped to an unavailable view.
  */
 export function toBalanceState(raw: unknown): BalanceState | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -205,9 +215,9 @@ export function toBalanceState(raw: unknown): BalanceState | null {
     const weeklyCapUsd = optNum(d.weeklyCapUsd);
     const monthlyCapUsd = optNum(d.monthlyCapUsd);
     const usage = parseUsage(d.usage);
-    // 月度窗口是这份数据的底线：缺了或非法即认不出响应，滚动窗、周窗口与各窗口额度都是可选。
+    // The monthly window is the bottom line of this data: if it is missing or invalid, the response cannot be recognized. The rolling window, weekly window and each window quota are all optional.
     if (monthly === undefined || monthly === null) return null;
-    // 可选窗口出现但非法，同样整拍跳过：不把坏数字送进展示层。
+    // The optional window appears but is invalid, and the whole shot is also skipped: bad numbers are not sent to the display layer.
     if (
       rolling === null ||
       weekly === null ||
@@ -228,7 +238,7 @@ export function toBalanceState(raw: unknown): BalanceState | null {
       rollingCapUsd,
       weeklyCapUsd,
       monthlyCapUsd,
-      // 没有用量就不带这个键：页数由「键在不在」判定，写 undefined 会让消费方两种写法都判一次。
+      // If there is no usage, this key will not be included: the page number is determined by "the presence or absence of the key". Writing undefined will cause the consumer to judge both writing methods once.
       ...(usage ? { usage } : {}),
       rollingLabel: typeof d.rollingLabel === 'string' && d.rollingLabel.length > 0 ? d.rollingLabel : undefined,
       rollingResetsAt: typeof d.rollingResetsAt === 'string' ? d.rollingResetsAt : undefined,
@@ -237,9 +247,10 @@ export function toBalanceState(raw: unknown): BalanceState | null {
     };
   }
   if (r.shape === 'money') {
-    // 多币种：每项必须有 currency 与 total，granted、toppedUp 缺省记 '0.00'（只用于展示分项，
-    // 不参与档位），fullBalance 缺省表示该币种没有基准。单条结构不合法就丢掉这一条——少一个
-    // 币种比整拍不渲染好。
+    // Multiple currencies: Each item must have currency and total. granted and toppedUp are recorded as '0.00' by
+    // default (only used to display sub-items and do not participate in the scale). fullBalance by default means that
+    // the currency has no benchmark. If a single structure is invalid, discard this one - one less currency is better
+    // than not rendering the entire shot.
     const raw = Array.isArray(d.wallets) ? d.wallets : [];
     const wallets: MoneyWalletView[] = [];
     for (const item of raw) {
@@ -255,7 +266,7 @@ export function toBalanceState(raw: unknown): BalanceState | null {
         fullBalance: typeof w.fullBalance === 'string' && w.fullBalance.length > 0 ? w.fullBalance : undefined,
       });
     }
-    // 一个钱包都没有即认不出响应：host 侧空钱包是按 fetch-error 写的，走到这里说明结构坏了。
+    // There is no wallet, that is, the response cannot be recognized: host. The empty wallet is written as fetch-error. Coming here means that the structure is broken.
     if (wallets.length === 0) return null;
     return {
       provider,
@@ -266,8 +277,9 @@ export function toBalanceState(raw: unknown): BalanceState | null {
     };
   }
   if (r.shape === 'points') {
-    // unit 与 total 缺一不可：没有单位拼不出「800 积分」，没有数字更无从展示。
-    // full 缺省或为空串都表示没有基准，不参与档位折算，与 money 的 fullBalance 同口径。
+    // unit and total are indispensable: "800 points" cannot be spelled out without units, and it cannot be displayed
+    // without numbers. The default or empty string of full means that there is no basis and does not participate in
+    // state conversion. It has the same conventions as fullBalance of money.
     if (typeof d.unit !== 'string' || d.unit.length === 0) return null;
     if (typeof d.total !== 'string' || d.total.length === 0) return null;
     return {
@@ -282,14 +294,15 @@ export function toBalanceState(raw: unknown): BalanceState | null {
     };
   }
   if (r.shape === 'custom') {
-    // 两种写法归一：views 多页优先，rows 加可选 detailRows 是老两页写法；两种都给时以 views 为准，
-    // 别让新旧混用变成整拍失败。
+    // The two writing methods are unified: views multi-page priority, rows plus optional detailRows is the old
+    // two-page writing method; when both are given, views shall prevail. Don’t let the mixing of old and new result in
+    // the failure of the whole shooting.
     let views: CustomNode[] = [];
     if (Array.isArray(d.views) && d.views.length > 0) {
       if (d.views.length > CUSTOM_LIMITS.maxViews) return null;
       for (const raw of d.views) {
         const page = parseCustomNode(raw, 0, { nodes: 0 });
-        // 任一页非法即整拍跳过：不做「前几页正常、翻到后面崩」的半坏状态。
+        // If any page is invalid, the entire page will be skipped: it will not be in a semi-bad state of "the first few pages are normal, but the next page will crash".
         if (!page) return null;
         views.push(page);
       }
@@ -299,12 +312,12 @@ export function toBalanceState(raw: unknown): BalanceState | null {
       views = [rows];
       if (d.detailRows !== undefined) {
         const detail = parseCustomNode(d.detailRows, 0, { nodes: 0 });
-        // 给了却非法同样整拍跳过：静默丢掉「可切页」会让第三方以为点了有效果。
+        // If you give it but it is invalid, the entire shot will be skipped: silently discarding the "cutable page" will make the third party think that clicking it has an effect.
         if (!detail) return null;
         views.push(detail);
       }
     }
-    // 百分比夹到 0 至 100：越界是数据错误，不代表耗尽或未消耗；非法值则不播档位动画。
+    // The percentage is clamped between 0 and 100: out of bounds is a data error and does not mean exhausted or not consumed; if the value is invalid, the state animation will not be played.
     const pct =
       typeof d.percent === 'number' && Number.isFinite(d.percent) ? Math.max(0, Math.min(100, d.percent)) : undefined;
     return { provider, shape: 'custom', ok: true, custom: { views, percent: pct } };

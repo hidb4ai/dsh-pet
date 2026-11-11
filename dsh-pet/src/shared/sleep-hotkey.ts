@@ -1,22 +1,23 @@
 /**
- * 睡觉的悬停快捷键：鼠标停在宠物上时按 `Z` 切换睡 / 醒。
+ * Hover shortcut for sleeping: Press `Z` to toggle sleep/wake when the mouse is over the pet.
  *
- * 按键规则归 shared/hotkey，本模块只绑定「哪个键 + 菜单文案」。
- * 语义是切换而不是单向睡觉：醒着按 = 睡下，睡着按 = 叫醒——与右键那一项完全同一件事。
- * 用 `Z` 而不是 `S`：`S` 让给了截图，一个裸键不能挂两件事。
+ * The key rules belong to shared/hotkey, and this module only binds "which key + menu copy". The semantics are
+ * switching rather than one-way sleep: pressing while awake = sleep, pressing while sleeping = wake up - exactly the
+ * same thing as the right button. Use `Z` instead of `S` : `S` gives way to screenshots, and one bare key cannot do
+ * two things.
  * @module dsh-pet/src/shared/sleep-hotkey
  */
 import { isBareKey } from './hotkey.ts';
 import type { HotkeyEvent } from './hotkey.ts';
 
-/** 快捷键的显示文案（菜单项右侧灰字）。与 {@link isSleepHotkey} 的按键保持同一份事实。 */
+/** Display text of shortcut keys (gray text on the right side of menu items). Keeps the same fact as the keys {@link isSleepHotkey}. */
 export const SLEEP_HOTKEY_HINT = 'Z 键';
 
 /**
- * 这次按键该不该切换睡觉状态。
+ * Should this button switch to sleep mode?
  *
- * @param e - 键盘事件。
- * @returns 裸按 `Z`（含大写）时为 true，输入框里打字则为 false。
+ * @param e - keyboard event.
+ * @returns is true when you press `Z` (including uppercase letters), and false when you type in the input box.
  */
 export function isSleepHotkey(e: HotkeyEvent): boolean {
   return isBareKey(e, 'z');

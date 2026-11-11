@@ -1,15 +1,17 @@
 /**
- * 轮询统一状态 S 的客户端侧逻辑单元测试（拉取容错 / 拍平 / 比对 / 余额叶子解析）。
+ * Polling client-side logical unit test for unified state S (pull fault tolerance/flattening/comparison/balance leaf
+ * parsing).
  *
- * 钉住的不变式：
- *   - 首拉只记基线、不产出变化（否则页面刷新会重放旧气泡）；
- *   - counter 没变 → 不产出（同一句话不会被反复渲染）；
- *   - 新增的 section / 宠物自动纳入（将来加叶子不用改这段逻辑）；
- *   - 脏数据（counter 非数字 / 叶子非对象）被丢弃，不把垃圾送进渲染层；
- *   - 余额叶子要解析成客户端视图（raw.data 摊平），并带上 host 标的手动标记；
- *   - 路径只按最后一个点切叶子名（宠物 id 允许含点号）。
+ * Invariants of verify:
+ * - The first pull only remembers the baseline and does not produce changes (otherwise the page refresh will replay
+ * the old bubble);
+ * - counter unchanged → not produced (the same sentence will not be rendered repeatedly);
+ * - The new section / pets are automatically included (no need to change this logic when adding leaves in the future);
+ * - Dirty data (counter non-number/leaf non-object) is discarded and garbage is not sent to the rendering layer;
+ * - The balance leaf should be parsed into the client view (raw.data flattened) and manually marked with host;
+ * - The path only cuts the leaf name according to the last point (pet id is allowed to contain dots).
  *
- * 跑法：node --experimental-strip-types --test src/shared/state.test.ts
+ * Running method: node --experimental-strip-types --test src/shared/state.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +29,7 @@ import {
   type PollState,
 } from './state.ts';
 
-/** 造一份 S：sections / pets 用简写（叶子值 = counter，data 用 data 字段给） */
+/** Make a copy of S: sections / pets with abbreviation (leaf value = counter, data with data field) */
 function makeState(
   sections: Record<string, [number, unknown]>,
   pets: Record<string, Record<string, [number, unknown]>> = {},
@@ -44,36 +46,36 @@ function makeState(
   };
 }
 
-describe('flattenCounters —— 首拉基线', () => {
-  test('路径为 sections.<名> / pets.<id>.<名>', () => {
+describe('flattenCounters——First pull baseline', () => {
+  test('The path is sections .<name> / pets .< id >.<name>', () => {
     const s = makeState({ balance: [11, {}] }, { main: { say: [22, {}] } });
     assert.deepEqual(flattenCounters(s), { 'sections.balance': 11, 'pets.main.say': 22 });
   });
 
-  test('空 S → 空基线（不抛）', () => {
+  test('Empty S → Empty baseline (not thrown)', () => {
     assert.deepEqual(flattenCounters({ sections: {}, pets: {} }), {});
   });
 });
 
-describe('takeChanged —— counter 变了才算变化', () => {
-  test('没变 → 不产出（同一句话不会反复渲染）', () => {
+describe('takeChanged —— counter is a change only when it changes', () => {
+  test('No change → No output (the same sentence will not be rendered repeatedly)', () => {
     const baseline = { 'sections.balance': 11 };
     const changes = takeChanged(makeState({ balance: [11, { ok: true }] }), baseline);
     assert.deepEqual(changes, []);
   });
 
-  test('变了 → 产出该叶子，并就地推进基线（下一次同样内容不再产出）', () => {
+  test('Changed → Produce the leaf and advance the baseline in place (the same content will not be produced next time)', () => {
     const baseline: Record<string, number> = {};
     const s = makeState({ balance: [12, { ok: true }] });
     const first = takeChanged(s, baseline);
     assert.equal(first.length, 1);
     assert.equal(first[0].path, 'sections.balance');
     assert.deepEqual(first[0].leaf.data, { ok: true });
-    assert.equal(baseline['sections.balance'], 12, '基线必须被推进');
-    assert.deepEqual(takeChanged(s, baseline), [], '同一份 S 再比一次不应再产出');
+    assert.equal(baseline['sections.balance'], 12, 'Baseline must be advanced');
+    assert.deepEqual(takeChanged(s, baseline), [], 'The same S should not be produced again when compared again.');
   });
 
-  test('基线里没有的叶子（新增宠物/section）也算变化', () => {
+  test('Leaves that are not in the baseline (new pets/section) are also considered changes', () => {
     const baseline = { 'sections.balance': 11 };
     const changes = takeChanged(
       makeState({ balance: [11, {}] }, { 'pet-9': { say: [7, { text: '新来的' }] } }),
@@ -85,7 +87,7 @@ describe('takeChanged —— counter 变了才算变化', () => {
     );
   });
 
-  test('多个叶子同时变化 → 全部产出（顺序：sections 在前、pets 在后）', () => {
+  test('Multiple leaves change at the same time → all output (sequence: sections first, pets last)', () => {
     const baseline = { 'sections.balance': 1, 'pets.main.say': 1 };
     const changes = takeChanged(makeState({ balance: [2, {}] }, { main: { say: [2, {}] } }), baseline);
     assert.deepEqual(
@@ -94,7 +96,7 @@ describe('takeChanged —— counter 变了才算变化', () => {
     );
   });
 
-  test('宠物 id 含点号也能正确区分（基线按整条路径作键）', () => {
+  test('Pet id can be correctly distinguished even if it contains dot numbers (the baseline is keyed by the entire path)', () => {
     const baseline: Record<string, number> = {};
     const changes = takeChanged(makeState({}, { 'a.b': { say: [5, { text: 'x' }] } }), baseline);
     assert.deepEqual(
@@ -104,37 +106,37 @@ describe('takeChanged —— counter 变了才算变化', () => {
   });
 });
 
-describe('resolveLeafPath —— 路径解析成落点（分发规则的唯一口径）', () => {
-  test('sections 的六个叶子各自解析成落点', () => {
+describe('resolveLeafPath - Path parsed into drop point (unique conventions for distribution rules)', () => {
+  test('The six leaves of sections are each resolved into landing points.', () => {
     for (const name of ['config', 'balance', 'workStatus', 'notify', 'menu', 'focusSession'] as const) {
       assert.deepEqual(resolveLeafPath('sections.' + name), { where: 'section', name });
     }
   });
 
-  test('pets 的五类叶子各自带上宠物 id', () => {
+  test('Each of the five types of leaves pets brings pets id', () => {
     for (const name of ['say', 'anim', 'position', 'throw', 'lock'] as const) {
       assert.deepEqual(resolveLeafPath('pets.main.' + name), { where: 'pet', name, petId: 'main' });
     }
   });
 
-  test('宠物 id 含点号：只按最后一个点切叶子名（`pets.a.b.say` 的宠物是 `a.b`）', () => {
+  test('Pet id contains dot number: only press the last dot to cut the leaf name (the pet of `pets.a.b.say` is `a.b`)', () => {
     assert.deepEqual(resolveLeafPath('pets.a.b.say'), { where: 'pet', name: 'say', petId: 'a.b' });
   });
 
-  test('叶子名不合法 → null（不把 `say.text` 之类当成叶子名）', () => {
+  test('The leaf name is invalid → null (`say.text` and the like are not regarded as leaf names)', () => {
     assert.equal(resolveLeafPath('pets.main.say.text'), null);
     assert.equal(resolveLeafPath('sections.balances'), null);
     assert.equal(resolveLeafPath('pets.main.unknown'), null);
   });
 
-  test('空宠物 id / 空叶子名 / 缺叶子名 → null（都不是合法落点）', () => {
+  test('Empty pet id / Empty leaf name / Missing leaf name → null (none of them are valid landing points)', () => {
     assert.equal(resolveLeafPath('pets..say'), null);
     assert.equal(resolveLeafPath('pets.main.'), null);
     assert.equal(resolveLeafPath('pets.main'), null);
     assert.equal(resolveLeafPath('sections.'), null);
   });
 
-  test('不属于任何一族的键 → null（顶层 counter、空串、别的插件的键）', () => {
+  test('Key that does not belong to any family → null (top-level counter, empty string, key of other plugins)', () => {
     assert.equal(resolveLeafPath(''), null);
     assert.equal(resolveLeafPath('counter'), null);
     assert.equal(resolveLeafPath('sectionsx.config'), null);
@@ -142,8 +144,8 @@ describe('resolveLeafPath —— 路径解析成落点（分发规则的唯一�
   });
 });
 
-describe('readBalance —— 余额叶子 → 客户端视图', () => {
-  test('money：raw.data 摊平到视图顶层（含多币种钱包与峰谷装饰）', () => {
+describe('readBalance —— Balance leaf → Client view', () => {
+  test('money: raw.data flattened to the top of the view (including multi-currency wallet and peak and valley decoration)', () => {
     const hit = readBalance({
       counter: 1,
       data: {
@@ -168,7 +170,7 @@ describe('readBalance —— 余额叶子 → 客户端视图', () => {
     });
   });
 
-  test('windows：三窗口用量是数字才认，非数字 → null（不把 NaN 送进展示层）', () => {
+  test('windows: The three-window usage is recognized only if it is a number, not a number → null (NaN is not sent to the display layer)', () => {
     const good = readBalance({
       counter: 1,
       data: { ok: true, provider: 'opencode', shape: 'windows', data: { rolling: 1, weekly: 2, monthly: 3 } },
@@ -181,14 +183,14 @@ describe('readBalance —— 余额叶子 → 客户端视图', () => {
     assert.equal(bad, null);
   });
 
-  test('不可用：reason 原样保留，非法 reason 归一成 fetch-error', () => {
+  test('Unavailable: reason is retained as is, invalid reason is normalized to fetch-error', () => {
     const hit = readBalance({ counter: 1, data: { ok: false, provider: 'p', reason: 'credential-missing' } });
     assert.deepEqual(hit?.state, { provider: 'p', ok: false, reason: 'credential-missing', message: undefined });
     const weird = readBalance({ counter: 1, data: { ok: false, provider: 'p', reason: '???' } });
     assert.equal(weird?.state.ok === false && weird.state.reason, 'fetch-error');
   });
 
-  test('manual 标记：host 标的 true 才算手动触发（决定"不可用时要不要必弹"）', () => {
+  test('manual Mark: host Target true is considered a manual trigger (determine "must play when unavailable")', () => {
     const manual = readBalance({ counter: 1, data: { ok: false, provider: 'p', reason: 'unsupported', manual: true } });
     assert.equal(manual?.manual, true);
     const auto = readBalance({ counter: 1, data: { ok: false, provider: 'p', reason: 'unsupported' } });
@@ -197,24 +199,28 @@ describe('readBalance —— 余额叶子 → 客户端视图', () => {
       counter: 1,
       data: { ok: false, provider: 'p', reason: 'unsupported', manual: 'yes' },
     });
-    assert.equal(notBool?.manual, false, '只有严格 true 才算');
+    assert.equal(notBool?.manual, false, 'Only strictly true counts');
   });
 
-  test('脏数据 → null（消费端跳过这一拍，不抛）', () => {
+  test('Dirty data → null (consumer skips this beat and does not throw it)', () => {
     assert.equal(readBalance({ counter: 1, data: null }), null);
     assert.equal(readBalance({ counter: 1, data: 'nope' }), null);
     assert.equal(readBalance({ counter: 1, data: { ok: true, provider: 'p', shape: '未知' } }), null);
-    assert.equal(readBalance({ counter: 1, data: { ok: true, provider: 'p', shape: 'money' } }), null, '缺 data 段');
+    assert.equal(
+      readBalance({ counter: 1, data: { ok: true, provider: 'p', shape: 'money' } }),
+      null,
+      'Missing data segment',
+    );
   });
 });
 
-describe('readAnim —— 点播动画叶子（名字或地址 + 回执编号）', () => {
-  test('名字与 playbackId 都取到（渲染端据此在四个时机上报真实状态）', () => {
+describe('readAnim - playback request animation leaf (name or address + receipt number)', () => {
+  test('Both the name and playbackId are obtained (the renderer reports the true status at four opportunities accordingly)', () => {
     const hit = readAnim({ counter: 1, data: { name: '拉侧栏-拉拽', playbackId: 'pb-abc-1' } });
     assert.deepEqual(hit, { name: '拉侧栏-拉拽', url: undefined, playbackId: 'pb-abc-1', facing: undefined });
   });
 
-  test('url 形态（issue #122 第 1 条）：地址取到、name 缺席', () => {
+  test('url form (issue #122 Article 1): Address obtained, name absent', () => {
     const hit = readAnim({ counter: 1, data: { url: 'https://cdn.example.com/拉侧栏.webm' } });
     assert.deepEqual(hit, {
       name: undefined,
@@ -224,68 +230,76 @@ describe('readAnim —— 点播动画叶子（名字或地址 + 回执编号）
     });
   });
 
-  test('url 形态一样带 playbackId（两条路的回执语义相同）', () => {
+  test('url has the same form with playbackId (the receipt semantics of the two routes are the same)', () => {
     const hit = readAnim({ counter: 1, data: { url: 'http://127.0.0.1:8080/a/x.webm', playbackId: 'pb-1' } });
     assert.equal(hit?.url, 'http://127.0.0.1:8080/a/x.webm');
     assert.equal(hit?.playbackId, 'pb-1');
   });
 
-  test('老 host 不写 playbackId → undefined（按"无回执"处理，不是非法数据）', () => {
+  test('The old host does not write playbackId → undefined (processed as "no receipt", not invalid data)', () => {
     const hit = readAnim({ counter: 1, data: { name: '东张西望' } });
     assert.equal(hit?.name, '东张西望');
     assert.equal(hit?.playbackId, undefined);
   });
 
-  test('playbackId 形状非法（非字符串 / 空串）→ 归一成 undefined，不影响名字', () => {
+  test('playbackId invalid shape (non-character string/empty string) → normalize to undefined, does not affect the name', () => {
     assert.equal(readAnim({ counter: 1, data: { name: 'A', playbackId: 42 } })?.playbackId, undefined);
     assert.equal(readAnim({ counter: 1, data: { name: 'A', playbackId: '' } })?.playbackId, undefined);
     assert.equal(readAnim({ counter: 1, data: { name: 'A', playbackId: null } })?.name, 'A');
   });
 
-  test('两个都给时两个都取到（host 判定层保证不会这么写；消费端以 url 优先）', () => {
+  test('When both are given, both are obtained (host decision layer guarantees that it will not be written like this; consumer gives priority to url)', () => {
     const hit = readAnim({ counter: 1, data: { name: 'A', url: 'https://x/y.webm' } });
     assert.equal(hit?.name, 'A');
     assert.equal(hit?.url, 'https://x/y.webm');
   });
 
-  test('脏数据 → null（消费端跳过这一拍）', () => {
+  test('Dirty data → null (consumer skips this beat)', () => {
     assert.equal(readAnim({ counter: 1, data: null }), null);
     assert.equal(readAnim({ counter: 1, data: 'nope' }), null);
-    // 两个都缺席 = 形状非法：宿主写端保证恰好一个，读取端不替它猜
+    // Both are absent = invalid shape: the host writer guarantees exactly one, the reader does not guess for it
     assert.equal(readAnim({ counter: 1, data: { name: '' } }), null);
     assert.equal(readAnim({ counter: 1, data: { name: 42 } }), null);
     assert.equal(readAnim({ counter: 1, data: { url: '' } }), null);
     assert.equal(readAnim({ counter: 1, data: { url: 42 } }), null);
-    assert.equal(readAnim({ counter: 1, data: { playbackId: 'pb-1' } }), null, '只有回执编号不算一条指令');
+    assert.equal(
+      readAnim({ counter: 1, data: { playbackId: 'pb-1' } }),
+      null,
+      'Only the receipt number does not count as an instruction',
+    );
   });
 
-  test('facing（POST /anim 的朝向参数）：合法值取到，name / url 两种形态都适用', () => {
+  test('facing (orientation parameter of POST /anim): valid value is obtained, both forms of name / url are applicable', () => {
     assert.equal(readAnim({ counter: 1, data: { name: '东张西望', facing: 'right' } })?.facing, 'right');
     assert.equal(readAnim({ counter: 1, data: { url: 'https://x/y.webm', facing: 'left' } })?.facing, 'left');
   });
 
-  test('facing 缺省 → undefined（= **不动朝向**，不是回落 left）', () => {
+  test('facing default → undefined (= **immobile orientation**, not fallback left)', () => {
     assert.equal(readAnim({ counter: 1, data: { name: 'A' } })?.facing, undefined);
     assert.equal(readAnim({ counter: 1, data: { name: 'A', facing: null } })?.facing, undefined);
   });
 
-  test('facing 形状非法 → 归一成 undefined，且不影响这条指令本身', () => {
+  test('facing invalid shape → normalize to undefined, and does not affect the instruction itself', () => {
     for (const bad of ['LEFT', 'Right', 'up', '', '   ', 42, true, {}]) {
       const hit = readAnim({ counter: 1, data: { name: 'A', facing: bad } });
       assert.equal(hit?.facing, undefined, JSON.stringify(bad) + ' 不应被当成朝向');
-      assert.equal(hit?.name, 'A', '脏 facing 不该让整条指令作废（照样播，只是不动朝向）');
+      assert.equal(
+        hit?.name,
+        'A',
+        'Dirty facing The entire command should not be invalidated (it will still be played, but the direction will not change)',
+      );
     }
   });
 });
 
-describe('readSay —— 说话叶子（弹气泡 / 清空 两种形态）', () => {
-  /** 只取"弹气泡"形态（清空 / 脏数据都归 null），让断言短一点 */
+describe('readSay——Talking leaves (play bubble / clear in two forms)', () => {
+  /** Only take the "bubble" form (clear / dirty data belongs to null) and make the assertion shorter */
   const say = (data: unknown) => {
     const hit = readSay({ counter: 1, data });
     return hit && hit.kind === 'say' ? hit : null;
   };
 
-  test('弹气泡：文本与配图取到；不带 duration/anim/voiceTo 时三者都 undefined（= 老行为 10s + 联动 + 不念）', () => {
+  test('Play bubble: text and pictures are obtained; without duration/anim/voiceTo, all three are undefined (= old behavior 10 s + linkage + no reading)', () => {
     assert.deepEqual(say({ text: '主人今天也要加油哦～', image: '可爱' }), {
       kind: 'say',
       text: '主人今天也要加油哦～',
@@ -297,76 +311,89 @@ describe('readSay —— 说话叶子（弹气泡 / 清空 两种形态）', () 
     });
   });
 
-  test('配图的 url 形态（issue #122 第 1 条）：地址取到、image 缺席', () => {
+  test('Pictured url form (issue #122 Article 1): Address obtained, image absent', () => {
     const hit = say({ text: 'x', url: 'https://cdn.example.com/拒绝.png' });
     assert.equal(hit?.url, 'https://cdn.example.com/拒绝.png');
     assert.equal(hit?.image, undefined);
   });
 
-  test('配图两种形态并列、由字段名区分：两个都给时两个都取到（host 判定层保证不会这么写）', () => {
+  test('The two forms of pictures are juxtaposed and distinguished by field names: when both are given, both are obtained (host, the judgment layer guarantees that it will not be written like this)', () => {
     const hit = say({ text: 'x', image: '可爱', url: 'https://cdn.example.com/拒绝.png' });
     assert.equal(hit?.image, '可爱');
     assert.equal(hit?.url, 'https://cdn.example.com/拒绝.png');
   });
 
-  test('url 脏值当"没给"（非字符串不毁掉整拍），文本照常显示', () => {
+  test('url dirty value is treated as "not given" (non-character string does not ruin the whole shot), the text is displayed as usual', () => {
     for (const v of [42, {}, null, undefined]) {
-      assert.equal(say({ text: 'x', url: v })?.url, undefined, `url=${JSON.stringify(v)} 应归一成 undefined`);
+      assert.equal(
+        say({ text: 'x', url: v })?.url,
+        undefined,
+        `url = ${JSON.stringify(v)} should be converted into undefined`,
+      );
     }
-    // 空串与 image 同口径：原样透传——读取器只做类型收窄，不做 trim / 非空判定
-    //（非空由宿主写端保证）。消费端拿到空串会走纯文本路径，无副作用。
+    // The empty string has the same conventions as image: transparent transmission as it is - the reader only narrows
+    // the type and does not make trim / non-null determination (non-null is guaranteed by the host write end). When
+    // the consumer gets the empty string, it will take the plain text path, without side effect.
     assert.equal(say({ text: 'x', url: '' })?.url, '');
     assert.equal(say({ text: 'x', url: 42 })?.text, 'x');
   });
 
-  test('duration / anim 原样带出（含 0 与 false 这两个"有含义的假值"）', () => {
-    assert.equal(say({ text: 'x', duration: 0, anim: false })?.duration, 0, 'duration=0 不能被兜成缺省');
+  test('duration / anim are brought out as they are (including the two "meaningful false values" of 0 and false)', () => {
+    assert.equal(
+      say({ text: 'x', duration: 0, anim: false })?.duration,
+      0,
+      'duration =0 cannot be used as the default',
+    );
     assert.equal(say({ text: 'x', duration: 0, anim: false })?.anim, false);
     assert.equal(say({ text: 'x', duration: 3000, anim: true })?.duration, 3000);
     assert.equal(say({ text: 'x', duration: 3000, anim: true })?.anim, true);
   });
 
-  test('voiceTo：只认 web / desktop，其余当作没给（undefined）', () => {
+  test('voiceTo: Only recognize web / desktop, and treat the others as not given (undefined)', () => {
     assert.equal(say({ text: 'x', voiceTo: 'web' })?.voiceTo, 'web');
     assert.equal(say({ text: 'x', voiceTo: 'desktop' })?.voiceTo, 'desktop');
     for (const v of ['both', 'any', 'WEB', 1, null, {}]) {
       assert.equal(
         say({ text: 'x', voiceTo: v })?.voiceTo,
         undefined,
-        `voiceTo=${JSON.stringify(v)} 应归一成 undefined`,
+        `voiceTo = ${JSON.stringify(v)} should be normalized to undefined`,
       );
     }
   });
 
-  test('清空形态：{ clear: true } → { kind: "clear" }（**空文本表达不了它**）', () => {
+  test('clear form: { clear : true } → { kind : " clear " } (**empty text cannot express it**)', () => {
     assert.deepEqual(readSay({ counter: 1, data: { clear: true } }), { kind: 'clear' });
-    // 空文本被判非法、整拍跳过——这正是"清空"必须有独立形态的原因。
-    // 纯空白不归这里管：host 写入前已经 trim 过，readSay 只做形状校验。
+    // Empty text is invalid and the whole beat is skipped - this is why "clear" must have an independent form. Pure
+    // blanks are not covered here: host has been trim before writing, and readSay is only used for shape verification.
     assert.equal(readSay({ counter: 1, data: { text: '' } }), null);
     assert.equal(say({ text: '   ' })?.text, '   ');
   });
 
-  test('clear 优先于 text：两个都在时按清空处理（host 不会这么写，但形状上要确定）', () => {
+  test('clear takes precedence over text: press clear when both are present (host will not be written like this, but the shape must be determined)', () => {
     assert.deepEqual(readSay({ counter: 1, data: { clear: true, text: 'x' } }), { kind: 'clear' });
   });
 
-  test('clear 只认严格 true（"yes"/1 之类不算，免得脏数据把气泡误清掉）', () => {
+  test('clear only recognizes strict true (" yes "/1 and the like are not counted, to prevent dirty data from accidentally clearing the bubble)', () => {
     for (const v of ['yes', 1, {}, null]) {
-      assert.equal(say({ clear: v, text: 'x' })?.text, 'x', `clear=${JSON.stringify(v)} 不应判成清空`);
-    }
-  });
-
-  test('duration 脏值当"没给"（负数 / NaN / Infinity / 字符串），不毁掉整拍', () => {
-    for (const v of [-1, NaN, Infinity, '3000', {}]) {
       assert.equal(
-        say({ text: 'x', duration: v })?.duration,
-        undefined,
-        `duration=${JSON.stringify(v)} 应归一成 undefined`,
+        say({ clear: v, text: 'x' })?.text,
+        'x',
+        `clear = ${JSON.stringify(v)} should not be judged as clear`,
       );
     }
   });
 
-  test('脏数据 → null（消费端跳过这一拍）', () => {
+  test('duration dirty value should be treated as "not given" (negative number / NaN / Infinity / character string) without ruining the whole shot', () => {
+    for (const v of [-1, NaN, Infinity, '3000', {}]) {
+      assert.equal(
+        say({ text: 'x', duration: v })?.duration,
+        undefined,
+        `duration = ${JSON.stringify(v)} should be normalized to undefined`,
+      );
+    }
+  });
+
+  test('Dirty data → null (consumer skips this beat)', () => {
     assert.equal(readSay({ counter: 1, data: null }), null);
     assert.equal(readSay({ counter: 1, data: 'nope' }), null);
     assert.equal(readSay({ counter: 1, data: {} }), null);
@@ -374,8 +401,8 @@ describe('readSay —— 说话叶子（弹气泡 / 清空 两种形态）', () 
   });
 });
 
-describe('readPosition —— 位置指令叶子（中心归一化坐标 + 运动模式）', () => {
-  test('instant / spring：坐标与模式都取到，duration 恒为 0（这两个模式不用时间）', () => {
+describe('readPosition —— Position command leaf (center normalized coordinates + motion mode)', () => {
+  test('instant / spring: Both coordinates and mode are obtained, duration is always 0 (these two modes do not use time)', () => {
     assert.deepEqual(readPosition({ counter: 1, data: { x: 0.5, y: 0.35, mode: 'instant' } }), {
       x: 0.5,
       y: 0.35,
@@ -390,7 +417,7 @@ describe('readPosition —— 位置指令叶子（中心归一化坐标 + 运�
     });
   });
 
-  test('line：duration 一起取到（`0` 也合法 = 立即到位）', () => {
+  test('line: duration are obtained together (`0` is also valid = in place immediately)', () => {
     assert.deepEqual(readPosition({ counter: 1, data: { x: 0.5, y: 0.35, mode: 'line', duration: 1200 } }), {
       x: 0.5,
       y: 0.35,
@@ -400,7 +427,7 @@ describe('readPosition —— 位置指令叶子（中心归一化坐标 + 运�
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.35, mode: 'line', duration: 0 } })?.duration, 0);
   });
 
-  test('边界值 0 与 1 合法（中心可到屏幕边缘）', () => {
+  test('Boundary values 0 and 1 are valid (the center can reach the edge of the screen)', () => {
     assert.deepEqual(readPosition({ counter: 1, data: { x: 0, y: 1, mode: 'spring' } }), {
       x: 0,
       y: 1,
@@ -409,21 +436,21 @@ describe('readPosition —— 位置指令叶子（中心归一化坐标 + 运�
     });
   });
 
-  test('mode 非法 / 缺失 → null（老叶子的 {x,y,smooth} 不再被接受：不替调用方猜模式）', () => {
+  test('mode invalid/missing → null (old leaf { x , y , smooth } is no longer accepted: no guessing mode for caller)', () => {
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5 } }), null);
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5, mode: 'ease' } }), null);
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5, mode: 'LINE' } }), null);
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5, smooth: true } }), null);
   });
 
-  test('line 缺 duration（或非法）→ null（宿主一定会写；写错宁可跳过这一拍，也不猜一个时间）', () => {
+  test('line is missing duration (or invalid) → null (host must be written; if it is wrong, you would rather skip this beat than guess a time)', () => {
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5, mode: 'line' } }), null);
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5, mode: 'line', duration: -1 } }), null);
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5, mode: 'line', duration: NaN } }), null);
     assert.equal(readPosition({ counter: 1, data: { x: 0.5, y: 0.5, mode: 'line', duration: '1200' } }), null);
   });
 
-  test('脏数据 → null（缺坐标 / 非数字 / NaN / Infinity 都拒，不把 NaN 送进运动学）', () => {
+  test('Dirty data → null (missing coordinates / non-numeric / NaN / Infinity are rejected, NaN will not be sent to kinematics)', () => {
     assert.equal(readPosition({ counter: 1, data: null }), null);
     assert.equal(readPosition({ counter: 1, data: 'nope' }), null);
     assert.equal(readPosition({ counter: 1, data: { y: 0.5, mode: 'spring' } }), null);
@@ -434,13 +461,13 @@ describe('readPosition —— 位置指令叶子（中心归一化坐标 + 运�
   });
 });
 
-describe('readThrow —— 抛掷指令叶子（角度 + 力度）', () => {
-  test('角度与力度都取到（角度不归一化，负值原样保留）', () => {
+describe('readThrow —— Throwing command leaf (angle + strength)', () => {
+  test('Both angle and intensity are obtained (angles are not normalized, negative values are retained as they are)', () => {
     assert.deepEqual(readThrow({ counter: 1, data: { angle: 45, power: 1 } }), { angle: 45, power: 1 });
     assert.deepEqual(readThrow({ counter: 1, data: { angle: -90, power: 3 } }), { angle: -90, power: 3 });
   });
 
-  test('脏数据 → null（power ≤ 0 也拒：那不是一个初速度）', () => {
+  test('Dirty data → null (power ≤ 0 is also rejected: that is not an initial velocity)', () => {
     assert.equal(readThrow({ counter: 1, data: null }), null);
     assert.equal(readThrow({ counter: 1, data: 'nope' }), null);
     assert.equal(readThrow({ counter: 1, data: { angle: 45 } }), null);
@@ -452,8 +479,8 @@ describe('readThrow —— 抛掷指令叶子（角度 + 力度）', () => {
   });
 });
 
-describe('readSleep —— 睡觉叶子解析（状态不是指令）', () => {
-  test('三种形态：睡着带三段名 / 醒着 / 从未写过', () => {
+describe('readSleep - Sleeping leaf analysis (status is not an instruction)', () => {
+  test('Three forms: sleeping with a three-part name / awake / never written', () => {
     assert.deepEqual(readSleep({ counter: 1, data: { sleeping: true, start: 's', loop: 'l', end: 'e' } }), {
       sleeping: true,
       start: 's',
@@ -464,7 +491,7 @@ describe('readSleep —— 睡觉叶子解析（状态不是指令）', () => {
     assert.equal(readSleep({ counter: 0, data: null }), null);
   });
 
-  test('形状非法一律丢弃：缺段名 / 空段名 / 非布尔 sleeping', () => {
+  test('Invalid shapes will be discarded: missing segment name / empty segment name / non-Boolean sleeping', () => {
     assert.equal(readSleep({ counter: 1, data: { sleeping: true, start: 's', loop: 'l' } }), null);
     assert.equal(readSleep({ counter: 1, data: { sleeping: true, start: 's', loop: 'l', end: '' } }), null);
     assert.equal(readSleep({ counter: 1, data: { sleeping: 'yes' } }), null);

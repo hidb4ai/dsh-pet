@@ -1,28 +1,30 @@
 'use strict';
 /**
- * 系统托盘：桌面模式的显示开关与「退出」入口。
+ * System system tray: desktop mode display switch and "exit" entry point.
  *
- * 托盘是桌面模式唯一不进浏览器的入口——某只宠物改成 web/none 后窗口与右键菜单一起消失，
- * 只有托盘还能把它切回来。菜单是静态的：切换 display 后宿主会重启本进程，新进程按新配置重建。
+ * The system tray is the only entry point in desktop mode that does not enter the browser - after a certain pet is
+ * changed to web/none, the window and the right-click menu disappear together, and only the system tray can switch it
+ * back. The menu is static: after switching to display, the host will restart the process, and the new process will be
+ * rebuilt according to the new configuration.
  * @module dsh-pet/runtime/electron-helper/main/tray
  */
 
 const path = require('node:path');
 
 /**
- * 造托盘能力。
+ * Create system tray capability.
  *
- * @param deps.app - Electron app（退出）。
- * @param deps.Tray - Electron Tray 构造器。
- * @param deps.Menu - Electron Menu（模板 → 菜单）。
- * @param deps.nativeImage - Electron nativeImage（图标）。
- * @param deps.hostRequest - 与宿主通信（读配置、改 display、请求退出）。
- * @param deps.callbackUrl - bridge 回调地址（建托盘前要等它就绪）。
- * @param deps.isBridge - 是否由宿主以 bridge 模式拉起。
- * @param deps.appMode - 是否同进程应用模式。
- * @param deps.petRoute - 宠物路由前缀。
- * @param deps.platform - 托盘平台差异（tray-platform.js 的判定结果）。
- * @param deps.helperDir - runtime/electron-helper 的绝对目录（图标在包的 assets/ 下）。
+ * @param deps.app - Electron app (exit).
+ * @param deps.Tray - Electron Tray constructor.
+ * @param deps.Menu - Electron Menu (Template → Menu).
+ * @param deps.nativeImage - Electron nativeImage (icons).
+ * @param deps.hostRequest - communicate with host (read configuration, change display, request to exit).
+ * @param deps.callbackUrl - bridge callback address (you must wait until it is ready before building the system tray).
+ * @param deps.isBridge - Whether to be pulled up by the host in bridge mode.
+ * @param deps.appMode - Whether it is the same as the process application mode.
+ * @param deps.petRoute - pet route prefix.
+ * @param deps.platform - system tray platform difference (determination result of tray-platform.js).
+ * @param deps.helperDir - Absolute directory for runtime/electron-helper (the icon is under assets / in the package).
  */
 function createTray({
   app,
@@ -39,25 +41,25 @@ function createTray({
 }) {
   const isDesktopDisplay = (display) => display === 'desktop' || display === 'both';
 
-  /** 翻转「桌面位」：both↔web、desktop↔none——浏览器位保持不动，因此不制造新的单向门 */
+  /** Flip the "desktop bit": both ↔ web , desktop ↔ none - the browser bit remains unchanged, so no new one-way door is created */
   const toggleDisplay = (display) =>
     display === 'both' ? 'web' : display === 'web' ? 'both' : display === 'desktop' ? 'none' : 'desktop';
 
   let tray = null;
 
-  /** 写回某只宠物的 display：宿主写完配置会重启本进程，响应可能永远不回（同 sprite.js 的 setPetDisplay） */
+  /** Write back display of a certain pet: The host will restart the process after writing the configuration, and the response may never be returned (same as sprite.js's setPetDisplay) */
   function traySetPetDisplay(id, display) {
     hostRequest('POST', petRoute + '/pet-display', JSON.stringify({ id, display })).catch((e) => {
       console.error('[dsh-pet-desktop-helper] tray pet-display failed:', String(e && e.message ? e.message : e));
     });
   }
 
-  /** 托盘图标：包内 logo 缩到 16×16（macOS 要模板图，否则深色菜单栏下看不见） */
+  /** system tray icon: logo in the package is reduced to 16×16 (macOS requires a template image, otherwise it cannot be seen under the dark menu bar) */
   function trayIcon() {
     const file = path.join(helperDir, '..', '..', 'assets', 'logo.png');
     let img = nativeImage.createFromPath(file);
     if (img.isEmpty()) {
-      // 读不到图标 = 托盘不可见但菜单逻辑照跑，最难查的一种坏法：必须留下能定位的日志
+      // The icon cannot be read = the system tray is not visible but the menu logic still runs. The most difficult method to check: a log that can be located must be left.
       console.error('[dsh-pet-desktop-helper] tray icon missing or unreadable: ' + file);
       return img;
     }
@@ -67,11 +69,13 @@ function createTray({
   }
 
   /**
-   * 托盘「退出」是否该出现。
+   * Should system tray "Exit" appear?
    *
-   * 独立应用与手动 start-desktop 流可以自己 app.quit()；isBridge 下本进程由宿主拉起，
-   * 自己退会被当成崩溃按退避重启，必须先问宿主（GET /quit 的 canQuit）。
-   * @returns 可以自己退出时为 true；探测失败按不支持处理，菜单项因此不出现。
+   * Independent applications and manual start-desktop streams can app.quit() by themselves; under isBridge, the
+   * process is started by the host. If it exits by itself, it will be regarded as a crash and press retreat to
+   * restart. The host must be asked first (canQuit of GET /quit).
+   * @returns can exit by itself as true; detection failure is handled as not supported, so the menu item does not
+   * appear.
    */
   async function canQuitSelf() {
     if (appMode || !isBridge) return true;
@@ -84,35 +88,39 @@ function createTray({
   }
 
   /**
-   * 按当前配置拼托盘菜单；返回 null 表示此时不该有托盘（开关关掉 / 配置里没有宠物）。
+   * The system tray menu is assembled according to the current configuration; returning null means there should be no
+   * system tray at this time (the switch is turned off/there are no pets in the configuration).
    *
-   * 独立成函数是为了应用模式的重建：那边改 display 只重建窗口、不重启进程，
-   * 勾选状态得靠这里重读一次刷新，否则菜单和配置对不上。
+   * It is made into an independent function for the purpose of rebuilding the application mode: changing display there
+   * will only rebuild the window without restarting the process. The check status must be refreshed by re-reading
+   * here, otherwise the menu and configuration will not match.
    */
   async function buildMenu() {
     const resp = await hostRequest('GET', petRoute + '/config');
     const merged = JSON.parse(resp.body || '{}');
-    // 托盘开关（main 条目的 trayEnabled）：只有显式 false 才不建，缺失或写坏时保持建，
-    // 免得一份老配置或一个错值让托盘无声消失。与下面的 pets 取自同一份成品配置。
+    // system tray switch (trayEnabled of main entry): Only explicit false will not be built. If it is missing or
+    // written bad, it will be kept built to prevent an old configuration or an incorrect value from silently
+    // disappearing the system tray. Taken from the same finished configuration as pets below.
     if (merged && merged.main && merged.main.trayEnabled === false) return null;
-    // 成品聚合的形状是 { <条目>: <整份配置文档> }：顶层键不是宠物，宠物在各条目的 pets 数组里
-    // （与渲染端同一契约）。托盘只要 id/name/display，所以不吹条目级字段。
+    // The shape of the finished aggregate is { <entry>: <entire configuration document> }: the top-level key is not a
+    // pet, and the pet is in the pets array of each entry (same contract as the renderer). The system tray only needs
+    // id/name/display, so the entry-level fields are not blown.
     const pets = Object.values(merged)
       .flatMap((conf) => (conf && Array.isArray(conf.pets) ? conf.pets : []))
       .map((pet) => ({
         id: String((pet && pet.id) || ''),
-        name: String((pet && pet.name) || '').trim(), // host 已保证 name 缺失时回落 id
+        name: String((pet && pet.name) || '').trim(), // host is guaranteed fallback id when name is missing
         display: String((pet && pet.display) || ''),
       }))
       .filter((pet) => pet.id);
-    if (!pets.length) return null; // 配置里没有任何宠物：没有可切换的对象，不建托盘
+    if (!pets.length) return null; // There are no pets in the configuration: no switchable objects, no system tray is created
     const canQuit = await canQuitSelf();
     const quitApp = () => {
       if (!isBridge || appMode) {
         app.quit();
         return;
       }
-      // 交给宿主停机：它会先停本进程再退，所以这条请求不用等结果
+      // Leave it to the host to stop: it will stop the process first and then exit, so this request does not need to wait for the result.
       hostRequest('POST', petRoute + '/quit').catch((e) => {
         console.error('[dsh-pet-desktop-helper] tray quit failed:', String(e && e.message ? e.message : e));
       });
@@ -129,12 +137,13 @@ function createTray({
   }
 
   /**
-   * 建托盘：列出配置里全部宠物（含 display 为 web/none 的——它们当前勾是空的，点一下就能送回来，
-   * 这是托盘相对宠物右键菜单的增量）。勾 = 当前 display 含 desktop/both。
+   * Create system tray: List all pets in the configuration (including display to web/none - their current checkboxes
+   * are empty and can be sent back with one click. This is the increment of the system tray relative to the pet
+   * right-click menu). Tick = current display contains desktop/both.
    */
   async function startTray() {
     try {
-      // 请求行要携带回调 URL，而端口在 startBridgeCallback 的 listen 回调里才有值（最多等 2s）
+      // The request line must carry callback URL, and the port only has a value in the listen callback of startBridgeCallback (up to 2 s)
       for (let i = 0; isBridge && !callbackUrl() && i < 100; i += 1) {
         await new Promise((r) => setTimeout(r, 20));
       }
@@ -143,14 +152,14 @@ function createTray({
       tray = new Tray(trayIcon());
       tray.setToolTip('dsh-pet 桌面宠物');
       tray.setContextMenu(menu);
-      // Windows 上 setContextMenu 只接管右键，左键默认什么都不做（macOS 相反：左键即弹菜单）
+      // On Windows, setContextMenu only takes over the right button, and the left button does nothing by default (macOS does the opposite: the left button pops up the menu)
       if (platform.leftClickPopsMenu) tray.on('click', () => tray.popUpContextMenu());
     } catch (e) {
       console.error('[dsh-pet-desktop-helper] tray init failed:', String(e && e.message ? e.message : e));
     }
   }
 
-  /** 重读配置并刷新菜单勾选；没建托盘时什么都不做（应用模式重建窗口后调用）。 */
+  /** Reread configuration and refresh menu check; do nothing when system tray is not created (called after application mode rebuilds window). */
   async function refreshTray() {
     if (!tray) return;
     try {

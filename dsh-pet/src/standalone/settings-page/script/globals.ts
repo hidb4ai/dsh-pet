@@ -1,14 +1,16 @@
 /**
- * 「桌宠配置」面板的全局部分：开关、语音、外观、物理、移动端、对话模型与落盘位置。
+ * Global sections of the "desktop pet configuration" panel: switches, speech, appearance, physics, mobile,
+ * conversation model and persist to disk location.
  *
- * 全部读写 state.globals（main 条目的全局字段），由 ./pets 的保存一并提交。
- * 卡片按 builder 数组返回，渲染时机由 ./pets 决定——这里不自己找容器。
+ * All read and write state.globals (global field of main entry), committed together with the save of ./pets. The card
+ * is returned as an array of builder, and the rendering timing is determined by ./pets - the container is not found
+ * here.
  * @module dsh-pet/src/standalone/settings-page/script/globals
  */
 
 import { DEFAULT_CHAT_MEMORY } from '../../../shared/chat-memory-config.ts';
 
-/** 生成全局卡片片段。 */
+/** Generate global card fragments. */
 export function globalsScript(): string {
   return `
 const FALLBACK_CHAT_MEMORY = ${JSON.stringify(DEFAULT_CHAT_MEMORY)};

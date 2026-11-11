@@ -1,55 +1,57 @@
 /**
- * 待办面板的 DOM 骨架与清单渲染：只拼元素、绑事件，不取数、不定位、不关弹窗。
+ * DOM skeleton and list rendering of to-do panel: only elements are assembled and events are tied, no numbers are
+ * retrieved, no positioning is done, and pop-up windows are not closed.
  *
- * 删除做成两步（先变成「确认」，2.5 秒后自动复原）：清单没有撤销，误点一次就没了太容易。
+ * Deletion is a two-step process (change to "Confirm" first, and then automatically restore after 2.5 seconds): the
+ * list is not revoked, and it is too easy to make a mistake and lose it.
  * @module dsh-pet/src/shared/todo/render
  */
 import { createDuePicker, type DuePicker } from './due-picker.ts';
 import { metaLabel, todoUrgency } from './format.ts';
 import type { TodoItem } from './types.ts';
 
-/** 面板里需要被面板逻辑持有的元素。 */
+/** Elements in the panel that need to be held by the panel logic. */
 export interface TodoPanelParts {
-  /** 根：面板内容的外框，节点由调用方塞进容器。 */
+  /** Root: the outer frame of the panel content, and the nodes are inserted into the container by caller. */
   root: HTMLElement;
-  /** 添加表单：回车提交。 */
+  /** Add form: press Enter to submit. */
   form: HTMLFormElement;
-  /** 正文输入框。 */
+  /** Text input box. */
   input: HTMLInputElement;
-  /** 到期时间选择器：按钮在表单行，日历挂在根节点里。 */
+  /** Expiration time selector: The button is in the form row, and the calendar is hung in the root node. */
   duePicker: DuePicker;
-  /** 添加按钮。 */
+  /** Add button. */
   addButton: HTMLButtonElement;
-  /** 清单容器。 */
+  /** Manifest container. */
   list: HTMLUListElement;
-  /** 空态提示。 */
+  /** Empty prompt. */
   empty: HTMLDivElement;
-  /** 顶部的未完成计数。 */
+  /** Top outstanding count. */
   count: HTMLSpanElement;
-  /** 右上角关闭按钮；桌面端窗口余量是穿透的，点空白收不起来，只能靠它。 */
+  /** The close button in the upper right corner; the desktop window margin is click-through, and you can't close it by clicking on the blank space, so you can only rely on it. */
   closeButton: HTMLButtonElement;
-  /** 错误行（隐藏时为 `hidden`）。 */
+  /** Error line (`hidden` when hidden). */
   error: HTMLDivElement;
 }
 
-/** 清单条目上的交互回调。 */
+/** Interaction callback on manifest items. */
 export interface TodoListHandlers {
-  /** 勾选 / 取消勾选。 */
+  /** Check/uncheck. */
   onToggle: (todo: TodoItem, done: boolean) => void;
-  /** 删除（调用方已确认过一次）。 */
+  /** Delete (caller has confirmed once). */
   onDelete: (todo: TodoItem) => void;
 }
 
-/** 删除按钮的二次确认窗口（ms）：超时自动复原，避免「确认」态一直挂着。 */
+/** The secondary confirmation window of the delete button (ms): automatically recovers after timeout to avoid the "confirmation" status hanging all the time. */
 const DELETE_ARM_MS = 2500;
 
-/** 空态文案：加载中会临时替换它，重渲染时再写回来。 */
+/** Empty copy: It will be temporarily replaced during loading and written back when re-rendering. */
 const EMPTY_TEXT = '还没有待办。记一件要做的事，到点我会提醒你～';
 
-/** 清单最多露出几行，其余靠滚动。 */
+/** At most a few lines of the list are exposed, and the rest are scrolled. */
 const LIST_ROWS = 2;
 
-/** 造一个带 class 的元素，避免每处都写 createElement + className。 */
+/** Create an element with class to avoid writing createElement + className everywhere. */
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className: string,
@@ -61,7 +63,7 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** 造一个可折叠区：高度靠 grid-template-rows 在 0fr 与 1fr 之间过渡，内容高度是 auto 也能动画。 */
+/** Create a foldable area: the height is grid-template-rows and transitions between 0 fr and 1 fr. The content height is auto and can also be animated. */
 function fold(className: string, children: HTMLElement[]): HTMLDivElement {
   const outer = element('div', 'dsh-pet-todo-fold ' + className);
   const clip = element('div', 'dsh-pet-todo-foldClip');
@@ -71,9 +73,9 @@ function fold(className: string, children: HTMLElement[]): HTMLDivElement {
 }
 
 /**
- * 造面板骨架（尚未挂进文档）。
+ * Create panel skeleton (not yet attached to the document).
  *
- * @returns 面板需要的全部元素引用。
+ * @returns All element references needed for the panel.
  */
 export function createTodoPanelParts(): TodoPanelParts {
   const root = element('div', 'dsh-pet-todo');
@@ -112,8 +114,9 @@ export function createTodoPanelParts(): TodoPanelParts {
   const list = element('ul', 'dsh-pet-todo-list');
   const hint = element('div', 'dsh-pet-todo-hint', '离到期越近，我会提醒得越勤快～');
 
-  // 下半区两块内容轮流出现：清单态与日历态各是一个折叠区，展开收起走同一条过渡。
-  // 面板高度因此跟着内容走（不留空白），切换时也是滑过去而不是硬跳。
+  // Two pieces of content appear in the lower half of the area in turn: the list state and the calendar state are each
+  // a folding area, and the expansion and collapse follow the same transition. The height of the panel therefore
+  // follows the content (no blank space is left), and when switching, it slides over instead of jumping hard.
   const lower = element('div', 'dsh-pet-todo-lower');
   lower.append(fold('is-cal', [duePicker.calendar]), fold('is-list', [error, empty, list, hint]));
   root.append(head, form, lower);
@@ -121,12 +124,13 @@ export function createTodoPanelParts(): TodoPanelParts {
 }
 
 /**
- * 把清单压到「两行」的高度，多出来的部分靠清单自己滚动。
+ * Press the list to the height of "two lines", and the extra part will be scrolled by the list itself.
  *
- * 行高随正文折行变化，写不成 CSS 常量，所以量一次首行再乘二；量不到（未挂载）就不设上限，
- * 免得把清单压成 0 高。
+ * The line height changes with the text folding and cannot be written as a constant CSS, so measure the first line
+ * once and multiply it by two; if the amount is less than the amount (not mounted), there is no upper limit to avoid
+ * pressing the list to 0 height.
  *
- * @param list - 清单容器。
+ * @param list - manifest container.
  */
 function capListHeight(list: HTMLUListElement): void {
   const first = list.firstElementChild;
@@ -136,18 +140,18 @@ function capListHeight(list: HTMLUListElement): void {
   }
   const rowHeight = first.getBoundingClientRect().height;
   if (rowHeight <= 0) return;
-  // 清单自带内边距，算进高度里才不会被截掉最后一行的一半。
+  // The list has built-in padding, which is included in the height so that half of the last line will not be cut off.
   const pad = parseFloat(getComputedStyle(list).paddingTop) || 0;
   list.style.maxHeight = rowHeight * LIST_ROWS + pad * 2 + 'px';
 }
 
 /**
- * 渲染一整张清单。
+ * Render an entire list.
  *
- * @param parts - 面板元素。
- * @param todos - 已排序的待办。
- * @param handlers - 勾选与删除的回调。
- * @param now - 当前时刻，用来生成「还剩多久」。
+ * @param parts - Panel element.
+ * @param todos - Sorted to-do.
+ * @param handlers - callback for checking and deleting.
+ * @param now - the current time, used to generate "how long is left".
  */
 export function renderTodoList(
   parts: TodoPanelParts,
@@ -164,7 +168,7 @@ export function renderTodoList(
   capListHeight(parts.list);
 }
 
-/** 渲染一条；未完成项带紧迫度，已完成项划线。 */
+/** Render one line; unfinished items have urgency, completed items are underlined. */
 function renderItem(todo: TodoItem, handlers: TodoListHandlers, now: number): HTMLLIElement {
   const item = element('li', 'dsh-pet-todo-item' + (todo.done ? ' is-done' : ''));
   if (!todo.done) item.dataset.urgency = todoUrgency(todo.dueAt, now);
@@ -184,13 +188,13 @@ function renderItem(todo: TodoItem, handlers: TodoListHandlers, now: number): HT
   remove.type = 'button';
   remove.setAttribute('aria-label', '删除：' + todo.text);
   remove.addEventListener('click', () => {
-    // 第一次点击只进入确认态；再点一次才真的删。
+    // Clicking for the first time only enters the confirmation state; clicking again will actually delete it.
     if (remove.dataset.armed !== '1') {
       remove.dataset.armed = '1';
       remove.classList.add('is-armed');
       remove.textContent = '确认';
       window.setTimeout(() => {
-        // 面板已关闭 / 已重渲染时元素不再在文档里：静默复原即可。
+        // When the panel is closed/re-rendered, the element is no longer in the document: just restore it silently.
         if (!remove.isConnected) return;
         delete remove.dataset.armed;
         remove.classList.remove('is-armed');
@@ -206,10 +210,10 @@ function renderItem(todo: TodoItem, handlers: TodoListHandlers, now: number): HT
 }
 
 /**
- * 显示 / 清除错误行。
+ * Show/clear error lines.
  *
- * @param parts - 面板元素。
- * @param message - 错误文案；null 表示清除。
+ * @param parts - Panel element.
+ * @param message - error text; null means clear.
  */
 export function setTodoError(parts: TodoPanelParts, message: string | null): void {
   parts.error.hidden = message === null;
@@ -217,10 +221,10 @@ export function setTodoError(parts: TodoPanelParts, message: string | null): voi
 }
 
 /**
- * 切换忙碌态：请求在途时禁掉输入与按钮，避免连点建出两条。
+ * Switch busy state: disable input and buttons when the request is in progress to avoid connecting two dots.
  *
- * @param parts - 面板元素。
- * @param busy - 是否请求在途。
+ * @param parts - Panel element.
+ * @param busy - Whether the request is in transit.
  */
 export function setTodoBusy(parts: TodoPanelParts, busy: boolean): void {
   parts.input.disabled = busy;

@@ -1,8 +1,10 @@
 /**
- * 独立 AI 服务的装配根：初始化设置存储、维护就绪与暂停状态，把生成通道与连接测试接到门面上。
+ * Assembly root of the independent AI service: initializes settings storage, maintains ready and paused states,
+ * connects channel generation and connection testing to the facade.
  *
- * 不解析请求（归 ./request）、不定义限额（归 ./limits）、不写通道细节（归 ./stream 与 ./test-connection）。
- * 必须始终成立：设置读不安全时整体失败，不顺势启用环境里的旧凭据。
+ * The request is not parsed (returned to ./request), the quota is not defined (returned to ./limits), and the channel
+ * details are not written (returned to ./stream and ./test-connection). Must always be true: overall failure when
+ * setting read-insecure does not enable old credentials in the environment.
  * @module dsh-pet/src/standalone/ai-provider/create
  */
 import { type StandaloneLogger } from '../context.ts';
@@ -15,14 +17,16 @@ import { createTextStream } from './stream.ts';
 import { testAiConnection } from './test-connection.ts';
 
 /**
- * 保存设置：单飞、先中止在途请求，失败即暂停，等下一次保存成功才恢复。
- * @throws 服务已释放、另一次保存正在进行，或存储层校验/落盘失败时。
+ * Save settings: When flying solo, abort the request in transit first. If it fails, it will be paused and will be
+ * restored after the next save is successful.
+ * @throws When the service has been released, another save is in progress, or storage layer verification/persist to
+ * disk fails.
  */
 async function saveSettings(runtime: AiRuntime, store: AiStore, input: unknown): Promise<StandaloneAiPublicSettings> {
   if (runtime.disposed) throw new Error('Standalone AI is disposed.');
   if (runtime.saving) throw new Error('Standalone AI settings are being saved.');
   runtime.saving = true;
-  // 保存期间先中止在途请求，避免旧设置继续产生输出。
+  // Abort requests in transit during saving to prevent old settings from continuing to generate output.
   runtime.active?.abort();
   try {
     const result = await store.save(input);
@@ -37,12 +41,12 @@ async function saveSettings(runtime: AiRuntime, store: AiStore, input: unknown):
 }
 
 /**
- * 创建独立模式 AI 服务。
- * @param home - DSH_HOME。
- * @param logger - 日志出口。
- * @param dependencies - 测试注入的传输与时钟。
- * @returns AI 服务。
- * @throws 设置无法安全读取时抛出。
+ * Creating standalone mode AI service.
+ * @param home - DSH_HOME.
+ * @param logger - log export.
+ * @param dependencies - Test injected transmissions and clocks.
+ * @returns AI Service.
+ * @throws Thrown when the settings cannot be read safely.
  */
 export function createStandaloneAi(
   home: string,
@@ -54,7 +58,7 @@ export function createStandaloneAi(
     store = createAiConfig(home);
   } catch {
     logger.error('Cannot securely load standalone AI settings.');
-    // 持久化损坏或权限不安全时不能顺势启用环境里的旧凭据，宁可整体失败。
+    // When the persistence is damaged or the permissions are insecure, the old credentials in the environment cannot be enabled. It would rather fail overall.
     throw new Error('Cannot securely load standalone AI settings.');
   }
   const runtime: AiRuntime = {

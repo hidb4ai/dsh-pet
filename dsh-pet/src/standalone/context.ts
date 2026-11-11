@@ -1,19 +1,20 @@
 /**
- * 独立模式的伪 ctx：让插件的宿主半侧在 DSH 之外运行。
+ * Pseudo ctx in standalone mode: Let the host side of the plugin run outside of DSH.
  *
- * 负责补齐 apply 需要的 Cordis 语义与降级替身，路由表仍由插件宿主半侧提供；
- * 不实现窗口逻辑，HTTP 边界由 ./server 提供。
- * 必须始终成立：替身只显式失败，effect 单项失败不拖垮整个插件。
+ * Responsible for completing the Cordis semantics and downgraded avatars required by apply. The route table is still
+ * provided by the plugin host side; the window logic is not implemented, and the HTTP boundary is provided by ./
+ * server. This must always be true: stand-ins only fail explicitly, and a single failure of effect does not bring down
+ * the entire plugin.
  * @module dsh-pet/src/standalone/context
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { createLlmFacade, createOfflineLlm, type StandaloneModelService } from './llm-facade.ts';
 
-/** 独立模式下余额路由报出的未登记服务商 id。 */
+/** The unregistered service provider id reported by the balance route in standalone mode. */
 export const STANDALONE_PROVIDER = 'standalone';
 
-/** 独立模式的日志接口，与插件对 ctx.logger 的使用面一致。 */
+/** The log interface in standalone mode is consistent with the use of ctx.logger by the plugin. */
 export interface StandaloneLogger {
   info(message: string): void;
   warn(message: string): void;
@@ -21,52 +22,55 @@ export interface StandaloneLogger {
   debug(message: string): void;
 }
 
-/** 插件注册到 ctx.webServer 的一条路由。 */
+/** The plugin registers a route to ctx.webServer. */
 export interface RegisteredRoute {
-  /** prefix 或 exact，原样透传。 */
+  /** prefix or exact, transparent transmission as it is. */
   kind: string;
-  /** 路由路径；独立模式按它匹配，不硬编码前缀。 */
+  /** route path; standalone mode matches against it, no hard-coded prefix. */
   path: string;
-  /** 真实 Node HTTP handler，自行写响应头与正文。 */
+  /** True Node HTTP handler, write the response header and body by yourself. */
   handler: (req: IncomingMessage, res: ServerResponse) => unknown;
 }
 
-/** 创建伪 ctx 的选项。 */
+/** Option to create fake ctx. */
 export interface StandaloneContextOptions {
-  /** 端口或端口取值函数，用于拼桌面 Helper 的配置地址。 */
+  /** Port or port value function, used to configure the desktop Helper configuration address. */
   port: number | (() => number);
-  /** 日志出口。 */
+  /** Log export. */
   logger: StandaloneLogger;
-  /** 路由收集数组；服务与 apply 共用同一个数组。 */
+  /** route collection array; service and apply share the same array. */
   routes?: RegisteredRoute[];
-  /** 可选的 AI 服务，缺失时模型能力明确不可用。 */
+  /** The optional AI service, when missing, the model capability is clearly unavailable. */
   ai?: StandaloneModelService;
-  /** 给地址附加访问凭据的包装。 */
+  /** A wrapper that appends access credentials to an address. */
   authenticatedUrl?: (baseUrl: string) => string;
   /**
-   * 关掉整个独立模式进程的能力（桌面 Helper 托盘的「退出」）。
+   * Ability to shut down an entire standalone mode process ("Exit" of the Helper system tray on the desktop).
    *
-   * 只有独立模式提供：DSH 内的桌面模式不挂这个字段，关掉整个 DSH 不该由一只宠物决定。
+   * Only standalone mode is provided: Desktop mode within DSH does not hang this field, turning off the entire DSH
+   * should not be decided by a pet.
    */
   shutdown?: (reason: string) => void;
 }
 
-/** 伪 ctx 与它的生命周期。 */
+/** Pseudo ctx with its lifecycle. */
 export interface StandaloneContext {
-  /** 交给 apply 的伪 ctx。 */
+  /** Pseudo ctx handed to apply. */
   ctx: Record<string, unknown>;
-  /** apply 期间注册的路由，按注册顺序。 */
+  /** Route registered during apply, in register order. */
   routes: RegisteredRoute[];
-  /** 初始化期间被记录下来的异常，每项都已打日志。 */
+  /** Exceptions recorded during initialization, each item has been logged. */
   failures: string[];
-  /** 释放全部 effect：停桌面 Helper、清周期定时器。 */
+  /** Release all effect: Stop the desktop Helper and clear the period timer. */
   dispose(): Promise<void>;
 }
 
 /**
- * webServer 替身：插件按前缀注册路由，独立模式的 server 再按同一份数组匹配。
+ * webServer substitute: The plugin register route according to the prefix, and server in standalone mode matches the
+ * same array.
  *
- * 端口用 getter 读取：服务先监听、端口确定之后才 apply，构造时取值会固定成 0。
+ * The port is read with getter: the service listens first and the port is determined before apply. The value will be
+ * fixed to 0 during construction.
  */
 function createWebServer(routes: RegisteredRoute[], portOf: () => number) {
   return {
@@ -84,8 +88,8 @@ function createWebServer(routes: RegisteredRoute[], portOf: () => number) {
 }
 
 /**
- * Cordis 的 effect 语义：跑一次注册函数并收集它返回的释放函数。
- * 单项失败只记录并打日志，不让整个插件起不来。
+ * effect semantics of Cordis: run the register function once and collect the release function it returns. Single
+ * failure is only recorded and logged, so that the entire plugin will not be shut down.
  */
 function createEffectRunner(
   disposers: Array<() => unknown>,
@@ -100,15 +104,16 @@ function createEffectRunner(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       failures.push(message);
-      logger.error(`初始化某项失败（已跳过）：${message}`);
+      logger.error(`Initialization step failed and was skipped: ${message}`);
       return undefined;
     }
   };
 }
 
 /**
- * Cordis 的 provide / get 语义：先查注册表，再回落到伪 ctx 自身的属性。
- * 独立模式把可选能力直接挂在伪 ctx 上，不回落会把本来就有的能力判成没有。
+ * provide / get semantics of Cordis: first check the register table, and then fallback to the attributes of the pseudo
+ * ctx itself. The standalone mode directly hangs the optional capabilities on the pseudo ctx. Without fallback, the
+ * existing capabilities will be judged as non-available.
  */
 function createServiceRegistry(services: Map<string, unknown>, attrs: () => Record<string, unknown>) {
   return {
@@ -127,17 +132,17 @@ function createServiceRegistry(services: Map<string, unknown>, attrs: () => Reco
 }
 
 /**
- * 创建独立模式的伪 ctx。
- * @param options - 端口、日志器与可选的路由收集数组。
- * @returns 伪 ctx、路由列表、初始化失败记录与释放函数。
+ * Creating a pseudo ctx in standalone mode.
+ * @param options - Port, logger and optional route collection array.
+ * @returns pseudo ctx, route list, initialization failure record and release function.
  */
 export function createStandaloneContext(options: StandaloneContextOptions): StandaloneContext {
   const { logger, ai } = options;
   const routes = options.routes ?? [];
   const failures: string[] = [];
-  /** effect 释放函数，后注册先释放。 */
+  /** effect release function, then register is released first. */
   const disposers: Array<() => unknown> = [];
-  /** 通过 provide 挂出去的服务。 */
+  /** Service hung out through provide. */
   const services = new Map<string, unknown>();
   let disposed = false;
 
@@ -147,7 +152,7 @@ export function createStandaloneContext(options: StandaloneContextOptions): Stan
   const context: Record<string, unknown> = {
     effect: createEffectRunner(disposers, failures, logger),
     ...createServiceRegistry(services, () => context),
-    /** 独立模式没有 DSH 会话事件：不订阅，工作状态保持空闲。 */
+    /** There is no DSH session event in standalone mode: no subscribe, and the working status remains idle. */
     on(): () => void {
       return () => {};
     },
@@ -158,12 +163,12 @@ export function createStandaloneContext(options: StandaloneContextOptions): Stan
       ? {
           standaloneAi: {
             isReady: () => ai.isReady(),
-            // 余额走独立模式自己的服务商与密钥：DSH 的 credential store 与账号服务在这里都不在场。
+            // The balance adopts the standalone mode and its own service provider and key: DSH’s credential store and account services are not present here.
             balanceAuth: () => ai.balanceAuth(),
           },
         }
       : {}),
-    // 托盘退出的能力开关：宿主路由只看这个字段在不在，停机实现由 cli.ts 提供。
+    // System tray exit ability switch: host route only checks whether this field is present, and the shutdown implementation is provided by cli.ts.
     ...(options.shutdown ? { shutdownApp: options.shutdown } : {}),
     commands: { register: (): (() => void) => () => {} },
     agentDefaultModel: {
@@ -186,7 +191,7 @@ export function createStandaloneContext(options: StandaloneContextOptions): Stan
         try {
           await dispose();
         } catch (error) {
-          logger.warn(`释放某项失败：${error instanceof Error ? error.message : String(error)}`);
+          logger.warn(`Cleanup step failed: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     },

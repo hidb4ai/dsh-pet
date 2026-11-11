@@ -1,14 +1,15 @@
 /**
- * 宠物之间的碰撞：包围盒换算、重叠判定与一次弹性分离。
+ * Collision between pets: bounding box conversion, overlap determination and primary elastic separation.
  *
- * 不做多体求解，也不改渲染；只回答「撞没撞、撞后速度多少」。
- * 必须始终成立：只算一次分离，不迭代求解。
+ * No multi-body solution is performed, and the rendering is not changed; only the answer is "did the collision occur,
+ * and what was the speed after the collision?" Must always hold: only one separation is counted, no iterative solution
+ * is performed.
  * @module dsh-pet/src/shared/physics/collide
  */
 import { HIT_BOX } from '../constants.ts';
 import { PET_BOUNCE_E } from './constants.ts';
 
-/** 一只参与碰撞的宠物：位置（包围盒左上角，px）+ 速度（px/s）+ 宽（px，质量 ∝ size²）。 */
+/** A pet participating in the collision: position (upper left corner of the bounding box, px) + speed (px/s) + width (px, mass ∝ size ²). */
 export interface PetCollider {
   x: number;
   y: number;
@@ -17,9 +18,12 @@ export interface PetCollider {
   size: number;
 }
 
-/** 身体包围盒（HIT_BOX 命中框比例换算到视口像素）：碰撞相交检测的几何。
- *  box = 宠物包围盒左上角（浏览器 root 的 left/top、桌面窗口位置）；
- *  bottomPad = 舞台脚底垫高（stage 被 translateY 下移的量）。 */
+/**
+ * Body bounding box (HIT_BOX hit box scale converted to viewport pixels): geometry for collision intersection
+ * detection.
+ * box = the upper left corner of the pet bounding box (left/top of browser root, desktop window position);
+ * bottomPad = Stage foot pad height (the amount stage is moved down by translateY).
+ */
 export const bodyPixelBox = (o: {
   x: number;
   y: number;
@@ -35,16 +39,20 @@ export const bodyPixelBox = (o: {
   };
 };
 
-/** 两矩形是否相交（碰撞检测）。 */
+/** Whether two rectangles intersect (collision detection). */
 export const rectsOverlap = (
   a: { left: number; top: number; right: number; bottom: number },
   b: { left: number; top: number; right: number; bottom: number },
 ): boolean => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 
-/** 飞行中的宠物撞到另一只：近乎弹性碰撞（动量守恒 + 恢复系数 0.995），质量 ∝ size²。
- *  法向 = 两包围盒中心连线，法向速度按一维动量公式重分配，切向分量各自保留（无切向摩擦）。
- *  返回 null = 中心重合定不出法向，或两者正在分离（避免重叠帧反复弹跳抖动）。
- *  impactSpeed 是法向相对速度，供触觉反馈换算强度。 */
+/**
+ * Flying pet hits another: nearly elastic collision (conservation of momentum + restitution coefficient 0.995), mass ∝
+ * size ². Normal = the line connecting the centers of the two bounding boxes, the normal velocity is redistributed
+ * according to the one-dimensional momentum formula, and the tangential components are retained (no tangential
+ * friction). Return null = The center coincidence cannot determine the normal direction, or the two are separating (to
+ * avoid repeated bouncing and jittering of overlapping frames). impactSpeed is the normal relative velocity, used for
+ * tactile feedback conversion intensity.
+ */
 export const collidePet = (
   fly: PetCollider,
   hit: PetCollider,
@@ -54,12 +62,12 @@ export const collidePet = (
   const cx = hit.x + hit.size / 2 - (fly.x + fly.size / 2);
   const cy = hit.y + hh - (fly.y + hf);
   const dist = Math.hypot(cx, cy);
-  if (dist < 1e-6) return null; // 中心重合：无法定碰撞法向，跳过本帧
+  if (dist < 1e-6) return null; // Center coincidence: No valid collision normal, skip this frame
   const nx = cx / dist;
   const ny = cy / dist;
-  // 相对速度在法向的投影（碰撞方向 = fly → hit，正 = 正在接近）
+  // Projection of relative velocity in the normal direction (collision direction = fly → hit, positive = approaching)
   const vrel = (fly.vx - hit.vx) * nx + (fly.vy - hit.vy) * ny;
-  if (vrel <= 0) return null; // 正在分离：不再弹（避免重叠帧反复触发）
+  if (vrel <= 0) return null; // Separating: No more playing (to avoid repeated triggering of overlapping frames)
   const e = PET_BOUNCE_E;
   const m1 = fly.size * fly.size;
   const m2 = hit.size * hit.size;
@@ -67,7 +75,7 @@ export const collidePet = (
   const v2n = hit.vx * nx + hit.vy * ny;
   const v1n2 = ((m1 - e * m2) * v1n + (1 + e) * m2 * v2n) / (m1 + m2);
   const v2n2 = ((m2 - e * m1) * v2n + (1 + e) * m1 * v1n) / (m1 + m2);
-  // 组合：切向分量（原速度 − 法向分量）不变 + 新法向分量
+  // Combination: Tangential component (original velocity − normal component) unchanged + new normal component
   return {
     fvx: fly.vx - v1n * nx + v1n2 * nx,
     fvy: fly.vy - v1n * ny + v1n2 * ny,
@@ -78,14 +86,15 @@ export const collidePet = (
 };
 
 /**
- * 两个身体框重叠时的最短推出位移：只算几何、不碰速度。
+ * The shortest push-out displacement when two body frames overlap: only geometry, no collision speed.
  *
- * 速度交换（{@link collidePet}）在两者正在分离时返回 null，光靠它会让已经插在一起的两只
- * 直接穿过去；补这一个纯位移量才能把它们推开。
+ * Speed exchange ({@link collidePet}) returns null when the two are separating. It alone will make the two already
+ * inserted together go directly through; adding this pure displacement can push them apart.
  *
- * @param a - 自己的身体框。
- * @param b - 对方的身体框。
- * @returns 推 a 离 b 的位移（各让一半）；不重叠时返回 `null`。
+ * @param a - own body frame.
+ * @param b - The opponent's body frame.
+ * @returns pushes the displacement of a away from b (each gives half); when there is no overlap, it returns to `null`
+ * .
  */
 export const overlapPush = (
   a: { left: number; top: number; right: number; bottom: number },
@@ -105,16 +114,16 @@ export const overlapPush = (
   return alongX ? { dx: (sign * ox) / 2, dy: 0 } : { dx: 0, dy: (sign * oy) / 2 };
 };
 
-/** 共享碰撞站场的槽位（每只宠物注册一个；浏览器半侧 PetMulti 与桌面端的碰撞 broker 共用）。 */
+/** Shared collision station slots (register one for each pet; browser side PetMulti is shared with desktop side collision broker). */
 export interface PetCollisionSlot {
-  /** 宠物宽（px，质量 ∝ size²） */
+  /** Pet width (px, mass ∝ size²) */
   size: number;
-  /** 舞台脚底垫高（bodyPixelBox 需要） */
+  /** Stage foot pads (required for bodyPixelBox) */
   bottomPad: number;
-  /** 当前包围盒左上角（px）；null = 未挂载或无位置 */
+  /** The upper left corner of the current bounding box (px); null = not mounted or no position */
   getBox: () => { x: number; y: number } | null;
-  /** 当前速度（px/s）；没在运动时为 0 */
+  /** Current speed (px/s); it is 0 when not in motion */
   getVel: () => { vx: number; vy: number };
-  /** 写入碰撞结算后的**绝对**速度（px/s）：由宠物自己按当前模式落地——在动就改速度，没动就以此起飞。 */
+  /** Write the **absolute** speed after collision settlement (px/s): The pet will land according to the current mode - change the speed when it is moving, and take off if it is not moving. */
   applyVelocity: (vx: number, vy: number) => void;
 }

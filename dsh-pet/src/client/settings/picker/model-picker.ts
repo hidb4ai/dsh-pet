@@ -1,8 +1,11 @@
 /**
- * 「AI 模型」单选下拉选择器（碎碎念 / 对话各一个实例）：触发器 + 浮层，一对服务商与模型同时选定。
- * 数据同源于 `GET /models`；打开时实测触发器定位浮层，点浮层外或 Esc 关闭，↑↓/Enter 与鼠标共用一套行清单。
- * 不用两个 `<select>`：既占地方，又容易留下「只选了服务商没选模型」的非法组合；也不提供手填模型 id 的退路。
- * 行清单与浮层定位都在同目录的纯函数里，本文件只管状态、键盘与装配。
+ * "AI Model" single-select drop-down selector (one instance each of whisper/dialogue): trigger + floating layer, a
+ * pair of service providers and models are selected at the same time. The data originates from `GET /models` ; when it
+ * is turned on, the measured trigger locates the floating layer, point outside the floating layer or Esc is turned
+ * off, ↑↓/ Enter shares a set of row lists with the mouse. There is no need for two `<select>` : it takes up space,
+ * and it is easy to leave an invalid combination of "only the service provider is selected but not the model"; it also
+ * does not provide a retreat for the hand-filled model id. The line list and floating layer positioning are all in
+ * pure functions in the same directory. This file only takes care of the status, keyboard and device.
  * @module dsh-pet/src/client/settings/picker/model-picker
  */
 import type * as ReactNS from 'react';
@@ -13,28 +16,28 @@ import { buildModelRows, selectableIndexes, type ModelCatalogGroup, type ModelRo
 import { computePanelPlacement, type PanelPosition } from '../panel/placement.ts';
 import { buildModelPanel } from './model-picker-panel.ts';
 
-/** 选择器的对外契约：一个字段一个实例。 */
+/** External contract of selector: one field per instance. */
 export interface ModelPickerProps {
-  /** 字段标签，作为浮层的无障碍名。 */
+  /** Field label, used as the accessibility name of the floating layer. */
   label: string;
-  /** 当前选择；两者都空 = 跟随当前对话。 */
+  /** Current selection; both empty = follow current conversation. */
   value: ModelSelection;
-  /** 禁用原因（保存中 / 配置未加载）。 */
+  /** Reason for disabling (saving/configuration not loaded). */
   disabled: boolean;
-  /** 候选清单；`null` 表示还在拉取。 */
+  /** Candidate list; `null` means it is still being pulled. */
   catalog: readonly ModelCatalogGroup[] | null;
-  /** 候选清单拉取失败。 */
+  /** Failed to pull candidate list. */
   failed: boolean;
-  /** 选中一项时回填整对值。 */
+  /** Backfill the entire pair of values when one is selected. */
   onChange: (value: ModelSelection) => void;
 }
 
 /**
- * 造模型选择器。
- * 依赖只在调用时注入一次：组件类型必须跨渲染稳定，否则浮层状态（打开 / 搜索词 / 高亮）每次渲染都会丢。
+ * Build model selector. Dependencies are only injected once at call time: the component type must be stable across
+ * renders, otherwise the overlay state (open/search term/highlight) will be lost every render.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 选择器组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns selector component.
  */
 export function makeModelPicker(
   rt: Pick<SettingsRuntime, 'h' | 'useState' | 'useEffect' | 'useRef' | 't'>,
@@ -44,9 +47,9 @@ export function makeModelPicker(
   return function ModelPicker(props: ModelPickerProps) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
-    // 高亮行（键盘 ↑↓ 走的就是它；只停在可选项上）
+    // Highlight row (keyboard ↑↓ will go to it; only stop on optional items)
     const [active, setActive] = useState(0);
-    // 浮层位置：打开时按触发器实测一次，空间不够就翻到上方
+    // Floating layer position: Press the trigger to measure once when opening. If there is not enough space, turn it to the top.
     const [pos, setPos] = useState<PanelPosition | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
     const panelRef = useRef<HTMLDivElement | null>(null);
@@ -56,7 +59,7 @@ export function makeModelPicker(
     const picked = group?.models.find((m) => m.id === props.value.model);
     const isFollow = props.value.provider === '';
     const triggerLabel = isFollow ? t('modelFollow') : (picked?.name ?? props.value.model);
-    // 当前配置不在清单里（服务商下线 / 模型下架）时如实标注，绝不显示成别的模型
+    // When the current configuration is not in the list (the service provider is offline/the model is removed from the shelves), it will be marked truthfully and will never be displayed as another model.
     const triggerSub = isFollow ? '' : (group?.name ?? props.value.provider + t('modelUnknown'));
 
     const rows = buildModelRows(groups, query);
@@ -83,7 +86,7 @@ export function makeModelPicker(
     useEffect(() => {
       if (!open) return;
       const el = rootRef.current;
-      // 定位 + 关闭时机：浮层脱离文档流实测定位，滚动/缩放跟着走，点外面或 Esc 关。
+      // Positioning + closing timing: The floating layer breaks away from the document flow for actual positioning, scroll/zoom to follow, click outside or Esc to close.
       const place = (): void => {
         if (!el) return;
         setPos(
@@ -94,7 +97,7 @@ export function makeModelPicker(
         );
       };
       place();
-      // 打开即聚焦搜索框（DSH 同样把焦点交给搜索）
+      // Open and focus the search box (DSH also gives focus to search)
       panelRef.current?.querySelector('input')?.focus();
       const onDown = (e: MouseEvent): void => {
         const target = e.target as Node | null;
@@ -122,7 +125,7 @@ export function makeModelPicker(
       if (props.disabled) return;
       if (!open) {
         setQuery('');
-        // 打开时高亮停在当前选择上（DSH 打开菜单也是先定位到已选项）
+        // When opening, the highlight stops on the current selection (DSH also locates the selected option first when opening the menu)
         const at = rows.findIndex(
           (r) => r.kind === 'model' && r.provider === props.value.provider && r.model.id === props.value.model,
         );

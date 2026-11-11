@@ -1,37 +1,43 @@
 /**
- * 全局 DPI 线性化的纯判定与纯换算（不 require electron，可被 node:test 直接加载）。
- * Windows 的 DIP↔物理换算是逐显示器仿射变换，骑缝时两套坐标系横跳：启动前强制 device scale
- * factor = 1 把各屏塌缩成恒等映射，再按探测到的真实主屏缩放补偿回原观感。macOS 的 DIP 即「点」，
- * 该开关只改 backing store、不产生需要补偿的差异，故 darwin 一律不启用；探测与接线不在本文件。
+ * Pure determination and pure conversion of global DPI linearization (not require electron, can be loaded directly by
+ * node:test). Windows's DIP ↔The physical conversion is a monitor-by-monitor affine transformation, and the two
+ * coordinate systems jump horizontally when riding: force device scale before starting
+ * factor = 1 Collapse each screen into an identity mapping, and then scale and compensate according to the detected
+ * real main screen to return to the original look and feel. DIP of macOS is the "point". This switch only changes
+ * backing store and does not produce differences that require compensation. Therefore, darwin will not be enabled;
+ * detection and wiring are not included in this document.
  * @module dsh-pet/runtime/electron-helper/dpi-linearization
  */
 
 'use strict';
 
 /**
- * 是否启用全局 DPI 线性化（并强制 device scale factor）。
+ * Whether to enable global DPI linearization (and force device scale factor).
  *
- * @param o.platform - process.platform。
- * @param o.dpiProbe - 本进程是否就是探测子进程（探测子进程再做一次会无限递归）。
- * @param o.forceDsf - DSH_PET_FORCE_DSF 原始值（'0' = 关闭本机制；正数 = 排障用覆盖）。
- * @returns 是否启用。
+ * @param o.platform - process.platform.
+ * @param o.dpiProbe - Is this process a detection sub-process (detecting the sub-process again will result in infinite
+ * recursion).
+ * @param o.forceDsf - DSH_PET_FORCE_DSF Original value ('0' = turn off this mechanism; positive number = override for
+ * troubleshooting).
+ * Is @returns enabled?
  */
 function shouldLinearize(o = {}) {
-  if (o.dpiProbe) return false; // 探测子进程自己不做
-  if (String(o.forceDsf ?? '') === '0') return false; // 排障开关：整个机制关掉
-  if (o.platform === 'darwin') return false; // macOS：DIP 已是「点」，没有可补偿的东西
+  if (o.dpiProbe) return false; // The child process does not detect itself
+  if (String(o.forceDsf ?? '') === '0') return false; // Troubleshooting switch: The entire mechanism is turned off
+  if (o.platform === 'darwin') return false; // macOS: DIP is already a "point" and there is nothing to compensate for it.
   return true;
 }
 
 /**
- * 实际要强制成的 device scale factor（0 = 不启用）。
+ * device scale factor actually to be forced (0 = not enabled).
  *
- * 正数覆盖优先；探测到真实主屏缩放才锁死 1（恒等映射）；探测失败返回 0——
- * 宁可退回逐屏 DIP 行为，也不做没有补偿的缩放。
+ * Positive number coverage takes priority; only lock 1 (identity mapping) when real main screen scaling is detected;
+ * return 0 if detection fails - it would rather return to screen-by-screen DIP behavior than do scaling without
+ * compensation.
  *
- * @param o.forceDsf - 排障覆盖值。
- * @param o.primaryScale - 探测到的主屏缩放。
- * @returns 强制值。
+ * @param o.forceDsf - Troubleshooting coverage value.
+ * @param o.primaryScale - Home screen zoom detected.
+ * @returns mandatory value.
  */
 function resolveForcedScale(o = {}) {
   const override = Number(o.forceDsf);
@@ -40,9 +46,10 @@ function resolveForcedScale(o = {}) {
 }
 
 /**
- * 渲染端的 CONFIG.scale = 宿主给的基准 × 物理像素补偿。
+ * renderer's CONFIG.scale = base given by host × physical pixel compensation.
  *
- * 只有线性化确实生效且探测到真实主屏缩放时才补偿，否则等于基准（base 缺省/非法回落 1）。
+ * Compensation is only made when linearization is indeed in effect and real main screen scaling is detected, otherwise
+ * it is equal to the baseline (base default/invalid fallback 1).
  */
 function resolvePetScale(o = {}) {
   const base = Number(o.baseScale ?? '1') || 1;

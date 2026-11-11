@@ -1,8 +1,10 @@
 /**
- * 播完判定（src/client/pet/animation/cues.ts）的契约测试。
+ * Contract test for broadcast completion determination (src/client/pet/animation/cues.ts).
  *
- * 三条契约：事件动画播完只回事件链，绝不进随机链；档位动画在非终态下轮换或续播，
- * 终态与空闲则回事件结束；转向、拖拽、点击各自回自己的分支，其余才走随机链。
+ * Three contracts: After the event animation is played, it will only return to the event chain and never enter the
+ * random chain; the state animation will be rotated or continued in the non-final state, and the final state and idle
+ * state will return to the end of the event; turning, dragging, and clicking will each return to their own branches,
+ * and the rest will go to the random chain.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,22 +20,22 @@ const animations = {
   moves: { default: {}, actions: [] },
   categories: [],
   events: {
-    // 两候选档位：播完要轮换；单候选：续播。
+    // Two candidate slots: rotate after broadcasting; single candidate: continue broadcasting.
     workStatus: [['ws-run-a', 'ws-run-b'], 'ws-error'],
     balance: ['bal1'],
   },
 } as unknown as Animations;
 
-describe('decideEndedCue —— 播完之后进哪条分支', () => {
-  test('普通自播动画播完：走随机链', () => {
+describe('decideEndedCue——Which branch to enter after broadcasting?', () => {
+  test('After the normal self-broadcast animation is finished: follow the random chain', () => {
     assert.deepEqual(decideEndedCue({ animations, current: 'idle1', workState: null }), { kind: 'random' });
   });
 
-  test('转向动画播完：回 turn 分支（组件翻转朝向）', () => {
+  test('After the turning animation is played: return to the turn branch (component flip direction)', () => {
     assert.deepEqual(decideEndedCue({ animations, current: 'turn1', workState: null }), { kind: 'turn' });
   });
 
-  test('拖拽与点击动画播完：回互动结束分支', () => {
+  test('After the drag and click animation is finished: return to the interaction end branch', () => {
     assert.deepEqual(decideEndedCue({ animations, current: 'drag1', workState: null }), {
       kind: 'interaction-done',
     });
@@ -42,28 +44,28 @@ describe('decideEndedCue —— 播完之后进哪条分支', () => {
     });
   });
 
-  test('档位动画 + 非终态 + 多候选：轮换到下一候选', () => {
+  test('Gear animation + non-final state + multiple candidates: rotate to the next candidate', () => {
     const cue = decideEndedCue({ animations, current: 'ws-run-a', workState: 'working' });
     assert.equal(cue.kind, 'work-rotate');
-    assert.equal(cue.kind === 'work-rotate' ? cue.anim : '', 'ws-run-b', '轮换要避开当前这一段');
+    assert.equal(cue.kind === 'work-rotate' ? cue.anim : '', 'ws-run-b', 'Avoid the current section during rotation');
   });
 
-  test('档位动画 + 非终态 + 单候选：续播同一段', () => {
+  test('Gear animation + non-final state + single candidate: continue playing the same segment', () => {
     assert.deepEqual(decideEndedCue({ animations, current: 'ws-error', workState: 'error' }), {
       kind: 'event-done',
     });
-    // ws-error 位于单候选档位，但工作状态是终态 error → 回事件结束而不是续播。
+    // ws-error is in the single candidate position, but the working state is the final state error → the event ends instead of continuing.
     assert.deepEqual(decideEndedCue({ animations, current: 'ws-error', workState: null }), { kind: 'event-done' });
   });
 
-  test('事件动画播完（非档位）：回事件结束，不进随机链', () => {
+  test('The event animation is finished (non-stage): the event ends and the random chain is not entered.', () => {
     assert.deepEqual(decideEndedCue({ animations, current: 'bal1', workState: null }), { kind: 'event-done' });
   });
 
-  test('工作状态为终态或空闲：不轮换、不续播', () => {
+  test('The working status is final or idle: no rotation or resumption.', () => {
     for (const state of [null, undefined, 'success', 'error']) {
       const cue = decideEndedCue({ animations, current: 'ws-run-a', workState: state });
-      assert.deepEqual(cue, { kind: 'event-done' }, `state=${String(state)} 应回事件结束`);
+      assert.deepEqual(cue, { kind: 'event-done' }, `state=${String(state)} must return the event-end result`);
     }
   });
 });

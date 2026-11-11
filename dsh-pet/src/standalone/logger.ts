@@ -1,20 +1,22 @@
 /**
- * 独立模式的日志出口：给了文件就落盘，否则只写控制台。
+ * Standalone mode log export: persist to disk if a file is given, otherwise write-only console.
  *
- * 文件模式复用宿主半侧的文件日志器——这个 logger 会挂到伪 ctx.logger 上，插件据此共用同一个
- * 文件出口，避免两份缓冲互相踩。不决定级别与格式（归 ../host/log-file），不判断该不该记。
+ * The file logger of reuse host side in file mode - this logger will be hung on the fake ctx.logger, and the plugin
+ * will share the same file outlet accordingly to avoid the two buffers from stepping on each other. It does not
+ * determine the level and format (returned to ../host/log-file), and it does not determine whether it should be
+ * recorded.
  * @module dsh-pet/src/standalone/logger
  */
 import { createFileLogger } from '../host/log-file.ts';
 import type { StandaloneLogger } from './context.ts';
 
-/** 创建独立模式日志器的选项。 */
+/** Option to create standalone mode logger. */
 export interface StandaloneLoggerOptions {
-  /** 落盘文件；不给则只写控制台。 */
+  /** persist to disk file; if not given, write-only console. */
   file?: string;
 }
 
-/** 创建独立模式日志器。 */
+/** Creating a standalone mode logger. */
 export function createStandaloneLogger(options: StandaloneLoggerOptions = {}): StandaloneLogger {
   if (options.file) {
     return createFileLogger({

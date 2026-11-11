@@ -1,36 +1,37 @@
 /**
- * 对话面板的 react 能力契约（宿主注入，不直接 import react）。
+ * react capability contract for dialog panel (host injection, not import react directly).
  *
- * `h` 就是 `react/jsx-runtime` 的 `jsx`：子节点只能放进 `props.children`，
- * 它的第三个参数是 key 而不是 children——传成变参会把内容静默丢掉（表现为整块空白）。
+ * `h` is `jsx` of `react/jsx-runtime` : child nodes can only be put into `props.children` , and its third parameter is
+ * key instead of children - passing it as a variable parameter will silently discard the content (shown as a whole
+ * block of blank space).
  * @module dsh-pet/src/client/chat/runtime
  */
 import type { Button, ImageLightbox, Modal } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { Key } from './locales/index.ts';
 
-/** 面板文案的翻译函数：`params` 用于 `{name}` 占位符替换。 */
+/** Translation function of panel copy: `params` is used for `{name}` placeholder replacement. */
 export type ChatTranslate = (key: Key, params?: Record<string, unknown>) => string;
 
-/** DSH 的 UI 原语：确认弹窗与图片灯箱都用平台组件，不自己造。 */
+/** UI primitive of DSH: Both the confirmation pop-up window and the image light box use platform components and do not need to be made by yourself. */
 export interface PetChatUi {
   readonly Modal: typeof Modal;
   readonly Button: typeof Button;
-  /** 原图灯箱：点击消息里的图片时用它（与 DSH 会话里的看图完全同一个组件）。 */
+  /** Original image lightbox: Use it when clicking on the image in the message (exactly the same component as the image viewing in the DSH session). */
   readonly ImageLightbox: typeof ImageLightbox;
 }
 
-/** 组件与 hook 需要的 react 子集。 */
+/** Component with hook requires subset react. */
 export interface ChatPanelRuntime {
-  /** 创建元素；子节点写进 `props.children`。 */
+  /** Create element; child node is written to `props.children`. */
   h: (type: unknown, props?: Record<string, unknown> | null) => unknown;
-  /** 状态。 */
+  /** Status. */
   useState: <T>(init: T) => [T, (next: T | ((prev: T) => T)) => void];
-  /** 副作用。 */
+  /** side effect. */
   useEffect: (effect: () => void | (() => void), deps: readonly unknown[]) => void;
-  /** 跨渲染引用。 */
+  /** Cross-render reference. */
   useRef: <T>(initial: T) => { current: T };
-  /** 文案翻译；读取的是宿主当前语言，随语言切换即时生效。 */
+  /** Text translation; what is read is the current language of the host, and it takes effect immediately when the language is switched. */
   readonly t: ChatTranslate;
-  /** 平台 UI 原语；缺失时确认弹窗退化为内联确认条。 */
+  /** Platform UI primitive; when missing, the confirmation pop-up window degenerates into an inline confirmation bar. */
   readonly ui?: PetChatUi;
 }

@@ -1,8 +1,10 @@
 /**
- * 余额拉取与周期换算：按配置取周期、刷新余额并写进轮询快照。
+ * Balance pulling and period conversion: fetch the period according to the configuration, refresh the balance and
+ * write it into the polling snapshot.
  *
- * 不实现各服务商的取数协议（归 ./balance/providers）。
- * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
+ * The number access protocol of each service provider is not implemented (returned to ./balance/providers).
+ * Dependencies are explicitly passed in by apply (see input type), and the module does not read globals or create
+ * singletons.
  * @module dsh-pet/src/host/plugin/balance-poll
  */
 import { flattenPetList, readAllConfig } from '../config.ts';
@@ -15,9 +17,9 @@ import type { ChatMemory } from './chat-memory.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 
-/** 余额与周期的输入：装配期对象与更早的工厂。 */
+/** Input of balance and period: assembly period objects and earlier plants. */
 export type BalancePollInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<HostSetup, 'configPaths'> &
   Pick<ChatMemory, 'getActivePetId'> &
@@ -26,22 +28,25 @@ export type BalancePollInput = {
   Pick<HostSetup, 'state'>;
 
 /**
- * 创建余额与周期。
+ * Create balance and period.
  */
 export function createBalancePoll(deps: BalancePollInput) {
   const { ctx, configPaths, getActivePetId, log, state, standaloneAiBalance } = deps;
-  /** 当前生效宠物列表：成品配置拍平（合并器已保证 id 唯一、字段填满），命令与桌面模式共用。 */
+  /** Currently effective pet list: the resolved configuration is flat (the merger has ensured that id is unique and the fields are filled), and the command is shared with desktop mode. */
   const effectivePetList = (): Record<string, unknown>[] => flattenPetList(readAllConfig(configPaths));
 
-  /** 余额刷新周期（秒）：成品 main 条目的 eventsRefreshSec.balance（合并器已填默认；非法兜底 1800） */
+  /** Balance refresh period (seconds): eventsRefreshSec.balance of resolved value main entry (the combiner has filled in the default; invalid fallback 1800) */
   const balancePeriodSec = (cfg: Record<string, Record<string, unknown>>): number => {
     const ers = cfg.main?.eventsRefreshSec as Record<string, unknown> | undefined;
     const n = Number(ers?.balance);
     return Number.isFinite(n) && n > 0 ? n : 1800;
   };
 
-  /** 碎碎念周期（秒）：该宠物所属条目的 eventsRefreshSec.whisper（合并器已填默认；非法兜底 300）。
-   *  收已解析的条目配置：唯一调用方是周期调度，它的 petId 就是从同一份 cfg 拍平出来的。 */
+  /**
+   * whisper period (seconds): eventsRefreshSec.whisper of the entry to which the pet belongs (the merger has filled in
+   * the default; invalid fallback 300). Collect the parsed entry configuration: the only caller is periodic
+   * scheduling, and its petId is flattened from the same cfg.
+   */
   const whisperPeriodSec = (conf: Record<string, unknown>): number => {
     const ers = conf.eventsRefreshSec as Record<string, unknown> | undefined;
     const n = Number(ers?.whisper);
@@ -49,8 +54,9 @@ export function createBalancePoll(deps: BalancePollInput) {
   };
 
   /**
-   * 账号服务要求的调用方身份（`AccountClientMetadata`）：只影响请求来源标识与服务端本地化文案，
-   * 不参与余额数值与币种。version 读自身 package.json（读不到回落 '0.0.0'）；locale 固定 zh-CN。
+   * The caller identity required by the account service (`AccountClientMetadata`): only affects the request source
+   * identifier and server localization copy, and does not affect the balance value and currency. version reads itself
+   * package.json (cannot read fallback '0.0.0'); locale fixes zh-CN.
    */
   const accountClientMetadata = (): { version: string; locale: string; timezoneOffsetSeconds: number } => {
     let version = '0.0.0';
@@ -58,26 +64,30 @@ export function createBalancePoll(deps: BalancePollInput) {
       const raw = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as { version?: unknown };
       if (typeof raw.version === 'string' && raw.version.length > 0) version = raw.version;
     } catch {
-      // 读不到不影响查询：version 只是平台侧的来源标识
+      // Failure to read does not affect the query: version is just the source identifier on the platform side
     }
     return { version, locale: 'zh-CN', timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60 };
   };
 
   /**
-   * 刷新余额并写入轮询状态：host 侧唯一的余额查询点，两端从 /state 读同一份结果。
-   * 失败也写进状态（reason 区分 unsupported / credential-missing / fetch-error）：余额不可用要弹
-   * 文字说明，不能静默；意外异常同样落成 fetch-error。
+   * Refresh the balance and write the polling status: The only balance query point on the host side, and both ends
+   * read the same result from / state. Failure is also written into the status (reason distinguishes unsupported /
+   * credential-missing / fetch-error): If the balance is unavailable, a text description must be played and cannot be
+   * silent; unexpected exceptions are also completed fetch-error.
    *
-   * @param manual - 这次刷新是否由用户触发（/balance 命令、桌面「查看余额」菜单）；标记随数据写进
-   *   叶子，前端据此决定余额不可用时是否必弹文字说明（周期刷新只在原因变化时弹一次）。
+   * @param manual - Whether this refresh is triggered by the user (/ balance command, desktop "View Balance" menu);
+   * the mark is written with the data
+   * Leaf, based on which the front end decides whether the text description must be played when the balance is
+   * unavailable (the periodic refresh only plays once when the reason changes).
    */
   const refreshBalance = async (manual = false): Promise<void> => {
-    // 开始 + 结果各一行：否则 logs.txt 里既看不出「有没有查」，也看不出「查了但余额没变」。
-    log.info(`[dsh-pet] 余额刷新开始（${manual ? '手动' : '周期'}）`);
+    // Start + Result each have one line: Otherwise, neither "Has it been checked" nor "Checked but the balance has not changed" can be seen in logs.txt.
+    log.info(`[dsh-pet] Balance refresh started (${manual ? 'manual' : 'scheduled'})`);
     const mark = <T>(v: T): T | (T & { manual: true }) => (manual ? { ...v, manual: true } : v);
     try {
-      // 独立模式自己选余额服务商、自己持密钥：它的 provider 不是聊天用的那个，
-      // 也不能经 DSH 的 credential store 解析，所以优先走 standaloneAi 交出来的凭证。
+      // In standalone mode, you choose the balance service provider and hold the key yourself: its provider is not
+      // the one used for chatting, and it cannot be parsed by DSH’s credential store, so the certificate handed over
+      // by standaloneAi is given priority.
       const standalone = standaloneAiBalance();
       const provider = standalone?.provider || ctx.agentDefaultModel.currentSelection().provider;
       const result = await queryBalance(
@@ -87,9 +97,10 @@ export function createBalancePoll(deps: BalancePollInput) {
           const rc = await ctx.credentials.resolve(credentialRef(ref));
           return rc?.value;
         },
-        // `deepseek-account`（免费额度 / 平台登录）没有 API Key：它的凭证是 DSH 账号服务
-        // 持有的授权记录，只能经 getBalance 查询。账号服务是可选服务（软取，不放进 inject）
-        // ——没装账号插件时它不在场，此时该路由报 credential-missing 而不是崩。
+        // `deepseek-account` (free quota/platform login) does not have API Key: Its certificate is the authorization
+        // record held by the DSH account service, which can only be queried through getBalance. The account service is
+        // an optional service (soft fetch, do not put inject) - it is not present when the account plugin is not
+        // installed. At this time, the route reports credential-missing instead of crashing.
         async () => {
           const account = ctx.get('deepseekAccount', false);
           if (!account) return undefined;
@@ -97,13 +108,14 @@ export function createBalancePoll(deps: BalancePollInput) {
         },
       );
       state.writeSection('balance', mark(result));
-      // 失败也写 S（前端弹文字说明），日志同样留一条：否则「查了、失败了」与「根本没查」
-      // 在文件里长得一模一样。成功用 info，失败用 warn（亮度不同，扫一眼就能分辨）。
+      // If it fails, write S (front-end pop-up text description), and also leave a message in the log: otherwise
+      // "checked, failed" and "not checked at all" will look exactly the same in the file. Use info for success, and
+      // warn for failure (the brightness is different, you can tell it at a glance).
       if (result.ok) {
-        log.info(`[dsh-pet] 余额刷新成功 provider=${result.provider}（${result.shape}）`);
+        log.info(`[dsh-pet] Balance refresh succeeded provider=${result.provider} (${result.shape})`);
       } else {
         log.warn(
-          `[dsh-pet] 余额刷新失败 provider=${result.provider} reason=${result.reason}` +
+          `[dsh-pet] Balance refresh failed provider=${result.provider} reason=${result.reason}` +
             (result.message ? ' ' + result.message : ''),
         );
       }
@@ -118,11 +130,11 @@ export function createBalancePoll(deps: BalancePollInput) {
           message,
         }),
       );
-      log.warn('[dsh-pet] 余额刷新异常：' + message);
+      log.warn('[dsh-pet] Balance refresh threw an error:' + message);
     }
   };
 
-  /** 当前交互桌宠 id：/pet 已选且仍存在 → 该宠物；未选/已失效 → 有效宠物列表第一只（进程内，重启回默认） */
+  /** Current interaction desktop pet id: / pet selected and still exists → the pet; unselected/invalid → the first pet in the valid pet list (in-process, restart to default) */
   const resolveActivePetId = (): string => {
     try {
       const eff = effectivePetList();
@@ -134,12 +146,12 @@ export function createBalancePoll(deps: BalancePollInput) {
     }
   };
 
-  /** 宠物的显示名（name，缺失回落 id）——命令文案用 */
+  /** Pet's display name (name, missing fallback id) - for command text */
   const petDisplayName = (pet: Record<string, unknown>): string => {
     const n = String(pet.name ?? '').trim();
     return n || String(pet.id ?? '');
   };
   return { effectivePetList, balancePeriodSec, whisperPeriodSec, refreshBalance, resolveActivePetId, petDisplayName };
 }
-/** 余额与周期的产出（供下游工厂按需 Pick）。 */
+/** Balance and cycle output (for downstream factories on demand Pick). */
 export type BalancePoll = ReturnType<typeof createBalancePoll>;

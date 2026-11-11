@@ -1,10 +1,10 @@
-/** DSH 本机记忆管理接口；模型凭据只进入准备流程，不回显。 */
+/** DSH native memory management interface; model credentials only enter the preparation process and are not echoed. */
 import { setupErrorCode } from '../../standalone/setup-models.ts';
 import { readAllConfig } from '../config.ts';
 import type { RouteHandler } from './types.ts';
 import { failResult, methodNotAllowed, okResult } from './result.ts';
 
-/** 返回准备进度与落盘的记忆绑定，供设置页同步表单。 */
+/** Return the memory binding of preparation progress and persist to disk for setting page synchronization form. */
 export const handleMemorySetupRoutes: RouteHandler = async (deps, { rest, method, body }) => {
   if (rest !== 'powercontext/setup') return;
   if (method !== 'GET' && method !== 'POST') return methodNotAllowed();

@@ -1,8 +1,10 @@
 /**
- * 会话事件到系统通知的判定：完成提醒、终止清理与活动去抖。
+ * Determination of session events to system notifications: completion reminder, termination cleanup and activity
+ * debouncing.
  *
- * 不订阅事件（订阅在装配层），不渲染气泡；只做纯判定与定时器。
- * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
+ * No subscribe event (subscribe is in the assembly layer), no bubble rendering; only pure judgment and timer. The
+ * dependency is explicitly passed in by apply (see input type), and the global is not read in the module and no
+ * singleton is created.
  * @module dsh-pet/src/host/plugin/session-notify
  */
 import { hasBlockingActivity, reduceNotifyFrame, withSessionId, type HostNotifyFrame } from '../notify-events.ts';
@@ -11,58 +13,64 @@ import type { WorkStatusBridge } from './work-status-bridge.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 
-/** 在途调用的键：宿主给的 `callId`；没有标识时用临时 `Symbol` 占位。 */
+/** The key called in transit: `callId` given by the host; when there is no identification, use the temporary `Symbol` placeholder. */
 export type ToolCallKey = string | symbol;
 
-/** 每会话在途调用的记账表：会话标识 → （调用键 → 气泡文案）。 */
+/** Accounting table for in-flight calls per session: session ID → (call key → bubble copy). */
 export type ToolCallLedger = Map<string, Map<ToolCallKey, string>>;
 
-/** 会话通知的输入：装配期对象与更早的工厂。 */
+/** Input for session notifications: assembly-time objects and earlier factories. */
 export type SessionNotifyInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<WorkStatusBridge, 'publishWorkStatus'> &
   Pick<HostSetup, 'state'> &
   Pick<HostSetup, 'workStatus'>;
 
 /**
- * 创建会话通知。
+ * Create session notification.
  */
 export function createSessionNotify(deps: SessionNotifyInput) {
   const { ctx, publishWorkStatus, state, workStatus } = deps;
-  // 系统通知帧：host 监听 DSH 宿主事件生成通知帧（帧契约与 shared/notify.ts 一致），写进 S 的
-  // sections.notify，浏览器轮询 /state 后弹 toast。
-  // 单槽（后到覆盖先到）：1 秒内连弹多条本身没有意义，所以不带 seq / 增量帧队列。
+  // System notification frame: host monitors the DSH host event to generate a notification frame (the frame contract
+  // is consistent with shared/notify.ts), writes sections.notify of S, and the browser polls / state and then pops up
+  // toast. Single slot (last-come, first-come): there is no meaning in playing multiple slots within 1 second, so
+  // there is no seq/incremental frame queue.
   const pushNotifyFrame = (frame: HostNotifyFrame): void => {
     state.writeSection('notify', frame);
   };
 
   const turnFlags = new Map<string, WorkStatusTurnContext>();
 
-  /** 终态（success/error）展示窗口定时器：约 60s 后清掉该会话条目，陈旧完成态不再浮上来。 */
+  /** The final state (success/error) display window timer: clear the session entry after about 60 s, and the stale completion state will no longer appear. */
   const terminalTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const TERMINAL_KEEP_MS = 60 * 1000;
 
   /**
-   * 每会话最近一条 todo 文案：工具跑完要把气泡「还」给它。没有这份缓存，`tool/result` 写 null
-   * 就只能回落到通用档位文案，用户刚看到的清单进度会被抹掉。
+   * The latest todo copy in each session: The bubble must be "returned" to it after the tool is finished running.
+   * Without this cache, writing `tool/result` to null can only fallback to the general file copy, and the list
+   * progress the user just saw will be erased.
    */
   const lastTodoText = new Map<string, string | null>();
 
   /**
-   * 每会话最后一段回复文本：完成通知的正文靠它。排活动门定时器时取用即出队——活动门会把它延后
-   * 1.5s，但待确认期间文本不会再变；留到定时器里再删，遇到「判定还有活」提前返回就成了长期残留。
+   * The last paragraph of reply text in each conversation: it relies on it to complete the text of the notification.
+   * Dequeue the activity gate timer when it is taken - the activity gate will delay it
+   * 1.5 s, but the text will not change during the period of confirmation; leave it in the timer and then delete it.
+   * If it is returned early when it is "determined to be alive", it will become a long-term residue.
    */
   const lastReplyText = new Map<string, string>();
 
   /**
-   * 每会话在途调用的详情：键为调用标识（缺标识时用临时 `Symbol`），值为气泡文案。
-   * 结果事件只删自己那一条，并行调用因此不会互相顶掉，全部删完才回落 todo 文案。
+   * Details of in-transit calls for each session: the key is the call identifier (use temporary `Symbol` when the
+   * identifier is missing), and the value is the bubble copy. As a result, only one of the events is deleted, so the
+   * parallel calls will not override each other. The fallback todo text is only completed after all are
+   * deleted.
    */
   const toolsInFlight: ToolCallLedger = new Map();
 
-  /** 取消某会话待执行的终态清理：会话已回到非终态，那次清理到点后既不清理也不重排，留着只会误导 */
+  /** Cancel the pending final state cleanup of a session: the session has returned to a non-final state. After the cleanup is completed, it will neither be cleaned nor rearranged. Keeping it will only mislead. */
   const cancelTerminalCleanup = (sessionId: string): void => {
     const t = terminalTimers.get(sessionId);
     if (t === undefined) return;
@@ -70,37 +78,40 @@ export function createSessionNotify(deps: SessionNotifyInput) {
     terminalTimers.delete(sessionId);
   };
 
-  /** 排一个终态清理定时器（每会话一个，已排则跳过） */
+  /** Schedule a final state cleanup timer (one per session, skip if already scheduled) */
   const scheduleTerminalCleanup = (sessionId: string): void => {
     if (terminalTimers.has(sessionId)) return;
     const t = setTimeout(() => {
       terminalTimers.delete(sessionId);
       const sessionState = workStatus.stateOf(sessionId);
       if (sessionState === 'success' || sessionState === 'error') {
-        workStatus.clear(sessionId); // 条目连同它的任务详情文案一起消失，不残留到后续活动
+        workStatus.clear(sessionId); // The entry disappears together with its task details copy and does not remain in subsequent activities.
         turnFlags.delete(sessionId);
-        lastTodoText.delete(sessionId); // 会话都没了，这两份按会话记的缓存也一起清（防泄漏）
+        lastTodoText.delete(sessionId); // All sessions are gone, and the two caches recorded by sessions are also cleared together (to prevent leakage)
         toolsInFlight.delete(sessionId);
-        publishWorkStatus(); // 清完要写 S：否则前端一直挂着那条陈旧完成态
+        publishWorkStatus(); // Write S after clearing: otherwise the front end will always hang with the stale completion status
       }
     }, TERMINAL_KEEP_MS);
     terminalTimers.set(sessionId, t);
   };
 
-  // 通知活动门（issue #114）：「对话完成」先挂起，到点确认这条会话确实没活了再弹
-  // （在跑的子代理 / 团队成员、后台任务、活跃提醒任一非空 → 丢弃这一帧）。
-  // 不能同步查：`workspace/session-activity` 读的是活 Agent 的 status，而 turn/end 是在回合体的
-  // finally 里追加的——同步那一刻自己还是 running，照「任一非空就不弹」写会把通知全吞掉。
-  // 判据不可用（宿主没组合 workspace、伪 ctx 没有 waterfall、抛错）→ 一律放行，宁可多弹一条。
+  // Notification activity gate (issue #114): "Conversation Completed" is suspended first, and then it is confirmed
+  // that the session is indeed dead and then played again (any of the running subagents/team members, background
+  // tasks, and active reminders is not empty → discard this frame). Unable to synchronize the query:
+  // `workspace/session-activity` reads the status of the live Agent, and turn/end is added to the finally of the turn
+  // body - at the moment of synchronization, it is still running. Writing according to "If it is not empty, it will
+  // not play" will swallow up the notification. The criterion is not available (the host has no combination of
+  // workspace, the fake ctx does not have waterfall, and the error is thrown) → all are allowed, and it is better to
+  // play one more.
   const NOTIFY_ACTIVITY_DELAY_MS = 1500;
 
-  /** 每会话一个待查定时器（同会话连续收尾只保留最后一次：后到覆盖先到，与单槽帧同语义） */
+  /** One pending timer per session (continuous cleanup in the same session only retains the last one: last-come overrides first-come, same semantics as single-slot frame) */
   const notifyActivityTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  /** waterfall 只用到签名本身：DSH 未导出该事件的请求/响应类型，这里宽松声明（与 ctx 同为 any 的现状一致） */
+  /** waterfall only uses the signature itself: DSH does not export the request/response type of this event, which is loosely stated here (consistent with the current situation that ctx is also any) */
   type Waterfall = (name: string, request: unknown, next: () => Promise<unknown[]>) => Promise<unknown>;
 
-  /** 这条会话是否还有在跑的活；判据不可用一律 false＝放行 */
+  /** Is this session still running? If the criterion is unavailable, false = Release */
   const sessionHasRunningWork = async (sessionId: string): Promise<boolean> => {
     const waterfall = (ctx as { waterfall?: Waterfall }).waterfall;
     if (typeof waterfall !== 'function') return false;
@@ -110,13 +121,13 @@ export function createSessionNotify(deps: SessionNotifyInput) {
       );
       return hasBlockingActivity(activity);
     } catch {
-      return false; // 查询失败不阻塞通知（与「判据不可用时放行」同一策略）
+      return false; // Query failure does not block notification (same policy as "release when criterion is unavailable")
     }
   };
 
-  /** 排一个活动门定时器：到点确认空闲才推这一帧 */
+  /** Schedule an activity gate timer: push this frame only when the point is confirmed to be idle. */
   const scheduleCompletionNotify = (sessionId: string, event: unknown): void => {
-    // 取用即出队：同一回合的 assistant/message 已经到齐，文本不会再变。
+    // Dequeue as soon as you take it: assistant/message of the same round has arrived, and the text will not change.
     const replyText = lastReplyText.get(sessionId);
     lastReplyText.delete(sessionId);
     const prev = notifyActivityTimers.get(sessionId);
@@ -126,9 +137,9 @@ export function createSessionNotify(deps: SessionNotifyInput) {
       setTimeout(() => {
         notifyActivityTimers.delete(sessionId);
         void (async () => {
-          if (await sessionHasRunningWork(sessionId)) return; // 还有活：等真正的收尾轮再弹
+          if (await sessionHasRunningWork(sessionId)) return; // There is still work: wait for the real cleanup round before playing again
           const frame = reduceNotifyFrame(event as Parameters<typeof reduceNotifyFrame>[0], replyText);
-          // 这条延迟路径（活动门等 1.5s 确认没活了才推的「对话完成」）最常被点，同样要带会话 id
+          // This delay path (activity gate, etc. 1.5 s, push "Conversation Completed" after confirming that it is not alive) is most commonly clicked, and it also requires session id
           if (frame) pushNotifyFrame(withSessionId(frame, sessionId));
         })();
       }, NOTIFY_ACTIVITY_DELAY_MS),
@@ -147,5 +158,5 @@ export function createSessionNotify(deps: SessionNotifyInput) {
     scheduleCompletionNotify,
   };
 }
-/** 会话通知的产出（供下游工厂按需 Pick）。 */
+/** Output of session notification (Pick for downstream factories on demand). */
 export type SessionNotify = ReturnType<typeof createSessionNotify>;

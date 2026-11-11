@@ -1,25 +1,28 @@
 /**
- * 余额查询入口：/balance 主动刷新并返回成品快照。
+ * Balance query entry point: / balance actively refreshes and returns the resolved value snapshot.
  *
- * 不实现各服务商的取数协议（归 ./balance/providers）。
- * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
+ * The number access protocol of each service provider is not implemented (returned to ./balance/providers). The
+ * dependency (PetRouteDeps) is passed in explicitly, and the module does not read the global state or build the
+ * status.
  * @module dsh-pet/src/host/routes/balance
  */
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
 import { methodNotAllowed, okResult } from './result.ts';
 
-/** 余额领域：未命中返回 undefined，命中返回应答。 */
+/** Balance field: undefined is returned for misses and response is returned for hits. */
 export async function handleBalanceRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { refreshBalance } = deps;
   const { method, rest } = input;
 
-  // 余额：POST /balance 立即刷新一次并写入 S，返回 {ok}——不返回余额数据，数据只有 /state 一个出口。
-  // 前端已不再各自定时查余额，也没有计数轮询中转端点。
+  // Balance: POST /balance Immediately refresh once and write S, return { ok } - no balance data is returned, the
+  // data only has one outlet / state. The front-end no longer checks the balance regularly, and there is no counting
+  // polling transfer endpoint.
   if (rest === 'balance') {
     if (method !== 'POST') return methodNotAllowed();
-    await refreshBalance(true); // manual：用户主动要的，余额不可用时前端必弹文字说明
-    // ok 只表示「这次刷新动作完成了」；余额本身是否可用在 S 的 data 里（ok:false 会弹文字说明气泡）
+    await refreshBalance(true); // manual: The user actively requests it. When the balance is unavailable, the front end will pop up a text
+    // description. ok only means "this refresh action is completed"; whether the balance itself can be used in data of S
+    // (ok:false will pop up a text description bubble)
     return okResult({ ok: true });
   }
 

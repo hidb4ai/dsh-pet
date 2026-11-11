@@ -7,7 +7,7 @@ import { apply } from './index.ts';
 import { createStandaloneContext, type StandaloneLogger } from '../standalone/context.ts';
 import { listenStandaloneServer, type StandaloneServer } from '../standalone/server.ts';
 
-// 用隔离存储在 HTTP 上跑真实路由；不需要素材，也不触发模型调用。
+// Use isolated storage to run the real route on HTTP; no asset is required, and model calls are not triggered.
 const pet = {
   id: 'main',
   name: 'Blue',

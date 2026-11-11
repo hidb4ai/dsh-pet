@@ -1,15 +1,17 @@
-# 设置页浏览器回归
+# Browser and script regression checks
 
-在 `dsh-pet/` 包目录运行：
+English · [简体中文](README.zh.md)
+
+Run from the inner `dsh-pet/` package:
 
 ```sh
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm exec playwright install chromium
-npm run test:ui
+pnpm test:ui
 ```
 
-Linux CI 缺少系统库时用 `pnpm exec playwright install --with-deps chromium`。
+On Linux CI, use `pnpm exec playwright install --with-deps chromium` if system libraries are missing.
 
-测试用真实 React 和 Chromium 渲染设置页，拦截配置与模型接口，验证加载、失败重试、恢复默认与保存，以及中英文窄窗口布局。只访问临时本地服务，不读取或修改用户的 DSH 配置。与 `npm test` 的 Node 单元测试分开运行，普通插件安装不下载浏览器。
+The settings tests render real React in Chromium and intercept local configuration/model APIs. They cover loading, failed requests, retry, defaults, saving, and narrow English/Chinese layouts. They use temporary local services and do not read or modify your personal DSH configuration. Run them separately from `pnpm test`; installing the pet does not download a test browser.
 
-可选设置 `DSH_PET_UI_ARTIFACTS` 为输出目录，保存布局截图。桌面 Electron 窗口、操作系统点击穿透和显示器缩放仍需另做运行时测试。
+Set `DSH_PET_UI_ARTIFACTS` to a directory outside the checkout when saving layout screenshots. Native Electron windows, OS click-through and display scaling need separate runtime checks. See the [development guide](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/en/reference/development.md).

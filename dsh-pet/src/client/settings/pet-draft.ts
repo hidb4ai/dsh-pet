@@ -1,21 +1,23 @@
 /**
- * 「添加宠物」的草稿构造：新 id 的分配与从模板拷贝哪些字段。
- * 只拷贝条目级之外的实例字段——条目级字段（人设之外的全局值）由成品配置回落，不在这里抄一份。
+ * Draft structure of "Add Pet": assignment of new id and which fields to copy from template. Only copy instance fields
+ * outside the entry level - entry-level fields (global values outside persona) are configured by the resolved value
+ * fallback, so I will not copy them here.
  * @module dsh-pet/src/client/settings/pet-draft
  */
 import type { Pet } from '../../shared/types.ts';
 import { SIZE_PERCENT_DEFAULT } from '../../shared/pet-size.ts';
 
 /**
- * 生成一个未占用的宠物 id。
+ * Generate an unoccupied pet id.
  *
- * 前缀按种类区分：main 沿用 `pet-N`（既有行为），文件宠物用 `<种类>-N`，编号在种类内递增。
- * 查重始终扫全量列表——合并后 id 跨条目全局唯一，各数各的必然撞。
- * 从 2 起：`-1` 通常已被该种类的首只占用（`daily1` 这类手工 id 不占号）。
+ * Prefixes are distinguished by type: main follows `pet-N` (existing behavior), file pets use `<pet-type>-N` , and the
+ * number increases within the type. Duplicate checking always scans the entire list - after merging, id is globally
+ * unique across entries, and each number will inevitably collide. Starting from 2: `-1` is usually occupied by the
+ * first one of this type (`daily1` and this kind of manual id do not occupy the number).
  *
- * @param list - 全条目的实例列表，只读。
- * @param kind - 条目名（`main` 或 pet/<前缀>-config.json 的前缀）；缺省按 main。
- * @returns 形如 `pet-2` / `daily-2` 的空闲 id。
+ * @param list - Full entry instance list, read-only.
+ * @param kind - entry name (`main` or pet /<prefix>- the prefix of config.json); the default is main.
+ * @returns is an idle id in the shape of `pet-2` / `daily-2` .
  */
 export function nextPetId(list: readonly Pet[], kind = 'main'): string {
   const prefix = kind === 'main' ? 'pet' : kind;
@@ -26,12 +28,14 @@ export function nextPetId(list: readonly Pet[], kind = 'main'): string {
 }
 
 /**
- * 按模板造一只新宠物的草稿。
- * 名字固定用新 id：模板名字是另一只宠物的身份，继承了就会两只同名，而空名字在宿主侧本来也按 id 处理。
+ * A draft to create a new pet based on the template. The name is fixed to use the new id: the template name is the
+ * identity of another pet. If it is inherited, two pets will have the same name. The empty name is also treated as id
+ * on the host side.
  *
- * @param template - 模板宠物（main 条目的首只）。
- * @param id - 新宠物的 id，通常来自 {@link nextPetId}。
- * @returns 可直接进编辑列表的宠物对象；位置深拷贝，改新宠物不会动到模板。
+ * @param template - Template pets (the first of the main entries).
+ * @param id - id for new pets, usually from {@link nextPetId} .
+ * @returns can directly enter the pet object in the edit list; the position is copied deeply, and the template will
+ * not be moved when changing the pet.
  */
 export function draftPet(template: Pet, id: string): Pet {
   return {

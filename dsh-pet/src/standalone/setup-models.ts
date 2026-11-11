@@ -41,13 +41,13 @@ export function setupErrorMessage(error: unknown): string {
   );
 }
 
-/** 只公开已知错误码，未知异常正文可能包含模型密钥或本机路径。 */
+/** Only known error codes are disclosed, unknown exception text may contain model keys or local paths. */
 export function setupErrorCode(error: unknown): string {
   const code = error instanceof Error ? error.message : '';
   return code in setupErrors ? code : code === 'setup_busy' ? code : 'setup_failed';
 }
 
-/** DSH 模式只检查记忆抽取模型，不修改宿主聊天模型或凭据。 */
+/** DSH mode only checks the memory extraction model and does not modify the host chat model or credentials. */
 export async function checkGeneration(models: MemoryModels, signal: AbortSignal): Promise<void> {
   const timeout = AbortSignal.timeout(30_000);
   try {

@@ -1,10 +1,11 @@
 /**
- * 睡觉：`POST /sleep?pet=` 让它睡下，`POST /wake?pet=` 叫醒。
+ * Sleeping: `POST /sleep?pet=` puts it to sleep, `POST /wake?pet=` wakes it up.
  *
- * 宿主只做两件事：挑一套动画名字写进 `pets.<id>.sleep`，以及把这只宠物从自动来源里摘出去；
- * 播 start → loop → end 的时机由渲染端负责（视频播完只有它知道）。
- * 三段名字在这里定死，渲染端不再自己挑——否则两端会播到不同的一套。
- * 失败一律 HTTP 200 + 失败实体；方法错由协议构造器给真实状态码。
+ * The host only does two things: select a set of animation names and write them into `pets.<id>.sleep` , and remove
+ * this pet from the automatic source; the timing of playing start → loop → end is the responsibility of the renderer
+ * (only it knows when the video is finished). The three-part name is fixed here, and the renderer no longer chooses it
+ * by itself - otherwise different sets will be broadcast at both ends. Failure is always HTTP 200 + failed entity;
+ * method errors are given real status codes by the protocol constructor.
  * @module dsh-pet/src/host/routes/sleep
  */
 import { readAllConfig } from '../config.ts';
@@ -13,11 +14,11 @@ import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
 import { failResult, methodNotAllowed, okResult } from './result.ts';
 
-/** 睡觉领域：未命中返回 undefined，命中返回应答。 */
+/** Sleeping area: undefined is returned for misses, and response is returned for hits. */
 export async function handleSleepRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { configPaths, lock, requirePet, sleep, state } = deps;
   const { method, rest, url } = input;
-  // 两个分支各写一次与字面量的相等判断：check-openapi 按这种写法收集宿主实现的路由
+  // Each of the two branches writes once to determine the equality of the literal: check-openapi. According to this writing method, collect the route implemented by the host.
   const isSleep = rest === 'sleep';
   const isWake = rest === 'wake';
   if (!isSleep && !isWake) return undefined;
@@ -29,26 +30,26 @@ export async function handleSleepRoutes(deps: PetRouteDeps, input: RouteInput): 
 
     const texts = sleepTextsOf(who.conf);
     if (rest === 'wake') {
-      // 叫醒永远安全：锁住时它本来就已经被锁叫醒了，这里幂等回 ok
+      // It is always safe to wake up: when it is locked, it has already been woken up by the lock. Here, the idempotent answer is ok
       const changed = sleep.wake(who.petId);
-      // 醒来台词：与入睡同一套口径（配置里随机挑一句，只弹气泡不换动画）
+      // Lines for waking up: the same conventions as falling asleep (randomly pick a line from the configuration, only play bubbles without changing the animation)
       const text = pickSleepText(texts.end);
       if (text !== undefined) state.writePet(who.petId, 'say', { text, anim: false });
       return okResult({ ok: true, sleeping: false, changed });
     }
 
-    // 锁在睡之前：锁 = 第三方接管，并且取锁时已经把它叫醒；占用期间不允许再睡下
+    // Lock before going to sleep: lock = third party takes over, and has woken it up when taking the lock; no more sleep is allowed during the occupation period
     if (lock.locked(who.petId)) {
       return failResult('locked', '这只桌宠正被占用，不能睡觉');
     }
-    // 入睡：整套 + 段内各自随机挑一个；该条目没配睡觉动画时明确拒绝，不静默罚站。
+    // Falling asleep: the whole set + randomly select one from each section; if the entry does not have a sleeping animation, it will be explicitly rejected and will not be punished by standing silently.
     const names = pickSleepNames(who.conf.animations);
     if (names === null) {
       return failResult('no-sleep-animations', '这只宠物没有配置睡觉动画（animations.sleep）');
     }
-    // 已经在睡：保持原套（重复调用不该把动画从头放一遍），仍回 ok 让调用方幂等重试
+    // Already sleeping: keep the original set (repeated calls should not play the animation from the beginning), still return ok to let the caller retry idempotently.
     const changed = sleep.enter(who.petId, names);
-    // 入睡台词只在真的进入睡眠时弹一次（幂等重复调用不该重复说话）
+    // The falling asleep line is only played once when you actually go to sleep (idempotent repeated calls should not repeat the speech)
     if (changed) {
       const text = pickSleepText(texts.start);
       if (text !== undefined) state.writePet(who.petId, 'say', { text, anim: false });

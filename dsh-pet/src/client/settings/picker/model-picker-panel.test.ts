@@ -1,12 +1,14 @@
 /**
- * 模型选择器浮层的契约测试。
+ * Contract testing of model selector overlay.
  *
- * 三条契约：
- *   1. 三态分明：清单没拉到显示「加载中」/「拉取失败」，清单为空或搜索没命中显示对应空态，绝不静默留白；
- *   2. 选中态来自当前值：`aria-checked` 只落在真正选中的那一行上，高亮行另有 `is-active` 类；
- *   3. 禁用透传：选择器禁用时搜索框与每一行都不可点。
+ * Three contracts:
+ * 1. Three distinct states: "Loading"/"Pull failed" is displayed when the list is not pulled, and the corresponding
+ * empty state is displayed when the list is empty or the search fails, and it is never left blank;
+ * 2. The selected state comes from the current value: `aria-checked` only falls on the line that is actually selected,
+ * and the highlighted line also has the `is-active` class;
+ * 3. Disable transparent transmission: When the selector is disabled, the search box and each row cannot be clicked.
  *
- * 用假的 `h` 记录节点树（不引 jsdom，也不渲染真实 DOM）。
+ * Record the node tree with a fake `h` (does not reference jsdom and does not render the real DOM).
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +17,7 @@ import type { jsx } from 'react/jsx-runtime';
 import { buildModelRows } from './model-rows.ts';
 import { buildModelPanel, type ModelPanelView } from './model-picker-panel.ts';
 
-/** 假节点：只留标签名与 props，够断言用。 */
+/** Fake node: Only the label name and props are left, which is enough for assertion. */
 interface Node {
   tag: string;
   props: Record<string, unknown>;
@@ -23,7 +25,7 @@ interface Node {
 
 const h = ((tag: string, props: Record<string, unknown>) => ({ tag, props })) as unknown as typeof jsx;
 
-/** 把整棵树摊平成节点数组，便于按标签或类名找。 */
+/** Flatten the entire tree into a node array to facilitate searching by label or class name. */
 function flatten(node: unknown): Node[] {
   if (node === null || node === undefined || typeof node === 'string') return [];
   if (Array.isArray(node)) return node.flatMap(flatten);
@@ -34,11 +36,11 @@ function flatten(node: unknown): Node[] {
 
 const catalog = [{ id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-4o', name: 'GPT-4o' }] }];
 
-/** 造一份视图；只覆盖用例关心的字段。 */
+/** Create a view; only cover the fields that the use case cares about. */
 function view(overrides: Partial<ModelPanelView> = {}): ModelPanelView {
   const base: ModelPanelView = {
     h,
-    // 翻译函数直接回键名，断言里就能按 key 定位文案，不依赖具体中英文。
+    // The translation function directly returns the key name, and the copy can be located according to key in the assertion, without relying on the specific Chinese and English.
     t: (key) => key,
     label: '碎碎念模型',
     disabled: false,
@@ -63,25 +65,25 @@ const texts = (tree: unknown): string[] =>
     .map((node) => node.props.children)
     .filter((child): child is string => typeof child === 'string');
 
-describe('buildModelPanel —— 浮层三态与选中态', () => {
-  test('清单没拉到：显示「加载中」，不渲染行清单', () => {
+describe('buildModelPanel - floating layer three states and selected state', () => {
+  test('The list is not pulled: "Loading" is displayed and the row list is not rendered.', () => {
     const tree = buildModelPanel(view({ catalog: null, rows: [] }));
     assert.deepEqual(
       flatten(tree)
         .filter((node) => node.tag === 'button')
         .map((node) => node.props.className),
       [],
-      '还没拉到清单时不能出现可选行',
+      'Optional rows cannot appear before the list is pulled.',
     );
     assert.deepEqual(texts(tree), ['modelLoading']);
   });
 
-  test('拉取失败：显示「拉取失败」而不是「加载中」', () => {
+  test('Pull failed: "Pull failed" is displayed instead of "Loading"', () => {
     const tree = buildModelPanel(view({ catalog: null, rows: [], failed: true }));
     assert.deepEqual(texts(tree), ['modelCatalogFailed']);
   });
 
-  test('宿主没有可用服务商：整块显示「没有可用模型」，不留空白浮层', () => {
+  test('There is no available service provider for host: the entire block displays "No available model" without leaving a blank floating layer.', () => {
     const tree = buildModelPanel(view({ catalog: [], rows: buildModelRows([], '') }));
     assert.deepEqual(
       texts(tree).filter((text) => text !== 'modelSearch'),
@@ -89,7 +91,7 @@ describe('buildModelPanel —— 浮层三态与选中态', () => {
     );
   });
 
-  test('搜索没命中：显示「没有匹配的模型」空态', () => {
+  test('Search failed: "No matching model" is displayed.', () => {
     const tree = buildModelPanel(view({ query: 'zzz', rows: buildModelRows(catalog, 'zzz') }));
     assert.deepEqual(
       texts(tree).filter((text) => text !== 'modelSearch'),
@@ -97,20 +99,24 @@ describe('buildModelPanel —— 浮层三态与选中态', () => {
     );
   });
 
-  test('正常清单：行数、可点的行、选中态与高亮都跟着视图数据', () => {
+  test('Normal list: number of rows, clickable rows, selected state and highlighting all follow the view data', () => {
     const rows = buildModelRows(catalog, '');
-    // 行序：[跟随(0), 分组头(1), 模型(2)]，高亮落在模型那一行。
+    // Line order: [Follow(0), Group header(1), Model(2)], highlight the line where the model falls.
     const tree = buildModelPanel(view({ rows, active: 2, value: { provider: 'openai', model: 'gpt-4o' } }));
     const buttons = flatten(tree).filter((node) => node.tag === 'button');
-    assert.equal(buttons.length, 2, '「跟随当前对话」+ 一个模型');
+    assert.equal(buttons.length, 2, '"Follow the current conversation" + a model');
     const [follow, model] = buttons;
-    assert.equal(follow.props['aria-checked'], false, '当前选的是具体模型，跟随行不该打勾');
+    assert.equal(
+      follow.props['aria-checked'],
+      false,
+      'The specific model is currently selected, and the follow line should not be checked.',
+    );
     assert.equal(model.props['aria-checked'], true);
-    assert.equal(model.props.className, 'dsh-pet-mp__item is-active', '高亮落在 active 行上');
+    assert.equal(model.props.className, 'dsh-pet-mp__item is-active', 'Highlight falls on line active');
     assert.equal(model.props['data-row'], 2);
   });
 
-  test('禁用透传：搜索框与每一行都被禁用', () => {
+  test('Disable passthrough: search box and every row are disabled', () => {
     const tree = buildModelPanel(view({ disabled: true }));
     const nodes = flatten(tree);
     assert.equal(nodes.find((node) => node.tag === 'input')?.props.disabled, true);
@@ -119,7 +125,7 @@ describe('buildModelPanel —— 浮层三态与选中态', () => {
     }
   });
 
-  test('写入工序：面板带 menu 语义，搜索框带 aria-label', () => {
+  test('Writing process: The panel has menu semantics and the search box has aria-label', () => {
     const tree = buildModelPanel(view());
     const nodes = flatten(tree);
     const panel = nodes[0];

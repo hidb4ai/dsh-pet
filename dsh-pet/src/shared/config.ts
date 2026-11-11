@@ -1,24 +1,28 @@
 /**
- * 共享层：把宿主半侧的成品配置拍平成渲染用宠物列表。
- * 不负责读取、合并与校验——那是宿主半侧 readAllConfig 的职责，本层只消费其结果。
- * 不依赖 React / DOM；宿主半侧不 import 本目录，其配置实现自包含、规则须与本层同步。
- * 条目级字段必须吹进每只实例：多实例共享所属条目的同一份值。
+ * Shared layer: Flatten the finished configuration of the host side into a pet list for rendering. It is not
+ * responsible for reading, merging and verifying - that is the responsibility of host side readAllConfig. This layer
+ * only consumes the results. It does not depend on React / DOM; the host side does not depend on import. Its
+ * configuration is self-contained and the rules must be synchronized with this layer. Entry-level fields must be
+ * pushed into each instance: multiple instances share the same value for the entry they belong to.
  * @module dsh-pet/src/shared/config
  */
 import type { Animations, FontConfig, ModelSelection, Pet, PetDisplay, PhysicsParams, Weights } from './types.ts';
 
-/** 显示位置白名单。 */
+/** Display location whitelist. */
 export const PET_DISPLAYS: PetDisplay[] = ['web', 'desktop', 'both', 'none'];
 
-/** 该宠物是否参与浏览器半侧渲染。 */
+/** Whether this pet participates in browser side rendering. */
 export const isWebVisible = (display: PetDisplay): boolean => display === 'web' || display === 'both';
 
-/** 该宠物是否参与桌面模式（Electron 透明窗）渲染。 */
+/** Whether this pet participates in desktop mode (Electron transparent window) rendering. */
 export const isDesktopVisible = (display: PetDisplay): boolean => display === 'desktop' || display === 'both';
 
-/** 把成品聚合拍平成渲染用宠物列表。
- *  条目级字段（animations / physics / font 等）由所属条目一份、多实例共享；assetRoot 取条目 key，
- *  即素材根。非 main 条目打 extra 标记：文件宠物在设置页不可编辑、保存时排除。 */
+/**
+ * Flatten the finished aggregate into a pet list for rendering. Entry-level fields (animations / physics / font, etc.)
+ * are shared by the corresponding entry and multiple instances; assetRoot takes the entry key, which is the asset
+ * root. Non-main entries are marked with extra: file pets cannot be edited on the settings page and are excluded when
+ * saving.
+ */
 export function flattenConfigPets(merged: Record<string, Record<string, unknown>>): Pet[] {
   const out: Pet[] = [];
   for (const [entry, conf] of Object.entries(merged)) {
@@ -33,15 +37,18 @@ export function flattenConfigPets(merged: Record<string, Record<string, unknown>
         font: conf.font as FontConfig | undefined,
         confineToScreen: conf.confineToScreen as boolean | undefined,
         workStatusTexts: conf.workStatusTexts as string[][] | undefined,
-        // 睡觉文案：渲染端要能「睡着时点对话/碎碎念就弹拒绝台词」，所以必须在拍平时带出来
-        // （与 workStatusTexts 同一类条目级字段：多实例共享所属条目那一份）。
+        // Sleep text: The renderer must be able to "talk/whisper and play rejection lines while asleep", so it
+        // must be brought out during filming (the same type of entry-level fields as workStatusTexts: multiple
+        // instances share the copy of the entry it belongs to).
         sleepStartTexts: conf.sleepStartTexts as string[] | undefined,
         sleepEndTexts: conf.sleepEndTexts as string[] | undefined,
         sleepRefuseTexts: conf.sleepRefuseTexts as string[] | undefined,
         whisperModel: conf.whisperModel as ModelSelection | undefined,
         chatModel: conf.chatModel as ModelSelection | undefined,
-        // 表情包三件套：右键「配图」菜单要按配置里的清单与顺序分组，客户端不读磁盘，
-        // 所以只能在拍平时一并带出；文件是否存在由宿主在生成时校验（见 host/memes 的池判定）。
+        // Three-piece set of memes: The right-click "Pictures" menu must be grouped according to the list and
+        // order in the configuration. The client does not read the disk, so it can only be brought out together when
+        // taking pictures; whether the file exists is verified by the host when it is generated (see the pool judgment
+        // of host/memes).
         memes: conf.memes as Record<string, string> | undefined,
         chatImageEnabled: conf.chatImageEnabled as boolean | undefined,
         chatAnimationEnabled: conf.chatAnimationEnabled as boolean | undefined,

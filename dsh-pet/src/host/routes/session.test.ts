@@ -1,8 +1,8 @@
 /**
- * 会话跳转端点（`POST /focus-session`）：出入参分档与叶子写入。
+ * Session jump endpoint (`POST /focus-session`): Incoming and outgoing parameter binning and leaf writing.
  *
- * 只测端点自己的判断和写入结果；页面怎么消费这条信号不在本文件范围。
- * 跑法：node --experimental-strip-types --test src/host/routes/session.test.ts
+ * Only the endpoint's own judgment and writing results are tested; how the page consumes this signal is beyond the
+ * scope of this document. Running method: node --experimental-strip-types --test src/host/routes/session.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,13 +12,13 @@ import { PollStateStore } from '../state.ts';
 import type { RouteResult } from '../http.ts';
 import type { PetRouteDeps } from './types.ts';
 
-/** 路由只用到 state，其余依赖本领域不读，测试里不构造。 */
+/** route only uses state, and other dependencies are not read in this field and are not constructed in the test. */
 function makeDeps(): { deps: PetRouteDeps; state: PollStateStore } {
   const state = new PollStateStore();
   return { deps: { state } as unknown as PetRouteDeps, state };
 }
 
-/** 调一次端点；`rest` 默认是干净的 `focus-session`。 */
+/** Adjust the endpoint once; `rest` defaults to clean `focus-session`. */
 function call(
   deps: PetRouteDeps,
   method: string,
@@ -28,20 +28,20 @@ function call(
   return handleSessionRoutes(deps, { url: new URL('http://localhost/focus-session'), rest, method, body });
 }
 
-/** 断言是 JSON 应答并取出状态码与响应体。 */
+/** The assertion is JSON response and the status code and response body are taken out. */
 function asJson(result: RouteResult | undefined): { status: number; obj: Record<string, unknown> } {
-  assert.ok(result !== undefined, '处理器应给出应答');
+  assert.ok(result !== undefined, 'The processor should respond');
   assert.equal(result.kind, 'json');
   return { status: result.status, obj: result.obj as Record<string, unknown> };
 }
 
-describe('handleSessionRoutes —— 路径与方法', () => {
-  test('非 focus-session 路径 → undefined（交给下一个处理器）', async () => {
+describe('handleSessionRoutes —— Path and method', () => {
+  test('Non-focus-session path → undefined (passed to next processor)', async () => {
     const { deps } = makeDeps();
     assert.equal(await call(deps, 'POST', '{}', 'other'), undefined);
   });
 
-  test('非 POST → 405', async () => {
+  test('Not POST → 405', async () => {
     const { deps } = makeDeps();
     const { status, obj } = asJson(await call(deps, 'GET'));
     assert.equal(status, 405);
@@ -49,66 +49,66 @@ describe('handleSessionRoutes —— 路径与方法', () => {
   });
 });
 
-describe('handleSessionRoutes —— 输入校验', () => {
-  test('请求体不是 JSON → 400 invalid-json', async () => {
+describe('handleSessionRoutes ——Input verification', () => {
+  test('The request body is not JSON → 400 invalid-json', async () => {
     const { deps } = makeDeps();
     const { status, obj } = asJson(await call(deps, 'POST', 'not json'));
     assert.equal(status, 400);
     assert.equal(obj.reason, 'invalid-json');
   });
 
-  test('缺 sessionId → bad-request，且不写叶子', async () => {
+  test('Missing sessionId → bad-request, and no leaves are written', async () => {
     const { deps, state } = makeDeps();
     const { status, obj } = asJson(await call(deps, 'POST', '{}'));
     assert.equal(status, 200);
     assert.equal(obj.reason, 'bad-request');
-    assert.equal(state.read().sections.focusSession.data, null, '校验失败不该留下半条信号');
+    assert.equal(state.read().sections.focusSession.data, null, 'Verification failure should not leave half a signal');
   });
 
-  test('sessionId 为空串 / 纯空白 / unknown → bad-request', async () => {
+  test('sessionId is an empty string / pure blank / unknown → bad-request', async () => {
     const { deps } = makeDeps();
     for (const body of ['{"sessionId":""}', '{"sessionId":"   "}', '{"sessionId":"unknown"}']) {
       assert.equal(asJson(await call(deps, 'POST', body)).obj.reason, 'bad-request');
     }
   });
 
-  test('sessionId 不是字符串 → bad-request', async () => {
+  test('sessionId is not a character string → bad-request', async () => {
     const { deps } = makeDeps();
     assert.equal(asJson(await call(deps, 'POST', '{"sessionId":42}')).obj.reason, 'bad-request');
   });
 
-  test('sessionId 超过 128 字符 → bad-request', async () => {
+  test('sessionId exceeds 128 characters → bad-request', async () => {
     const { deps } = makeDeps();
     const body = JSON.stringify({ sessionId: 'x'.repeat(129) });
     assert.equal(asJson(await call(deps, 'POST', body)).obj.reason, 'bad-request');
   });
 });
 
-describe('handleSessionRoutes —— 写 sections.focusSession', () => {
-  test('成功 → 200 ok，并把 sessionId 与 ts 写进快照', async () => {
+describe('handleSessionRoutes - write sections.focusSession', () => {
+  test('Success → 200 ok, and write sessionId and ts into the snapshot', async () => {
     const { deps, state } = makeDeps();
     const { status, obj } = asJson(await call(deps, 'POST', '{"sessionId":"session-abc"}'));
     assert.equal(status, 200);
     assert.equal(obj.ok, true);
     const leaf = state.read().sections.focusSession;
     assert.deepEqual(leaf.data, { sessionId: 'session-abc', ts: obj.ts });
-    assert.ok(leaf.counter > 0, '写入必须推进 counter，否则页面拿不到变化');
+    assert.ok(leaf.counter > 0, 'The write must advance counter, otherwise the page will not get the changes');
   });
 
-  test('首尾空白被裁掉后落库', async () => {
+  test('The leading and trailing blanks are cut off and then dropped into the library.', async () => {
     const { deps, state } = makeDeps();
     await call(deps, 'POST', '{"sessionId":"  session-abc  "}');
     const data = state.read().sections.focusSession.data as { sessionId: string };
     assert.equal(data.sessionId, 'session-abc');
   });
 
-  test('连续两次 → 后一次覆盖前一次，ts 不回退', async () => {
+  test('Two consecutive times → the last time overwrites the previous one, ts does not roll back', async () => {
     const { deps, state } = makeDeps();
     await call(deps, 'POST', '{"sessionId":"session-one"}');
     const first = state.read().sections.focusSession.data as { ts: number };
     await call(deps, 'POST', '{"sessionId":"session-two"}');
     const second = state.read().sections.focusSession.data as { sessionId: string; ts: number };
     assert.equal(second.sessionId, 'session-two');
-    assert.ok(second.ts >= first.ts, 'ts 用于消费端判重，不允许回退');
+    assert.ok(second.ts >= first.ts, 'ts is used for consumer judgment and no rollback is allowed.');
   });
 });

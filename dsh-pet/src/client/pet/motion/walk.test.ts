@@ -1,7 +1,8 @@
 /**
- * 自主走位（src/client/pet/motion/walk.ts）的契约测试：起脚与收脚窗口内不位移、中途按播放时间线性插值、
- * 结束时提交目标比例只一次；停走取消帧且迟到的帧不再写样式；飞行中不发起新走位。
- * 用假 rAF 驱动，位置断言读写入的 style。
+ * Contract test of autonomous walking (src/client/pet/motion/walk.ts): no displacement within the starting and closing
+ * windows, linear interpolation according to the playback time in the middle, and submitting the target ratio only
+ * once at the end; stop and walk cancels the frame and the late frame will no longer write the style; no new movement
+ * is initiated during flight. With the fake rAF driver, the position assertion reads and writes style.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,17 +17,17 @@ const moves = {
   actions: [{ name: 'walk1' }],
 } as unknown as MovesConfig;
 
-/** 假根节点：只留被写的四个 style 字段。 */
+/** Fake root node: only four style fields are left written. */
 function fakeRoot() {
   return { style: { left: '', top: '', right: '', bottom: '' } } as unknown as HTMLDivElement;
 }
 
-/** 假视频：只看时长与播放进度。 */
+/** Fake video: only look at the duration and playback progress. */
 function fakeVideo(duration: number) {
   return { duration, currentTime: 0 } as unknown as HTMLVideoElement;
 }
 
-/** 装假 rAF。 */
+/** Fake rAF. */
 function withFakeFrames() {
   const previousRaf = globalThis.requestAnimationFrame;
   const previousCancel = globalThis.cancelAnimationFrame;
@@ -56,7 +57,7 @@ function withFakeFrames() {
   };
 }
 
-/** 造一套依赖：记录播放的动画、提交的位置与朝向。 */
+/** Create a set of dependencies: record the played animation, submitted position and orientation. */
 function harness(extra: Partial<WalkDeps> = {}) {
   const root = fakeRoot();
   const played: string[] = [];
@@ -78,8 +79,8 @@ function harness(extra: Partial<WalkDeps> = {}) {
   return { walk: createWalk(deps), root, played, commits, boxes };
 }
 
-describe('createWalk —— 规划与占用', () => {
-  test('没有可用走位动作：tryMove 返回 false，且不占用', () => {
+describe('createWalk - Planning and Occupancy', () => {
+  test('There is no available movement action: tryMove returns false and is not occupied', () => {
     const frames = withFakeFrames();
     try {
       const { walk, played } = harness({ moves: () => ({ default: {}, actions: [] }) as unknown as MovesConfig });
@@ -91,7 +92,7 @@ describe('createWalk —— 规划与占用', () => {
     }
   });
 
-  test('规划成功：返回动作名、播该动作并留下待走的走位', () => {
+  test('Planning successful: return the action name, play the action and leave the position to be taken', () => {
     const frames = withFakeFrames();
     try {
       const { walk, played } = harness();
@@ -103,7 +104,7 @@ describe('createWalk —— 规划与占用', () => {
     }
   });
 
-  test('飞行中不发起走位：吞掉这一拍（返回 true），不播也不排队', () => {
+  test('Movement is not initiated during flight: this beat is swallowed (returns to true), neither broadcast nor queued', () => {
     const frames = withFakeFrames();
     try {
       const { walk, played } = harness({ isFlying: () => true });
@@ -115,7 +116,7 @@ describe('createWalk —— 规划与占用', () => {
     }
   });
 
-  test('走位进行中再发一次：返回 true，不覆盖当前这条', () => {
+  test('Send again while moving: return true, do not overwrite the current one', () => {
     const frames = withFakeFrames();
     try {
       const { walk, played } = harness();
@@ -130,8 +131,8 @@ describe('createWalk —— 规划与占用', () => {
   });
 });
 
-describe('createWalk —— 按播放时间推进', () => {
-  test('没有待走的走位：start 不开帧', () => {
+describe('createWalk——Advance by playback time', () => {
+  test('There is no move to be made: start does not open the frame', () => {
     const frames = withFakeFrames();
     try {
       const { walk } = harness();
@@ -142,7 +143,7 @@ describe('createWalk —— 按播放时间推进', () => {
     }
   });
 
-  test('起脚窗口内停在起点，收脚窗口外到目标并只提交一次', () => {
+  test('Stop at the starting point within the starting window, reach the target outside the closing window and submit only once', () => {
     const frames = withFakeFrames();
     try {
       const { walk, root, commits } = harness();
@@ -150,25 +151,28 @@ describe('createWalk —— 按播放时间推进', () => {
       const video = fakeVideo(10);
       walk.start(video);
 
-      video.currentTime = 0.1; // <= leadSec 0.2：仍在起点
+      video.currentTime = 0.1; // <= leadSec 0.2: Still at the starting point
       frames.tick();
       const startX = parseFloat(root.style.left);
-      assert.ok(Math.abs(startX - (0.5 * viewport.width - metrics.halfW)) < 1e-6, `起点应为 0.5 比例：${startX}`);
+      assert.ok(
+        Math.abs(startX - (0.5 * viewport.width - metrics.halfW)) < 1e-6,
+        `Starting point should be 0.5 scale: ${startX}`,
+      );
 
-      video.currentTime = 5; // 行进中：位置应已离开起点
+      video.currentTime = 5; // Traveling: The position should have left the starting point
       frames.tick();
-      assert.ok(parseFloat(root.style.left) !== startX, '行进中位置应变化');
+      assert.ok(parseFloat(root.style.left) !== startX, 'The position should change while traveling');
       assert.equal(commits.length, 0);
 
-      video.currentTime = 9.8; // >= duration - tailSec：已经到位
+      video.currentTime = 9.8; // >= duration - tailSec: Already in place
       frames.tick();
-      assert.equal(frames.queued, 0, '到位后不再排帧');
+      assert.equal(frames.queued, 0, 'No longer arranging frames after reaching the position');
     } finally {
       frames.restore();
     }
   });
 
-  test('到位后提交的是目标比例，不是终点处的插值', () => {
+  test('What is submitted after arriving is the target ratio, not the interpolation at the end point.', () => {
     const frames = withFakeFrames();
     try {
       const { walk, commits } = harness();
@@ -179,13 +183,13 @@ describe('createWalk —— 按播放时间推进', () => {
       frames.tick();
       assert.equal(commits.length, 1);
       const target = commits[0]!;
-      assert.ok(target.rx > 0.5, `向右走应落在起点右侧：${target.rx}`);
+      assert.ok(target.rx > 0.5, `Go right and you should land on the right side of the starting point: ${target.rx}`);
       assert.equal(target.ry, 0.5);
     } finally {
       frames.restore();
     }
   });
-  test('负距离：向 facing 反方向走 → 行进中在起点左侧，结束停在左侧', () => {
+  test('Negative distance: Go in the opposite direction of facing → on the left side of the starting point when traveling, and stop on the left side when it ends', () => {
     const frames = withFakeFrames();
     try {
       const negative = {
@@ -198,20 +202,20 @@ describe('createWalk —— 按播放时间推进', () => {
       walk.start(video);
 
       const startX = 0.5 * viewport.width - metrics.halfW;
-      video.currentTime = 3; // 行进中：应已离开起点、且落在起点左侧
+      video.currentTime = 3; // Traveling: should have left the starting point and landed on the left side of the starting point
       frames.tick();
-      assert.ok(parseFloat(root.style.left) < startX, `负距离应往左走：${root.style.left}`);
+      assert.ok(parseFloat(root.style.left) < startX, `Negative distance should go left: ${root.style.left}`);
 
-      video.currentTime = 9.8; // 收脚：停在规划落点，不跳回起点右侧
+      video.currentTime = 9.8; // Retract your feet: Stop at the planned landing point and do not jump back to the right of the starting point
       frames.tick();
       assert.equal(commits.length, 1);
-      assert.ok(commits[0]!.rx < 0.5, `目标应在起点左侧：${commits[0]!.rx}`);
+      assert.ok(commits[0]!.rx < 0.5, `The target should be to the left of the starting point: ${commits[0]!.rx}`);
     } finally {
       frames.restore();
     }
   });
 
-  test('每帧回写包围盒：与写进 DOM 的 left 同源', () => {
+  test('Write back bounding box for each frame: Same origin as left written into DOM', () => {
     const frames = withFakeFrames();
     try {
       const { walk, root, boxes } = harness();
@@ -220,16 +224,20 @@ describe('createWalk —— 按播放时间推进', () => {
       walk.start(video);
       video.currentTime = 5;
       frames.tick();
-      assert.equal(boxes.length, 1, '每帧只写一次包围盒');
-      assert.equal(boxes[0]!.x + 'px', root.style.left, '包围盒与 DOM 应来自同一次计算');
+      assert.equal(boxes.length, 1, 'Write-only bounding box once per frame');
+      assert.equal(
+        boxes[0]!.x + 'px',
+        root.style.left,
+        'The bounding box and DOM should come from the same calculation',
+      );
     } finally {
       frames.restore();
     }
   });
 });
 
-describe('createWalk —— 停走', () => {
-  test('停走取消帧：之后不再写样式、不提交位置', () => {
+describe('createWalk——Stop and go', () => {
+  test('Stop and go cancellation frame: no more writing style or position submission after that', () => {
     const frames = withFakeFrames();
     try {
       const { walk, root, commits } = harness();
@@ -241,17 +249,17 @@ describe('createWalk —— 停走', () => {
       const leftBeforeStop = root.style.left;
 
       walk.stop();
-      assert.equal(frames.queued, 0, '停走后不应还有排队的帧');
+      assert.equal(frames.queued, 0, 'There should be no queued frames after stop and go');
       video.currentTime = 6;
       frames.tick();
-      assert.equal(root.style.left, leftBeforeStop, '停走后位置应冻结');
+      assert.equal(root.style.left, leftBeforeStop, 'The position should be frozen after stop and go');
       assert.equal(commits.length, 0);
     } finally {
       frames.restore();
     }
   });
 
-  test('停走清掉待走的走位：之后视频就绪也不会开跑', () => {
+  test('Stop and clear the position to be taken: after the video is ready, it will not start running.', () => {
     const frames = withFakeFrames();
     try {
       const { walk } = harness();

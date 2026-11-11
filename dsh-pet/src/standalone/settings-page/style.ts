@@ -1,14 +1,14 @@
 /**
- * 设置页样式：照 DSH 设置对话框的令牌与排版写成一份普通 CSS。
+ * Setting page style: Write a normal CSS according to the token and layout of the DSH setting dialog box.
  *
- * 令牌值取自 dsh-client-ui-theme 与 dsh-client-ui-settings-general 的浅色主题，
- * 名字保持 `--dsw-*` 原样，改版时能对着上游逐项核对。
- * 不内联样式、不引 CDN：页面 CSP 是 default-src 'none'。
+ * The token value is taken from the light theme of dsh-client-ui-theme and dsh-client-ui-settings-general, and the
+ * name remains `--dsw-*` . It can be checked against the upstream item by item during revision. No inline styles, no
+ * references to CDN: Page CSP is default-src ' none '.
  * @module dsh-pet/src/standalone/settings-page/style
  */
 import { PANEL_CSS } from '../../client/chat/panel-css.ts';
 
-/** 设置页样式表。 */
+/** Set page style sheet. */
 export const settingsStyle = `:root{
   color-scheme:light;
   --dsw-static-neutral-bluish-00:#fff;--dsw-static-neutral-bluish-50:#f9fafb;--dsw-static-neutral-bluish-75:#f1f3f5;
@@ -73,7 +73,10 @@ a{color:var(--dsw-static-blue-500)}
 .panel{display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden}
 .scroll{flex:1;min-height:0;overflow-y:auto;padding:22px 30px 4px}
 .scroll>*{width:100%;max-width:var(--dsh-content-width);margin-left:auto;margin-right:auto}
-/* 对话面板自己管内边距与滚动，这里只负责给它一个确定高度的容器；宽度与配置页对齐。 */
+/*
+ * The dialog panel manages the inner margins and scrolling by itself. Here we are only responsible for
+ * giving it a container with a determined height; the width is aligned with the configuration page.
+ */
 .pet-chat-host{display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden;width:100%;max-width:var(--dsh-content-width);margin-left:auto;margin-right:auto}
 .card{background:var(--dsw-alias-settings-card-fill);border:1px solid var(--dsw-alias-settings-card-stroke);border-radius:var(--dsw-radius-lg);padding:18px 20px;margin-bottom:14px}
 .card:first-child{margin-top:2px}
@@ -86,8 +89,12 @@ a{color:var(--dsw-static-blue-500)}
 input[type=text],input[type=url],input[type=password],input[type=number],select,textarea{display:block;width:100%;min-height:36px;padding:7px 10px;border:1px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px}
 textarea{min-height:72px;resize:vertical;line-height:1.6}
 input:hover,select:hover,textarea:hover{border-color:var(--dsw-static-neutral-bluish-300)}
-/* :where() 把元素选择器权重降到 0：对话面板用「外层容器 focus-within 变色」代替逐控件焦点环，
-   保持 input:focus-visible 的 (0,1,1) 会压过面板里的 .pet-chat-input{outline:none}，把焦点环画进输入框。 */
+/*
+ * : where () Reduce the element selector weight to 0: the dialog panel uses "outer container focus-within
+ * color change" instead of the control-by-control focus ring.
+ *    Keeping (0,1,1) of input:focus-visible will overwhelm . pet-chat-input { outline:none } in the panel,
+ * and draw the focus ring into the input box.
+ */
 :where(input,select,textarea,button):focus-visible,.navCell:focus-visible{outline:2px solid var(--dsw-static-blue-500);outline-offset:1px}
 input:disabled,select:disabled,textarea:disabled{background:var(--dsw-static-neutral-bluish-50);color:var(--dsw-alias-label-tertiary);cursor:not-allowed}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}

@@ -1,8 +1,9 @@
 /**
- * 设置页对话面板的浏览器产物：运行时读同包内的 `lib/chat-panel.js`。
+ * Browser product of settings page dialog panel: Read `lib/chat-panel.js` in the same package at runtime.
  *
- * 与 icon.ts 同口径：按进程缓存、读不到回 undefined，由调用方回 404——
- * 缺产物时宁可显式报错，也不静默回一个空脚本让页面只剩空白。
+ * Same conventions as icon.ts: cached by process, undefined cannot be read, and 404 is returned by the caller - when
+ * the product is missing, it is better to report an error explicitly than to silently return an empty script and leave
+ * the page blank.
  * @module dsh-pet/src/standalone/chat-panel-asset
  */
 import { readFileSync } from 'node:fs';
@@ -12,9 +13,9 @@ import { PACKAGE_ROOT } from '../host/paths.ts';
 let cached: string | undefined;
 
 /**
- * 读取对话面板脚本。
+ * Reading dialog panel script.
  *
- * @returns 打包后的脚本源码；未构建或文件不可读时为 undefined。
+ * @returns packaged script source code; when it is not built or the file is unreadable, it is undefined.
  */
 export function readChatPanelScript(): string | undefined {
   if (cached !== undefined) return cached;

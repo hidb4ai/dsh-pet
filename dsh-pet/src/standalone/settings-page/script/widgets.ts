@@ -1,12 +1,13 @@
 /**
- * 设置页表单控件：把「标签 + 控件 + 说明」的重复结构收成函数。
+ * Setting page form controls: convert the repeated structure of "label + control + description" into a function.
  *
- * 只造 DOM 并把编辑回调交回调用方，不持有状态、不发请求——状态归各面板片段。
- * 所有文本都走 textContent，页面里不拼 HTML 字符串，避免配置值被当成标记执行。
+ * Only create DOM and return the editing callback to the caller. It does not hold state and does not send requests -
+ * the state belongs to each panel fragment. All text is textContent, and the HTML character string is not spelled on
+ * the page to avoid configuration values being executed as tags.
  * @module dsh-pet/src/standalone/settings-page/script/widgets
  */
 
-/** 生成控件层片段。 */
+/** Generate control layer fragments. */
 export function widgetsScript(): string {
   return `
 function fieldRow(id, label, control, hint) {

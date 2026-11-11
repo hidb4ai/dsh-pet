@@ -1,11 +1,13 @@
 /**
- * `POST /chat` 的图片入参契约测试：校验顺序、附件准入与引用透传。
+ * `POST /chat` ’s image input contract test: verification sequence, attachment access and reference transparent
+ * transmission.
  *
- * 直接测导出的路由处理函数，不走 apply()：图片准入发生在读配置之前，而源码形态下内置配置
- * 不可达（readAllConfig 会抛），整机 harness 到不了这一层。最小依赖桩同时钉住了一条顺序不变量——
- * 图片被拒时 chatWithPet 一次都不该被调用。
+ * Directly test the exported route processing function without using apply(): image access occurs before reading the
+ * configuration, and the built-in configuration in the source code form is unreachable (readAllConfig will be thrown),
+ * and the entire machine harness cannot reach this layer. The minimal dependency stub also verifies an order invariant
+ * - chatWithPet should not be called even once when the image is rejected.
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,14 +16,14 @@ import type { PetImageRef, PetImageSink } from '../image-attachment.ts';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import { handleChatRoutes } from './chat.ts';
 
-/** 最小 PNG 头：8 字节，足够走完准入 */
+/** Minimum PNG header: 8 bytes, enough to complete the admission process */
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const PNG_BASE64 = PNG_BYTES.toString('base64');
 
-/** 一次 chatWithPet 调用（用来断言路由把什么透传下去了） */
+/** A chatWithPet call (used to pass assertion route transparently) */
 type ChatCall = { petId: string; text: string; image?: PetImageRef };
 
-/** 造最小路由依赖；只有 chat 分支用到的成员是真的，其余按接口形状占位。 */
+/** Create minimal route dependencies; only the members used by the chat branch are real, and the rest take up space according to the interface shape. */
 function makeDeps(sink?: PetImageSink): { deps: PetRouteDeps; calls: ChatCall[] } {
   const calls: ChatCall[] = [];
   const deps = {
@@ -40,7 +42,7 @@ function makeDeps(sink?: PetImageSink): { deps: PetRouteDeps; calls: ChatCall[] 
   return { deps, calls };
 }
 
-/** 造附件服务桩；`saved` 记录实际交进来的字节，`overrides` 用来构造超限/抛错分支。 */
+/** Create an attachment service pile; `saved` records the bytes actually delivered, and `overrides` is used to construct an overrun/thrown error branch. */
 function makeSink(overrides: Partial<PetImageSink> = {}): {
   sink: PetImageSink;
   saved: { data: Uint8Array; mediaType: string }[];
@@ -63,7 +65,7 @@ function makeSink(overrides: Partial<PetImageSink> = {}): {
   return { sink, saved };
 }
 
-/** 一次 POST /chat 调用；URL 只是占位，pet 与 surface 由 requirePet 桩决定。 */
+/** A POST /chat call; URL is just a placeholder, pet and surface are determined by the requirePet pile. */
 function postChat(body: unknown): RouteInput {
   return {
     url: new URL('http://127.0.0.1/dsh-pet-7340/chat?pet=main&surface=web'),
@@ -73,14 +75,14 @@ function postChat(body: unknown): RouteInput {
   };
 }
 
-/** 从 RouteResult 里取 JSON 体（断言用）。 */
+/** Get the JSON body from RouteResult (for assertion). */
 function jsonBody(result: Awaited<ReturnType<typeof handleChatRoutes>>): Record<string, unknown> {
   assert.equal(result?.kind, 'json');
   return (result as { obj: Record<string, unknown> }).obj;
 }
 
-describe('POST /chat 的 attachment', () => {
-  test('不传 attachment：走原路径，chatWithPet 收到 undefined 图片 → 响应与形状不变', async () => {
+describe('POST /chat of attachment', () => {
+  test('Do not transmit attachment: Take the original path, chatWithPet receives the undefined picture → the response and shape remain unchanged', async () => {
     const { sink } = makeSink();
     const { deps, calls } = makeDeps(sink);
     const body = jsonBody(await handleChatRoutes(deps, postChat({ text: '  在吗  ' })));
@@ -88,7 +90,7 @@ describe('POST /chat 的 attachment', () => {
     assert.deepEqual(calls, [{ petId: 'main', text: '在吗', image: undefined }]);
   });
 
-  test('mediaType 不在白名单 → bad-request，且不调用 chatWithPet', async () => {
+  test('mediaType is not in the whitelist → bad-request, and chatWithPet is not called', async () => {
     const { deps, calls } = makeDeps(makeSink().sink);
     const body = jsonBody(
       await handleChatRoutes(
@@ -101,7 +103,7 @@ describe('POST /chat 的 attachment', () => {
     assert.equal(calls.length, 0);
   });
 
-  test('base64 含非法字符 → bad-request，且不调用 chatWithPet', async () => {
+  test('base64 contains invalid character → bad-request, and chatWithPet is not called', async () => {
     const { deps, calls } = makeDeps(makeSink().sink);
     const body = jsonBody(
       await handleChatRoutes(
@@ -114,7 +116,7 @@ describe('POST /chat 的 attachment', () => {
     assert.equal(calls.length, 0);
   });
 
-  test('没有附件服务（独立模式）→ bad-request，文案指出不支持图片', async () => {
+  test('No attachment service (standalone mode) → bad-request, the copy indicates that images are not supported', async () => {
     const { deps, calls } = makeDeps(undefined);
     const body = jsonBody(
       await handleChatRoutes(
@@ -127,7 +129,7 @@ describe('POST /chat 的 attachment', () => {
     assert.equal(calls.length, 0);
   });
 
-  test('解码后超出部署上限 → bad-request，且不写附件', async () => {
+  test('After decoding, the deployment limit is exceeded → bad-request, and no attachment is written.', async () => {
     const { sink, saved } = makeSink({ imageLimits: { maxImageBytes: 4 } });
     const { deps, calls } = makeDeps(sink);
     const body = jsonBody(
@@ -142,7 +144,7 @@ describe('POST /chat 的 attachment', () => {
     assert.equal(calls.length, 0);
   });
 
-  test('合法图片：附件服务收到原样字节，引用透传给对话层', async () => {
+  test('Valid image: The attachment service receives the original bytes, and the reference is transparently passed to the conversation layer', async () => {
     const { sink, saved } = makeSink();
     const { deps, calls } = makeDeps(sink);
     const body = jsonBody(
@@ -156,12 +158,12 @@ describe('POST /chat 的 attachment', () => {
     assert.equal(saved[0]?.mediaType, 'image/png');
     assert.deepEqual(saved[0]?.data, new Uint8Array(PNG_BYTES));
     assert.equal(calls.length, 1);
-    // 正文原样透传：图片不往用户的话里拼任何东西
+    // The text is transmitted as it is: the picture does not spell anything into the user's words
     assert.equal(calls[0]?.text, '屏幕上这个报错是什么');
     assert.match(String(calls[0]?.image?.attachmentId), /^sha256:/);
   });
 
-  test('附件落盘失败 → generate-error（不伪装成调用方参数错误）', async () => {
+  test('Attachment persist to disk failed → generate-error (not disguised as caller parameter error)', async () => {
     const { sink } = makeSink({
       saveImages: async () => {
         throw new Error('disk full');
@@ -179,7 +181,7 @@ describe('POST /chat 的 attachment', () => {
     assert.equal(calls.length, 0);
   });
 
-  test('文本为空时先按文本报错，不因为带了图就放行', async () => {
+  test('When the text is empty, press the text first to report an error. It will not be released just because a picture is included.', async () => {
     const { sink } = makeSink();
     const { deps, calls } = makeDeps(sink);
     const body = jsonBody(

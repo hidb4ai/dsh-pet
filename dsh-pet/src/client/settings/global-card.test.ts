@@ -1,9 +1,10 @@
 /**
- * 全局开关卡（src/client/settings/global-card.ts）的契约测试。
+ * Contract test of global switch card (src/client/settings/global-card.ts).
  *
- * 两条契约：
- *   1. 四个开关的勾选态来自 `values`，切换回传的是配置字段名（键名错位会静默写坏别的开关）；
- *   2. 忙时全部禁用，一次切换只回调一次。
+ * Two contracts:
+ * 1. The check status of the four switches comes from `values` , and the switch returns the configuration field name
+ * (misplaced key names will silently damage other switches);
+ * 2. Disable all when busy, and only callback once during a switch.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,11 +34,11 @@ const allOff: GlobalFlags = {
   trayEnabled: false,
 };
 
-/** 四个开关的框，顺序即展示顺序。 */
+/** A frame with four switches, the order is the display order. */
 const boxes = (tree: unknown): Node[] => flatten(tree).filter((node) => node.tag === 'input');
 
-describe('GlobalCard —— 全局开关卡', () => {
-  test('四个开关都在，勾选态来自 values', () => {
+describe('GlobalCard ——Global switch card', () => {
+  test('All four switches are present, and the checked state comes from values', () => {
     const tree = GlobalCard({
       busy: false,
       values: { ...allOff, notificationsEnabled: true, trayEnabled: true },
@@ -51,7 +52,7 @@ describe('GlobalCard —— 全局开关卡', () => {
     );
   });
 
-  test('每个开关回传自己的配置字段名', () => {
+  test('Each switch returns its own configuration field name', () => {
     const seen: Array<[string, boolean]> = [];
     const tree = GlobalCard({
       busy: false,
@@ -67,11 +68,11 @@ describe('GlobalCard —— 全局开关卡', () => {
     );
     assert.ok(
       seen.every(([, value]) => value === true),
-      '回传的必须是布尔值，不是事件对象',
+      'What is returned must be a Boolean value, not an event object',
     );
   });
 
-  test('忙时全部禁用', () => {
+  test('Disable all when busy', () => {
     const tree = GlobalCard({ busy: true, values: allOff, onChange: () => {} } as never);
     for (const box of boxes(tree)) assert.equal(box.props.disabled, true);
   });

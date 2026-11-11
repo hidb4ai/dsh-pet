@@ -1,6 +1,7 @@
 /**
- * 插件入口：Cordis 插件，把 host 半侧的配置、路由、斜杠命令、轮询与桌面 Helper 装配到 ctx。
- * 装配顺序不能改：`getHandlePetRoute` 惰性取用（`httpRoute` 在本函数后段才创建），`startHelper` 必须最后调用。
+ * Plugin entry point: Cordis plugin, assembles the configuration, route, slash command, polling and desktop Helper
+ * of host side to ctx. The assembly sequence cannot be changed: `getHandlePetRoute` is used lazily (`httpRoute` is
+ * created later in this function), `startHelper` must be called last.
  * @module dsh-pet/src/host/index
  */
 import { createHostSetup } from './plugin/setup.ts';
@@ -27,13 +28,13 @@ import { TODO_FILE_NAME, TodoStore } from './todo/store.ts';
 import { join } from 'node:path';
 import type { PetRouteDeps } from './routes/types.ts';
 
-/** 插件行 id（与 cordis.patch.yml 一致） */
+/** Plugin row id (consistent with cordis.patch.yml) */
 export const name = 'pet';
-/** 需要注入的服务：webServer（路由）+ agentDefaultModel（当前服务商）+ credentials（凭证）+ llm（对话模型调用）+ commands（/balance 斜杠命令）+ connection（桌面 Helper「打开 AI 设置」用的已鉴权站点 URL） */
+/** Services that need to be injected: webServer (route) + agentDefaultModel (current service provider) + credentials (credential) + llm (dialog model call) + commands (/ balance slash command) + connection (desktop Helper "Open AI Authenticated site URL used in Settings) */
 export const inject = ['webServer', 'agentDefaultModel', 'credentials', 'llm', 'commands', 'connection'];
 
-/** 宿主插件主体：注册 `/dsh-pet-7340` 前缀路由与斜杠命令（/balance /pet /chat）；ctx 暂用 any（peer 类型包本地不可解析）。 */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 注入的 ctx（webServer/locale 等 service 无静态类型）
+/** host plugin body: register `/dsh-pet-7340` prefix route with slash command (/ balance / pet / chat); ctx temporarily uses any (peer type package cannot be parsed locally). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH-injected webServer/locale services have no static types.
 export function apply(ctx: any): void {
   const setup = createHostSetup(ctx);
   const {
@@ -81,7 +82,7 @@ export function apply(ctx: any): void {
   const { effectivePetList, balancePeriodSec, whisperPeriodSec, refreshBalance, resolveActivePetId, petDisplayName } =
     balancePoll;
 
-  // 待办清单：一份用户级数据（不分宠物），落盘在插件数据根；提醒循环与 /todos 路由共用同一个实例。
+  // To-do list: a user-level data (regardless of pets), persist to disk in the plugin data root; reminder loop and / todos route share the same instance.
   const todos = new TodoStore({ file: join(userRoot, TODO_FILE_NAME), log });
 
   const desktopHelper = createDesktopHelper({
@@ -91,7 +92,7 @@ export function apply(ctx: any): void {
     log,
     reportDownload,
     thumbUserRoot,
-    // 惰性取用：handlePetRoute 在下方装配，Helper 只在启动/收请求时才真正调用它
+    // Lazy access: handlePetRoute is assembled below, Helper is only actually called when starting/receiving requests
     getHandlePetRoute: () => httpRoute.handlePetRoute,
   });
   const { startHelper, stopHelper, markDisposed } = desktopHelper;
@@ -107,9 +108,9 @@ export function apply(ctx: any): void {
     ...sessionNotify,
     ctx,
     todos,
-    // 语音合成：缓存落 userRoot，失败只留日志，不打断宿主
+    // Speech synthesis: The cache falls into userRoot. If it fails, only the log will be left and the host will not be interrupted.
     voice: createVoiceService({ userRoot, log }),
-    // 语音识别：能力来自宿主（DSH 的 speechToText），没启用时服务自己在调用时回 unsupported
+    // Speech recognition: The capability comes from the host (speechToText of DSH). When not enabled, the service itself returns unsupported when called.
     speech: createHearService({ speechToText: () => setup.optionalService('speechToText') }),
   };
   const httpRoute = createHttpRoute(deps);
@@ -153,8 +154,9 @@ export function apply(ctx: any): void {
 
   registerChatCommand({ ctx, chatWithPet, log, publishWhisper, resolveActivePetId, sleep, sleepRefusalText });
 
-  // 待办提醒：随插件生命周期起停；锁被第三方持有时由 pickReminderSpeaker 跳过该宠物。
-  // 播报开关现读现用：改配置后下一次提醒即生效，不必重启。
+  // To-do reminder: starts and stops with the plugin lifecycle; when the lock is held by a third party, the pet is
+  // skipped by pickReminderSpeaker. The broadcast switch is read and used: after the configuration is changed, the
+  // next reminder will take effect without restarting.
   registerTodoReminders({
     ctx,
     effectivePetList,
@@ -178,6 +180,6 @@ export function apply(ctx: any): void {
     stopWorkStatusFlush,
   });
 
-  // 路由就绪后拉起桌面 Helper（Electron 缺失时仅告警，不影响 DSH 与浏览器 overlay）
+  // Pull up the desktop Helper after the route is ready (only an warning will be issued when Electron is missing, and will not affect DSH and the browser overlay)
   startHelper();
 }

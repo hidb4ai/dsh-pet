@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * 独立模式入口：不启动 DSH，直接在本机运行桌宠。
+ * Standalone entry: run a local pet without starting DSH.
  *
- * 负责把伪 ctx、本机 HTTP 服务与桌面 Helper 串成一条启动路径，并处理收尾与退出码。
- * 不实现路由、配置读取或窗口逻辑，这些都复用插件与宿主半侧的实现。
- * 必须始终成立：服务先监听再 apply，所有退出入口共用同一套收尾流程。
+ * Wire the shim context, local HTTP server and desktop helper; manage shutdown and exit status.
+ * Reuse plugin and host implementations for routes, configuration and windows.
+ * Invariant: listen before apply; every exit path shares the same cleanup.
  * @module dsh-pet/src/standalone/cli
  */
 import { existsSync } from 'node:fs';
@@ -26,24 +26,24 @@ import { ROUTE_SEGMENT } from '../shared/constants.ts';
 import { createSetup, setupMemoryBinding } from './setup.ts';
 import { openSetup } from './open-setup.ts';
 
-/** 启动独立模式：先起服务拿到端口，再 apply。 */
+/** Start the server and resolve its port before applying the plugin. */
 async function run(logger: StandaloneLogger, options: { port: number; setup: boolean }): Promise<void> {
   const home = dshHomeDir();
   const paths = configPathsFor(packageRoot, home);
 
-  // 包内默认配置缺失时宿主半侧每个请求都会失败，先给可操作的诊断。
+  // Fail early with an actionable message when missing defaults would break every host request.
   if (!existsSync(paths.defaultFile)) {
     logger.error(
-      `包内默认配置缺失：${paths.defaultFile}。若你是在直接跑源码（包根被解析成了 src/），` +
-        '请改用构建产物：npm run bundle 后 node lib/standalone.js（或 npm run standalone）。',
+      `Bundled defaults are missing: ${paths.defaultFile}. If running source directly resolves the root to src/, ` +
+        'use the built entry: npm run bundle, then node lib/standalone.js (or npm run standalone).',
     );
     process.exitCode = 1;
     return;
   }
 
   const routes: RegisteredRoute[] = [];
-  // /shutdown 的回调要在建服务时交出，而收尾函数要在服务之后定义：
-  // 用可替换的转发器解耦，让服务构造时只拿到「将来会是谁」。
+  // The server needs a /shutdown callback before the cleanup function can capture it.
+  // Use a replaceable forwarder until the cleanup implementation is available.
   let forwardShutdown: (reason: string) => void = () => {};
   const portRef = { value: options.port };
   const ai = createStandaloneAi(home, logger);
@@ -59,10 +59,10 @@ async function run(logger: StandaloneLogger, options: { port: number; setup: boo
     routes,
     ai,
     authenticatedUrl: security.authenticatedUrl,
-    // 托盘退出与 POST /shutdown 走同一条收尾路径。
+    // Tray quit and POST /shutdown share the same cleanup path.
     shutdown: (reason) => forwardShutdown(reason),
   });
-  // 收尾函数要在服务之后定义（见 forwardShutdown 的说明）。
+  // Define cleanup after the server, as described above forwardShutdown.
   const server = await listenStandaloneServer({
     routes,
     logger,
@@ -99,8 +99,8 @@ async function run(logger: StandaloneLogger, options: { port: number; setup: boo
   const shutdown = async (reason: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    logger.info(`收尾（${reason}）…`);
-    // 先释放插件注册的 effect（停 Helper、清周期定时器），再关服务。
+    logger.info(`Shutting down (${reason})...`);
+    // Dispose plugin effects (helper and timers) before closing the server.
     try {
       await setup.dispose();
       await context.dispose();
@@ -108,13 +108,13 @@ async function run(logger: StandaloneLogger, options: { port: number; setup: boo
       await server.close();
       releaseRuntime();
     }
-    logger.info('已退出。');
+    logger.info('Shutdown complete.');
   };
   const requestShutdown = (reason: string): void => {
     shutdown(reason)
       .then(() => process.exit(0))
       .catch((error: unknown) => {
-        logger.error(`收尾失败：${error instanceof Error ? error.message : String(error)}`);
+        logger.error(`Shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
         process.exit(1);
       });
   };
@@ -122,7 +122,7 @@ async function run(logger: StandaloneLogger, options: { port: number; setup: boo
   process.on('SIGINT', () => requestShutdown('SIGINT'));
   process.on('SIGTERM', () => requestShutdown('SIGTERM'));
 
-  // 这一句里注册路由表、状态仓与桌面 Helper（含 bridge 管道）。
+  // Register routes, the state store and the desktop helper bridge.
   apply(context.ctx);
   setup.resume();
   if (options.setup || !ai.isReady()) openSetup(security.authenticatedUrl(`http://127.0.0.1:${server.port}`));
@@ -131,41 +131,43 @@ async function run(logger: StandaloneLogger, options: { port: number; setup: boo
   let configSource = paths.userFile;
   try {
     pets = flattenPetList(readAllConfig(paths));
-    if (!existsSync(paths.userFile)) configSource = `${paths.userFile}（不存在 → 用包内默认）`;
+    if (!existsSync(paths.userFile)) configSource = `${paths.userFile} (missing; using bundled defaults)`;
   } catch (error) {
     logger.warn(
-      `读配置失败（服务照常运行，相关端点会显式报错）：${error instanceof Error ? error.message : String(error)}`,
+      `Configuration read failed (server remains available; affected routes report errors): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   const desktopVisible = pets.filter(isDesktopVisible);
   for (const line of [
     '',
-    '===== dsh-pet 独立模式（不需要 DSH）=====',
-    `  插件        dsh-pet-powercontext@${packageVersion(packageRoot)}  ${packageRoot}`,
-    `  路由        http://127.0.0.1:${server.port}${ROUTE_SEGMENT}/`,
-    `  配置        ${configSource}`,
-    `  宠物        ${describePets(pets)}`,
+    '===== dsh-pet standalone (DSH not required) =====',
+    `  Plugin      dsh-pet-powercontext@${packageVersion(packageRoot)}  ${packageRoot}`,
+    `  Route       http://127.0.0.1:${server.port}${ROUTE_SEGMENT}/`,
+    `  Config      ${configSource}`,
+    `  Pets        ${describePets(pets)}`,
     desktopVisible.length === 0
-      ? '  桌面小窗    0 只：display 需要 desktop 或 both 才会出现透明小窗（服务仍在运行）'
-      : `  桌面小窗    ${desktopVisible.length} 只`,
+      ? '  Desktop     0 pets: set display to desktop or both to show windows (server remains active)'
+      : `  Desktop     ${desktopVisible.length} pets`,
     ai.isReady()
-      ? '  AI          本机 API 已启用；自动碎碎念遵循设置页开关'
-      : '  AI          未配置或未启用，不发送模型请求；右键“打开 AI 设置”后在本机填写',
+      ? '  AI          Local API enabled; automatic whispers follow the settings toggle'
+      : '  AI          Not configured or disabled; no model requests. Open AI settings from the context menu',
     ai.getSettings().balanceProvider
-      ? `  余额        已选 ${ai.getSettings().balanceProvider}，设置页点「查询余额」取数`
-      : '  余额        未选服务商；设置页「AI 服务商」→「余额查询服务商」里选一家',
-    '  不可用      会话工作状态 / DSH 系统通知',
-    '  退出        Ctrl+C、POST /shutdown，或桌面托盘菜单的「退出」',
+      ? `  Balance     Provider: ${ai.getSettings().balanceProvider}; use Check balance in settings`
+      : '  Balance     Select a balance provider in AI settings',
+    '  Unavailable DSH session work states / system notifications',
+    '  Exit        Ctrl+C, POST /shutdown or Quit in the system tray menu',
     '',
   ]) {
     logger.info(line);
   }
   if (context.failures.length > 0) {
-    logger.warn(`初始化期间有 ${context.failures.length} 项失败（见上方日志）；路由仍可用，相关端点会显式报错`);
+    logger.warn(
+      `${context.failures.length} initialization steps failed (see logs); routes remain available and affected endpoints report errors`,
+    );
   }
 }
 
-/** CLI 入口，返回进程退出码。 */
+/** Run the CLI and return its exit status. */
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2));
   if ('error' in parsed) {
@@ -178,17 +180,17 @@ async function main(): Promise<number> {
     console.log(USAGE);
     return 0;
   }
-  // 独立模式常常没有终端，日志必须同时落盘；插件会复用同一个 logger。
+  // Standalone often runs without a terminal; persist logs and share the logger with the plugin.
   const logger = createStandaloneLogger({ file: join(dshHomeDir(), 'dsh-pet', 'logs.txt') });
-  // 纯模块没有 ctx.logger，靠默认出口落盘。
+  // Pure modules use the default log sink because they have no ctx.logger.
   setDefaultLogger(logger);
   if (options.check) return runCheck(logger);
   await run(logger, options);
   return 0;
 }
 
-// 本文件就是 bin 指向的可执行入口，因此无条件启动；
-// import.meta.main 需要 Node 24+，而 argv[1] 比较在 pnpm 的 bin 符号链接下会判错。
+// This is the bin executable entry, so start unconditionally.
+// import.meta.main requires Node 24+; argv[1] comparisons fail for pnpm bin symlinks.
 main()
   .then((code) => {
     if (code !== 0) process.exit(code);

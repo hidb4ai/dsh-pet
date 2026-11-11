@@ -1,10 +1,11 @@
 /**
- * 待办提醒的单元测试：一拍做什么，以及由哪只宠物开口。
+ * Unit test of to-do reminder: what does a beat do, and which pet speaks.
  *
- * 钉住四条：到点才提醒、一次只提醒一条、写完 S 才记提醒时刻、没有可见宠物或被占用时跳过
- * （跳过也不推进，下一拍会补上）。时间由 `now` 注入，测试不睡真实时间。
+ * Verify four items: only remind when the time is up, only remind one at a time, remember the reminder time after
+ * writing S, skip when there is no visible pet or it is occupied (skipping will not advance, the next tick will make
+ * up for it). The time is injected by `now` , and the test does not sleep the real time.
  *
- * 跑法：node --experimental-strip-types --test src/host/plugin/todo-reminders.test.ts
+ * Running method: node --experimental-strip-types --test src/host/plugin/todo-reminders.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,18 +13,18 @@ import assert from 'node:assert/strict';
 import { pickReminderSpeaker, tickTodoReminders } from './todo-reminders.ts';
 import type { TodoRecord } from '../todo/types.ts';
 
-/** 固定时钟。 */
+/** Fixed clock. */
 const NOW = 1_000_000_000;
 const MINUTE = 60 * 1000;
 
-/** 造一条待办：只覆盖本文件关心的字段。 */
+/** Create a to-do: only cover the fields that this document cares about. */
 function todo(overrides: Partial<TodoRecord> = {}): TodoRecord {
   return {
     id: 'todo-1',
     text: '交周报',
     dueAt: NOW + 10 * MINUTE,
     done: false,
-    // 创建于 30 分钟前、到期还剩 10 分钟：档位 20 分钟，第一次排期早已到点。
+    // Created 30 minutes ago, with 10 minutes left until expiration: the slot is 20 minutes, and the first schedule has already expired.
     createdAt: NOW - 30 * MINUTE,
     updatedAt: NOW - 30 * MINUTE,
     completedAt: null,
@@ -32,10 +33,10 @@ function todo(overrides: Partial<TodoRecord> = {}): TodoRecord {
   };
 }
 
-/** 造一条宠物：只带本函数会读的字段。 */
+/** Create a pet: only bring fields that this function can read. */
 const pet = (id: string, display: string): Record<string, unknown> => ({ id, display });
 
-/** 一拍用的最小替身：记录写入口。`voiceTodo` 缺省开（与成品配置默认不同，测试里按「要念」跑）。 */
+/** The smallest stand-in for one shot: record entry point. `voiceTodo` is enabled by default (different from the default configuration of the resolved value, press "Keywords" to run during the test). */
 function harness(options: {
   todos: TodoRecord[];
   pets?: Record<string, unknown>[];
@@ -67,8 +68,8 @@ function harness(options: {
   return { deps, writes, marked };
 }
 
-describe('pickReminderSpeaker —— 挑开口的宠物', () => {
-  test('网页端可见的优先，桌面端兜底', () => {
+describe('pickReminderSpeaker —— A pet that picks its mouth', () => {
+  test('Visible on the web page first, fallback on the desktop', () => {
     assert.equal(
       pickReminderSpeaker([pet('d', 'desktop'), pet('w', 'web')], () => false),
       'w',
@@ -83,14 +84,14 @@ describe('pickReminderSpeaker —— 挑开口的宠物', () => {
     );
   });
 
-  test('display: none 与空 id 跳过', () => {
+  test('display: none and empty id skip', () => {
     assert.equal(
       pickReminderSpeaker([pet('n', 'none'), { display: 'web' }], () => false),
       null,
     );
   });
 
-  test('被占用的跳过；全被占用 → null（这次提醒不丢，下一拍再试）', () => {
+  test('Skip occupied ones; all occupied → null (this reminder will not be lost, try again next tick)', () => {
     assert.equal(
       pickReminderSpeaker([pet('a', 'web'), pet('b', 'web')], (id) => id === 'a'),
       'b',
@@ -101,7 +102,7 @@ describe('pickReminderSpeaker —— 挑开口的宠物', () => {
     );
   });
 
-  test('空列表 → null', () => {
+  test('Empty list → null', () => {
     assert.equal(
       pickReminderSpeaker([], () => false),
       null,
@@ -109,8 +110,8 @@ describe('pickReminderSpeaker —— 挑开口的宠物', () => {
   });
 });
 
-describe('tickTodoReminders —— 一拍', () => {
-  test('到点：写进 say，并记下提醒时刻', async () => {
+describe('tickTodoReminders ——One shot', () => {
+  test('Arrival: write say and note the reminder time', async () => {
     const { deps, writes, marked } = harness({ todos: [todo()] });
     await tickTodoReminders(deps);
     assert.equal(writes.length, 1);
@@ -120,7 +121,7 @@ describe('tickTodoReminders —— 一拍', () => {
     assert.deepEqual(marked, [{ id: 'todo-1', at: NOW }]);
   });
 
-  test('没到点 / 已完成 / 无期限 → 什么都不做', async () => {
+  test('Not yet / Completed / No deadline → Do nothing', async () => {
     for (const list of [
       [todo({ dueAt: NOW + 3 * 24 * 60 * MINUTE, createdAt: NOW })],
       [todo({ done: true })],
@@ -133,47 +134,51 @@ describe('tickTodoReminders —— 一拍', () => {
     }
   });
 
-  test('没有可见宠物 → 不写也不记（下一拍补上，而不是白白丢掉）', async () => {
+  test('No visible pet → Do not write or remember (replenish next tick instead of throwing away in vain)', async () => {
     const { deps, writes, marked } = harness({ todos: [todo()], pets: [] });
     await tickTodoReminders(deps);
     assert.equal(writes.length, 0);
     assert.equal(marked.length, 0);
   });
 
-  test('唯一的宠物被占用 → 跳过', async () => {
+  test('The only pet is occupied → skip', async () => {
     const { deps, writes, marked } = harness({ todos: [todo()], locked: 'main' });
     await tickTodoReminders(deps);
     assert.equal(writes.length, 0);
     assert.equal(marked.length, 0);
   });
 
-  test('没有端在线 → 不写也不记（等下一个端连上再提醒，避免写进空状态后丢失）', async () => {
+  test('No client is online → Do not write or remember (wait until the next client is connected and then remind you to avoid losing it after writing to an empty state)', async () => {
     const { deps, writes, marked } = harness({ todos: [todo()], hasListener: false });
     await tickTodoReminders(deps);
     assert.equal(writes.length, 0);
     assert.equal(marked.length, 0);
   });
 
-  test('播报开关关掉：照样弹气泡，但叶子不带 voiceTo（谁都不念）', async () => {
+  test('The broadcast switch is turned off: bubbles are still playing, but the leaves do not have voiceTo (no one reads them)', async () => {
     const { deps, writes } = harness({ todos: [todo()], voiceTodo: false });
     await tickTodoReminders(deps);
-    assert.equal(writes.length, 1, '气泡照旧要弹');
-    assert.equal('voiceTo' in (writes[0]?.data as object), false, '关掉时不该写这个键');
+    assert.equal(writes.length, 1, 'The bubble still needs to be played');
+    assert.equal('voiceTo' in (writes[0]?.data as object), false, 'This key should not be written when turned off');
   });
 
-  test('播报开关打开：按 display 带 voiceTo', async () => {
+  test('The broadcast switch is on: press display with voiceTo', async () => {
     const { deps, writes } = harness({ todos: [todo()], voiceTodo: true });
     await tickTodoReminders(deps);
-    assert.equal((writes[0]?.data as { voiceTo?: string }).voiceTo, 'web', '默认宠物只在网页显示');
+    assert.equal(
+      (writes[0]?.data as { voiceTo?: string }).voiceTo,
+      'web',
+      'By default pets are only displayed on web pages',
+    );
   });
 
-  test('只有桌面端宠物时也能提醒', async () => {
+  test('Reminders can also be made when there are only desktop pets.', async () => {
     const { deps, writes } = harness({ todos: [todo()], pets: [pet('d', 'desktop')] });
     await tickTodoReminders(deps);
     assert.equal(writes[0]?.petId, 'd');
   });
 
-  test('写 say 时带上该由哪一端念：桌面优先，只在网页显示才写 web', async () => {
+  test('When writing say, which end should be read: Desktop priority, only write web when the web page is displayed.', async () => {
     const webOnly = harness({ todos: [todo()], pets: [pet('w', 'web')] });
     await tickTodoReminders(webOnly.deps);
     assert.equal((webOnly.writes[0]?.data as { voiceTo?: string }).voiceTo, 'web');
@@ -183,7 +188,7 @@ describe('tickTodoReminders —— 一拍', () => {
     assert.equal(
       (both.writes[0]?.data as { voiceTo?: string }).voiceTo,
       'desktop',
-      '两端都显示时交给桌面端：桌面端必然有窗口，网页端随时可能关掉',
+      'When both ends are displayed, hand it to the desktop: the desktop must have a window, and the web page may be closed at any time.',
     );
   });
 });

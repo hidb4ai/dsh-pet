@@ -1,8 +1,8 @@
 /**
- * 右侧栏「桌宠对话」标签页的组件入口。
+ * The component entry point of the "desktop pet conversation" tab in the right column.
  *
- * 只是把状态 hook 与渲染树接起来：状态在 ./state、树在 ./view、样式在 ./panel-css。
- * react 能力由宿主注入（见 ./runtime）。
+ * Just connect the state hook to the rendering tree: the state is in ./state, the tree is in ./view, and the style is
+ * in ./panel-css. The react capability is injected by the host (see ./runtime ).
  * @module dsh-pet/src/client/chat/panel
  */
 import { createPetChatState } from './state.ts';
@@ -13,10 +13,10 @@ import { makeMemoryStatus } from './memory-status.ts';
 export type { ChatPanelRuntime } from './runtime.ts';
 
 /**
- * 造面板组件。
+ * Manufacturing panel components.
  *
- * @param rt - 注入的 react 能力。
- * @returns 无参组件：状态与动作都从 ./state 取，本身不持逻辑。
+ * @param rt - Injected react capability.
+ * @returns parameterless component: status and action are taken from ./state, and does not hold logic.
  */
 export function makePetChatPanel(rt: ChatPanelRuntime): () => unknown {
   const useChatState = createPetChatState(rt);

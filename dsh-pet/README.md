@@ -11,7 +11,7 @@ English · [简体中文](README.zh.md) · [Full project guide](https://github.c
 
 ## Overview
 
-An animated desktop companion for DeepSeek Harness and standalone use: chat, configurable personality, voice, animation, reminders and optional per-pet PowerContext 1.5.0 memory. This branch’s memory features may not be in the published upstream package.
+An animated desktop companion for DeepSeek Harness and standalone use: chat, configurable personality, voice, animation, reminders and optional per-pet PowerContext 1.5.0 memory. This package adds optional PowerContext memory to the upstream desktop pet.
 
 <a id="use"></a>
 
@@ -62,4 +62,4 @@ Chat needs model credentials. Host-specific features require their DSH services.
 
 Use `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm check:cycles`, `pnpm check:runtime`, `pnpm check:openapi`, `pnpm test`, `pnpm test:ui` and `pnpm build` before delivery.
 
-See the [release instructions](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/README.md#publishing-the-npm-package) for workflow setup. Artwork terms and credits ship in [ASSET-LICENSE.md](ASSET-LICENSE.md).
+See the [release instructions](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/en/guides/releases.md) for workflow setup. Artwork terms and credits ship in [ASSET-LICENSE.md](ASSET-LICENSE.md).

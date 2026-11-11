@@ -1,13 +1,15 @@
 /**
- * 独立模式余额查询的契约测试：只钉住不联网的两条短路，真实取数由 host 半侧的 balance.test.ts 覆盖。
+ * Contract test of standalone mode balance query: only verify two short-circuit that are not connected to the
+ * Internet, and the actual number is covered by balance.test.ts of host side.
  *
- * 这样测试不依赖公网与真实账号，也不会因为服务商接口变动而红。
+ * This kind of test does not rely on the public network and real accounts, nor will it become popular due to changes
+ * in the service provider's interface.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { queryStandaloneBalance } from './balance.ts';
 
-test('未选服务商：直接 unsupported，不解析密钥也不发请求', async () => {
+test('No service provider selected: direct unsupported, without parsing the key or sending a request', async () => {
   assert.deepEqual(await queryStandaloneBalance('', 'some-key'), {
     ok: false,
     provider: '',
@@ -15,7 +17,7 @@ test('未选服务商：直接 unsupported，不解析密钥也不发请求', as
   });
 });
 
-test('缺密钥：落成 credential-missing，并把 host 半侧的凭证名带回来', async () => {
+test('Missing key: Complete credential-missing and bring back the certificate name of host side', async () => {
   assert.deepEqual(await queryStandaloneBalance('deepseek-official', ''), {
     ok: false,
     provider: 'deepseek-official',
@@ -24,7 +26,7 @@ test('缺密钥：落成 credential-missing，并把 host 半侧的凭证名带�
   });
 });
 
-test('账号路由：独立模式没有账号服务，只能明确不可用而不是伪造余额', async () => {
+test('Account route: There is no account service in standalone mode. It can only be clearly unavailable instead of forging balances.', async () => {
   assert.deepEqual(await queryStandaloneBalance('deepseek-account', 'some-key'), {
     ok: false,
     provider: 'deepseek-account',

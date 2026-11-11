@@ -1,8 +1,9 @@
 /**
- * 文案组装：把命中的节日、节气与时段拼成一句话，另提供历史消息用的时间前缀。
+ * Text assembly: spell the hit festivals, solar terms and time periods into one sentence, and also provide the
+ * time prefix for historical news.
  *
- * 不读时钟、不碰 IO；候选由 ./lunar 提供。
- * 必须始终成立：同一日期多次调用结果一致，不依赖调用顺序。
+ * Do not read clock, do not touch IO; candidate provided by ./lunar. This must always be true: multiple calls on the
+ * same date will produce consistent results, regardless of the order of calls.
  * @module dsh-pet/src/host/time-context/context
  */
 import { MAX_AHEAD, MAX_LOOKBACK, SEASON_ENTRIES } from './entries.ts';
@@ -22,28 +23,29 @@ import {
 import { dayOfYear, dayOfYearOf, entriesAt } from './lunar.ts';
 
 /**
- * 相位 → 从句措辞。
- * @param entry - 节日条目；`name`/`spoken`/`span` 决定措辞与默认窗口。
- * @param delta - 相对节日起始日的天数：> 0 = 还有这么多天；0 = 起始当天；< 0 = 已在节期内或过后。
+ * Phase → clause wording.
+ * @param entry - holiday entry; `name` / `spoken` / `span` determine wording and default window.
+ * @param delta - Number of days relative to the start day of the festival: > 0 = there are so many days left; 0 = the
+ * start day; < 0 = already within or after the festival.
  */
 function phraseOf(entry: Entry, delta: number): string {
   const span = entry.span ?? DEFAULT_SPAN;
   if (delta > 0) return delta === 1 ? '明天就是' + entry.name : '快要过' + entry.name + '了';
   if (delta === 0) return '今天是' + (entry.spoken ?? entry.name);
-  // 节期内（长假分段说，避免十几天重复同一句）：进入节日体的第 daysIn + 1 天
+  // During the festival (long holidays are divided into sections to avoid repeating the same sentence for more than ten days): daysIn + 1 day into the festival
   const daysIn = -delta;
   if (daysIn < span) {
     return span - daysIn === 1 ? entry.name + '假期最后一天了' : '还在' + entry.name + '假期里';
   }
-  // 节后：rest 是「结束后第几天」（0 起）
+  // After the holiday: rest is "the number of days after the end" (starting from 0)
   const rest = daysIn - span;
   return rest <= 1 ? entry.name + '刚过完' : entry.name + '这么快就过完了';
 }
 
 /**
- * 条目 → 候选从句（不在自身窗口内则返回 undefined）。
- * @param ranked - 已排序条目；`priority` 高者先出候选。
- * @param delta - 相对节日起始日的天数。
+ * entry → candidate clause (returns undefined if not within own window).
+ * @param ranked - Sorted entries; `priority` highest candidate first.
+ * @param delta - The number of days relative to the start of the holiday.
  */
 function candidateOf(ranked: RankedEntry, delta: number): Candidate | undefined {
   const { entry, priority } = ranked;
@@ -59,7 +61,7 @@ function candidateOf(ranked: RankedEntry, delta: number): Candidate | undefined 
   return { clause: phraseOf(entry, delta), priority };
 }
 
-/** 假期区间 → 候选从句（不在窗口内返回 undefined）。 */
+/** Holiday interval → candidate clause (returns undefined not within the window). */
 function seasonCandidateOf(date: Date): Candidate | undefined {
   const year = date.getFullYear();
   const today = dayOfYear(date);
@@ -86,8 +88,10 @@ function seasonCandidateOf(date: Date): Candidate | undefined {
 }
 
 /**
- * 节日从句：扫描窗口内枚举每一天命中的条目、算出各自相位与措辞，取优先级最小（数组里最靠前）的那个。
- * @returns 如「今天是大年初一」「快要过国庆节了」「还在春节假期里」「正在放暑假」；无节日时 ''。
+ * Festival Clause: Enumerate the items hit by each day in the scanning window, calculate their respective phases and
+ * words, and select the one with the smallest priority (the highest in the array).
+ * @returns Such as "Today is the first day of the Lunar New Year", "National Day is coming soon", "Still during the
+ * Spring Festival holiday", "Summer vacation is on"; when there is no holiday ''.
  */
 function holidayClauseOf(date: Date): string {
   let best: Candidate | undefined;
@@ -103,14 +107,14 @@ function holidayClauseOf(date: Date): string {
 }
 
 /**
- * 生成注入 system 末尾的时间背景（一行）。
- * @param date - 当前时刻（生产调用方传 new Date()；测试传固定日期）。
- * @returns 形如
- *   `【当下】现在是2026年10月8日星期四 21:32，晚上，工作日，国庆节刚过完。这只是背景，不必刻意报时，也别句句都提节日。`
- *   无节日时中间那一段省略；非法 Date → 空串（调用方据此不加这一行）。
+ * Generate time context (one line) injected at the end of system.
+ * @param date - Current time (production caller passes new Date(); test passes fixed date).
+ * @returns shaped like
+ * `【当下】现在是2026年10月8日星期四 21:32，晚上，工作日，国庆节刚过完。这只是背景，不必刻意报时，也别句句都提节日。` The middle paragraph is omitted when there is no
+ * holiday; invalid Date → empty string (caller does not add this line accordingly).
  */
 export function timeContextOf(date: Date): string {
-  // 非法 Date 的 getFullYear()/getDay() 都返回 NaN，直接拼会产出「NaN年NaN月」——显式挡掉
+  // getFullYear()/ getDay() of invalid Date both return NaN, and direct combination will produce "NaN year NaN month" - explicitly blocked
   if (Number.isNaN(date.getTime())) return '';
   const day = date.getDay();
   const hour = date.getHours();
@@ -138,13 +142,17 @@ export function timeContextOf(date: Date): string {
 }
 
 /**
- * 历史消息的时间前缀（对话历史专用）：`10月31日 22:53`，跨年时带年份。
+ * The time prefix of historical messages (only for conversation history): `10月31日 22:53` , with the year when crossing
+ * the new year.
  *
- * 不带方括号，由调用方决定怎么包；是否加前缀（阈值）也归调用方判断。
+ * Without square brackets, the caller decides how to package; whether to add a prefix (threshold) is also judged by
+ * the caller.
  *
- * @param ts - 那条消息的发送时刻（毫秒时间戳，`memory.json` 里每条都带）。
- * @param now - 当前时刻；与发送时刻不同年时前缀带年份，消掉“哪一年”的歧义。
- * @returns `ts` 或 `now` 非法时返回空串（调用方据此不加前缀，原样发送）。
+ * @param ts - The sending time of that message (millisecond timestamp, each one in `memory.json` contains).
+ * @param now - The current time; when it is different from the sending time, the year is prefixed with the year to
+ * eliminate the ambiguity of "which year".
+ * When @returns `ts` or `now` is invalid, an empty string is returned (the caller does not add a prefix and sends it
+ * as it is).
  */
 export function historyStampOf(ts: number, now: Date): string {
   const at = new Date(ts);

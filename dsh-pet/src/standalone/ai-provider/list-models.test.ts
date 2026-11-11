@@ -11,7 +11,7 @@ const settings: StandaloneAiSettings = {
   apiKey: 'saved-key',
 };
 
-/** 记录请求并按脚本回放响应的假 fetch。 */
+/** False fetch for logging requests and scripting playback of responses. */
 function recorder(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   const calls: Array<{ url: string; headers: Record<string, string> }> = [];
   const fetchImpl = (async (input: string, init?: RequestInit) => {
@@ -24,7 +24,7 @@ function recorder(handler: (url: string, init?: RequestInit) => Response | Promi
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-test('OpenAI 兼容端点：data 数组被归一成 id 与名称 → 保持端点顺序', async () => {
+test('OpenAI compatible endpoints: data array is normalized to id with name → preserving endpoint order', async () => {
   const { calls, fetchImpl } = recorder(() =>
     json({ data: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }, { id: 'bare' }] }),
   );
@@ -40,7 +40,7 @@ test('OpenAI 兼容端点：data 数组被归一成 id 与名称 → 保持端�
   assert.equal(calls[0].headers.authorization, 'Bearer saved-key');
 });
 
-test('兼容网关的 models 映射与 Anthropic 的 display_name → 两种写法都能读出名称', async () => {
+test("Compatible with the gateway's models mapping and Anthropic's display_name → both writing methods can read the name", async () => {
   const mapped = recorder(() => json({ models: { a: { id: 'a', name: 'A' }, b: { id: 'b', name: 'B' } } }));
   assert.deepEqual(await discoverModels(mapped.fetchImpl, settings, {}), {
     ok: true,
@@ -59,7 +59,7 @@ test('兼容网关的 models 映射与 Anthropic 的 display_name → 两种写�
   );
 });
 
-test('Anthropic 协议：请求带版本号的清单地址与 x-api-key，不发送 Bearer', async () => {
+test('Anthropic protocol: Request the manifest address with version number and x-api-key, do not send Bearer', async () => {
   const { calls, fetchImpl } = recorder(() => json({ data: [{ id: 'claude-3' }] }));
   await discoverModels(fetchImpl, settings, {
     protocol: 'anthropic',
@@ -72,7 +72,7 @@ test('Anthropic 协议：请求带版本号的清单地址与 x-api-key，不发
   assert.equal(calls[0].headers.authorization, undefined);
 });
 
-test('地址省略 /v1：先按原样请求，404 之后改打带版本号的地址', async () => {
+test('Address omitted / v1: Request as is first, then change the address with version number after 404', async () => {
   const { calls, fetchImpl } = recorder((url) =>
     url.endsWith('/v1/models') ? json({ data: [{ id: 'found' }] }) : json({ error: 'nope' }, 404),
   );
@@ -87,7 +87,7 @@ test('地址省略 /v1：先按原样请求，404 之后改打带版本号的地
   );
 });
 
-test('鉴权失败：401 → code 为 auth，文案不回显响应正文', async () => {
+test('Authentication failed: 401 → code is auth, the text does not echo the response text', async () => {
   const { fetchImpl } = recorder(() => json({ error: 'invalid key sk-should-not-leak' }, 401));
   const result = await discoverModels(fetchImpl, settings, {});
   assert.equal(result.ok, false);
@@ -96,7 +96,7 @@ test('鉴权失败：401 → code 为 auth，文案不回显响应正文', async
   assert.doesNotMatch(result.message, /sk-should-not-leak/);
 });
 
-test('响应不是模型列表：code 为 contract，且不做第二次请求', async () => {
+test('The response is not a model list: code is contract, and no second request is made', async () => {
   const { calls, fetchImpl } = recorder(() => json({ hello: 'world' }));
   const result = await discoverModels(fetchImpl, settings, {});
   assert.equal(result.ok, false);
@@ -104,14 +104,14 @@ test('响应不是模型列表：code 为 contract，且不做第二次请求', 
   assert.equal(calls.length, 1);
 });
 
-test('响应不是 JSON：code 为 contract', async () => {
+test('Response is not JSON: code is contract', async () => {
   const { fetchImpl } = recorder(() => new Response('<html>gateway</html>', { status: 200 }));
   const result = await discoverModels(fetchImpl, settings, {});
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.code, 'contract');
 });
 
-test('缺地址或缺密钥：不发请求，直接回 code input', async () => {
+test('Missing address or key: do not send a request, directly reply code input', async () => {
   const { calls, fetchImpl } = recorder(() => json({ data: [] }));
   const blank = { ...settings, baseUrl: '', apiKey: '' };
   const noBase = await discoverModels(fetchImpl, blank, {});
@@ -123,7 +123,7 @@ test('缺地址或缺密钥：不发请求，直接回 code input', async () => 
   assert.equal(calls.length, 0);
 });
 
-test('带账号或查询参数的地址被拒绝', async () => {
+test('Addresses with account numbers or query parameters are rejected', async () => {
   const { calls, fetchImpl } = recorder(() => json({ data: [] }));
   for (const baseUrl of ['https://user:pass@api.example.test/v1', 'https://api.example.test/v1?x=1']) {
     const result = await discoverModels(fetchImpl, settings, { baseUrl });
@@ -133,7 +133,7 @@ test('带账号或查询参数的地址被拒绝', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('网络失败：code 为 network', async () => {
+test('Network failure: code is network', async () => {
   const { fetchImpl } = recorder(() => {
     throw new TypeError('fetch failed');
   });
@@ -142,14 +142,14 @@ test('网络失败：code 为 network', async () => {
   if (!result.ok) assert.equal(result.code, 'network');
 });
 
-test('草稿缺省：沿用已保存的地址与密钥', async () => {
+test('Draft default: use the saved address and key', async () => {
   const { calls, fetchImpl } = recorder(() => json({ data: [{ id: 'saved' }] }));
   await discoverModels(fetchImpl, settings, { protocol: 'openai-compatible' });
   assert.equal(calls[0].url, 'https://api.example.test/v1/models');
   assert.equal(calls[0].headers.authorization, 'Bearer saved-key');
 });
 
-test('换域名、同域路径或协议不复用已保存密钥', async () => {
+test('The saved key cannot be reused when changing the domain name, same-domain path or protocol.', async () => {
   const { calls, fetchImpl } = recorder(() => json({ data: [] }));
   for (const input of [
     { baseUrl: 'https://other.example/v1' },
@@ -162,7 +162,7 @@ test('换域名、同域路径或协议不复用已保存密钥', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('流式超大清单提前停止读取，429 保留稳定错误分类', async () => {
+test('The streaming extremely large list stops reading early, 429 retains stable error classification', async () => {
   let cancelled = false;
   let reads = 0;
   const { fetchImpl } = recorder(

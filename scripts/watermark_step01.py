@@ -1,16 +1,15 @@
-"""水印填充（step01）：video/*.mp4 → step01/*.mp4（水印像素用第5近背景色填充）
+"""Watermark filling (step01): video /*. mp4 → step01 /*. mp4 (watermark pixels are filled with the 5th nearest background color)
 
-素材处理链第 1 步（替代原 crop_step01 的职责——去水印，且更精确）：
-  video/（1280x720 原视频）→ 本脚本 → step01/（水印去除后的 1280x720）
-  → chroma_step02.py（绿幕抠像）→ normalize_step03.py → encode_thumbs.py
+ Step 1 of the asset processing chain (replaces the responsibility of the original crop_step01 - watermark removal, and is more accurate):
+   video / (1280 x720 original video) → this script → step01 / (1280 x720 after watermark removal)
+  → chroma_step02.py (green screen background removal) → normalize_step03.py → encode_thumbs.py
 
-方案（已验证）：
-- mask：video/watermark_mask_v5.mkv（黑视频亮度>10 生成，覆盖淡入淡出水印）
-- 取色：每个水印像素取第 5 近的"非水印像素"颜色（跳过紧贴的未标记水印字空洞）
-- 输出：libx264 crf18 yuv420p，与原视频同尺寸/帧率，供 chromakey 抠像
+Solution (verified):
+- mask: video/watermark_mask_v5.mkv (black video brightness >10 generated, covering fade watermark)
+- Color picking: Each watermark pixel takes the 5th closest "non-watermark pixel" color (skipping the adjacent unmarked watermark holes)
+- Output: libx264 crf18 yuv420p, the same size/frame rate as the original video, for chromakey background removal
 
-并发：PARALLEL 个视频同时处理（每视频独立 Python 进程 + 3 个 ffmpeg 子进程）。
-"""
+ concurrency: PARALLEL videos are processed simultaneously (each video has an independent Python process + 3 ffmpeg sub-processes)."""
 from __future__ import annotations
 
 import re
@@ -25,7 +24,7 @@ OUT = ROOT / "step01"
 MASK = SRC / "watermark_mask_v5.mkv"
 K = 5
 PARALLEL = 4
-# 统一使用工作区自带的 ffmpeg（素材处理链零第三方依赖）
+# Uniformly use ffmpeg that comes with the workspace (the asset processing chain has zero third-party dependencies)
 FFMPEG = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffmpeg.exe")
 FFPROBE = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffprobe.exe")
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -43,10 +42,9 @@ def duration(video: Path) -> int:
 
 
 def _is_valid(dst: Path, src: Path, min_size: int = 50_000) -> bool:
-    """断点续跑完整性检查：存在、够大、不比源旧、且能被 ffprobe 读到视频流。
+    """Breakpoint resume integrity check: exists, is large enough, is not older than the source, and can be read by ffprobe into the video stream.
 
-    ffprobe 验证防止"中断时正在写、大小看似足够但已损坏"的文件被误判为已完成。
-    """
+     ffprobe Validation prevents files that are "writing when interrupted, appear to be of sufficient size but are damaged" from being misjudged as completed."""
     if not dst.exists() or dst.stat().st_size <= min_size:
         return False
     if dst.stat().st_mtime < src.stat().st_mtime:
@@ -57,7 +55,7 @@ def _is_valid(dst: Path, src: Path, min_size: int = 50_000) -> bool:
 
 
 def _process_one(video: Path) -> tuple[str, str]:
-    """处理单个视频（worker 函数，必须模块级以支持 Windows spawn）。"""
+    """Processing a single video (worker function, must be module level to support Windows spawn)."""
     dst = OUT / video.name
     if _is_valid(dst, video):
         return video.name, "SKIP"

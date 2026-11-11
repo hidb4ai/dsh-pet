@@ -1,8 +1,9 @@
 /**
- * 气泡与悬浮提示的渲染：工作状态 / 碎碎念 / 余额三段内容共用一个气泡槽，按优先级择一显示。
+ * Rendering of bubbles and floating prompts: the three pieces of content, working status / whisper / balance, share a
+ * bubble slot, and one is displayed according to priority.
  *
- * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
- * 只读实例状态，除 DOM 与 syncInputBusy() 之外不写任何字段。
+ * PetSprite is defined by sprite.js. This file only adds methods to the prototype and must be loaded afterwards.
+ * read-only instance state, no fields are written except DOM and syncInputBusy().
  * @module dsh-pet/runtime/electron-helper/sprite-bubble
  */
 'use strict';
@@ -16,11 +17,14 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 悬浮提示渲染：文本 = 宠物显示名（宿主已保证非空）；位置 = 光标右下（装不下自动翻边），
-   * 摆位判据与浏览器端共用 shared 的 tooltipPlacement。
+   * Rendering of floating prompts: text = pet display name (host is guaranteed to be non-empty); position = lower
+   * right of the cursor (cannot be loaded and automatically flanged), and the positioning criterion shares shared and
+   * tooltipPlacement with the browser.
    *
-   * 光标存的是视口坐标，而提示是 position:fixed、DOM 坐标相对窗口，所以这里减掉窗口原点。
-   * 存视口坐标而非窗口坐标，是因为窗口会随宠物移动：只在这里按当前原点重算一次，贴光标不会漂。
+   * The cursor stores the viewport coordinates, and the prompts are position:fixed and DOM coordinates relative to the
+   * window, so the window origin is subtracted here. The viewport coordinates are stored instead of the window
+   * coordinates because the window will move with the pet: it is only recalculated based on the current origin here,
+   * and the cursor will not drift.
    */
   renderTip() {
     if (this.tip.textContent !== this.pet.name) this.tip.textContent = this.pet.name;
@@ -30,8 +34,9 @@ Object.assign(PetSprite.prototype, {
       const winY = this.pos.y - this.winOffset.y;
       const winW = this.size + this.margin.l + this.margin.r;
       const winH = this.winH + this.margin.t + this.margin.b;
-      // 允许显示范围 = 窗口 ∩ 光标所在屏的工作区：只按窗口夹会画到屏幕外，只按工作区夹会落到
-      // 窗口外（html/body 是 overflow:hidden，一样看不见）。
+      // Allowed display range = window ∩ The work area of the screen where the cursor is located: just pressing the
+      // window clip will draw it outside the screen, and just pressing the work area clip will fall outside the window
+      // (html/body is overflow:hidden, which is also invisible).
       const area = S.resolveRect(WORK_AREAS, cursor.x, cursor.y) ?? { x: winX, y: winY, width: winW, height: winH };
       const x0 = Math.max(winX, area.x);
       const y0 = Math.max(winY, area.y);
@@ -50,8 +55,9 @@ Object.assign(PetSprite.prototype, {
     window.__dshPetDebug.tooltipOn = this.tipOn;
   },
   renderBubble() {
-    // 待办面板占气泡槽且优先级最高：它是用户主动打开的窗口，其余气泡一律让位。
-    // 面板是外部塞进来的 DOM，重建 innerHTML 会把它自己抹掉，所以这一段只补显隐与让位。
+    // The to-do panel occupies the bubble slot and has the highest priority: it is the window that the user actively
+    // opens, and all other bubbles will give way. The panel is DOM plugged in from the outside. Rebuilding innerHTML
+    // will erase it, so this section only makes up for the display and hiding.
     this.bubble.classList.toggle('dsh-pet-todo-bubble', this.todoOpen);
     if (this.todoOpen) {
       this.bubble.classList.remove('is-whisper', 'is-clickable', 'is-expanded', S.MEME_BUBBLE_CLASS);
@@ -60,19 +66,22 @@ Object.assign(PetSprite.prototype, {
       this.syncInputBusy();
       return;
     }
-    // 气泡单槽：同一时刻只显示一个（优先级：终态任务 > 碎碎念/对话 > 余额 > 非终态任务）。
-    // 终态任务不让位：完成/失败气泡只活 10s，被顶掉就彻底看不到；非终态气泡常驻，让位零损失。
-    // 工作气泡与碎碎念同款样式（宽度自适应 + 自动换行）；配图标记交给 CSS（带图时取消 min-width）。
-    // 图片 URL 与视频同规则：传 BASE 前缀（桌面是 file:// 页面，必须绝对地址），素材根同理。
+    // bubble single slot: only one is displayed at the same time (priority: final task > whisper/dialogue > balance >
+    // non-final task). The final state task does not give way: the completed/failed bubble only lives 10 s, and it
+    // will be completely invisible if it is pushed out; the non-final state bubble is permanent, and there is zero
+    // loss when giving way. The work bubble has the same style as whisper (width adaptive + automatic word wrapping);
+    // the picture mark is given to CSS (cancel min-width when adding pictures). The picture URL has the same rules as
+    // the video: pass the BASE prefix (the desktop is the file:// page, which must be an absolute address), and the
+    // asset root is the same.
     const workOn = !!(this.workOn && this.workText);
     const whisperOn = !!(this.whisperOn && this.whisperView);
     const balanceOn = !!(this.bubbleOn && this.balanceView);
     const workTerminal = this.workState === 'success' || this.workState === 'error';
     const slot =
       workTerminal && workOn ? 'work' : whisperOn ? 'whisper' : balanceOn ? 'balance' : workOn ? 'work' : 'none';
-    // 记住当前槽位：点击处理在 init.js，必须知道「现在显示的是哪一种气泡」才能分清翻页与跳会话。
+    // Remember the current slot: click processing is at init.js. You must know "which bubble is displayed now" to distinguish between page turning and session jumping.
     this.bubbleSlot = slot;
-    // 配图两种形态二选一：url 用完整地址，image 按素材根拼表情包路径；样式/class 共用。
+    // Choose one of two forms of pictures: url uses the complete address, image uses the asset root to spell the meme path; style/class is shared.
     const whisperImg =
       slot === 'whisper'
         ? this.whisperUrl
@@ -81,12 +90,14 @@ Object.assign(PetSprite.prototype, {
         : null;
     this.bubble.classList.toggle(
       'is-whisper',
-      // 余额「文字说明」也套紧凑变体：字号更小、宽度下限更窄，多行说明更紧凑
+      // The balance "text description" also has a compact variant: the font size is smaller, the lower limit of the width is narrower, and the multi-line description is more compact.
       slot === 'whisper' || slot === 'work' || (slot === 'balance' && this.balanceWrap),
     );
     this.bubble.classList.toggle(S.MEME_BUBBLE_CLASS, !!whisperImg);
-    // 可点/展开两个状态类：可点 → 气泡参与命中区（见 syncInputRegions）；index>0 → 更宽的盒与紧凑字号。
-    // 展开态仅内置 windows 的窗口明细与用量页使用；custom 各页是对等页面，翻页不切紧凑字号。
+    // Apply separate clickable and expanded classes. Clickable bubbles participate in syncInputRegions; index > 0 uses
+    // a wider box and smaller text.
+    // Only built-in windows detail and usage pages expand. Custom pages remain peers and retain the same text size
+    // when paging.
     const isCustom = !!(this.balanceState && S.customViews(this.balanceState));
     const workClickable = this.workClickable();
     const clickable = (slot === 'balance' && this.balanceClickable()) || workClickable;
@@ -94,10 +105,10 @@ Object.assign(PetSprite.prototype, {
     this.bubble.classList.toggle('is-clickable', clickable);
     this.bubble.classList.toggle('is-expanded', expanded);
     if (slot === 'none') {
-      // 三者都没有可显示的内容：隐藏（不占位，也就不会挡住任何一层）
+      // None of the three have displayable content: hidden (does not occupy space, so it will not block any layer)
       this.bubble.classList.remove('is-on');
       window.__dshPetDebug.lastBubbleTitle = '';
-      this.syncInputBusy(); // 气泡没了 → 撤销它的控件矩形与 busy 标记（否则整窗还留着可点区域）
+      this.syncInputBusy(); // The bubble is gone → Cancel its control rectangle and busy mark (otherwise the entire window will still have a clickable area)
       return;
     }
     this.bubble.innerHTML = '';
@@ -107,16 +118,16 @@ Object.assign(PetSprite.prototype, {
       line.textContent = this.workText;
       this.bubble.appendChild(line);
     } else if (slot === 'whisper') {
-      // 配图（shared 生成的 <img> + 共用样式）：先看图再读话
+      // Pictures (generated by shared < img > + shared style): Look at the pictures first and then read the words
       if (whisperImg) this.bubble.appendChild(whisperImg);
       const line = document.createElement('div');
       line.className = 'pet-bub-row';
       line.textContent = this.whisperView[0]?.text ?? '';
       this.bubble.appendChild(line);
-      // 语音状态角标：idle 时什么都不加；failed 用静音喇叭，表示这句没念出来
+      // Voice status code: idle does not add anything; failed uses a mute speaker to indicate that the sentence is not pronounced.
       const voice = S.getVoiceState();
       if (voice !== 'idle') {
-        S.injectMemeBubbleCss(); // 角标样式与配图同一份 CSS，两端共用
+        S.injectMemeBubbleCss(); // The corner mark style and the accompanying picture are the same CSS, shared at both ends.
         const badge = document.createElement('span');
         badge.className =
           'dsh-pet-voice-badge' + (voice === 'loading' ? ' is-loading' : '') + (voice === 'failed' ? ' is-failed' : '');
@@ -126,18 +137,20 @@ Object.assign(PetSprite.prototype, {
         this.bubble.appendChild(badge);
       }
     } else if (this.balanceState && S.customViews(this.balanceState)) {
-      // custom 形态：第三方自己的节点树。页索引取当前页；页数变少时夹到最后一页，不显示残页。
+      // custom form: third party’s own node tree. The page index retrieves the current page; when the number of pages becomes less, it clips to the last page and does not display the remaining pages.
       const views = S.customViews(this.balanceState);
       const page = views[Math.min(this.balanceViewIndex, views.length - 1)];
       if (page) this.bubble.appendChild(this.renderTree(page));
     } else {
-      // 展开态的行在这里现算：renderBubble 是只读渲染路径，不缓存（余额每轮都在变，缓存反而要同步失效）
-      // 每页内容与页数同源（S.balancePageView / S.balancePageCount）：不再按「index>0 即窗口明细」二分化，
-      // 否则新增的用量页会和明细挤在同一页。没有读数时回落到缓存的首屏行。
+      // The expanded rows are calculated here: renderBubble is a read-only rendering path and is not cached (the
+      // balance changes every round, but the cache must be invalidated simultaneously). The content of each page has
+      // the same source as the page number (S.balancePageView / S.balancePageCount): no longer divided by "index > 0,
+      // that is, window details", otherwise the new usage page will be squeezed into the same page as the details.
+      // Fallback to the cached above-the-fold row when there are no readings.
       const rows = this.balanceState ? S.balancePageView(this.balanceState, this.balanceViewIndex) : this.balanceView;
       const hasTier = rows.some((r) => r.role === 'tier');
       if (hasTier) {
-        // deepseek 余额单行：余额（峰/谷）¥x — 档位字着色
+        // deepseek Balance single line: Balance (peak/trough) ¥ x — state word coloring
         const line = document.createElement('div');
         line.className = 'pet-bub-row';
         for (const r of rows) {
@@ -149,7 +162,7 @@ Object.assign(PetSprite.prototype, {
         this.bubble.appendChild(line);
       } else {
         for (const r of rows) {
-          // 展开态一行 = 一个窗口：窗口名 + 进度条 + 已用百分比 + 重置倒计时，四段 flex 同行，条吃剩余宽度。
+          // One line in the expanded state = one window: window name + progress bar + used percentage + reset countdown, four segments flex in the same row, the bar takes up the remaining width.
           if (r.role === 'quota') {
             const row = document.createElement('div');
             row.className = 'pet-bub-quota';
@@ -172,7 +185,7 @@ Object.assign(PetSprite.prototype, {
             this.bubble.appendChild(row);
             continue;
           }
-          // 用量页：三行两列，总量是唯一大字；进/出各一处强调色，其余次级灰。
+          // Usage page: three rows and two columns, the total amount is the only big word; there is an accent color for each entry/exit, and the rest are gray.
           if (r.role === 'usage') {
             const box = document.createElement('div');
             box.className = 'pet-bub-usage';
@@ -187,7 +200,7 @@ Object.assign(PetSprite.prototype, {
               }
               return row;
             };
-            // 进出比例条：宽度即真实占比，输入通常压倒性占多数，条偏单色属正常。
+            // In/out ratio bar: The width is the actual proportion. The input usually accounts for an overwhelming majority. It is normal for the bar to be a single color.
             const bar = document.createElement('div');
             bar.className = 'pet-bub-usage-bar';
             if (r.inputPercent !== undefined) {
@@ -230,7 +243,7 @@ Object.assign(PetSprite.prototype, {
     }
     this.bubble.classList.add('is-on');
     window.__dshPetDebug.lastBubbleTitle = this.bubble.textContent.slice(0, 60);
-    // 气泡内容/尺寸变了 → 重报控件矩形并同步 busy 标记。这里是所有显隐与换内容的汇聚点。
+    // The bubble content/size has changed → Re-report the control rectangle and synchronize the busy mark. This is where all the revealing and changing content comes together.
     this.syncInputBusy();
   },
 });

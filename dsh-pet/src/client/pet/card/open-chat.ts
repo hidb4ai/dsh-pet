@@ -1,28 +1,29 @@
 /**
- * 打开对话的隐式入口：拖拽落到宠物上、悬停时按 L、悬停时粘贴一张图。
- * 只在调用方生命周期内注册，卸载时全部摘除；不认为自己是 React 组件，也不碰状态。
- * 菜单项那条入口由调用方直接接线，不在这里。
+ * Open the implicit entry point of the conversation: drag and drop on the pet, press L when hovering, and paste a
+ * picture when hovering. Only register in the caller lifecycle and remove them all when unmounting; it does not
+ * consider itself to be a React component and does not touch the state. The entry point of the menu item is directly
+ * connected by the caller, not here.
  * @module dsh-pet/src/client/pet/card/open-chat
  */
 import { isChatHotkey, isTypingTarget } from '../../../shared/chat/hotkey.ts';
 import { firstImageFromClipboard } from '../../../shared/chat/image-pick.ts';
 import { claimFileDragEnter, claimFileDragOver, claimFileDrop } from '../../file-drop.ts';
 
-/** 注册来源。 */
+/** register source. */
 export interface OpenChatInput {
-  /** 宠物舞台节点；拖拽只在它上面生效，其它区域的 drop 留给页面自己。 */
+  /** Pet stage node; dragging only takes effect on it, leaving drop in other areas to the page itself. */
   readonly stage: HTMLElement | null;
-  /** 调用方持有的悬停标记：为 true 时才响应快捷键。 */
+  /** The shortcut key will be responded to only when the hover mark held by the caller is true. */
   readonly isHovered: () => boolean;
-  /** 打开对话；带图时直接进入待发送状态。 */
+  /** Open the conversation; when adding a picture, it will directly enter the pending state. */
   readonly openChat: (image?: File) => void;
 }
 
 /**
- * 注册拖拽、快捷键与粘贴。
+ * Register drag and drop, shortcut keys and paste.
  *
- * @param input - 舞台节点、悬停判定与打开动作。
- * @returns 解绑函数，交给调用方的 effect 清理。
+ * @param input - Stage node, hover determination and opening action.
+ * @returns unbinds the function and leaves it to the caller’s effect for cleaning.
  */
 export function bindOpenChat(input: OpenChatInput): () => void {
   const { stage, isHovered, openChat } = input;
@@ -32,7 +33,7 @@ export function bindOpenChat(input: OpenChatInput): () => void {
     openChat();
   };
   const onPaste = (e: ClipboardEvent): void => {
-    // 焦点在输入框里就是正常粘贴，抢了会把文字粘丢——那种情况有弹窗自己的处理器
+    // If the focus is in the input box, it will be pasted normally. If you grab it, the text will be lost. In that case, there is a pop-up window's own processor.
     if (!isHovered() || isTypingTarget(e.target)) return;
     const file = firstImageFromClipboard(e.clipboardData);
     if (file === undefined) return;

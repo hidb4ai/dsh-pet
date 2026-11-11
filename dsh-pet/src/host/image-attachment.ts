@@ -1,14 +1,15 @@
 /**
- * 对话图片入参的解析：把线上 JSON 的 `attachment` 变成附件服务可直接接收的字节。
- * 不做 IO、不碰附件服务——落盘与权威校验（解码真实性、像素上限）在路由层，本模块只负责
- * 形状、媒体类型白名单与 base64 规范化。
+ * Analysis of the input parameters of the conversation picture: convert the `attachment` of the online JSON into bytes
+ * that can be directly received by the attachment service. Do not do IO, do not touch the attachment service - persist
+ * to disk and authoritative verification (decoding authenticity, pixel upper limit). At the route layer, this module
+ * is only responsible for shape, media type whitelist and base64 normalization.
  * @module dsh-pet/src/host/image-attachment
  */
 
-/** 图片媒体类型白名单，与宿主附件服务接受的集合一致。 */
+/** The image media type whitelist is consistent with the set accepted by the host attachment service. */
 export type PetImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
 
-/** 一张已落盘的图片：只声明 pet 用到的字段，不引 @deepseek-ai/dsh-attachment 的类型包。 */
+/** A picture that has been persisted to disk: only declare the fields used by pet, and do not quote the type package of @deepseek-ai/dsh-attachment. */
 export interface PetImageRef {
   readonly attachmentId: string;
   readonly mediaType: PetImageMediaType;
@@ -17,37 +18,38 @@ export interface PetImageRef {
   readonly height: number;
 }
 
-/** 定位一张已落盘图片所需的最小信息：对象路径只由 attachmentId 决定。 */
+/** Minimum information required to locate an image that has been persisted to disk: the object path is determined only by attachmentId. */
 export interface PetImageLocator {
   readonly attachmentId: string;
 }
 
-/** 附件服务的最小形状：DSH 宿主提供，独立模式缺失。 */
+/** Minimum shape of attachment service: DSH host provided, standalone mode missing. */
 export interface PetImageSink {
-  /** 部署级单图字节上限；缺失视为不设限（服务内部仍会权威校验）。 */
+  /** The upper limit of bytes for a single image at the deployment level; if it is missing, it will be considered as no limit (the service will still authoritatively verify it internally). */
   readonly imageLimits?: { readonly maxImageBytes?: number };
-  /** 校验并持久化一批图片，返回与入参同序的引用。 */
+  /** Verify and persist a batch of pictures, returning references in the same order as the input parameters. */
   saveImages(inputs: readonly { data: Uint8Array; mediaType: PetImageMediaType }[]): Promise<readonly PetImageRef[]>;
-  /** 宿主文件后端上的绝对路径；非文件后端不提供此方法（取图端点据此回 404）。 */
+  /** Absolute path on host file backend; non-file backend does not provide this method (the image fetch endpoint returns 404 accordingly). */
   imageHostPath?(ref: PetImageLocator): string | undefined;
 }
 
-/** 解析结论；失败时 message 直接作为 bad-request 的文案。 */
+/** Analysis conclusion; when failed, message directly serves as the copy of bad-request. */
 export type ParsedImage =
   | { readonly ok: true; readonly mediaType: PetImageMediaType; readonly bytes: Uint8Array }
   | { readonly ok: false; readonly message: string };
 
-/** 允许的媒体类型；顺序用于错误文案，与宿主附件服务的白名单保持一份事实。 */
+/** Allowed media types; order used for error copy, keeping a fact with host attachment service's whitelist. */
 const MEDIA_TYPES: readonly PetImageMediaType[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
-/** base64 字符上限：请求体上限 1 MiB 下留出 text 与 JSON 结构的余量。 */
+/** base64 character upper limit: The upper limit of the request body is 1 MiB, leaving a margin for the text and JSON structures. */
 const MAX_BASE64_CHARS = 900_000;
 
 /**
- * 解析请求体里的 `attachment`。
+ * Parse `attachment` in the request body.
  *
- * @param raw - 未经校验的原始值。
- * @returns 规范 base64 解出的字节与媒体类型；失败时给出可直接下发的文案。
+ * @param raw - Unchecked raw value.
+ * @returns specifies the bytes and media type resolved by base64; if it fails, it will provide a copy that can be sent
+ * directly.
  */
 export function parseImageAttachment(raw: unknown): ParsedImage {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -63,8 +65,9 @@ export function parseImageAttachment(raw: unknown): ParsedImage {
   if (data.length > MAX_BASE64_CHARS) {
     return { ok: false, message: 'attachment.data 过长（请压缩或降低分辨率）' };
   }
-  // Buffer 解码会静默丢弃非法字符，所以用「重新编码必须与原文一致」确认它确实是规范 base64；
-  // 否则 `"abc!!!"` 会被悄悄解成别的字节，调用方以为发了 A、模型看到的却是 B。
+  // Buffer decoding will silently discard invalid characters, so use "recoding must be consistent with the original
+  // text" to confirm that it is indeed the standard base64; otherwise `"abc!!!"` will be secretly decoded into other
+  // bytes, and the caller thinks A is sent, but the model sees B.
   const decoded = Buffer.from(data, 'base64');
   if (decoded.length === 0 || decoded.toString('base64') !== data) {
     return { ok: false, message: 'attachment.data 不是合法的 base64' };

@@ -1,31 +1,31 @@
 /**
- * 「吃白饭」覆盖层的插槽载体：把命令式覆盖层挂进 DSH 的 shell.overlay。
+ * Slot carrier for the "free rice" overlay: hook the imperative overlay into shell.overlay of DSH.
  *
- * 覆盖层必须住在 AppFrame 的 [data-shell-overlay] 里，不能自己往 body 上挂：
- * body 直接子级会命中宿主给 macOS 写的 no-drag 规则，把标题栏拖成死区；
- * 而 shell.overlay 是官方指定的全应用浮层座位，自带 z-index:20 的层叠上下文，
- * 覆盖层因此只压在桌宠之上，不会越级盖住宿主模态框。
+ * The overlay must live in [ data-shell-overlay ] of AppFrame and cannot be attached to body by itself: body's direct
+ * children will hit the no-drag rule written by the host for macOS and drag the title bar into a dead zone;
+ * shell.overlay is the officially designated all-application floating layer seat and comes with z-index:20 Stacking
+ * context, the overlay is therefore only pressed on the desktop pet and will not jump over the host modal box.
  * @module dsh-pet/src/client/baifan/layer
  */
 import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
 
-/** 注入的 react 能力：只取这个组件用到的三个。 */
+/** Injected react capabilities: only take the three used by this component. */
 export interface LayerRuntime {
-  /** 创建元素。 */
+  /** Create element. */
   h: typeof jsx;
-  /** 引用：容器节点要跨渲染存活，卸载时据此清场。 */
+  /** Quote: The container node must survive across renderings and be cleared accordingly when unmounting. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
-  /** 副作用：挂载与清理成对出现。 */
+  /** side effect: Mounting and cleaning appear in pairs. */
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
 }
 
 /**
- * 造插槽组件。
+ * Build slot assembly.
  *
- * @param rt - 注入的 react 能力。
- * @param mount - 把覆盖层挂到给定容器上，返回卸载钩子。
- * @returns 可注册进 `shell.overlay` 的组件。
+ * @param rt - Injected react capability.
+ * @param mount - Unmount hook to unmount the overlay on the given container.
+ * @returns can register components of `shell.overlay` .
  */
 export function makeBaifanLayer(rt: LayerRuntime, mount: (host: HTMLDivElement) => () => void) {
   return function BaifanLayer(): ReactNS.ReactNode {
@@ -34,8 +34,9 @@ export function makeBaifanLayer(rt: LayerRuntime, mount: (host: HTMLDivElement) 
       const host = ref.current;
       if (host === null) return undefined;
       return mount(host);
-      // 空依赖是有意的：容器只在挂载时出现一次，覆盖层自己管内部状态，
-      // 不跟着父组件重渲染重挂——重挂会重建米饭与分数的整条状态。
+      // The empty dependency is intentional: the container only appears once when mounting, and the overlay manages
+      // the internal state by itself, and does not follow the parent component to re-render and re-hang - re-hanging
+      // will rebuild the entire state of rice and scores.
     }, []);
     return rt.h('div', { ref });
   };

@@ -1,8 +1,10 @@
 /**
- * 配置读取：扫描宠物目录、迁移旧文件名、合并出成品配置并拍平。
+ * Configuration reading: scan the pet directory, migrate old file names, merge the finished configuration and flatten
+ * it.
  *
- * 不负责写盘（归 ./save）；解析失败按内置默认回退，绝不返回半成品。
- * 必须始终成立：所有读取都经 readAllConfig，模块外不得自行拼路径。
+ * It is not responsible for writing to the disk (returned to ./save); if parsing fails, it will fall back to the
+ * built-in default and will never return to partial results. It must always be true: all reads go through
+ * readAllConfig, and the path must not be spelled out outside the module.
  * @module dsh-pet/src/host/config/read
  */
 import { existsSync, readdirSync, renameSync } from 'node:fs';
@@ -14,9 +16,10 @@ import { mergeEntry, packBase } from './merge.ts';
 import { DEFAULT_CHAT_MEMORY } from '../../shared/chat-memory-config.ts';
 
 /**
- * 老用户一次性迁移：main-config.json → main-config.jsonc（重命名，内容一字不动）。
- * 为什么改扩展名：用户层从「同步」起就是带 // 注释的 JSONC 原文，挂在 .json 名下名不副实。
- * 新文件已存在 → 什么都不做（绝不用旧文件覆盖新文件）；重命名失败静默放过，读取侧有回落。
+ * One-time migration for old users: main-config.json → main-config.jsonc (renamed, the content remains unchanged). Why
+ * change the extension: The user layer has been the original text of JSONC with // annotation since "synchronization",
+ * and it is unworthy of the name. json. The new file already exists → do nothing (never overwrite the new file with
+ * the old file); rename failure is silently ignored, with fallback on the reading side.
  */
 export function migrateUserConfig(paths: ConfigPaths, log?: (message: string) => void): boolean {
   const legacy = paths.legacyUserFile;
@@ -24,25 +27,25 @@ export function migrateUserConfig(paths: ConfigPaths, log?: (message: string) =>
   try {
     renameSync(legacy, paths.userFile);
   } catch {
-    return false; // 迁移失败：读取侧回落旧路径，不影响使用
+    return false; // Migration failed: read side fallback old path, does not affect use
   }
-  log?.(`用户配置已迁移到 JSONC：${legacy} → ${paths.userFile}`);
+  log?.(`Migrated user configuration to JSONC: ${legacy} -> ${paths.userFile}`);
   return true;
 }
 
 interface PetFileEntry {
-  /** 文件名前缀 = 条目 key = 素材根 */
+  /** Filename prefix = entry key = asset root */
   prefix: string;
   path: string;
 }
 
-/** 扫描 pet/ 目录：<名>-config.(json|jsonc) → 条目（按文件名排序） */
+/** Scan pet / directory: <name>- config .( json | jsonc ) → entries (sorted by file name) */
 function scanPetFiles(petDir: string): PetFileEntry[] {
   let entries;
   try {
     entries = readdirSync(petDir, { withFileTypes: true });
   } catch {
-    return []; // pet/ 目录不存在 = 无文件宠物
+    return []; // pet / Directory does not exist = No file pet
   }
   return entries
     .filter((e) => e.isFile())
@@ -53,10 +56,12 @@ function scanPetFiles(petDir: string): PetFileEntry[] {
 }
 
 /**
- * 按条目 key（= 文件名前缀 = 素材根）定位文件宠物的实际文件与磁盘原对象。
- * 写路径（POST /pet-display）改文件宠物的 display 时，既要写回它自己的配置文件，也要拿该文件的
- * existing 做透传保留，否则手改的 whisperPrompt / animations / memes 会被白名单重建抹掉。
- * 扩展名不写死（.json 或 .jsonc），写错就会新建一个空配置；前缀不存在 → undefined。
+ * Locate the actual file and disk original object of the file pet by entry key (= file name prefix = asset root). When
+ * writing the path (POST /pet-display) to change the display of the file pet, you must not only write back its own
+ * configuration file, but also use the existing of the file as a transparent transmission reservation, otherwise the
+ * manually modified whisperPrompt / animations / memes will be erased by the whitelist reconstruction. The extension
+ * is not hard-coded (. json or . jsonc). If it is written incorrectly, an empty configuration will be created; the
+ * prefix does not exist → undefined.
  */
 export function readPetConfigEntry(
   paths: ConfigPaths,
@@ -67,33 +72,39 @@ export function readPetConfigEntry(
 }
 
 /**
- * 唯一读取函数：内置默认 + 用户主配置 + 文件宠物逐字段合并后的成品聚合。
- * 每个条目都是原文件结构且字段已填满，消费端直接读；每次调用重新读文件，改配置即刻生效。
+ * The only read function: built-in default + user master configuration + file pet field-by-field merged finished
+ * product aggregate. Each entry is the original file structure and the fields are filled. The consumer reads it
+ * directly; the file is re-read every time it is called, and the configuration changes take effect immediately.
  */
 export function readAllConfig(paths: ConfigPaths): Record<string, Record<string, unknown>> {
   const base = readJsonc(paths.defaultFile);
-  if (!base) throw new Error('dsh-pet: 内置默认配置缺失或解析失败（安装损坏）：' + paths.defaultFile);
+  if (!base)
+    throw new Error('dsh-pet: bundled defaults missing or invalid; check the installation:' + paths.defaultFile);
   // Keep optional memory defaults in code so existing packaged configuration files need no migration.
   base.chatMemory ??= { ...DEFAULT_CHAT_MEMORY };
   const basePets = Array.isArray(base.pets) ? (base.pets as Record<string, unknown>[]) : [];
   const seenIds = new Set<string>();
   const out: Record<string, Record<string, unknown>> = {};
 
-  // main 条目：内置默认 ← main-config.jsonc（可编辑层；迁移前的老用户回落到 main-config.json）
+  // main entry: built-in default ← main-config.jsonc (editable layer; old users before migration fallback to main-config.json)
   const userFile = effectiveUserFile(paths);
   const mainOverlay = userFile ? readJsonc(userFile) : undefined;
   if (userFile && !mainOverlay) {
-    warnOnce('file:' + userFile, '用户主配置解析失败，已按无用户配置处理：' + userFile);
+    warnOnce(
+      'file:' + userFile,
+      'User configuration could not be parsed; proceeding without user overrides:' + userFile,
+    );
   }
   out.main = mergeEntry(base, mainOverlay, 'main-config.jsonc', basePets, seenIds);
 
-  // 文件宠物条目：pet/<名>-config.json，一个文件一个条目（key = 文件名前缀 = 素材根）。
-  // 基座 = 内置默认，但白名单字段（用户级成本/偏好/环境）取用户层——「全局默认 + 种类可覆盖」。
+  // File pet entry: pet/<name>-config.json, one entry per file (key = file name prefix = asset root). Base = built-in
+  // default, but the whitelist fields (user-level cost/preference/environment) take the user level - "global default +
+  // category can be overridden".
   const filePetBase = packBase(base, mainOverlay);
   for (const file of scanPetFiles(paths.petDir)) {
     const parsed = readJsonc(file.path);
     if (!parsed) {
-      warnOnce('file:' + file.path, '文件宠物配置解析失败，已跳过：' + file.path);
+      warnOnce('file:' + file.path, 'Pet-pack configuration could not be parsed; skipping:' + file.path);
       continue;
     }
     out[file.prefix] = mergeEntry(filePetBase, parsed, file.prefix + '-config.json', basePets, seenIds);
@@ -101,7 +112,7 @@ export function readAllConfig(paths: ConfigPaths): Record<string, Record<string,
   return out;
 }
 
-/** 拍平全部条目的 pets 为单列表（host 消费端用：桌面宠物列表 / 命令 / 当前桌宠解析） */
+/** Flatten all entries pets into a single list (host consumer uses: desktop pet list/command/current desktop pet analysis) */
 export function flattenPetList(merged: Record<string, Record<string, unknown>>): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   for (const conf of Object.values(merged)) {
@@ -110,9 +121,13 @@ export function flattenPetList(merged: Record<string, Record<string, unknown>>):
   return out;
 }
 
-/** 在完成品聚合里按实例 id 定位宠物及其所属条目（host 内部消费索引）：
- *  条目 key 即素材根（assetRoot）；条目级字段（whisperPrompt/chatMemoryRounds/animations）随条目取
- *  （唯一例外：whisperPrompt 可被实例覆盖——调用方要生效值请走 ./persona 的 petPersona，别直接读 conf）。 */
+/**
+ * Locate the pet and its belonging items (host internal consumption index) by instance id in the resolved value
+ * aggregate: The item key is the asset root (assetRoot); the item-level field
+ * (whisperPrompt/chatMemoryRounds/animations) is taken with the item (the only exception: whisperPrompt can be
+ * overwritten by the instance - caller please go to ./persona for the effective value) of petPersona, don’t read conf
+ * directly).
+ */
 export function findPetInstance(
   merged: Record<string, Record<string, unknown>>,
   petId: string,

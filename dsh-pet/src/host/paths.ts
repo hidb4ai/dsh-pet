@@ -1,18 +1,19 @@
 /**
- * 包内路径常量：包根与素材根的唯一来源，宿主装配与路由层共用。
+ * In-package path constant: the only source of package root and asset root, shared by host assembly and route layer.
  *
- * 只做路径计算，不读盘、不判断存在性；解析出的目录是否可用由调用方决定。
- * 必须始终成立：所有素材路径都从 PACKAGE_ROOT 派生，不得在别处另算一份 `new URL('..', import.meta.url)`。
+ * It only does path calculation, does not read the disk, and does not determine the existence; whether the parsed
+ * directory is available is determined by the caller. Must always be true: all asset paths are derived from
+ * PACKAGE_ROOT and must not be derived from `new URL('..', import.meta.url)` elsewhere.
  * @module dsh-pet/src/host/paths
  */
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** 本包目录：宿主构建产物位于 lib/，其上一级即包根。 */
+/** This package directory: host build output is located at lib/, and its upper level is the package root. */
 export const PACKAGE_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
-/** 包内 assets 根 */
+/** assets root in package */
 export const PACKAGE_ROOT_ASSETS = join(PACKAGE_ROOT, 'assets');
 
-/** 包内表情包目录（表情包池的最后一环：assets/memes/<名称>.png） */
+/** Emoji package directory in the package (the last link of the meme pool: assets/memes/<name>. png) */
 export const PACKAGE_MEMES_DIR = join(PACKAGE_ROOT_ASSETS, 'memes');

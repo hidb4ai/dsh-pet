@@ -1,33 +1,37 @@
 /**
- * 五个 mock 余额服务商：三种内置形态（windows / money / points）+ 两种**自定义多页**（custom）。
- * 只验证展示层与第三方注册入口，不发任何网络请求。
+ * Five mock balance service providers: three built-in forms (windows / money / points) + two kinds of **custom
+ * multi-page** (custom). It only verifies the presentation layer and third-party registration entry point, and does
+ * not send any network requests.
  *
- * 自定义形态的要点（这是本文件后两个 provider 的意义）：
- * - 气泡内容是一棵**节点树**（tag + camelCase 内联样式 + 文本/子节点），由插件端白名单校验、
- *   两端渲染器按树画；第三方想怎么排就怎么排，不必等插件为某个服务商加一种形态；
- * - `views` 的第 1 项是初始页，**点击气泡循环切页**（末页回第一页）；只有一页时不可点；
- * - 尺寸一律用 `em`：相对气泡字号，宠物调大字号时会跟着缩放（写死 px 就不会跟）。
+ * The key points of customizing the form (this is the meaning of the last two provider in this document):
+ * - The content of the bubble is a **node tree** (tag + camelCase inline style + text/child node), which is verified
+ * by the plugin whitelist, and the renderers at both ends draw according to the tree; the third party can arrange it
+ * however they want, without waiting for the plugin to add a form for a certain service provider;
+ * - The first item of `views` is the initial page, **Click the bubble to cycle through pages** (the last page returns
+ * to the first page); it cannot be clicked when there is only one page;
+ * - Always use `em` for size: relative to the bubble font size, when the pet increases the font size, it will scale
+ * accordingly (if px is written in, it will not follow).
  *
  * @module dsh-cordis-probe/mock-balance
  */
 
-/** 相对当前时间的时间戳（ISO）：保证气泡里的「N 小时/天重置」每次都是未来时间。 */
+/** Timestamp relative to the current time (ISO): Ensure that the "N hour/day reset" in the bubble is the future time every time. */
 const inHours = (hours) => new Date(Date.now() + hours * 3_600_000).toISOString();
 
-// ---- 画布局用的小工具（自定义气泡的节点树是纯数据，几个原语就够拼出任意排版） ----
+// ----A small tool for drawing layouts (the node tree of custom bubbles is pure data, and a few primitives are enough to create any layout) ----
 
-/** 主文字色 / 次要文字色 / 底槽色（与 dsh-pet 气泡主题同一套取值）。 */
+/** Primary text color/secondary text color/bottom tank color (the same set of values as the dsh-pet bubble theme). */
 const INK = '#1f1f1f';
 const MUTED = 'rgba(43,43,43,.6)';
 const TRACK = 'rgba(43,43,43,.12)';
 
-/** 一段文本节点；style 可覆盖字号/颜色/字重（空对象会在解析层被丢掉，不会留下空 style）。 */
+/** A text node; style can cover the font size/color/weight (empty objects will be discarded in the parsing layer, leaving no empty style). */
 const text = (value, style = {}) => ({ tag: 'span', text: value, style });
 
-/** 一行（flex，默认两端对齐）。 */
+/** One line (flex, justified on both ends by default). */
 const row = (children, style = {}) => ({ tag: 'div', style: { display: 'flex', ...style }, children });
 
-/** 进度条：外框 + 内条，内条宽度 = 已用百分比（夹到 0-100）。 */
+/** Progress bar: outer frame + inner bar, inner bar width = used percentage (clip to 0-100). */
 const bar = (percent, color) => ({
   tag: 'div',
   style: { flex: '1 1 auto', height: '0.28em', borderRadius: '0.14em', background: TRACK, overflow: 'hidden' },
@@ -44,10 +48,10 @@ const bar = (percent, color) => ({
   ],
 });
 
-/** 角标（如 PRO）：小字 + 细边框。 */
+/** Corner mark (such as PRO): small characters + thin border. */
 const badge = (label) => text(label, { fontSize: '0.6em', color: '#2e9e4f', border: '1px solid rgba(46,158,79,.5)', borderRadius: '0.25em', padding: '0 0.2em' });
 
-/** 汇总行：名称 + 迷你条 + 百分比（自定义形态第 4 页用）。 */
+/** Summary row: name + mini bar + percentage (for custom shape page 4). */
 const summaryRow = (name, percent, color) =>
   row(
     [
@@ -58,7 +62,7 @@ const summaryRow = (name, percent, color) =>
     { alignItems: 'center', gap: '0.3em' },
   );
 
-/** 模型余量行：模型名 + 条 + 百分比 + 剩余（自定义形态第 1 页用）。 */
+/** Model remaining line: model name + bar + percentage + remaining (for custom form page 1). */
 const modelRow = (name, percent, left, color) =>
   row(
     [
@@ -70,14 +74,14 @@ const modelRow = (name, percent, left, color) =>
     { alignItems: 'center', gap: '0.25em', padding: '0.08em 0' },
   );
 
-/** 钱包分类列：上方名称、下方金额（自定义形态第 2 页用）。 */
+/** Wallet classification column: name at the top, amount at the bottom (for custom form page 2). */
 const walletColumn = (name, value, color) => ({
   tag: 'div',
   style: { display: 'flex', flexDirection: 'column', gap: '0.05em' },
   children: [text(name, { fontSize: '0.72em', color: MUTED }), text(value, { fontSize: '1.05em', fontWeight: '650', color })],
 });
 
-/** 统计格：名称 + 数值，带细边框（自定义形态第 3 页用）。 */
+/** Statistical grid: name + value, with thin border (for custom shape page 3). */
 const statCell = (name, value, color) => ({
   tag: 'div',
   style: {
@@ -93,9 +97,9 @@ const statCell = (name, value, color) => ({
   children: [text(name, { fontSize: '0.68em', color: MUTED }), text(value, { fontSize: '0.95em', fontWeight: '650', color })],
 });
 
-// ---- 三种内置形态（原样保留：它们验证"行数据"这条通道） ----
+// ----Three built-in forms (leave as is: they verify the "row data" channel) ----
 
-/** 三窗口用量：滚动 31% / 周 8% / 月 72%，最紧迫的是月窗口。 */
+/** Three window usage: rolling 31%/week 8%/month 72%, the most urgent is the monthly window. */
 export const mockWindows = {
   id: 'mock-windows',
   async fetch({ provider }) {
@@ -119,7 +123,7 @@ export const mockWindows = {
   },
 };
 
-/** 双币种余额 + 峰谷装饰：CNY 有余、USD 少量。 */
+/** Dual currency balance + peak and valley decoration: CNY is surplus, USD is small. */
 export const mockMoney = {
   id: 'mock-money',
   async fetch({ provider }) {
@@ -138,7 +142,7 @@ export const mockMoney = {
   },
 };
 
-/** 积分余额：800 / 1000（基准由数据带出，驱动档位）。 */
+/** Point balance: 800 / 1000 (the benchmark is brought out by data, driving state). */
 export const mockPoints = {
   id: 'mock-points',
   async fetch({ provider }) {
@@ -151,11 +155,13 @@ export const mockPoints = {
   },
 };
 
-// ---- 自定义形态 ①：把已有三种形态用节点树复刻成 4 页（第 4 页是三者汇总） ----
+// ----Custom form ①: Copy the existing three forms into 4 pages using node tree (page 4 is a summary of the three)
+// ----
 //
-// 意义：证明"第三方用 custom 能自己排出内置形态的等价物"，而不必等插件加形态。
+// Significance: Prove that "a third party using custom can generate the equivalent of the built-in form by itself"
+// without having to wait for the plugin to add the form.
 
-/** 第 1 页：windows 的等价物 —— 最紧迫窗口 + 进度条 + 重置倒计时。 */
+/** Page 1: Equivalent of windows - most urgent window + progress bar + reset countdown. */
 const kindsPageWindows = {
   tag: 'div',
   children: [
@@ -172,7 +178,7 @@ const kindsPageWindows = {
   ],
 };
 
-/** 第 2 页：money 的等价物 —— 「余额（峰）¥8.79/$2.40」三段混排 + 储值/赠送副行。 */
+/** Page 2: The equivalent of money - "Balance (peak) ¥8.79/$2.40" three-stage mixed arrangement + stored value/free side row. */
 const kindsPageMoney = {
   tag: 'div',
   children: [
@@ -188,7 +194,7 @@ const kindsPageMoney = {
   ],
 };
 
-/** 第 3 页：points 的等价物 —— 「积分 800 / 1000」+ 按基准折算的进度条。 */
+/** Page 3: The equivalent of points - "Points 800 / 1000" + a progress bar converted according to the benchmark. */
 const kindsPagePoints = {
   tag: 'div',
   children: [
@@ -201,7 +207,7 @@ const kindsPagePoints = {
   ],
 };
 
-/** 第 4 页：三者汇总 —— 一页里塞三条不同口径的进度条（内置形态做不到这种混排）。 */
+/** Page 4: Summary of the three - three progress bars of different calibers are placed on one page (the built-in form cannot do this kind of mixing). */
 const kindsPageSummary = {
   tag: 'div',
   style: { display: 'flex', flexDirection: 'column', gap: '0.18em' },
@@ -212,7 +218,7 @@ const kindsPageSummary = {
   ],
 };
 
-/** 4 页自定义：三种内置形态各复刻一页 + 一页汇总。percent 驱动档位动画（月窗口 72%）。 */
+/** 4 pages of customization: one page of each of the three built-in forms + one page of summary. percent drive state animation (monthly window 72%). */
 export const mockCustomKinds = {
   id: 'mock-custom-kinds',
   async fetch({ provider }) {
@@ -228,11 +234,12 @@ export const mockCustomKinds = {
   },
 };
 
-// ---- 自定义形态 ②：完全自设计的 3 页（多模型余量 / 钱包构成 / 用量统计） ----
+// ----Custom form ②: Completely self-designed 3 pages (multi-model margin/wallet composition/usage statistics) ----
 //
-// 意义：内置三种形态装不下的结构（多行、多列、角标、分隔线、统计格）在这里一次表达完。
+// Meaning: Structures that cannot be accommodated in the built-in three forms (multiple rows, multiple columns,
+// subscripts, dividing lines, and statistical grids) can be expressed here at once.
 
-/** 第 1 页：多模型余量 —— 三行，各自一条按模型额度算的进度条。 */
+/** Page 1: Multi-model allowance - three lines, each with a progress bar calculated according to the model allowance. */
 const fancyPageModels = {
   tag: 'div',
   style: { display: 'flex', flexDirection: 'column', gap: '0.1em' },
@@ -243,7 +250,7 @@ const fancyPageModels = {
   ],
 };
 
-/** 第 2 页：钱包构成 —— 标题 + PRO 角标 + 分隔线 + 储值/赠送两列 + 底部小字。 */
+/** Page 2: Wallet composition - title + PRO corner mark + separator + two columns for stored value/gift + small words at the bottom. */
 const fancyPageWallet = {
   tag: 'div',
   children: [
@@ -261,7 +268,7 @@ const fancyPageWallet = {
   ],
 };
 
-/** 第 3 页：用量统计 —— 三个带边框的统计格 + 页脚提示（提示页是可循环的）。 */
+/** Page 3: Usage statistics - three statistical grids with borders + footer prompts (the prompt page is recyclable). */
 const fancyPageStats = {
   tag: 'div',
   children: [
@@ -278,7 +285,7 @@ const fancyPageStats = {
   ],
 };
 
-/** 3 页自定义：结构最复杂的一组，用来压"任意布局"这条能力。percent 驱动档位动画（余额已用 65%）。 */
+/** 3 pages of customization: The group with the most complex structure, used to suppress the "arbitrary layout" ability. percent drive state animation (65% of the balance has been used). */
 export const mockCustomFancy = {
   id: 'mock-custom-fancy',
   async fetch({ provider }) {
@@ -294,5 +301,5 @@ export const mockCustomFancy = {
   },
 };
 
-/** 注册顺序即 id 顺序；三种内置形态各一个 + 两个自定义多页。 */
+/** The registration sequence is id sequence; one for each of the three built-in forms + two custom multi-pages. */
 export const MOCK_BALANCE_PROVIDERS = [mockWindows, mockMoney, mockPoints, mockCustomKinds, mockCustomFancy];

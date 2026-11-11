@@ -1,8 +1,10 @@
 /**
- * 「吃白饭」的菜单与点播触发：注册宿主菜单项、按拍读点击、按配置开演。
+ * "Eat for nothing" menu and playback request trigger: register host menu item, click to read and click, and start the
+ * show according to configuration.
  *
- * 点击源是页面内 Cordis 服务 `petApi7340.menuEvents`（读即消费），不绕 HTTP 长轮询；
- * 只有菜单注册走 HTTP。DSH 重启会清空宿主那份注册表，所以 owner 不在快照里时按间隔补注册。
+ * The click source is the Cordis service `petApi7340.menuEvents` (read and consume) in the page, and there is no long
+ * polling around HTTP; only the menu register goes through HTTP. Restarting DSH will clear the host's register table,
+ * so when owner is not in the snapshot, the register will be filled in at intervals.
  * @module dsh-pet/src/client/baifan/menu
  */
 import { activityAssets } from './assets.ts';
@@ -10,38 +12,38 @@ import { ACTIVITY, LABEL, OWNER } from './constants.ts';
 import type { Show } from './show.ts';
 import type { Transport } from './transport.ts';
 
-/** 页面内点击源的最小形状：`ok: false` 表示这个 owner 在本页还没有菜单项。 */
+/** The minimum shape of the click source on the page: `ok: false` means that this owner does not have a menu item on this page. */
 interface MenuEventSource {
-  /** 读取即消费：返回后所有标记清回 null。 */
+  /** Read and consume: all marks are cleared to null after return. */
   menuEvents?: (owner: string) => { ok: boolean; events?: Record<string, string | null> };
 }
 
-/** 菜单与点播的依赖。 */
+/** Dependence of menu and playback request. */
 export interface MenuDeps {
-  /** 取页面内 Cordis 服务（服务名 → 实例）；缺失返回 undefined。 */
+  /** Get the Cordis service in the page (service name → instance); if missing, return undefined. */
   get: (name: string) => unknown;
-  /** 传输层；调接口走它的 `call`，带超时与信号转发。 */
+  /** Transport layer; adjust the interface to use its `call`, with timeout and signal forwarding. */
   transport: Transport;
-  /** 演出；找到归属条目后开演。 */
+  /** Performance; start the performance after finding the belonging entry. */
   show: Show;
-  /** 挂载级取消信号：菜单注册不该被单场演出收场取消。 */
+  /** Mount level cancellation signal: menu register should not be canceled by the end of a single show. */
   signal: AbortSignal;
-  /** 补注册间隔（毫秒）：owner 不在快照里时按它重试。 */
+  /** Register interval (milliseconds): Press it to try again when owner is not in the snapshot. */
   retryMs: number;
 }
 
 /**
- * 造菜单控制器。
+ * Create a menu controller.
  *
- * @param deps - 见 {@link MenuDeps}。
- * @returns 一拍入口、首次注册与卸载钩子。
+ * @param deps - see {@link MenuDeps} .
+ * @returns one-shot entry point, first register and unmount hook.
  */
 export function createMenu(deps: MenuDeps) {
-  /** 上次尝试注册的时刻（`performance.now()`）；与 `retryMs` 比较决定要不要补。 */
+  /** The last time register was attempted (`performance.now()`); compare with `retryMs` to decide whether to make up for it. */
   let registeredAt = 0;
   let disposed = false;
 
-  /** 读一次页面内点击；服务缺失（老版本 dsh-pet）或 owner 还没进快照都返回 null。 */
+  /** Click once to read the page; if the service is missing (old version dsh-pet) or owner has not entered the snapshot, it will return null. */
   function readMarks(): Record<string, string | null> | null {
     const api = deps.get('petApi7340') as MenuEventSource | undefined;
     const read = api?.menuEvents;
@@ -50,7 +52,7 @@ export function createMenu(deps: MenuDeps) {
     return result.ok === true && result.events ? result.events : null;
   }
 
-  /** 只有 main 条目配置了 animations.baifan 才注册，否则这只宠物没有这个玩法。 */
+  /** Only the main entry configured with animations.baifan can be registered, otherwise this pet does not have this gameplay. */
   async function ensureMenu(): Promise<void> {
     const cfg = await deps.transport.call('GET', '/config', undefined, deps.signal);
     const main = cfg.main;
@@ -67,12 +69,12 @@ export function createMenu(deps: MenuDeps) {
     if (r.ok === true) registeredAt = performance.now();
   }
 
-  /** 一拍：读点击；owner 还不在快照里就按间隔补注册。 */
+  /** One shot: read click; if owner is not in the snapshot, register at intervals. */
   function tick(): void {
     if (disposed) return;
     const marks = readMarks();
     if (marks === null) {
-      // 没项 = 还没注册上，或 DSH 重启后宿主注册表空了；按间隔重试，不必等下次点击。
+      // No items = not registered yet, or the host register table is empty after DSH restarts; retry at intervals without waiting for the next click.
       if (performance.now() - registeredAt > deps.retryMs) {
         registeredAt = performance.now();
         void ensureMenu().catch(() => {});
@@ -84,10 +86,12 @@ export function createMenu(deps: MenuDeps) {
   }
 
   /**
-   * 按被点宠物所属条目取五段动画名并开演；找不到配置就不演。
+   * According to the entry of the clicked pet, take the name of five animations and start the performance; if the
+   * configuration cannot be found, it will not play.
    *
-   * 5 个动画名来自该条目的 animations.baifan——不同宠物可以用不同的动作，这是配置项存在的意义；
-   * 素材地址由各端渲染器按宠物的素材根拼，客户端这里只传名字。
+   * The 5 animation names come from the animations.baifan of this entry - different pets can use different actions,
+   * which is the meaning of the existence of the configuration item; the asset address is spelled by the renderer of
+   * each end based on the asset root of the pet, and the client only passes the name here.
    */
   async function launch(petId: string): Promise<void> {
     try {
@@ -110,16 +114,16 @@ export function createMenu(deps: MenuDeps) {
         return;
       }
     } catch (error) {
-      console.warn('[dsh-pet] 吃白饭启动失败 ' + String(error));
+      console.warn('[dsh-pet] Rice interaction startup failed ' + String(error));
     }
   }
 
   return {
-    /** 一拍：读点击、必要时补注册。 */
+    /** One shot: click to read, register if necessary. */
     tick,
-    /** 首次注册菜单项；配置里没有这个玩法时什么都不做。 */
+    /** Register menu item for the first time; nothing will be done if there is no such gameplay in the configuration. */
     ensureMenu,
-    /** 停掉后续拍；已发出的请求由 `signal` 收尾。 */
+    /** Stop subsequent shooting; the request has been sent by `signal` cleanup. */
     dispose: (): void => {
       disposed = true;
     },

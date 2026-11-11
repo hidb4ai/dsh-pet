@@ -1,7 +1,8 @@
 /**
- * 指针拖拽（src/client/pet/motion/drag.ts）的契约测试：按下态与拖拽阈值、松手三种去向（原地放下/甩抛/弹弓）、
- * 点击互动与「刚拖完」的忽略窗口、冻结时本地解冻。
- * 用假 DOM 元素、假指针事件与假 rAF 驱动，断言落在记录的回调上。
+ * Contract test of pointer drag (src/client/pet/motion/drag.ts): pressed state and drag threshold, three directions of
+ * release (drop/throw/slingshot), click interaction and "just finished dragging" ignore window, local unfreezing when
+ * frozen. Driven with fake DOM elements, fake pointer events, and fake rAF, the assertion falls on the logged
+ * callback.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_PHYSICS } from '../../../shared/physics/constants.ts';
 import { createDrag, type DragCard } from './drag.ts';
 
-/** 假根元素：只留拖拽用到的几个方法。 */
+/** Fake root element: only a few methods used for dragging are left. */
 function fakeEl() {
   const classes = new Set<string>();
   return {
@@ -23,12 +24,12 @@ function fakeEl() {
     hasPointerCapture: () => true,
     dispatchEvent: () => true,
     style: { transform: '' },
-    /** 盒 200×112.5，左上角 (400, 300)。 */
+    /** Box 200×112.5, upper left corner (400, 300). */
     getBoundingClientRect: () => ({ left: 400, top: 300, right: 600, bottom: 412.5, width: 200, height: 112.5 }),
   };
 }
 
-/** 造一个指针事件；只需要处理器读到的字段。 */
+/** Create a pointer event; only the fields read by the processor are required. */
 function pointer(el: ReturnType<typeof fakeEl>, x: number, y: number, button = 0, pointerType = 'mouse') {
   return {
     button,
@@ -40,7 +41,7 @@ function pointer(el: ReturnType<typeof fakeEl>, x: number, y: number, button = 0
   } as unknown as React.PointerEvent<HTMLDivElement>;
 }
 
-/** 假 window：只收 mouseup 监听，用来模拟指针捕获丢失后唯一到达的那次松开。 */
+/** False window: Only the mouseup listener is accepted, used to simulate the release of the only arrival after the pointer capture is lost. */
 function withFakeWindow() {
   const scope = globalThis as { window?: unknown };
   const previous = scope.window;
@@ -54,11 +55,11 @@ function withFakeWindow() {
     },
   };
   return {
-    /** 还挂着的 mouseup 监听数。 */
+    /** Number of mouseup monitors still hanging. */
     get count(): number {
       return listeners.size;
     },
-    /** 派发一次 mouseup；默认是左键完全松开。 */
+    /** Distribute mouseup once; the default is to release the left button completely. */
     mouseUp(x: number, y: number, init: { button?: number; buttons?: number } = {}): void {
       const event = { button: init.button ?? 0, buttons: init.buttons ?? 0, clientX: x, clientY: y } as MouseEvent;
       for (const fn of [...listeners]) fn(event);
@@ -69,7 +70,7 @@ function withFakeWindow() {
   };
 }
 
-/** node 里没有 MouseEvent：长按菜单会构造一个 contextmenu，这里用最小替身顶住。 */
+/** There is no MouseEvent in node: long pressing the menu will construct a contextmenu, which is supported by the smallest avatar. */
 function withFakeMouseEvent() {
   const scope = globalThis as { MouseEvent?: unknown };
   const previous = scope.MouseEvent;
@@ -86,7 +87,7 @@ function withFakeMouseEvent() {
   };
 }
 
-/** 假时钟 + 假 rAF。 */
+/** False clock + false rAF. */
 function withFakeFrames() {
   const previousRaf = globalThis.requestAnimationFrame;
   const previousCancel = globalThis.cancelAnimationFrame;
@@ -118,7 +119,7 @@ function withFakeFrames() {
   };
 }
 
-/** 造一套能力 + 全部回调的记录。 */
+/** Create a set of abilities + records of all callbacks. */
 function harness(extra: Partial<DragCard> = {}) {
   const el = fakeEl();
   const stage = fakeEl();
@@ -191,8 +192,8 @@ function harness(extra: Partial<DragCard> = {}) {
   };
 }
 
-describe('createDrag —— 按下与阈值', () => {
-  test('非左键：不进入按下态', () => {
+describe('createDrag - Press and Threshold', () => {
+  test('Non-left click: does not enter the pressed state', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el } = harness();
@@ -203,7 +204,7 @@ describe('createDrag —— 按下与阈值', () => {
     }
   });
 
-  test('左键按下：进入按下态，停飞、停弹簧、停走位各一次', () => {
+  test('Left button press: enter the pressed state, stop flying, stop spring, and stop and go position once each', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness();
@@ -217,7 +218,7 @@ describe('createDrag —— 按下与阈值', () => {
     }
   });
 
-  test('冻结时按下：本地解冻一次', () => {
+  test('Press when frozen: defrost locally once', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness({ isFrozen: () => true });
@@ -228,7 +229,7 @@ describe('createDrag —— 按下与阈值', () => {
     }
   });
 
-  test('未超过阈值的移动：不算拖拽，不播拖拽动画', () => {
+  test('Movement that does not exceed the threshold: does not count as drag and does not play drag animation', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness();
@@ -240,7 +241,7 @@ describe('createDrag —— 按下与阈值', () => {
     }
   });
 
-  test('超过阈值：进入拖拽并播拖拽动画，但不改写舞台位移（抓取点不跳）', () => {
+  test('Exceeding the threshold: Enter drag and drop and play the drag animation, but the stage displacement will not be rewritten (the grab point will not jump)', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, stage, calls } = harness();
@@ -248,15 +249,15 @@ describe('createDrag —— 按下与阈值', () => {
       drag.onPointerDown(pointer(el, 500, 350));
       drag.onPointerMove(pointer(el, 540, 350));
       assert.deepEqual(calls.plays, ['drag1']);
-      assert.equal(stage.style.transform, 'translateY(10px)', '舞台位移应保持恒定');
+      assert.equal(stage.style.transform, 'translateY(10px)', 'Stage displacement should remain constant');
     } finally {
       frames.restore();
     }
   });
 });
 
-describe('createDrag —— 松手去向', () => {
-  test('没拖动就松手：既不放也不飞，提示按松手位置复位', () => {
+describe('createDrag —— Where to go if you let go', () => {
+  test('Let go without dragging: neither release nor fly, prompt to press release position to reset', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness();
@@ -270,7 +271,7 @@ describe('createDrag —— 松手去向', () => {
     }
   });
 
-  test('慢慢拖动后松手：原地放下，提交的是当前包围盒', () => {
+  test('Drag slowly and then let go: put it down in place and submit the current bounding box.', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness();
@@ -279,7 +280,7 @@ describe('createDrag —— 松手去向', () => {
       drag.onPointerMove(pointer(el, 540, 350));
       frames.advance(50);
       drag.onPointerMove(pointer(el, 560, 350));
-      frames.advance(400); // 停顿够久，估算不出速度
+      frames.advance(400); // The pause is long enough and the speed cannot be estimated.
       drag.onPointerUp(pointer(el, 560, 350));
       assert.equal(calls.flights.length, 0);
       assert.equal(calls.places.length, 1);
@@ -288,7 +289,7 @@ describe('createDrag —— 松手去向', () => {
     }
   });
 
-  test('快速甩动后松手：起飞而不是原地放下', () => {
+  test('Shake quickly and then let go: take off instead of putting down', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness();
@@ -302,38 +303,41 @@ describe('createDrag —— 松手去向', () => {
       drag.onPointerUp(pointer(el, 800, 350));
       assert.equal(calls.places.length, 0);
       assert.equal(calls.flights.length, 1);
-      assert.ok(calls.flights[0]!.vx > 0, `应向右飞：${calls.flights[0]!.vx}`);
+      assert.ok(calls.flights[0]!.vx > 0, `Should fly right: ${calls.flights[0]!.vx}`);
     } finally {
       frames.restore();
     }
   });
 
-  test('弹弓：两次按下间隔够短，按拉距反向起飞', () => {
+  test('Slingshot: The interval between two presses is short enough, press the pull distance to take off in the opposite direction', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls, setBox } = harness();
       drag.onPointerDown(pointer(el, 500, 350));
       drag.onPointerUp(pointer(el, 500, 350));
       frames.advance(60);
-      // 第二次按下后往左上拽：松手应往右下飞。
+      // After pressing it for the second time, pull it up and to the left: when you let go, it should fly down and to the right.
       drag.onPointerDown(pointer(el, 500, 350));
       frames.advance(60);
       drag.onPointerMove(pointer(el, 420, 300));
-      // 弹簧跟随只在真实 rAF 里推进，这里直接给出被拉到的位置。
+      // Spring following only advances in the real rAF, and the pulled position is directly given here.
       setBox({ x: 380, y: 280 });
       frames.advance(20);
       drag.onPointerUp(pointer(el, 420, 300));
       assert.equal(calls.flights.length, 1);
       const flight = calls.flights[0]!;
-      assert.ok(flight.vx > 0 && flight.vy > 0, `拉向左上应往右下飞：vx=${flight.vx} vy=${flight.vy}`);
+      assert.ok(
+        flight.vx > 0 && flight.vy > 0,
+        `Pulling to the upper left should fly to the lower right: vx = ${flight.vx} vy = ${flight.vy}`,
+      );
     } finally {
       frames.restore();
     }
   });
 });
 
-describe('createDrag —— 鼠标松开兜底', () => {
-  test('指针捕获丢失、只来 mouseup：照样完成松手结算并复位拖拽态', () => {
+describe('createDrag —— mouse release fallback', () => {
+  test('The pointer capture is lost and only comes mouseup: The release settlement is still completed and the drag state is reset.', () => {
     const frames = withFakeFrames();
     const win = withFakeWindow();
     try {
@@ -341,18 +345,18 @@ describe('createDrag —— 鼠标松开兜底', () => {
       drag.onPointerDown(pointer(el, 500, 350));
       frames.advance(50);
       drag.onPointerMove(pointer(el, 540, 350));
-      frames.advance(400); // 停顿够久，结算是「原地放下」
+      frames.advance(400); // After a long enough pause, the settlement is "Put it down where you are"
       win.mouseUp(560, 350);
-      assert.equal(calls.places.length, 1, '捕获丢失后 mouseup 应该完成松手结算');
-      assert.equal(el.hasClass('dragging'), false, '拖拽类应该被摘掉');
-      assert.deepEqual(calls.tipOn, [false, true], '提示应该复位');
+      assert.equal(calls.places.length, 1, 'mouseup should complete the release settlement after the capture is lost');
+      assert.equal(el.hasClass('dragging'), false, 'The drag and drop class should be removed');
+      assert.deepEqual(calls.tipOn, [false, true], 'Prompt should be reset');
     } finally {
       frames.restore();
       win.restore();
     }
   });
 
-  test('正常 pointerup 之后再来的 mouseup：不结算第二次', () => {
+  test('Normal pointerup followed by mouseup: No settlement for the second time', () => {
     const frames = withFakeFrames();
     const win = withFakeWindow();
     try {
@@ -362,16 +366,16 @@ describe('createDrag —— 鼠标松开兜底', () => {
       drag.onPointerMove(pointer(el, 540, 350));
       frames.advance(400);
       drag.onPointerUp(pointer(el, 560, 350));
-      assert.equal(win.count, 0, 'pointerup 之后不该还挂着兜底监听');
+      assert.equal(win.count, 0, 'Fallback monitoring should not be hung after pointerup');
       win.mouseUp(560, 350);
-      assert.equal(calls.places.length, 1, '同一次松手只能结算一次');
+      assert.equal(calls.places.length, 1, 'The same release can only be settled once.');
     } finally {
       frames.restore();
       win.restore();
     }
   });
 
-  test('dispose：摘掉兜底监听，之后的 mouseup 不再结算', () => {
+  test('dispose: Remove fallback monitoring, and subsequent mouseup will no longer be settled.', () => {
     const frames = withFakeFrames();
     const win = withFakeWindow();
     try {
@@ -380,16 +384,16 @@ describe('createDrag —— 鼠标松开兜底', () => {
       drag.onPointerMove(pointer(el, 540, 350));
       frames.advance(400);
       drag.dispose();
-      assert.equal(win.count, 0, 'dispose 后不该留监听');
+      assert.equal(win.count, 0, 'Monitoring should not be left after dispose');
       win.mouseUp(560, 350);
-      assert.equal(calls.places.length, 0, '卸载后不该再结算');
+      assert.equal(calls.places.length, 0, 'It should not be settled after unmounting');
     } finally {
       frames.restore();
       win.restore();
     }
   });
 
-  test('右键松开或还有别的键按着：不算松手', () => {
+  test('Releasing the right button or pressing another button does not count as letting go.', () => {
     const frames = withFakeFrames();
     const win = withFakeWindow();
     try {
@@ -399,9 +403,9 @@ describe('createDrag —— 鼠标松开兜底', () => {
       frames.advance(400);
       win.mouseUp(560, 350, { button: 2 });
       win.mouseUp(560, 350, { buttons: 2 });
-      assert.equal(calls.places.length, 0, '非左键松开不该结算');
+      assert.equal(calls.places.length, 0, 'It should not be settled unless the left button is released.');
       win.mouseUp(560, 350);
-      assert.equal(calls.places.length, 1, '左键松开仍然要结算');
+      assert.equal(calls.places.length, 1, 'Settlement still needs to be settled after releasing the left button.');
     } finally {
       frames.restore();
       win.restore();
@@ -409,8 +413,8 @@ describe('createDrag —— 鼠标松开兜底', () => {
   });
 });
 
-describe('createDrag —— 按压已结束时松手', () => {
-  test('长按菜单结束了这次按压：松手照样摘类与复位提示，但不抛掷', (t) => {
+describe('createDrag —— Release when pressing is finished', () => {
+  test('Long pressing the menu ends the pressing: letting go will still pick the category and reset the prompt, but will not throw it.', (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const frames = withFakeFrames();
     const win = withFakeWindow();
@@ -418,13 +422,17 @@ describe('createDrag —— 按压已结束时松手', () => {
     try {
       const { drag, el, calls } = harness();
       drag.onPointerDown(pointer(el, 500, 350, 0, 'touch'));
-      assert.equal(el.hasClass('dragging'), true, '按下时应该带上拖拽类');
-      t.mock.timers.tick(500); // 长按到点：菜单接管，本次按压结束
+      assert.equal(el.hasClass('dragging'), true, 'The drag class should be brought when pressed');
+      t.mock.timers.tick(500); // Long press to the point: the menu takes over and this press ends
       drag.onPointerUp(pointer(el, 500, 350, 0, 'touch'));
-      assert.equal(el.hasClass('dragging'), false, '松手应该摘掉拖拽类');
-      assert.deepEqual(calls.places, [], '按压已被菜单结束，不该原地放下');
-      assert.deepEqual(calls.flights, [], '按压已被菜单结束，不该抛掷');
-      assert.deepEqual(calls.tipOn, [false, true], '提示应该复位');
+      assert.equal(el.hasClass('dragging'), false, 'The drag class should be removed when you let go');
+      assert.deepEqual(
+        calls.places,
+        [],
+        'The pressing has been terminated by the menu and should not be put down in place.',
+      );
+      assert.deepEqual(calls.flights, [], 'The press has been terminated by the menu and should not be thrown');
+      assert.deepEqual(calls.tipOn, [false, true], 'Prompt should be reset');
     } finally {
       frames.restore();
       win.restore();
@@ -433,8 +441,8 @@ describe('createDrag —— 按压已结束时松手', () => {
   });
 });
 
-describe('createDrag —— 点击', () => {
-  test('单击：点击音效 + 点击动画 + 标记 Q 弹 + 递增换源序号', () => {
+describe('createDrag —— Click', () => {
+  test('Click: click sound effect + click animation + mark Q bomb + increment the source change serial number', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness();
@@ -450,7 +458,7 @@ describe('createDrag —— 点击', () => {
     }
   });
 
-  test('刚拖完的 100ms 内：点击被忽略', () => {
+  test('Just dragged within 100 ms: click is ignored', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness();
@@ -469,7 +477,7 @@ describe('createDrag —— 点击', () => {
     }
   });
 
-  test('点击动画池为空：照样出声，但不播动画', () => {
+  test('The click animation pool is empty: the sound is still produced, but the animation is not played.', () => {
     const frames = withFakeFrames();
     try {
       const { drag, el, calls } = harness({ clickAnims: [] });

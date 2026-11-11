@@ -1,8 +1,10 @@
 /**
- * 面板工具栏与输入区的契约测试：新增的「记忆线」「刷新」入口，以及生成中的灰化 + 转圈。
+ * Contract test between the panel toolbar and the input area: the new "memory line" and "refresh" entry point, as well
+ * as the graying + circle during generation.
  *
- * 用假 `h` 把节点记成 `{ tag, props }` 树，断言的是渲染出来的形状与回调接线，不启动 react。
- * 跑法：node --experimental-strip-types --test src/client/chat/view-node.test.ts
+ * Use fake `h` to record the node as a `{ tag, props }` tree. The assertion is the rendered shape connected to the
+ * callback, and react is not started. Running method: node --experimental-strip-types --test
+ * src/client/chat/view-node.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +14,7 @@ import type { ChatPanelState } from './types.ts';
 import { composerNode, toolsNode } from './view-node.ts';
 import { zh } from './locales/zh.ts';
 
-/** 假节点：`h` 只记录标签与属性。 */
+/** False node: `h` only records labels and attributes. */
 interface Node {
   readonly tag: unknown;
   readonly props: Record<string, unknown>;
@@ -23,13 +25,13 @@ const h = ((tag: unknown, props?: Record<string, unknown> | null): Node => ({
   props: props ?? {},
 })) as unknown as ChatPanelRuntime['h'];
 
-/** 中文桩：断言继续写中文文案，参数按 `{name}` 规则替换。 */
+/** Chinese pile: Continue to write Chinese copy for assertion, and replace parameters according to `{name}` rules. */
 const t = ((key: string, params?: Record<string, unknown>) => {
   const text = (zh as Record<string, string>)[key] ?? key;
   return text.replace(/\{(\w+)\}/g, (_match: string, name: string) => String(params?.[name] ?? ''));
 }) as unknown as ChatPanelRuntime['t'];
 
-/** 深度遍历节点树（children 可能是数组、单个节点或文本）。 */
+/** Deeply traverse the node tree ( children may be an array, a single node, or text). */
 function walk(node: unknown, visit: (one: Node) => void): void {
   if (node === null || typeof node !== 'object') return;
   const one = node as Node;
@@ -42,7 +44,7 @@ function walk(node: unknown, visit: (one: Node) => void): void {
   walk(children, visit);
 }
 
-/** 按按钮文案找元素；找不到返回 undefined。 */
+/** Press the button copy to find the element; if not found, undefined is returned. */
 function buttonByText(root: unknown, text: string): Node | undefined {
   let found: Node | undefined;
   walk(root, (one) => {
@@ -51,7 +53,7 @@ function buttonByText(root: unknown, text: string): Node | undefined {
   return found;
 }
 
-/** 按 class 找元素；找不到返回 undefined。 */
+/** Press class to find the element; if not found, return undefined. */
 function byClass(root: unknown, className: string): Node | undefined {
   let found: Node | undefined;
   walk(root, (one) => {
@@ -60,7 +62,7 @@ function byClass(root: unknown, className: string): Node | undefined {
   return found;
 }
 
-/** 造一份够渲染的最小状态；动作默认是空实现，需要断言时再覆盖。 */
+/** Create a minimum state that is enough for rendering; the action defaults to an empty implementation and will be overridden when assertion is required. */
 function stateOf(overrides: Partial<ChatPanelState> = {}): ChatPanelState {
   return {
     pets: [],
@@ -95,72 +97,72 @@ function stateOf(overrides: Partial<ChatPanelState> = {}): ChatPanelState {
   } as unknown as ChatPanelState;
 }
 
-describe('toolsNode —— 记忆线与刷新入口', () => {
-  test('配了记忆轮数 → 出现「记忆线」，点击走 jumpToMemory', () => {
+describe('toolsNode ——Memory line and refresh entry point', () => {
+  test('Equipped with the number of memory rounds → "Memory line" appears, click to go jumpToMemory', () => {
     let jumped = 0;
     const node = toolsNode(h, t, stateOf({ jumpToMemory: () => (jumped += 1) }));
     const line = buttonByText(node, '记忆线');
-    assert.ok(line !== undefined, '工具栏应有「记忆线」按钮');
-    assert.equal(line?.props.disabled, false, '有分界线时按钮可用');
+    assert.ok(line !== undefined, 'The toolbar should have a "Memory Line" button');
+    assert.equal(line?.props.disabled, false, 'The button is available when there is a dividing line');
     (line?.props.onClick as () => void)();
-    assert.equal(jumped, 1, '点击应触发跳转');
+    assert.equal(jumped, 1, 'Clicking should trigger a jump');
   });
 
-  test('历史没超过记忆轮数 → 「记忆线」置灰（没有线可跳）', () => {
+  test('The history does not exceed the number of memory rounds → "Memory Line" is grayed out (no line to jump)', () => {
     const node = toolsNode(h, t, stateOf({ hasMemoryLine: false }));
     assert.equal(buttonByText(node, '记忆线')?.props.disabled, true);
   });
 
-  test('配置里没有记忆轮数 → 不出现「记忆线」（本就不画线）', () => {
+  test('There is no memory round number in the configuration → "memory line" does not appear (no line is drawn)', () => {
     const node = toolsNode(h, t, stateOf({ memoryRounds: undefined, hasMemoryLine: false }));
     assert.equal(buttonByText(node, '记忆线'), undefined);
   });
 
-  test('「刷新」始终在，点击走 refresh', () => {
+  test('"Refresh" is always on, click to go refresh', () => {
     let refreshed = 0;
     const node = toolsNode(h, t, stateOf({ memoryRounds: undefined, refresh: () => (refreshed += 1) }));
     const button = buttonByText(node, '刷新');
-    assert.ok(button !== undefined, '工具栏应有「刷新」按钮');
+    assert.ok(button !== undefined, 'The toolbar should have a "refresh" button');
     (button?.props.onClick as () => void)();
     assert.equal(refreshed, 1);
   });
 });
 
-describe('composerNode —— 生成中的灰化与转圈', () => {
-  test('busy → 容器带 is-busy 与 aria-busy，发送键换成转圈', () => {
+describe('composerNode - graying and turning during generation', () => {
+  test('busy → Container with is-busy and aria-busy, the send key is changed to a circle', () => {
     const node = composerNode(h, t, stateOf({ busy: true }));
     const composer = node as Node;
     assert.match(String(composer.props.className), /is-busy/);
     assert.equal(composer.props['aria-busy'], 'true');
 
     const spinner = byClass(node, 'pet-chat-send-spinner');
-    assert.ok(spinner !== undefined, '生成中应渲染转圈节点');
+    assert.ok(spinner !== undefined, 'The circle node should be rendered during generation');
     assert.equal(spinner?.tag, 'span');
     const send = byClass(node, 'pet-chat-send is-busy');
-    assert.equal(send?.props.disabled, true, '生成中发送键应禁用');
+    assert.equal(send?.props.disabled, true, 'Send key should be disabled during generation');
   });
 
-  test('非 busy → 没有灰化与转圈，发送键是可点的箭头', () => {
+  test('Not busy → There is no graying and turning, and the send button is a clickable arrow.', () => {
     const node = composerNode(h, t, stateOf({ busy: false }));
     const composer = node as Node;
     assert.doesNotMatch(String(composer.props.className), /is-busy/);
     assert.equal(byClass(node, 'pet-chat-send-spinner'), undefined);
     const send = byClass(node, 'pet-chat-send');
     assert.equal(send?.props.disabled, false);
-    assert.equal((send?.props.children as Node).tag, 'svg', '空闲时是箭头图标');
+    assert.equal((send?.props.children as Node).tag, 'svg', 'Arrow icon when idle');
   });
 });
 
-describe('composerNode —— 回车发送要让开输入法', () => {
-  test('输入框接上了组合事件与按键处理器', () => {
+describe('composerNode - Enter to send to avoid input method', () => {
+  test('The input box is connected to the combination event and key handler', () => {
     const area = byClass(composerNode(h, t, stateOf()), 'pet-chat-input');
-    assert.ok(area !== undefined, '应有输入框');
+    assert.ok(area !== undefined, 'There should be an input box');
     assert.equal(typeof area?.props.onKeyDown, 'function');
     assert.equal(typeof area?.props.onCompositionStart, 'function');
     assert.equal(typeof area?.props.onCompositionEnd, 'function');
   });
 
-  test('三个处理器原样转给 state（判定在 enter，发送在 state）', () => {
+  test('The three processors are transferred to state as they are (determined at enter, sent at state)', () => {
     const calls: string[] = [];
     const node = composerNode(
       h,

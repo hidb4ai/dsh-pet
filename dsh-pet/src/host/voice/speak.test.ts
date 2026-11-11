@@ -1,6 +1,6 @@
 /**
- * 语音服务的行为测试（src/host/voice/speak.ts）。
- * 合成实现由用例注入：默认套件不联网，只有边界与编排逻辑被钉住。
+ * Behavioral testing of voice services (src/host/voice/speak.ts). The synthesis implementation is injected by use
+ * cases: the default suite is not connected to the Internet, only the boundaries and orchestration logic are verified.
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -11,7 +11,7 @@ import { VoiceSynthError, type SynthInput } from './edge.ts';
 import { registerVoiceProvider } from './registry.ts';
 import { MAX_TEXT_CHARS, createVoiceService, isQueueStale, type VoiceService } from './speak.ts';
 
-/** 造一个隔离的语音服务；`synthesize` 缺省写一个假 mp3。 */
+/** Create an isolated voice service; `synthesize` defaults to a false mp3. */
 async function withService(
   run: (voice: VoiceService, root: string) => Promise<void>,
   synthesize?: (input: SynthInput) => Promise<void>,
@@ -28,24 +28,24 @@ async function withService(
   }
 }
 
-/** 等待异步文件操作；事件循环次数不能充当 I/O 的时间上限。 */
+/** Waiting for asynchronous file operation; event loop count cannot serve as time limit for I/O. */
 async function waitFor(check: () => boolean): Promise<void> {
   const deadline = performance.now() + 5000;
   while (performance.now() < deadline) {
     if (check()) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  assert.fail('等待条件超时');
+  assert.fail('Waiting condition timed out');
 }
 
-test('text 为空或全空白：判 bad-request 且不调用合成', () =>
+test('text is empty or completely blank: judge bad-request and do not call synthesis', () =>
   withService(async (voice) => {
     const result = await voice.speak({ text: '   ' });
     assert.equal(result.ok, false);
     assert.equal(result.ok === false ? result.reason : '', 'bad-request');
   }));
 
-test('text 超过上限：判 bad-request，不做截断', () =>
+test('text exceeds the upper limit: judge bad-request without truncation', () =>
   withService(async (voice) => {
     const result = await voice.speak({ text: '中'.repeat(MAX_TEXT_CHARS + 1) });
     assert.equal(result.ok, false);
@@ -53,30 +53,30 @@ test('text 超过上限：判 bad-request，不做截断', () =>
     assert.match(result.ok === false ? result.message : '', /too long/);
   }));
 
-test('voice 不在白名单：判 bad-request 并列出合法值', () =>
+test('voice is not in the whitelist: judge bad-request and list the valid values', () =>
   withService(async (voice) => {
     const result = await voice.speak({ text: '你好', voice: 'zh-CN-NopeNeural' });
     assert.equal(result.ok, false);
     assert.match(result.ok === false ? result.message : '', /zh-CN-XiaoxiaoNeural/);
   }));
 
-test('rate 格式不合法：判 bad-request', () =>
+test('rate format is invalid: judge bad-request', () =>
   withService(async (voice) => {
     const result = await voice.speak({ text: '你好', rate: '10%' });
     assert.equal(result.ok, false);
     assert.match(result.ok === false ? result.message : '', /rate/);
   }));
 
-test('合法请求：返回 mp3 路径，文件确实落盘', () =>
+test('Valid request: return mp3 path, the file does persist to disk', () =>
   withService(async (voice, root) => {
     const result = await voice.speak({ text: '今天也要加油哦' });
     assert.equal(result.ok, true);
     const file = result.ok ? result.file : '';
-    assert.ok(file.startsWith(join(root, 'voice-cache')), '必须落在 voice-cache 下');
+    assert.ok(file.startsWith(join(root, 'voice-cache')), 'Must fall under voice-cache');
     assert.ok(file.endsWith('.mp3'));
   }));
 
-test('同一输入第二次：命中缓存，不再调用合成', async () => {
+test('The same input for the second time: cache is hit and synthesis is no longer called.', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-pet-voice-hit-'));
   try {
     let calls = 0;
@@ -90,26 +90,26 @@ test('同一输入第二次：命中缓存，不再调用合成', async () => {
     await voice.speak({ text: '同一句话' });
     const second = await voice.speak({ text: '同一句话' });
     assert.equal(second.ok, true);
-    assert.equal(calls, 1, '第二次必须命中缓存');
+    assert.equal(calls, 1, 'The cache must be hit the second time');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test('合成失败：判 generate-error，不把上游细节回给调用方', () =>
+test('synthesis failed: judgment generate-error, do not return upstream details to the caller', () =>
   withService(
     async (voice) => {
       const result = await voice.speak({ text: '你好' });
       assert.equal(result.ok, false);
       assert.equal(result.ok === false ? result.reason : '', 'generate-error');
-      assert.doesNotMatch(result.ok === false ? result.message : '', /https?:/, '不许回显上游地址');
+      assert.doesNotMatch(result.ok === false ? result.message : '', /https?:/, 'Do not echo the upstream address');
     },
     async () => {
       throw new VoiceSynthError('upstream 403 from https://example.invalid');
     },
   ));
 
-test('队列已满：后续请求判 voice-busy，而不是无限排队', () => {
+test('The queue is full: subsequent requests will be judged as voice-busy instead of being queued indefinitely.', () => {
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -127,19 +127,23 @@ test('队列已满：后续请求判 voice-busy，而不是无限排队', () => 
       release();
       const results = await Promise.all(calls);
       const busy = results.filter((result) => !result.ok && result.reason === 'voice-busy');
-      assert.ok(busy.length >= 1, '至少有一个请求应被判为 voice-busy');
+      assert.ok(busy.length >= 1, 'At least one request should be evaluated as voice-busy');
     },
     () => gate,
   );
 });
 
-test('isQueueStale —— 排队久了就丢弃', () => {
-  assert.equal(isQueueStale(1_000, 1_000), false, '刚轮到自己不算久');
-  assert.equal(isQueueStale(1_000, 1_000 + 28_000), false, '正好到上限仍在容许范围内');
-  assert.equal(isQueueStale(1_000, 1_000 + 28_001), true, '超过上限就该丢');
+test('isQueueStale - discarded after queuing for a long time', () => {
+  assert.equal(isQueueStale(1_000, 1_000), false, 'It’s not long since it was my turn');
+  assert.equal(
+    isQueueStale(1_000, 1_000 + 28_000),
+    false,
+    'Just reached the upper limit but still within the allowable range',
+  );
+  assert.equal(isQueueStale(1_000, 1_000 + 28_001), true, 'If it exceeds the upper limit, it should be thrown away.');
 });
 
-test('排队等到客户端早已放弃：直接丢弃，不再白合成一次', async () => {
+test('Queue until the client has already given up: discard it directly, no more wasted synthesis', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-pet-voice-stale-'));
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => {
@@ -151,28 +155,28 @@ test('排队等到客户端早已放弃：直接丢弃，不再白合成一次',
     staleWaitMs: 100,
     synthesize: async (input) => {
       calls += 1;
-      if (calls === 1) await gate; // 第一句占住串行链，第二句才排得上队
+      if (calls === 1) await gate; // The first sentence occupies the serial chain, and only the second sentence can be queued.
       await writeFile(input.target, Buffer.from('mp3'));
     },
   });
   try {
-    const first = voice.speak({ text: '第一句' }); // 拿着队列不放
+    const first = voice.speak({ text: '第一句' }); // Holding the queue and not releasing it
     await waitFor(() => calls === 1);
-    const second = voice.speak({ text: '第二句' }); // 排在它后面
-    await new Promise((resolve) => setTimeout(resolve, 200)); // 越过等待上限，同时给首条请求正常调度的余量
+    const second = voice.speak({ text: '第二句' }); // behind it
+    await new Promise((resolve) => setTimeout(resolve, 200)); // The waiting upper limit is exceeded, and the first request is given a margin for normal scheduling.
     release();
     const [kept, dropped] = await Promise.all([first, second]);
-    assert.equal(kept.ok, true, '排在第一的照常合成');
+    assert.equal(kept.ok, true, 'The first ranked synthesis is as usual');
     assert.equal(dropped.ok === false ? dropped.reason : '', 'voice-busy');
     assert.match(dropped.ok === false ? dropped.message : '', /queued too long/);
-    assert.equal(calls, 1, '被丢弃的那句不能再调合成');
+    assert.equal(calls, 1, 'The discarded sentence cannot be synthesized again.');
   } finally {
     release();
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test('注册了第三方实现：合成走它，内置一次都不调', async () => {
+test('Registered a third-party implementation: synthesis goes through it, and the built-in is not adjusted even once', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-pet-voice-provider-'));
   let edgeCalls = 0;
   let providerCalls = 0;
@@ -193,15 +197,15 @@ test('注册了第三方实现：合成走它，内置一次都不调', async ()
     });
     const result = await voice.speak({ text: '你好' });
     assert.equal(result.ok, true);
-    assert.equal(providerCalls, 1, '应该走第三方实现');
-    assert.equal(edgeCalls, 0, '注册之后不该再调内置');
+    assert.equal(providerCalls, 1, 'Should be implemented by a third party');
+    assert.equal(edgeCalls, 0, 'You should not adjust the built-in after registering');
   } finally {
     dispose();
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test('第三方返回空字节：判 generate-error，不留下 0 字节文件', async () => {
+test('The third party returns empty bytes: judge generate-error, leaving no 0 bytes file', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-pet-voice-empty-'));
   const dispose = registerVoiceProvider({ id: 'my-tts', name: '我的语音', synthesize: async () => new Uint8Array() });
   try {

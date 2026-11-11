@@ -1,7 +1,9 @@
 /**
- * 设置页共用的小件：字段、问号说明、卡片头、开关格，以及输入框与等宽字体的共享常量。
- * 全部只是造节点，不含状态也不读翻译以外的全局——样式规则在 `css.ts`，文案键在 `locales.ts`。
- * 说明统一走 `data-tip` 属性（气泡由 `./tip-layer` 挂到 body 上摆位），不额外包一层 DOM，避免打乱外层 flex 的间距与对齐。
+ * Shared widgets on the settings page: fields, question mark descriptions, card headers, switch grids, and shared
+ * constants between input boxes and monospaced fonts. It's all just creating nodes, not including status and not
+ * reading the whole world other than translation - the style rules are in `css.ts` and the copy key is in `locales.ts`
+ * . It shows that the `data-tip` attribute is unified (the bubble is hung from `./tip-layer` to body for positioning),
+ * and does not include an additional layer of DOM to avoid disturbing the spacing and alignment of the outer flex.
  * @module dsh-pet/src/client/settings/ui
  */
 import type { ChangeEvent, KeyboardEvent } from 'react';
@@ -9,20 +11,22 @@ import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
 import type { SettingsRuntime } from './runtime.ts';
 
-/** 输入框与下拉框共用的类名。 */
+/** The class name shared by the input box and the drop-down box. */
 export const INPUT_CLASS = 'dsh-pet-cfg__inp';
 
 /**
- * 数字输入的统一属性：非受控 + 失焦提交。
+ * Unified properties for digital input: uncontrolled + out-of-focus submission.
  *
- * 受控写法（`value={String(n)}` + `Number(e.target.value)`）在删空时必然把空串变成 0，
- * 用户想「删干净再输」时会被打断；这里让空框是合法中间态，失焦才解析并提交。
- * `key` 跟随值变化：外部改了配置就重挂载刷新，编辑期间 state 不动，所以不会打断输入。
+ * The controlled writing method (`value={String(n)}` + `Number(e.target.value)` ) will inevitably turn the empty
+ * string into 0 when deleting it. The user will be interrupted when he wants to "delete it completely and then enter
+ * it again"; here, the empty box is a valid intermediate state, and it is parsed and submitted only when it is out of
+ * focus. `key` follows the value change: if the external configuration is changed, it will be remounted and refreshed.
+ * During editing, state will not move, so the input will not be interrupted.
  *
- * @param value - 当前生效值。
- * @param onCommit - 提交新值；只有真的变化时才回调。
- * @param extra - 该输入自己的属性（step / min / max / disabled 等）。
- * @returns 可直接摊给 `<input>` 的属性。
+ * @param value - the current effective value.
+ * @param onCommit - Submit new value; callback only when there is a real change.
+ * @param extra - This input has its own properties (step / min / max / disabled etc.).
+ * @returns can be directly assigned to the attributes of `<input>` .
  */
 export function numberInputProps(
   value: number,
@@ -38,7 +42,7 @@ export function numberInputProps(
     onBlur: (e: ChangeEvent<HTMLInputElement>) => {
       const text = e.target.value.trim();
       const parsed = Number(text);
-      // 空串/脏值 = 放弃这次编辑，把显示回退到生效值。
+      // Empty string/dirty value = Abandon this edit and return the display to the effective value.
       const next = text !== '' && Number.isFinite(parsed) ? parsed : value;
       e.target.value = String(next);
       if (next !== value) onCommit(next);
@@ -49,34 +53,34 @@ export function numberInputProps(
   };
 }
 
-/** 等宽字体栈（路径与命令展示用），走系统栈以免多拉一份资源。 */
+/** Fixed-width font stack (for path and command display), use the system stack to avoid pulling in an extra resource. */
 export const MONO_STACK = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace';
 
-/** 折叠卡的输入：标题行常驻，正文收进裁剪层。 */
+/** Input of folded cards: the title line is permanent and the text is retracted into the cropping layer. */
 export interface FoldCardOptions {
-  /** 正文 id，同时是标题按钮的 `aria-controls` 目标。 */
+  /** The text is id, which is also the target of the title button `aria-controls`. */
   readonly id: string;
   readonly title: string;
-  /** 问号气泡里的说明。 */
+  /** Description in question mark bubble. */
   readonly hint: string;
-  /** 展开后的若干行；`null` 表示该条不存在，整项跳过。 */
+  /** Several lines after expansion; `null` means that the line does not exist and the entire item is skipped. */
   readonly body: ReadonlyArray<ReturnType<typeof jsx> | null>;
-  /** 当前是否展开；开合状态由调用方用 `useState` 持有，钩子顺序才稳定。 */
+  /** Whether it is currently expanded; the opening and closing status is held by the caller using `useState`, and the hook sequence is stable. */
   readonly open: boolean;
   readonly onToggle: () => void;
 }
 
-/** 设置页的共用小件；由 {@link makeUiKit} 一次造好，各卡片共享同一套翻译与节点工厂。 */
+/** Shared widget for the settings page; built in one go by {@link makeUiKit}, each card shares the same set of translations and node factories. */
 export interface SettingsUiKit {
-  /** 悬浮说明的展开属性：带 `data-tip` 即悬浮出气泡。 */
+  /** The expansion attribute of the floating description: with `data-tip`, it means floating out the bubble. */
   tip: (text: string) => Record<string, string>;
-  /** 问号说明入口：气泡的圆形触发元素。 */
+  /** Question mark description entry point: The circular trigger element of bubble. */
   q: (text: string) => ReturnType<typeof jsx>;
-  /** 卡片头：标题与问号说明；右侧动作由调用方自行追加。 */
+  /** Card header: title and question mark description; the action on the right is added by the caller. */
   cardHead: (title: string, hint?: string) => ReturnType<typeof jsx>;
-  /** 一个字段：标签（可带问号）在上、控件在下。 */
+  /** A field: the label (can have a question mark) is at the top and the control is at the bottom. */
   field: (label: string, control: ReturnType<typeof jsx>, hint?: string) => ReturnType<typeof jsx>;
-  /** 开关的一格：勾选框、标题与问号；说明挂在问号上，点标题只切开关。 */
+  /** One grid of the switch: check box, title and question mark; the instructions are hung on the question mark, and clicking the title only turns on the switch. */
   toggleCell: (
     label: string,
     value: boolean,
@@ -84,30 +88,32 @@ export interface SettingsUiKit {
     onToggle: (value: boolean) => void,
   ) => ReturnType<typeof jsx>;
   /**
-   * 折叠卡骨架：标题行常驻且整行可点，正文收进裁剪层。
+   * Folding card skeleton: the title line is permanent and the entire line is clickable, and the text is retracted
+   * into the cropping layer.
    *
-   * 高度过渡走 `grid-template-rows` 的 0fr→1fr，不猜 max-height——正文多长都能收干净。
+   * The high transition goes from 0 fr → 1 fr of `grid-template-rows` , no guessing max-height - the text can be
+   * collected no matter how long it is.
    */
   foldCard: (options: FoldCardOptions) => ReturnType<typeof jsx>;
 }
 
 /**
- * 造设置页的共用小件。
+ * Create a shared widget for the settings page.
  *
- * @param rt - 只用到节点工厂 `h` 与翻译 `t`。
- * @returns 各卡片共享的小件集合。
+ * @param rt - only node factory `h` and translation `t` are used.
+ * @returns A collection of small items shared by each card.
  */
 export function makeUiKit(rt: Pick<SettingsRuntime, 'h' | 't'>): SettingsUiKit {
   const { h, t } = rt;
 
   /**
-   * 悬浮说明的展开属性。
+   * Expand property of hover description.
    *
-   * @param text - 说明正文（已翻译）。
+   * @param text - Description text (translated).
    */
   const tip = (text: string): Record<string, string> => ({ 'data-tip': text });
 
-  /** 问号：气泡的圆形触发元素。用 `<i>` 而不是 `<button>`——它只展示说明，点了不该有行为，也不该进 Tab 顺序。 */
+  /** Question mark: The bubble's circular trigger element. Use `<i>` instead of `<button>` - it only shows the description, there should be no behavior when clicked, and it should not enter the Tab sequence. */
   const q = (text: string): ReturnType<typeof jsx> =>
     h('i', { className: 'dsh-pet-cfg__q', ...tip(text), 'aria-label': text, role: 'img', children: '?' });
 
@@ -158,7 +164,7 @@ export function makeUiKit(rt: Pick<SettingsRuntime, 'h' | 't'>): SettingsUiKit {
       h('div', {
         className: 'dsh-pet-cfg__card is-fold' + (options.open ? ' is-open' : ''),
         children: [
-          // 整行可点：标题、问号与箭头都在按钮里。问号自己拦掉冒泡，点它只出气泡、不开合。
+          // The entire row is clickable: the title, question mark and arrow are all in the button. The question mark stops bubbling by itself. Clicking it will only produce bubbles, but will not open or close.
           h('button', {
             key: 'head',
             type: 'button',
@@ -174,7 +180,7 @@ export function makeUiKit(rt: Pick<SettingsRuntime, 'h' | 't'>): SettingsUiKit {
                 onClick: (e: ReactNS.MouseEvent<HTMLSpanElement>) => e.stopPropagation(),
                 children: q(options.hint),
               }),
-              // 箭头：展开时转 180°，与模型选择器的展开指示一致。
+              // Arrow: rotates 180° when expanded, consistent with the model selector's expanded indication.
               h('i', {
                 key: 'c',
                 className: 'dsh-pet-cfg__chevron' + (options.open ? ' is-open' : ''),
@@ -182,7 +188,7 @@ export function makeUiKit(rt: Pick<SettingsRuntime, 'h' | 't'>): SettingsUiKit {
               }),
             ],
           }),
-          // 裁剪层承担 overflow，正文内层出高度：收起时 0fr 把 padding 一起裁掉，卡片底不留空缝。
+          // The cutting layer bears overflow, and the height of the inner layer of the text is: 0 fr when folded. Cut padding together, leaving no gap at the bottom of the card.
           h('div', {
             key: 'body',
             id: options.id,

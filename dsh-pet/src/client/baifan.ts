@@ -1,11 +1,12 @@
 /**
- * 内置玩法「吃白饭」的挂载点：覆盖层、样式、菜单项与点击分发。
+ * Mounting points for built-in gameplay "eat for nothing": overlays, styles, menu items and click distribution.
  *
- * 由 app.ts 的 apply 直接挂载，不注册第二个客户端模块——DSH 的启动图按包声明，
- * 同一个 bundle 里第二次 load 的 factory 不会被任何行 materialize，apply 永远不会跑。
- * 覆盖层由 shell.overlay 槽承载（见 baifan/layer.ts），不自己往 body 上挂。
- * 菜单注册走 HTTP（/config 判断玩法、/menu/item 交给宿主），点击读页面内 Cordis 服务
- * `petApi7340.menuEvents`：同一份点击的本地读取，不必绕一圈长轮询。
+ * Directly mounted by apply of app.ts, without registering the second client module - the startup image of DSH is
+ * declared according to the package. factory of the second load in the same bundle will not be executed by any line
+ * materialize, and apply will never run. The covering layer is carried by the shell.overlay slot (see baifan/layer.ts)
+ * and is not hung on the body itself. Menu register and go to HTTP (/ config to determine the gameplay, / menu/item to
+ * the host), click to read the Cordis service `petApi7340.menuEvents` in the page: local reading of the same click, no
+ * need to go around for long polling.
  * @module dsh-pet/src/client/baifan
  */
 import { CSS, OWNER, ROOT_ID, ROUTE, STYLE_TAG } from './baifan/constants.ts';
@@ -14,22 +15,23 @@ import { createScene } from './baifan/scene.ts';
 import { createShow, type Show } from './baifan/show.ts';
 import { createTransport } from './baifan/transport.ts';
 
-/** 点击轮询间隔（毫秒）：读的是内存 Map，间隔只决定点击到响应的最大延迟。 */
+/** Click polling interval (milliseconds): Memory Map is read, and the interval only determines the maximum delay from click to response. */
 const POLL_MS = 150;
 
-/** 菜单注册失败后的重试间隔（毫秒）：DSH 重启会清掉宿主那份注册表。 */
+/** Retry interval (milliseconds) after menu register failure: DSH Restarting will clear the host's register table. */
 const RETRY_MS = 5000;
 
-/** 本模块用到的客户端上下文子集。 */
+/** A subset of client context used by this module. */
 export interface BaifanContext {
-  /** 取页面内 Cordis 服务（服务名 → 实例）；缺失返回 undefined。 */
+  /** Get the Cordis service in the page (service name → instance); if missing, return undefined. */
   get: (name: string) => unknown;
 }
 
 /**
- * 注入样式表（只注入一次）。
+ * Inject stylesheet (only once).
  *
- * @returns 本次新插入的标签；已存在时返回 null（卸载时不删别人的）。
+ * @returns is the newly inserted tag this time; if it already exists, it will return null (other people’s tags will
+ * not be deleted when unmounting).
  */
 function injectCss(): HTMLStyleElement | null {
   if (document.querySelector('style[data-plugin-css="' + STYLE_TAG + '"]') !== null) return null;
@@ -42,11 +44,11 @@ function injectCss(): HTMLStyleElement | null {
 }
 
 /**
- * 挂载「吃白饭」：建覆盖层、注册菜单、按拍读取页面内的点击。
+ * Mount "eat for nothing": build overlays, register menus, and click to read the clicks in the page.
  *
- * @param ctx - 客户端上下文；只用来取 `petApi7340` 这个只读服务。
- * @param host - 覆盖层容器，由 shell.overlay 槽提供；不能传 `document.body`。
- * @returns 卸载钩子：撤菜单、停轮询、清覆盖层。
+ * @param ctx - client context; only used to obtain the read-only service `petApi7340` .
+ * @param host - Overlay container, provided by the shell.overlay slot; cannot pass `document.body` .
+ * @returns unmount hook: Unmount the menu, stop polling, and clear the overlay.
  */
 export function mountBaifan(ctx: BaifanContext, host: HTMLElement): () => void {
   const abort = new AbortController();
@@ -70,14 +72,16 @@ export function mountBaifan(ctx: BaifanContext, host: HTMLElement): () => void {
     retryMs: RETRY_MS,
   });
 
-  void menu.ensureMenu().catch((error: unknown) => console.warn('[dsh-pet] 吃白饭注册菜单失败 ' + String(error)));
+  void menu
+    .ensureMenu()
+    .catch((error: unknown) => console.warn('[dsh-pet] Rice interaction menu registration failed ' + String(error)));
   const timer = window.setInterval(menu.tick, POLL_MS);
 
   return () => {
     menu.dispose();
     window.clearInterval(timer);
     void show.halt('');
-    // 先发 DELETE 再 abort：abort 会让这次删除立刻失败，留下一条到 TTL 才消失的菜单项。
+    // Send DELETE first and then abort: abort will cause the deletion to fail immediately, leaving a menu item that will not disappear until TTL.
     void fetch(ROUTE + '/menu/item?owner=' + encodeURIComponent(OWNER), { method: 'DELETE' }).catch(() => {});
     abort.abort();
     layer.remove();

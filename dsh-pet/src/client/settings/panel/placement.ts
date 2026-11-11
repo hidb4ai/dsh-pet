@@ -1,23 +1,27 @@
 /**
- * 设置页浮层的定位计算：把触发器的实测矩形与视口尺寸换算成浮层的 fixed 坐标。
- * 下方放不下且上方更宽裕时翻到上方，左右钳制在视口内，并给出高度上限——浮层自身不进文档流。
- * 纯函数，不读 `window`：矩形与视口由调用方传入，便于单测与将来的视口外定位。
- * 模型选择器与通用单选下拉共用这一份算术，差异只经 {@link PlacementOptions} 传入，不在调用方各自复制。
+ * Set the positioning calculation of the floating layer on the page: convert the measured rectangle of the trigger and
+ * the size of the viewport into the fixed coordinates of the floating layer. If the lower part cannot fit and the
+ * upper part has more room, flip it to the upper part, clamp the left and right sides within the viewport, and provide
+ * an upper limit for the height - the floating layer itself does not enter the document flow. Pure function, do not
+ * read `window` : The rectangle and viewport are passed in by the caller, which facilitates single testing and future
+ * positioning outside the viewport. The model selector and the universal radio selection drop-down share this
+ * arithmetic. The difference is only passed in through {@link PlacementOptions} and is not copied separately in the
+ * caller.
  * @module dsh-pet/src/client/settings/panel/placement
  */
 
-/** 浮层与触发器、视口边缘之间的间距。 */
+/** The spacing between the floating layer and the trigger and the edge of the viewport. */
 const PANEL_GAP_PX = 12;
-/** 浮层离触发器的偏移，避免贴着触发器边框。 */
+/** The floating layer is offset from the trigger to avoid sticking to the trigger frame. */
 const PANEL_OFFSET_PX = 4;
-/** 视口余量：浮层左右各留 8px，不贴死屏幕边。 */
+/** Viewport margin: Leave 8 px on the left and right sides of the floating layer, and do not stick to the edge of the screen. */
 const EDGE_MARGIN_PX = 8;
-/** 视口更窄时浮层宽度的兜底余量。 */
+/** The fallback margin of the overlay width when the viewport is narrower. */
 const VIEWPORT_INSET_PX = 16;
-/** 视口窄到连它都装不下时，仍按这个宽度渲染。 */
+/** When the viewport is so narrow that it cannot fit in it, it is still rendered according to this width. */
 const MIN_AVAILABLE_WIDTH_PX = 200;
 
-/** 触发器的实测矩形，语义同 `DOMRect` 的这几个字段。 */
+/** The measured rectangle of the trigger has the same semantics as the fields of `DOMRect`. */
 export interface AnchorRect {
   left: number;
   top: number;
@@ -25,13 +29,13 @@ export interface AnchorRect {
   width: number;
 }
 
-/** 视口尺寸，通常直接取 `window.innerWidth` / `innerHeight`。 */
+/** Viewport size, usually directly taken as `window.innerWidth` / `innerHeight`. */
 export interface Viewport {
   width: number;
   height: number;
 }
 
-/** 浮层的 fixed 定位与尺寸；`top` 与 `bottom` 只有一个有值。 */
+/** fixed positioning and size of the floating layer; only one of `top` and `bottom` has a value. */
 export interface PanelPosition {
   left: number;
   top?: number;
@@ -40,25 +44,25 @@ export interface PanelPosition {
   maxHeight: number;
 }
 
-/** 按浮层内容覆盖的默认值；缺省即模型选择器的取值。 */
+/** The default value overridden by the floating layer content; the default is the value of the model selector. */
 export interface PlacementOptions {
-  /** 浮层宽度下限（px）：模型清单要装下「服务商 + 模型」两段文字，故默认 240；单行下拉传 0 以跟触发器等宽。 */
+  /** Lower limit of floating layer width (px): The model list must contain the two paragraphs "Service Provider + Model", so the default is 240; single-line drop-down pass 0 to have the same width as the trigger. */
   minWidthPx?: number;
-  /** 浮层宽度上限（px），默认 420：再宽会横跨整个设置页。 */
+  /** The upper limit of floating layer width (px), default 420: any wider will span the entire settings page. */
   maxWidthPx?: number;
-  /** 浮层高度上限（px），默认 360：超出后清单自己滚动。 */
+  /** The upper limit of floating layer height (px), default 360: the list will scroll after it is exceeded. */
   maxHeightPx?: number;
-  /** 下方可用空间小于它（px）才考虑翻到上方，默认 240：否则即使靠近底部也优先向下展开。 */
+  /** Only when the available space below is less than it (px) will it be considered to flip to the top, the default is 240: otherwise, even if it is close to the bottom, it will be expanded downwards first. */
   flipThresholdPx?: number;
 }
 
 /**
- * 算出浮层该贴在哪。
+ * Calculate where the floating layer should be attached.
  *
- * @param anchor - 触发器的实测矩形。
- * @param viewport - 视口尺寸。
- * @param options - 宽度与翻面的阈值覆盖，见 {@link PlacementOptions}。
- * @returns 浮层定位；上方空间更宽裕时给出 `bottom`，否则给出 `top`。
+ * @param anchor - The measured rectangle of the flip-flop.
+ * @param viewport - Viewport size.
+ * @param options - Threshold override of width and flip, see {@link PlacementOptions} .
+ * @returns floating layer positioning; `bottom` is given when there is more space above, otherwise `top` is given.
  */
 export function computePanelPlacement(
   anchor: AnchorRect,
@@ -74,7 +78,7 @@ export function computePanelPlacement(
   const available = Math.max(MIN_AVAILABLE_WIDTH_PX, Math.min(maxWidth, viewport.width - VIEWPORT_INSET_PX));
   const width = Math.min(Math.max(anchor.width, minWidth), available);
   const left = Math.max(EDGE_MARGIN_PX, Math.min(anchor.left, viewport.width - width - EDGE_MARGIN_PX));
-  // 下方窄到放不下且上方更宽裕才翻上去：靠近底部的触发器向下展开才不会盖住上面的字段。
+  // Turn it up when the lower part is too narrow to fit and the upper part is wider: the trigger near the bottom expands downward so that it does not cover the upper field.
   const openUp = below < flipThreshold && above > below;
   return openUp
     ? { left, bottom: viewport.height - anchor.top + PANEL_OFFSET_PX, width, maxHeight: Math.min(maxHeight, above) }

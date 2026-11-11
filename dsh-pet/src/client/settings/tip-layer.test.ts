@@ -1,18 +1,19 @@
 /**
- * 设置页说明气泡（src/client/settings/tip-layer.ts）的契约测试。
+ * Setup page description bubble (src/client/settings/tip-layer.ts) contract test.
  *
- * 钉住四件事：命中 `data-tip` 才出气泡；贴边时坐标被夹回视口（这正是伪元素方案丢字的原因）；
- * 离开、滚动、按下都收起；拆掉之后监听与节点一个不剩，重新装上能再工作。
+ * Verify four things: the bubble comes out when `data-tip` is hit; the coordinates are clipped back to the viewport
+ * when welding (this is the reason why the pseudo-element scheme loses words); it is folded when leaving, scrolling,
+ * and pressing; after being removed, no monitor and node are left, and it can work again after reinstalling it.
  *
- * 假 DOM 只实现本模块用到的成员（不引 jsdom）：class 用 Set 表示，`style` 是普通对象，
- * 元素没有排版，宽高直接给定值。
+ * False DOM only implements the members used by this module (do not quote jsdom): class is represented by Set. `style`
+ * is an ordinary object. The elements are not typeset, and the width and height are directly given.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { attachTipLayer } from './tip-layer.ts';
 
-/** 极简元素替身：`parent` 与 `remove()` 连通，用来验证「挂到 body / 从 body 摘掉」。 */
+/** Minimalist element stand-in: `parent` is connected to `remove()`, used to verify "attached to body/removed from body". */
 class FakeEl {
   readonly attrs = new Map<string, string>();
   readonly classes = new Set<string>();
@@ -20,7 +21,7 @@ class FakeEl {
   readonly children: FakeEl[] = [];
   parent: FakeEl | null = null;
   textContent = '';
-  /** 假 DOM 没有排版：给固定宽高，摆位计算才有真实尺寸可用（对齐那条 150 字说明的量级）。 */
+  /** False DOM has no typesetting: given a fixed width and height, the real size is available for positioning calculation (aligned with the magnitude of the 150-word description). */
   offsetWidth = 300;
   offsetHeight = 120;
 
@@ -61,7 +62,7 @@ class FakeEl {
   }
 }
 
-/** 极简事件目标：记录监听，`fire()` 模拟一次派发。 */
+/** Minimalist event target: record monitoring, `fire()` simulates one dispatch. */
 class FakeTarget {
   readonly listeners = new Map<string, Set<(event: unknown) => void>>();
 
@@ -75,7 +76,7 @@ class FakeTarget {
     this.listeners.get(type)?.delete(listener);
   }
 
-  /** 该类型当前挂着的监听数（用来验证卸载时确实摘干净、重复装没叠加）。 */
+  /** The number of currently hanging monitors of this type (used to verify that they are indeed removed during unmount and that repeated installations do not overlap). */
   count(type: string): number {
     return this.listeners.get(type)?.size ?? 0;
   }
@@ -85,13 +86,13 @@ class FakeTarget {
   }
 }
 
-/** 极简 window 替身 + 视口尺寸。 */
+/** Minimalist window stand-in + viewport size. */
 class FakeWindow extends FakeTarget {
   innerWidth = 1280;
   innerHeight = 800;
 }
 
-/** 极简 document 替身。 */
+/** Minimalist document stand-in. */
 class FakeDocument extends FakeTarget {
   readonly body = new FakeEl();
 
@@ -100,7 +101,7 @@ class FakeDocument extends FakeTarget {
   }
 }
 
-/** 假触发元素：`closest` 返回自身，因此「同一元素」判定靠对象身份成立。 */
+/** False trigger element: `closest` returns itself, so the "same element" judgment is established based on the identity of the object. */
 interface FakeTrigger {
   getAttribute: (name: string) => string | null;
   closest: (selector: string) => FakeTrigger | null;
@@ -114,7 +115,7 @@ function fakeTrigger(text: string | null): FakeTrigger {
   return node;
 }
 
-/** 装一套假全局，返回 document 与还原函数。 */
+/** Install a fake global, return document and restore function. */
 function withFakeDom(): { doc: FakeDocument; restore: () => void } {
   const doc = new FakeDocument();
   const win = new FakeWindow();
@@ -131,24 +132,28 @@ function withFakeDom(): { doc: FakeDocument; restore: () => void } {
   };
 }
 
-/** 一次悬停事件：光标位置 + 事件目标。 */
+/** A hover event: cursor position + event target. */
 function hover(target: unknown, x = 100, y = 100): { target: unknown; clientX: number; clientY: number } {
   return { target, clientX: x, clientY: y };
 }
 
-/** 当前挂在 body 上的气泡。 */
+/** The bubble currently hanging on body. */
 function bubbles(doc: FakeDocument): FakeEl[] {
   return doc.body.children.filter((el) => el.attrs.get('class') === 'pet-cfg-tip');
 }
 
-describe('attachTipLayer —— 说明气泡', () => {
-  test('悬停到带 data-tip 的元素：气泡挂在 body 上，正文与显隐就位', () => {
+describe('attachTipLayer —— Description bubble', () => {
+  test('Hover to the element with data-tip: bubble hangs on body, text and display are in place', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
       doc.fire('pointerover', hover(fakeTrigger('对话配图张数上限的说明')));
       const bubble = bubbles(doc);
-      assert.equal(bubble.length, 1, '气泡应该挂在 body 上（设置页内容区是滚动容器，挂在里面会被裁掉）');
+      assert.equal(
+        bubble.length,
+        1,
+        'The bubble should be hung on body (the content area of the settings page is a scroll container, and it will be cut off if it is hung inside)',
+      );
       assert.equal(bubble[0].attrs.get('role'), 'tooltip');
       assert.equal(bubble[0].textContent, '对话配图张数上限的说明');
       assert.equal(bubble[0].classList.contains('is-on'), true);
@@ -158,7 +163,7 @@ describe('attachTipLayer —— 说明气泡', () => {
     }
   });
 
-  test('悬停到没有 data-tip 的元素：不出气泡', () => {
+  test('Hover to an element without data-tip: no bubble appears', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
@@ -170,37 +175,40 @@ describe('attachTipLayer —— 说明气泡', () => {
     }
   });
 
-  test('右缘：光标贴右边时气泡翻到光标左侧，整块仍在视口内', () => {
+  test('Right edge: When the cursor is placed on the right side, the bubble flips to the left of the cursor, and the entire block is still within the viewport.', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
-      // 1270 + 10 + 300 越过 1280，翻到左侧：1270 - 10 - 300 = 960
+      // 1270 + 10 + 300 Go past 1280 and turn to the left: 1270 - 10 - 300 = 960
       doc.fire('pointerover', hover(fakeTrigger('说明'), 1270, 400));
       const bubble = bubbles(doc)[0];
       assert.equal(bubble.style.left, '960px');
-      assert.ok(Number.parseInt(bubble.style.left, 10) + 300 <= 1280, '右边缘不能伸出视口');
+      assert.ok(
+        Number.parseInt(bubble.style.left, 10) + 300 <= 1280,
+        'The right edge cannot extend beyond the viewport',
+      );
     } finally {
       detach();
       restore();
     }
   });
 
-  test('底缘：光标贴底时气泡翻到光标上方，整块仍在视口内', () => {
+  test('Bottom edge: When the cursor is at the bottom, the bubble flips over the cursor and the entire block is still within the viewport.', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
-      // 790 + 10 + 120 越过 800，翻到上方：790 - 10 - 120 = 660
+      // 790 + 10 + 120 Go past 800 and flip to the top: 790 - 10 - 120 = 660
       doc.fire('pointerover', hover(fakeTrigger('说明'), 400, 790));
       const bubble = bubbles(doc)[0];
       assert.equal(bubble.style.top, '660px');
-      assert.ok(Number.parseInt(bubble.style.top, 10) + 120 <= 800, '下边缘不能伸出视口');
+      assert.ok(Number.parseInt(bubble.style.top, 10) + 120 <= 800, 'The lower edge cannot extend beyond the viewport');
     } finally {
       detach();
       restore();
     }
   });
 
-  test('光标离开：只摘显隐，元素留着复用（悬停频繁，反复建删会闪）', () => {
+  test('Cursor leaves: only the elements are shown and hidden, and the element remains reuse (hovering frequently, repeated creation and deletion will cause it to flash)', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
@@ -215,13 +223,13 @@ describe('attachTipLayer —— 说明气泡', () => {
     }
   });
 
-  test('光标移进触发元素自己的子节点：不算离开，气泡不闪', () => {
+  test("The cursor moves into the trigger element's own child node: it does not count as leaving, and the bubble does not flash.", () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
       const trigger = fakeTrigger('说明');
       doc.fire('pointerover', hover(trigger));
-      // 子节点的 closest 仍指向同一个触发元素
+      // closest of the child node still points to the same trigger element
       doc.fire('pointerout', { target: { closest: () => trigger }, relatedTarget: trigger });
       assert.equal(bubbles(doc)[0].classList.contains('is-on'), true);
     } finally {
@@ -230,7 +238,7 @@ describe('attachTipLayer —— 说明气泡', () => {
     }
   });
 
-  test('滚动或被按下：气泡立刻收起（fixed 定位不会跟着内容走，留着就错位）', () => {
+  test('After scrolling or being pressed: the bubble is immediately folded (fixed positioning will not follow the content, and will be misaligned if left on)', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
@@ -247,7 +255,7 @@ describe('attachTipLayer —— 说明气泡', () => {
     }
   });
 
-  test('同一触发元素内重复派发：只摆一次，不重复换位', () => {
+  test('Repeated distribution within the same trigger element: only placed once, no repeated transpositions', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
@@ -262,8 +270,8 @@ describe('attachTipLayer —— 说明气泡', () => {
   });
 });
 
-describe('attachTipLayer —— 安装与拆除', () => {
-  test('装上即有监听，拆掉后监听与气泡都不剩', () => {
+describe('attachTipLayer - Installation and removal', () => {
+  test('There is a monitor when it is installed, but no monitor or bubble is left after it is removed.', () => {
     const { doc, restore } = withFakeDom();
     const detach = attachTipLayer();
     try {
@@ -274,7 +282,7 @@ describe('attachTipLayer —— 安装与拆除', () => {
 
       doc.fire('pointerover', hover(fakeTrigger('说明')));
       detach();
-      assert.equal(bubbles(doc).length, 0, '气泡应该从 body 上摘掉');
+      assert.equal(bubbles(doc).length, 0, 'bubble should be removed from body');
       for (const type of ['pointerover', 'pointerout', 'pointerdown', 'scroll']) {
         assert.equal(doc.count(type), 0, type + ' 监听应该摘干净');
       }
@@ -283,7 +291,7 @@ describe('attachTipLayer —— 安装与拆除', () => {
     }
   });
 
-  test('重复安装：返回同一个拆除函数，监听不叠加', () => {
+  test('Repeated installation: return the same dismantling function, monitoring is not superimposed', () => {
     const { doc, restore } = withFakeDom();
     const first = attachTipLayer();
     try {
@@ -296,7 +304,7 @@ describe('attachTipLayer —— 安装与拆除', () => {
     }
   });
 
-  test('拆掉之后再装：仍能工作，不是一次性', () => {
+  test('After disassembly and reinstallation: it can still work, it is not a one-time use', () => {
     const { doc, restore } = withFakeDom();
     const first = attachTipLayer();
     first();

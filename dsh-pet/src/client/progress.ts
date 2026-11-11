@@ -1,47 +1,50 @@
 /**
- * 「播放进度」的页面内注册表：PetCard 挂载时注册读法，供 Cordis 只读服务 `petApi7340` 读取。
- * 读进度是每帧都要的事，做成 HTTP 就是每秒几十次回环；页面内直接读 `<video>` 属性，零请求、零序列化。
- * 低频的播放状态（accepted / playing / ended / cancelled / failed）仍在 `GET /playback/{id}`，那是跨进程的事实来源。
- * 只服务浏览器半侧；与 pose 一样按需读取，拿到的是这一刻的状态，不是注册时的快照。
+ * The register table in the "Playback Progress" page: PetCard register reading method when mounting, for Cordis
+ * read-only service `petApi7340` to read. Reading progress is a matter of every frame. To make HTTP, it means loopback
+ * dozens of times per second; `<video>` attributes are read directly in the page, with zero request and zero
+ * serialization. The playback state of the low frequency ( accepted / playing / ended / cancelled / failed ) is still
+ * in `GET /playback/{id}` , that is the cross-process source of fact. Only serves the browser side; like pose, it is
+ * read on demand. What you get is the status at this moment, not the snapshot when registering.
  * @module dsh-pet/src/client/progress
  */
 
-/** 一次播放的进度快照，字段全部取自前台 `<video>`，无缓存、无定时器。 */
+/** A snapshot of the progress of a playback. All fields are taken from the foreground `<video>`. There is no cache or timer. */
 export type PlaybackProgress = {
-  /** 本次播放的编号；`null` = 自播动画（随机走位 / 点击 / 碎碎念 / 余额…），不是第三方点播。 */
+  /** The number of this playback; `null` = self-play animation (random movement/click/whisper/balance...), not a third-party playback request. */
   playbackId: string | null;
-  /** 当前动画名：动作名或 `url` 点播地址；用 `playbackId` 是否非空分辨第三方点播。 */
+  /** Current animation name: action name or `url` playback request address; use whether `playbackId` is non-empty to identify third-party playback requests. */
   anim: string;
-  /** 当前播放位置，秒。 */
+  /** Current playback position, seconds. */
   currentTime: number;
-  /** 视频总长，秒；元数据未就绪时为 `0`。 */
+  /** Total video length, seconds; `0` when metadata is not ready. */
   duration: number;
-  /** 是否暂停；播放到结尾也是 `true`。 */
+  /** Whether to pause; the playback to the end is also `true`. */
   paused: boolean;
-  /** 是否缓冲：`readyState < 3`（HAVE_FUTURE_DATA）或正在 seek。 */
+  /** Whether buffering: `readyState < 3` (HAVE_FUTURE_DATA) or seek. */
   buffering: boolean;
 };
 
-/** petId → 取当前进度的函数；PetCard 挂载时注册、卸载时摘除。 */
+/** petId → Function to get the current progress; PetCard is registered when mounted and removed when unmounted. */
 const readers = new Map<string, () => PlaybackProgress>();
 
 /**
- * 注册一只宠物在这一页的进度读法。
- * @param petId - 宠物 id。
- * @param read - 取当前进度的函数。
- * @returns 摘除函数；重复调用无害。
+ * Register the progress of a pet on this page.
+ * @param petId - Pet id.
+ * @param read - function to get the current progress.
+ * @returns Remove function; repeated calls are harmless.
  */
 export function registerProgress(petId: string, read: () => PlaybackProgress): () => void {
   readers.set(petId, read);
   return () => {
-    // 只摘掉自己那一份：同一 id 重新挂载时，后注册的那份不能被前一个的清理函数误摘。
+    // Only remove its own copy: When the same id is remounted, the copy of the later register cannot be mistakenly removed by the previous cleanup function.
     if (readers.get(petId) === read) readers.delete(petId);
   };
 }
 
 /**
- * 读某只宠物在这一页的播放进度；不在这页（未注册 / 未挂载 / `display` 不含 `web`）时为 `null`。
- * 每次调用都取当前值，播放中途读到的就是那一刻的位置。
+ * Read the playback progress of a certain pet on this page; when it is not on this page (not registered / not mounted
+ * / `display` does not include `web` ), it is `null` . Each call takes the current value, and the position read during
+ * playback is the position at that moment.
  */
 export function readProgress(petId: string): PlaybackProgress | null {
   if (typeof petId !== 'string' || petId === '') return null;
@@ -49,7 +52,7 @@ export function readProgress(petId: string): PlaybackProgress | null {
   return read === undefined ? null : read();
 }
 
-/** 当前注册了几只（测试与观测用：验证卸载不泄漏）。 */
+/** How many are currently registered (for testing and observation: verify that unmount does not leak). */
 export function progressReaderCount(): number {
   return readers.size;
 }

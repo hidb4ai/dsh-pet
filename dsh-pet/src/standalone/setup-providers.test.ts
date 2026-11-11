@@ -1,4 +1,4 @@
-/** 三种模型连接通过真实 HTTP 分别校验，进程夹具仅代替安装阶段。 */
+/** The three model connections are verified separately through the real HTTP, and the process fixture only replaces the installation stage. */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

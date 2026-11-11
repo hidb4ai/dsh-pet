@@ -1,12 +1,14 @@
 /**
- * 网页端播放进度注册表（src/client/progress.ts）的单测 —— issue #122 第 2 条。
+ * Single test of web page playback progress register table (src/client/progress.ts) - issue #122 Article 2.
  *
- * 三条契约：
- *   1. 按需读：每次调用都重新取值（不是快照），播放中途读到的是那一刻的位置；
- *   2. 没注册 / 空 id / 非字符串 → `null`，绝不抛给第三方；
- *   3. 同一 id 重新挂载时，旧实例的清理函数不能摘掉新读函数（否则口子静默失效）。
+ * Three contracts:
+ * 1. Read on demand: the value is re-retrieved every time it is called (not a snapshot), and the position read during
+ * playback is the position at that moment;
+ * 2. No register / empty id / non-character string → `null` , never thrown to a third party;
+ * 3. When the same id is remounted, the cleanup function of the old instance cannot remove the new read function
+ * (otherwise the port will be silently invalid).
  *
- * 用 Node 内置 test runner，不引入任何 npm 依赖。
+ * Use Node to build test runner without introducing any npm dependencies.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,18 +24,18 @@ const progress = (currentTime: number, playbackId: string | null = null, anim = 
   buffering: false,
 });
 
-describe('registerProgress / readProgress —— 页面内播放进度', () => {
-  test('注册后能读到当前值，且每次调用都重新取值（按需，不是快照）', () => {
+describe('registerProgress / readProgress —— Playback progress within the page', () => {
+  test('The current value can be read after registering, and the value is re-retrieved every time it is called (on demand, not a snapshot)', () => {
     let t = 0.5;
     const off = registerProgress('p1', () => progress(t));
     assert.equal(readProgress('p1')?.currentTime, 0.5);
-    t = 3.25; // 模拟播放推进
-    assert.equal(readProgress('p1')?.currentTime, 3.25, '按需读：应取到最新值');
+    t = 3.25; // Simulation playback advancement
+    assert.equal(readProgress('p1')?.currentTime, 3.25, 'Read on demand: the latest value should be obtained');
     off();
-    assert.equal(readProgress('p1'), null, '摘除后读不到');
+    assert.equal(readProgress('p1'), null, 'Unable to read after removal');
   });
 
-  test('playbackId 原样透出：点播有值、自播为 null', () => {
+  test('playbackId is revealed as it is: playback request has value, self-broadcast is null', () => {
     const off1 = registerProgress('pointed', () => progress(1, 'pb_1'));
     assert.equal(readProgress('pointed')?.playbackId, 'pb_1');
     off1();
@@ -43,7 +45,7 @@ describe('registerProgress / readProgress —— 页面内播放进度', () => {
     off2();
   });
 
-  test('anim 原样透出：池内动作给名字，url 点播给地址', () => {
+  test('anim is revealed as it is: the action in the pool is given to the name, url playback request is given to the address', () => {
     const off1 = registerProgress('named', () => progress(1, null, 'walk'));
     assert.equal(readProgress('named')?.anim, 'walk');
     off1();
@@ -53,23 +55,23 @@ describe('registerProgress / readProgress —— 页面内播放进度', () => {
     off2();
   });
 
-  test('没注册 / 空 id / 非字符串 → null（不抛）', () => {
+  test('No register / empty id / non-character string → null (not thrown)', () => {
     assert.equal(readProgress('nope'), null);
     assert.equal(readProgress(''), null);
     assert.equal(readProgress(undefined as unknown as string), null);
     assert.equal(readProgress(42 as unknown as string), null);
   });
 
-  test('同一 id 重新挂载：旧清理函数不能摘掉新读函数', () => {
+  test('The same id is remounted: the old cleanup function cannot remove the new read function', () => {
     const off1 = registerProgress('p2', () => progress(0));
     const off2 = registerProgress('p2', () => progress(9));
-    off1(); // 旧实例卸载（晚于新实例挂载）
-    assert.equal(readProgress('p2')?.currentTime, 9, '新读函数必须还在');
+    off1(); // The old instance is unmounted (later than the new instance)
+    assert.equal(readProgress('p2')?.currentTime, 9, 'The new read function must still exist');
     off2();
     assert.equal(readProgress('p2'), null);
   });
 
-  test('清理函数重复调用无害，注册数不泄漏', () => {
+  test('Repeated calls to the cleanup function are harmless and the register number is not leaked.', () => {
     const before = progressReaderCount();
     const off = registerProgress('p3', () => progress(0));
     assert.equal(progressReaderCount(), before + 1);

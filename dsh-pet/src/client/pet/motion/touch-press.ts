@@ -1,60 +1,62 @@
 /**
- * 触屏长按：按住到一定时长把这次按压当右键，计时期间手指移动超过容差就取消。
- * 不负责右键菜单本身，也不碰拖拽与点击判定——到点只回调，派发交给调用方。
- * 鼠标与笔不走这条分支，起表前先按指针类型挡掉。
- * 不变量：同一时刻只有一个计时器；到点时按压若已结束，回调自弃。
+ * Touch screen long press: press and hold for a certain period of time and treat this press as a right button. During
+ * the timing, the finger moves beyond the tolerance and is canceled. It is not responsible for the right-click menu
+ * itself, nor does it touch the drag and click judgment-it only calls back when the point is reached, and dispatches
+ * it to the caller. The mouse and pen do not follow this branch. Before starting the table, block it according to the
+ * pointer type. Invariant: There is only one timer at the same time; if the pressing is over when the time is reached,
+ * the callback will abandon itself.
  * @module dsh-pet/src/client/pet/motion/touch-press
  */
-/** 触屏长按多久算右键（ms）。 */
+/** How long does it take to press and hold the touch screen to calculate the right button (ms). */
 const LONG_PRESS_MS = 500;
 
-/** 计时期间手指移动超过这个距离就取消（px）。 */
+/** If the finger moves beyond this distance during timing, it will be canceled (px). */
 const SLOP_PX = 8;
 
-/** 一次按下的现场：到点时要派发合成事件，得留着元素、指针与坐标。 */
+/** The scene of a single press: the synthesis event must be dispatched when the point is reached, and the elements, pointers and coordinates must be retained. */
 export interface TouchPressTarget {
-  /** 按下时被捕获的元素。 */
+  /** Element captured when pressed. */
   el: HTMLElement;
-  /** 指针 id，释放捕获用。 */
+  /** Pointer id, used for release capture. */
   pointerId: number;
-  /** 指针类型；鼠标与笔直接忽略。 */
+  /** Pointer type; mouse and pen are ignored directly. */
   pointerType: string;
-  /** 按下的视口横坐标（px）。 */
+  /** Pressed viewport abscissa (px). */
   x: number;
-  /** 按下的视口纵坐标（px）。 */
+  /** Viewport Y coordinate at pointer-down, in pixels. */
   y: number;
 }
 
-/** 长按驱动的依赖。 */
+/** Long press driver dependency. */
 export interface TouchPressDeps {
-  /** 到点时按压是否仍然有效：已松手或已进入拖拽都返回 false。 */
+  /** Is the press still valid when the point is reached: false will be returned if the user has let go or has entered dragging. */
   stillHolding(): boolean;
-  /** 到点：把这次按压当右键，由调用方派发。 */
+  /** At the point: Treat this press as a right button and dispatch it from the caller. */
   onMenu(target: TouchPressTarget): void;
 }
 
-/** 长按驱动：一个宠物一个实例。 */
+/** Long press driver: one instance per pet. */
 export interface TouchPress {
-  /** 起表；重复调用先取消旧的。鼠标与笔不起表。 */
+  /** Start table; cancel the old one first if called repeatedly. Mouse and pen are useless. */
   arm(target: TouchPressTarget): void;
-  /** 手指移动的累计距离（px）；超过容差即取消。 */
+  /** The cumulative distance of finger movement (px); if it exceeds the tolerance, it will be cancelled. */
   move(distancePx: number): void;
-  /** 松手或取消按压：清计时器。 */
+  /** Release or cancel pressing: clear the timer. */
   cancel(): void;
-  /** 是否正在等触发。 */
+  /** Whether it is waiting for trigger. */
   isArmed(): boolean;
 }
 
 /**
- * 造长按驱动。
+ * Build and hold the driver.
  *
- * @param deps - 到点时的有效性与回调。
- * @returns 可反复起表的驱动；计时器由本模块清理。
+ * @param deps - Validity and callback at the point.
+ * @returns is a driver that can start the watch repeatedly; the timer is cleared by this module.
  */
 export function createTouchPress(deps: TouchPressDeps): TouchPress {
-  /** 待触发的计时器；`null` = 没有在等。 */
+  /** timer to be triggered; `null` = not waiting. */
   let timer: ReturnType<typeof setTimeout> | null = null;
-  /** 本次按下的现场，到点时交给回调。 */
+  /** The scene pressed this time will be handed over to callback when the point is reached. */
   let pending: TouchPressTarget | null = null;
 
   const cancel = (): void => {

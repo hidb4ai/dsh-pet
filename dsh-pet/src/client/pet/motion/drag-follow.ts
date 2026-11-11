@@ -1,52 +1,53 @@
 /**
- * 拖拽的弹簧跟随：包围盒过阻尼追赶指针目标，抹平指针事件的高频抖动。
- * 不负责指针状态与松手结算：目标由拖拽模块每帧更新，这里只管把盒子追过去。
- * 依赖 shared/physics 的弹簧步进；帧句柄与速度由本模块持有，stop 之后可重新瞄准。
- * 不变量：同一时刻最多一条跟随在跑；瞄准与停走都会让迟到的帧自弃。
+ * Drag spring following: The bounding box catches up with the pointer target through damping, smoothing out the
+ * high-frequency jitter of pointer events. It is not responsible for the pointer status and release settlement: the
+ * target is updated every frame by the drag module, here we just chase the box. Depends on the spring step of
+ * shared/physics; the frame handle and speed are held by this module, and can be re-aimed after stop. Invariant: At
+ * most one follower is running at the same time; aiming and stop-and-go will cause late frames to be discarded.
  * @module dsh-pet/src/client/pet/motion/drag-follow
  */
 import { springStep } from '../../../shared/physics.ts';
 import type { BoxPoint } from './geometry.ts';
 
-/** 跟随驱动每次起跑取的当帧能力：起跑时取一次快照，一次拖拽内盒与弹簧参数不变。 */
+/** The ability to take the current frame every time the driver starts: take a snapshot when starting, and drag the inner box and spring parameters unchanged. */
 export interface DragFollowDeps {
-  /** 当帧能力快照。 */
+  /** When frame capability snapshot. */
   card(): {
-    /** 当前包围盒位置。 */
+    /** Current bounding box position. */
     box(): BoxPoint | null;
-    /** 写回包围盒位置（每帧调用）。 */
+    /** Write back the bounding box position (called every frame). */
     setBox(box: BoxPoint): void;
-    /** 该宠物的物理参数，只取弹簧刚度。 */
+    /** The physical parameters of this pet are only the spring stiffness. */
     physics: { throwPower: number };
   };
 }
 
-/** 弹簧跟随驱动：一个宠物一个实例。 */
+/** Spring follower driver: one instance per pet. */
 export interface DragFollow {
-  /** 设定这一拍的目标（包围盒左上角）。 */
+  /** Set the target for this shot (the upper left corner of the bounding box). */
   aim(target: BoxPoint): void;
-  /** 起跑；已经在跑时立即返回。 */
+  /** Start running; return immediately when already running. */
   start(rootEl: HTMLDivElement): void;
-  /** 停跟随并清掉目标与残余速度。 */
+  /** Stop following and clear the target and remaining speed. */
   stop(): void;
 }
 
 /**
- * 造跟随驱动。
+ * Create a follower drive.
  *
- * @param deps - 读写包围盒与取弹簧刚度。
- * @returns 可反复瞄准的驱动。
+ * @param deps - Read and write bounding boxes and get spring stiffness.
+ * @returns Repeatable aiming driver.
  */
 export function createDragFollow(deps: DragFollowDeps): DragFollow {
-  /** 在跑的 rAF；`null` = 没在追。 */
+  /** rAF is running; `null` = not chasing. */
   let frame: number | null = null;
-  /** 世代号：起跑或停下 +1，迟到的帧据此自弃。 */
+  /** Generation number: start or stop +1, late frames are discarded accordingly. */
   let token = 0;
-  /** 追赶目标；`null` = 没有目标。 */
+  /** Chasing target; `null` = No target. */
   let target: BoxPoint | null = null;
-  /** 上一帧的速度（px/s），跨帧累积出过阻尼手感。 */
+  /** The speed of the previous frame (px/s) accumulates over-damping feel across frames. */
   let velocity = { vx: 0, vy: 0 };
-  /** 上一帧的时刻（ms）。 */
+  /** The time of the previous frame (ms). */
   let last = 0;
 
   const stop = (): void => {

@@ -1,30 +1,32 @@
 /**
- * 全局开关卡：通知、点击音效、锁定在当前屏幕与系统托盘。
- * 切换只改本地状态，随「保存」整包写入——即时写盘会重启桌面 Helper、重建全部桌面宠物窗口。
- * 通知开关额外需要用户手势，开与关都要走外壳的同一个入口，因此卡里只回传键名与目标值。
+ * Global switch card: notifications, click sound effects, lock on current screen and system tray. Switch to only
+ * change the local state, and then "save" the entire package to write - instant disk writing will restart the desktop
+ * Helper and rebuild all desktop pet windows. The notification switch requires additional user gestures. Both opening
+ * and closing have to go through the same entry point of the shell, so the card only returns the key name and target
+ * value.
  * @module dsh-pet/src/client/settings/global-card
  */
 import type { FunctionComponent } from 'react';
 import type { SettingsRuntime } from './runtime.ts';
 import { makeUiKit } from './ui.ts';
 
-/** 四个全局开关的键名，与成品配置的字段名一致。 */
+/** The key names of the four global switches are consistent with the field names of the resolved configuration. */
 export type GlobalFlagKey = 'notificationsEnabled' | 'clickSoundEnabled' | 'confineToScreen' | 'trayEnabled';
 
-/** 四个全局开关的当前值。 */
+/** Current values of four global switches. */
 export type GlobalFlags = Record<GlobalFlagKey, boolean>;
 
-/** 全局开关卡的输入。 */
+/** Global switch card input. */
 export interface GlobalCardProps {
-  /** 保存中或配置未就绪时禁用全部开关。 */
+  /** All switches are disabled while saving or configuration is not ready. */
   busy: boolean;
-  /** 当前值。 */
+  /** Current value. */
   values: GlobalFlags;
-  /** 某个开关被切换；通知开关的权限申请由外壳处理。 */
+  /** A switch is toggled; permission request for notification switch is handled by the shell. */
   onChange: (key: GlobalFlagKey, value: boolean) => void;
 }
 
-/** 开关的展示顺序与文案键。 */
+/** Display order and text keys of switches. */
 const TOGGLES: Array<{ key: GlobalFlagKey; label: string }> = [
   { key: 'notificationsEnabled', label: 'notifyToggle' },
   { key: 'clickSoundEnabled', label: 'clickSoundToggle' },
@@ -33,10 +35,10 @@ const TOGGLES: Array<{ key: GlobalFlagKey; label: string }> = [
 ];
 
 /**
- * 造全局开关卡。
+ * Create a global switch card.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns card assembly.
  */
 export function makeGlobalCard(rt: SettingsRuntime): FunctionComponent<GlobalCardProps> {
   const { h, t } = rt;

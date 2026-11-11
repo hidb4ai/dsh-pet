@@ -1,35 +1,37 @@
 /**
- * DeepSeek 两条路由共用的业务口径：档位基准与峰谷计价。
+ * DeepSeek Business conventions shared by the two routes: state benchmark and peak-to-valley pricing.
  *
- * 不负责取数，也不属于展示层——展示层只认数据里带出的档位与基准。
- * 两条路由（官方 API Key 与 DSH 账号）必须使用同一套基准，否则气泡档位会不一致。
+ * It is not responsible for data acquisition and does not belong to the display layer - the display layer only
+ * recognizes the states and benchmarks brought out in the data. The two routes (official API Key and DSH accounts) must
+ * use the same set of benchmarks, otherwise the bubble states will be inconsistent.
  *
  * @module dsh-pet/src/host/balance/deepseek-common
  */
 import type { PricingTier } from './types.ts';
 
 /**
- * 余额档位基准（按币种）：余额 ≥ 该值视为未消耗，据此折算已用百分比。
- * CNY 20 / USD 5 是余量充足的参照（DeepSeek 充值以 10 元为最小档）；币种不同不能换算。
+ * Balance tier basis (by currency): Balance ≥ This value is considered unconsumed, and the used percentage is
+ * converted accordingly. CNY 20 / USD 5 is a reference for sufficient balance (the minimum recharge for DeepSeek is 10
+ * yuan); different currencies cannot be converted.
  */
 export const DEEPSEEK_FULL_BALANCE: Record<string, string> = { CNY: '20', USD: '5' };
 
-/** 取某币种的档位基准；没有基准时返回 undefined，不替它猜一个。 */
+/** Get the level benchmark of a certain currency; if there is no benchmark, it returns undefined and does not guess one for it. */
 export function deepseekFullBalance(currency: string): string | undefined {
   return DEEPSEEK_FULL_BALANCE[currency];
 }
 
 /**
- * DeepSeek 峰谷计价（北京时间）：工作日 9:00–12:00、14:00–18:00 为高峰，其余为空闲；
- * 周末全天按低谷计费（2026-08-23 起）。
- * 在取数时刻算好随数据带出，展示层因此不需要知道任何计价规则。
+ * DeepSeek Peak-to-valley pricing (Beijing time): 9:00–12:00 and 14:00–18:00 on weekdays are peak hours, and the rest
+ * are idle; weekend pricing is based on off-peak pricing (starting from 2026-08-23). It is calculated and brought out
+ * with the data at the moment of fetching, so the display layer does not need to know any pricing rules.
  */
 export function deepseekPricingTier(now: Date = new Date()): PricingTier {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai',
     weekday: 'short',
     hour: '2-digit',
-    hourCycle: 'h23', // 避免午夜被格式化为 24:00。
+    hourCycle: 'h23', // Avoid midnight being formatted as 24:00.
   }).formatToParts(now);
   const pick = (type: Intl.DateTimeFormatPartTypes): string | undefined => parts.find((p) => p.type === type)?.value;
   const weekday = pick('weekday');

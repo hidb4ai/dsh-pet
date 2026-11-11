@@ -36,7 +36,7 @@ test('validates safe endpoints and explicit configuration with fixed redacted er
   ]) {
     assert.equal(validateSettings({ ...configured, baseUrl }, DEFAULT_AI_SETTINGS).baseUrl, baseUrl);
   }
-  // 配置填一半是允许保存的：它只是暂时不可用，不该连保存都拒绝。
+  // Half-filled configuration is allowed to be saved: it is only temporarily unavailable and should not be refused even for saving.
   assert.equal(validateSettings({ model: '' }, DEFAULT_AI_SETTINGS).model, '');
   for (const patch of [
     { timeoutMs: 60001 },
@@ -53,13 +53,13 @@ test('validates safe endpoints and explicit configuration with fixed redacted er
   }
 });
 
-test('余额服务商：默认不查询，只接受三条可用路由，且随配置持久化', async () => {
+test('Balance service provider: no query by default, only accepts three available routes, and persists with configuration', async () => {
   assert.equal(DEFAULT_AI_SETTINGS.balanceProvider, '');
   assert.equal(validateSettings({}, DEFAULT_AI_SETTINGS).balanceProvider, '');
   for (const balanceProvider of ['deepseek-official', 'opencode-go', 'commandcode']) {
     assert.equal(validateSettings({ balanceProvider }, DEFAULT_AI_SETTINGS).balanceProvider, balanceProvider);
   }
-  // deepseek-account 读的是 DSH 登录态，独立模式没有账号服务，因此不进可选集合。
+  // deepseek-account reads the login status of DSH. There is no account service in standalone mode, so it does not enter the optional set.
   for (const balanceProvider of ['deepseek-account', 'openai', 'DEEPSEEK-OFFICIAL', ' ']) {
     assert.throws(() => validateSettings({ balanceProvider }, DEFAULT_AI_SETTINGS), /Invalid standalone AI settings/);
   }
@@ -70,7 +70,7 @@ test('余额服务商：默认不查询，只接受三条可用路由，且随�
     const saved = await store.save({ ...configured, balanceProvider: 'deepseek-official' });
     assert.equal(saved.balanceProvider, 'deepseek-official');
     assert.equal(createAiConfig(home).publicSettings().balanceProvider, 'deepseek-official');
-    // 不传该字段时保留上一份值，不会被默认值冲掉。
+    // When this field is not passed, the previous value is retained and will not be washed away by the default value.
     assert.equal((await store.save({ model: 'next-model' })).balanceProvider, 'deepseek-official');
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -90,7 +90,7 @@ test('persists only in isolated home, redacts keys, supports keep and clear, rel
     assert.equal((await store.save({ apiKey: '', automaticWhispers: true })).hasKey, true);
     assert.equal(createAiConfig(home).publicSettings().model, 'chosen-model');
     assert.match(readFileSync(join(home, 'dsh-pet', 'standalone-ai.json'), 'utf8'), /test-secret/);
-    // 启用位只为旧文件保留：无论传什么，落盘一律为 true，对外视图也不再暴露。
+    // The enable bit is only reserved for old files: no matter what is transferred, persist to disk will always be true, and the external view will no longer be exposed.
     const forced = await store.save({ enabled: false });
     assert.equal('enabled' in forced, false);
     assert.match(readFileSync(join(home, 'dsh-pet', 'standalone-ai.json'), 'utf8'), /"enabled":true/);
@@ -103,11 +103,11 @@ test('persists only in isolated home, redacts keys, supports keep and clear, rel
   }
 });
 
-test('旧配置文件缺后加字段：铺默认值后仍可读，不因 strict 校验整体失败', async () => {
+test('The old configuration file is missing fields added at the end: it is still readable after setting the default value, and the overall verification does not fail due to strict', async () => {
   const home = mkdtempSync(join(tmpdir(), 'pet-ai-legacy-'));
   try {
     mkdirSync(join(home, 'dsh-pet'), { recursive: true });
-    // 升级前的落盘形状：没有 balanceProvider。
+    // Pre-upgrade persist to disk shape: no balanceProvider.
     writeFileSync(
       join(home, 'dsh-pet', 'standalone-ai.json'),
       JSON.stringify({
@@ -125,7 +125,7 @@ test('旧配置文件缺后加字段：铺默认值后仍可读，不因 strict 
     const store = createAiConfig(home);
     assert.equal(store.publicSettings().model, 'legacy-model');
     assert.equal(store.publicSettings().hasKey, true);
-    assert.equal(store.publicSettings().balanceProvider, '', '缺的新字段用默认值补齐');
+    assert.equal(store.publicSettings().balanceProvider, '', 'Missing new fields are filled in with default values.');
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

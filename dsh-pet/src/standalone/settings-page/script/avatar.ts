@@ -1,20 +1,23 @@
 /**
- * 宠物头像行：预览当前头像、选图后压缩上传，成功即换版本号刷新预览。
+ * Pet avatar line: Preview the current avatar, select the image and then compress and upload it. If successful, the
+ * version number will be changed to refresh the preview.
  *
- * 后端就是插件自己的 /logo 与 /pet-avatar——独立模式经 apply() 原样挂载，不另开接口。
- * 超长边的图会先缩到上限再编 PNG；已在上限内则原样上传，透明与动图都不掉。
+ * The backend is the plugin's own / logo and / pet-avatar - the standalone mode is mounted as is via apply()
+ * without opening another interface. Pictures with extremely long sides will be reduced to the upper limit first and
+ * then edited into PNG; if they are already within the upper limit, they will be uploaded as they are without losing
+ * transparency and animation.
  * @module dsh-pet/src/standalone/settings-page/script/avatar
  */
 
-/** 生成头像片段所需的常量；两处都取自插件自己的实现，避免第二份真相。 */
+/** Constants required to generate avatar fragments; both are taken from the plugin's own implementation to avoid the duplicate source of truth. */
 export interface AvatarScriptConsts {
-  /** 头像读取地址（来自 shared/avatar.ts 的 LOGO_URL）。 */
+  /** Avatar reading address (LOGO_URL from shared/avatar.ts). */
   readonly logoUrl: string;
-  /** 长边上限（来自 client/settings/avatar-upload.ts 的 AVATAR_MAX_SIDE）。 */
+  /** Long side upper limit (AVATAR_MAX_SIDE from client/settings/avatar-upload.ts). */
   readonly maxSide: number;
 }
 
-/** 生成头像片段。 */
+/** Generate avatar fragment. */
 export function avatarScript(consts: AvatarScriptConsts): string {
   return `
 const AVATAR_LOGO_URL = ${JSON.stringify(consts.logoUrl)};
@@ -55,10 +58,13 @@ async function encodeAvatar(file) {
 }
 
 /**
- * 取头像并渲染。
+ * Get the avatar and render it.
  *
- * 不能把地址直接放进 img src：同源图片请求不带 Origin，打包版会把它判成文件来源而要令牌，结果是 403 裂图。
- * 所以带令牌 fetch 成 blob 再挂上去；取不到就留空白，预览失败不该挡住其它字段。
+ * You cannot put the address directly into img src: If the same source image request does not include
+ * Origin, the packaged version will judge it as a file source and require a token, and the result will be a
+ * 403 cracked image.
+ * Therefore, change the token fetch to blob and then hang it up; if you cannot get it, leave it blank. If
+ * the preview fails, other fields should not be blocked.
  */
 async function loadAvatar(image, assetRoot) {
   try {
@@ -75,7 +81,7 @@ async function loadAvatar(image, assetRoot) {
     image.dataset.blobUrl = url;
     image.src = url;
   } catch {
-    // 预览失败保持空白。
+    // Preview fails and remains blank.
   }
 }
 
@@ -94,7 +100,8 @@ async function uploadAvatar(assetRoot, file, result, image) {
     const data = await response.json().catch(() => null);
     if (!data) throw new Error('本机接口没有返回结果，请重试。');
     if (data.ok !== true) throw new Error(data.message || '上传失败');
-    // 用自增而不是 Date.now()：同一毫秒内连着传两张时，版本号必须仍然变化。
+    // Use auto-increment instead of Date.now (): When two consecutive transmissions are sent in the same
+    // millisecond, the version number must still change.
     avatarVersion += 1;
     await loadAvatar(image, assetRoot);
     setStatus(result, '头像已更新。', 'ok');
@@ -104,9 +111,11 @@ async function uploadAvatar(assetRoot, file, result, image) {
 }
 
 function avatarRow(pet) {
-  // 条目名就是素材根（/config 的 pets 上没有 assetRoot，那是客户端拍平时补的）。
+  // The entry name is the asset root (there is no assetRoot on pets of config, which is added by the client
+  // during shooting).
   const assetRoot = pet.assetRoot || state.entry;
-  // pet/ 只归 pet pack：内置条目用包内 logo，只给预览不给上传，与服务端的拒绝保持一致。
+  // pet / pet pack only: The built-in entry is in the package logo, which is only previewed and not uploaded,
+  // consistent with the rejection of the server.
   const editable = assetRoot !== 'main';
   const image = make('img', { class: 'avatarImg', alt: '头像' });
   void loadAvatar(image, editable ? assetRoot : '');

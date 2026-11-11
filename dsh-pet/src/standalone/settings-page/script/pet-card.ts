@@ -1,11 +1,11 @@
 /**
- * 单只宠物的卡片：选择器、增删与这只宠物的字段编辑（含头像行与人设）。
+ * Single pet card: selector, addition, deletion, and field editing of this pet (including avatar row and persona).
  *
- * 只改 state.pets 里的草稿，不直接写盘——保存与草稿装配见 ./pets。
+ * Only modify the draft in state.pets, do not write to disk directly - see ./pets for saving and draft assembly.
  * @module dsh-pet/src/standalone/settings-page/script/pet-card
  */
 
-/** 生成宠物卡片片段。 */
+/** Generate pet card fragments. */
 export function petCardScript(): string {
   return `
 function petBar() {
@@ -120,13 +120,18 @@ function petCard() {
   return card('宠物', '这里编辑的是 ' + (state.entry === 'main' ? '默认条目' : state.entry) + ' 的实例；改动在点保存后写盘。', children);
 }
 
-/** 条目人设提示：占位符里放的就是条目人设正文，这里只说规则。 */
+/**
+ * Entry persona Tip: The placeholder is the text of the entry persona. Here we only talk about the rules.
+ */
 function personaHint() {
   if (state.prompts[state.entry]) return '留空 = 跟随所属条目的人设，输入框里的灰色文字就是那份内容。';
   return '这个条目还没写人设；留空表示这只宠物没有系统提示词。';
 }
 
-/** 人设输入框连同右下角的字数统计；占位符用条目人设全文。 */
+/**
+ * The persona input box together with the character count statistics in the lower right corner; the
+ * placeholder uses the full text of the entry persona.
+ */
 function personaWrap(pet) {
   const wrap = make('div', { class: 'personaWrap' });
   const area = make('textarea', { id: 'pet-persona' });

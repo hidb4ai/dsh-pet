@@ -1,17 +1,21 @@
 /**
- * dsh-cordis-probe 的宿主半侧：注册五个 mock 服务商，验证第三方注册入口与展示层。
+ * Host side of dsh-cordis-probe: Register five mock service providers and verify the third-party registration entry
+ * point and display layer.
  *
- * 三件事，缺一不可：
- * - `ctx.llm.registerConfigurableProviders(...)` —— 让它们进入设置页的「模型」目录；
- * - `ctx.llm.registerAdapter(...)` —— 注册路由，选择器里才能选中并列出模型；
- * - `petApi7340.balance.register(...)` —— 选中后能查到余额、弹出对应气泡。
+ * Three things are indispensable:
+ * - `ctx.llm.registerConfigurableProviders(...)` - Let them enter the "Model" directory on the settings page;
+ * - `ctx.llm.registerAdapter(...)` —— Register the route so that the model can be selected and listed in the selector;
+ * - `petApi7340.balance.register(...)` ——After selecting, you can check the balance and pop up the corresponding
+ * bubble.
  *
- * 服务商里有两个是**自定义多页气泡**（`shape: 'custom'`）：一个把内置三种形态复刻成 4 页、
- * 一个自设计 3 页，用来验证"第三方自己决定气泡长什么样 + 点击循环切页"这条能力。
+ * There are two service providers that are **Customized multi-page bubbles** (`shape: 'custom'`): one reproduces the
+ * built-in three forms into 4 pages, and the other self-designs 3 pages to verify the ability of "the third party
+ * decides what the bubble looks like + clicks to cycle through pages".
  *
- * 另有两个开关（语音合成 / 语音识别）：默认关闭，打开后各注册一个 mock 实现，
- * 用来验证 `petApi7340.voice.register` 与 `petApi7340.speech.register` 两条第三方入口。
- * 记忆同理：一个开关，打开后注册 mock 记忆，验证 `petApi7340.memory.register`。
+ * There are also two switches (speech synthesis/speech recognition): the default is disable. After turning it on, each
+ * registers a mock implementation to verify the two third-party entry points `petApi7340.voice.register` and
+ * `petApi7340.speech.register` . Memory is the same: a switch, turn it on to register mock memory and verify
+ * `petApi7340.memory.register` .
  *
  * @module dsh-cordis-probe
  */
@@ -22,16 +26,16 @@ import { createMockSpeechProvider } from './mock-speech.js';
 import { createMockVoiceProvider } from './mock-voice.js';
 import { MEMORY_ROUTE, SPEECH_ROUTE, VOICE_ROUTE, createToggleHandler } from './toggle-route.js';
 
-/** Cordis 插件名（诊断与日志里显示）。 */
+/** Cordis plugin name (displayed in diagnostics and logs). */
 export const name = 'cordis-probe';
 
 /**
- * 依赖声明：Cordis 会等这些服务就绪后再执行 `apply`。
- * 缺少 `inject` 时 `apply` 会在服务提供之前跑，`ctx.get` 全部拿不到（已实测）。
+ * Dependency statement: Cordis will wait for these services to be ready before executing `apply` . When `inject` is
+ * missing, `apply` will run before the service is provided, and `ctx.get` cannot be obtained (actually tested).
  */
 export const inject = ['llm', 'petApi7340'];
 
-/** 模型选择器与设置页里显示的名字。 */
+/** The name displayed in the model selector and settings page. */
 const DISPLAY_NAMES = {
   'mock-windows': 'Mock 三窗口额度',
   'mock-money': 'Mock 账户余额',
@@ -40,18 +44,19 @@ const DISPLAY_NAMES = {
   'mock-custom-fancy': 'Mock 自定义（3 页复杂布局）',
 };
 
-/** 设置页里这几个 mock 服务商所属的命名空间（没有配置项，只用于渲染卡片）。 */
+/** The namespace to which these mock service providers belong in the settings page (no configuration items, only used for rendering cards). */
 const SETTINGS_NS = 'llm-cordis-probe';
 
 /**
- * 注册 mock 服务商。
+ * Register mock service provider.
  *
- * @param ctx - 宿主 Cordis 上下文；服务由 inject 保证在场，`petApi7340` 缺失时只跳过余额注册。
+ * @param ctx - host Cordis context; service guaranteed to be present by inject, only balance registration is skipped
+ * when `petApi7340` is missing.
  */
 export function apply(ctx) {
   const ids = MOCK_BALANCE_PROVIDERS.map((p) => p.id);
 
-  // 1) 设置页的模型目录
+  // 1) Model directory on the settings page
   try {
     ctx.effect(() =>
       ctx.llm.registerConfigurableProviders(
@@ -67,14 +72,14 @@ export function apply(ctx) {
     warn('模型目录', e);
   }
 
-  // 2) 模型路由：让这些 id 能在选择器里选中，并广告一个模型
+  // 2) Model routing: allow these id to be selected in the selector and advertise a model
   try {
     ctx.effect(() => ctx.llm.registerAdapter(ids, createMockAdapter(DISPLAY_NAMES)));
   } catch (e) {
     warn('模型路由', e);
   }
 
-  // 3) 余额注册表：选中之后能查到余额
+  // 3) Balance registration form: you can check the balance after selecting it
   const balance = ctx.get('petApi7340', false)?.balance;
   if (!balance) return;
   for (const def of MOCK_BALANCE_PROVIDERS) {
@@ -85,17 +90,18 @@ export function apply(ctx) {
     }
   }
 
-  // 4) 语音与识别：各一个开关，默认关闭，打开后 register 一个 mock 实现。
-  // 注册在宿主、按钮在页面，两半没有直接通道，所以额外开两个最小路由给页面点。
+  // 4) Speech and recognition: each has a switch, the default is disable, and when turned on, register and mock are
+  // implemented. The registration is on the host and the button is on the page. There is no direct channel between the
+  // two halves, so two additional minimum routes are opened for the page points.
   const api = ctx.get('petApi7340', false);
-  /** 待挂载的开关路由：路径 → 读写控制。 */
+  /** Route of the switch to be mounted: Path → Read and Write Control. */
   const toggles = [];
 
   const voice = api?.voice;
   if (voice) {
-    /** 已打开的注销函数；null = 当前关闭。 */
+    /** Logout function turned on; null = currently disable. */
     let disposeVoice = null;
-    /** 打开/关闭 mock 语音；幂等，重复调用不会叠加注册。 */
+    /** Enable/disable mock voice; idempotent, repeated calls will not superimpose registration. */
     const setVoiceOn = (on) => {
       if (on && !disposeVoice) disposeVoice = voice.register(createMockVoiceProvider());
       if (!on && disposeVoice) {
@@ -104,7 +110,7 @@ export function apply(ctx) {
       }
       return on;
     };
-    // 插件卸载时确保注销：否则 mock 语音会赖在宿主里，之后的 /voice/speak 一直走提示音
+    // Make sure to log out when uninstalling the plugin: otherwise the mock voice will remain in the host, and the / voice/speak voice will continue to sound after that.
     ctx.effect(() => () => {
       setVoiceOn(false);
     });
@@ -113,9 +119,9 @@ export function apply(ctx) {
 
   const speech = api?.speech;
   if (speech) {
-    /** 已打开的注销函数；null = 当前关闭。 */
+    /** Logout function turned on; null = currently disable. */
     let disposeSpeech = null;
-    /** 打开/关闭 mock 识别；幂等，重复调用不会叠加注册。 */
+    /** Enable/disable mock recognition; idempotent, repeated calls will not superimpose registration. */
     const setSpeechOn = (on) => {
       if (on && !disposeSpeech) disposeSpeech = speech.register(createMockSpeechProvider());
       if (!on && disposeSpeech) {
@@ -124,7 +130,7 @@ export function apply(ctx) {
       }
       return on;
     };
-    // 同上：卸载时必须注销，否则 /voice/hear 会一直回 mock 文字
+    // Same as above: You must log out when uninstalling, otherwise / voice/hear will always return the text mock
     ctx.effect(() => () => {
       setSpeechOn(false);
     });
@@ -133,11 +139,11 @@ export function apply(ctx) {
 
   const memory = api?.memory;
   if (memory) {
-    /** 已打开的注销函数；null = 当前关闭。 */
+    /** Logout function turned on; null = currently disable. */
     let disposeMemory = null;
-    /** 当前持有的 provider 实例；关闭后置空，计数从 0 重新开始。 */
+    /** The currently held provider instance; after disable, it is left empty and the count restarts from 0. */
     let memoryProvider = null;
-    /** 打开/关闭 mock 记忆；幂等，重复调用不会叠加注册。 */
+    /** Enable/disable mock memory; idempotent, repeated calls will not superimpose registration. */
     const setMemoryOn = (on) => {
       if (on && !disposeMemory) {
         memoryProvider = createMockMemoryProvider();
@@ -150,7 +156,7 @@ export function apply(ctx) {
       }
       return on;
     };
-    // 卸载时注销：否则 mock 记忆会赖在宿主里，之后的对话一直带 mock 证据
+    // Log out when uninstalling: otherwise the mock memory will remain in the host, and subsequent conversations will always contain mock evidence.
     ctx.effect(() => () => {
       setMemoryOn(false);
     });
@@ -159,7 +165,7 @@ export function apply(ctx) {
       {
         isOn: () => disposeMemory !== null,
         setOn: setMemoryOn,
-        // capture 计数：聊一句后 +1，证明扩展真的收到了这一轮
+        // capture count: +1 after chatting, proving that the extension really received this round
         extra: () => ({ captured: memoryProvider ? memoryProvider.stats().captured : 0 }),
       },
     ]);
@@ -176,7 +182,7 @@ export function apply(ctx) {
   }
 }
 
-/** 注册失败不该让整个探针起不来：记一行日志即可。 */
+/** Registration failure should not prevent the entire probe from starting up: just record a line in the log. */
 function warn(what, e) {
-  console.warn('[cordis-probe] 注册失败 ' + what + '：' + (e instanceof Error ? e.message : String(e)));
+  console.warn("[cordis-probe] Registration failed " + what + '：' + (e instanceof Error ? e.message : String(e)));
 }

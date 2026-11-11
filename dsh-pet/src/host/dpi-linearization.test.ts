@@ -1,18 +1,24 @@
 /**
- * 桌面 helper「全局 DPI 线性化」的判定测试 —— macOS 桌面宠物大一倍的修复。
+ * Determination test of desktop helper "global DPI linearization" - fix for macOS desktop pet that is doubled in size.
  *
- * 背景：Windows 上 Chromium 的 DIP↔物理像素换算是逐显示器的仿射变换，窗口骑缝时两套坐标系横跳
- * （拖过屏缝「分身闪烁」）。修法是启动前 `--force-device-scale-factor=1` 把坐标系塌缩成恒等映射，
- * 再按探测到的真实主屏 scaleFactor 把宠物放大回原来的观感。但补偿的前提「该开关会把 DIP 换算成物理
- * 像素」只对 Windows 成立：macOS 的 DIP 恒等于「点」，补偿变成纯放大——Retina(2x) 下 size=462 的宠物
- * 渲染成 924 点宽、窗口 1848×1487 点，而同一份配置在浏览器 overlay 里是 462 CSS 像素。
+ * Background: DIP ↔Physical pixel conversion of Chromium on Windows is a monitor-by-monitor affine transformation.
+ * When the window crosses the seam, the two coordinate systems jump horizontally (drag across the screen seam to
+ * "flicker"). The correction method is to collapse the coordinate system into an identity mapping before starting
+ * `--force-device-scale-factor=1` , and then press the detected real home screen scaleFactor to enlarge the pet back
+ * to its original look and feel. However, the premise of compensation "this switch will convert DIP into physical
+ * pixels" is only true for Windows: DIP of macOS is always equal to "points", and the compensation becomes pure
+ * amplification - size =462 under Retina (2 x) is rendered into a 924-point width window. 1848×1487 pixels, while the
+ * same configuration in the browser overlay is 462 CSS pixels.
  *
- * 本文件钉三件事：① 纯判定规则：darwin 一律不启用；win32/linux 维持原行为；探测子进程与
- * DSH_PET_FORCE_DSF='0' 各自的短路；强制值与渲染端缩放的两步换算；② 端到端不变量：macOS 的宠物
- * 尺寸必须等于配置值，而 Windows 150% 屏仍按 1.5 补偿；③ 源码守卫：平台例外只住在
- * dpi-linearization.js 里、main.js 只接线，且新模块进了发布必需清单（漏了 helper 启动即崩）。
+ * This document nails three things: ① Pure judgment rules: darwin will never be enabled; win32/linux will maintain the
+ * original behavior; detect child processes and
+ * DSH_PET_FORCE_DSF ='0' respective short-circuit; two-step conversion of forced value and renderer scaling; ②
+ * End-to-end invariant: macOS's pet size must be equal to the configuration value, while Windows 150% screen is still
+ * compensated by 1.5; ③ Source code guard: platform exception only lives in dpi-linearization.js, main.js is only
+ * wired, and the new module has been included in the release required list (helper will crash at startup if it is
+ * omitted).
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,51 +30,51 @@ const require = createRequire(import.meta.url);
 const helper = '../../runtime/electron-helper/';
 const { shouldLinearize, resolveForcedScale, resolvePetScale } = require(helper + 'dpi-linearization.js');
 
-/** 包内文件源码（守卫用；相对 src/host/ 解析） */
+/** Source code of files in the package (for guarding; relative to src/host / parsing) */
 const readSource = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-describe('shouldLinearize —— 平台例外（本 PR 的修复）', () => {
-  test('darwin 一律不启用：DIP 已是「点」，强制 DSF 不换坐标系、没有可补偿的东西', () => {
-    // 真机实测值：1920×1080 屏、backingScaleFactor=2 → 探测到的主屏 scaleFactor 是 2
+describe('shouldLinearize - Platform exception (fix for this PR)', () => {
+  test('darwin will never be enabled: DIP is already a "point", forcing DSF without changing the coordinate system, and there is nothing to compensate for', () => {
+    // Actual measured value of real machine: 1920×1080 screen, backingScaleFactor =2 → The detected main screen scaleFactor is 2
     assert.equal(shouldLinearize({ platform: 'darwin', dpiProbe: false }), false);
     assert.equal(shouldLinearize({ platform: 'darwin', dpiProbe: false, forceDsf: '1' }), false);
     assert.equal(shouldLinearize({ platform: 'darwin', dpiProbe: false, forceDsf: '2' }), false);
   });
 
-  test('win32 / linux 维持原行为（本修复不动任何非 macOS 平台）', () => {
+  test('win32 / linux maintain the original behavior (this fix does not affect any non-macOS platforms)', () => {
     assert.equal(shouldLinearize({ platform: 'win32', dpiProbe: false }), true);
     assert.equal(shouldLinearize({ platform: 'linux', dpiProbe: false }), true);
     assert.equal(shouldLinearize({ platform: 'win32', dpiProbe: false, forceDsf: '1' }), true);
   });
 
-  test('DSH_PET_FORCE_DSF=0 关掉整个机制（任何平台都认）', () => {
+  test('DSH_PET_FORCE_DSF =0 turns off the entire mechanism (recognized by any platform)', () => {
     assert.equal(shouldLinearize({ platform: 'win32', dpiProbe: false, forceDsf: '0' }), false);
     assert.equal(shouldLinearize({ platform: 'linux', dpiProbe: false, forceDsf: 0 }), false);
   });
 
-  test('探测子进程自己不做（它会再 spawn 一个探测子进程，无限递归）', () => {
+  test('The detection sub-process does not do it by itself (it will create another spawn detection sub-process, infinite recursion)', () => {
     assert.equal(shouldLinearize({ platform: 'win32', dpiProbe: true }), false);
     assert.equal(shouldLinearize({ platform: 'linux', dpiProbe: true, forceDsf: '2' }), false);
   });
 });
 
-describe('resolveForcedScale —— 要强制成几（0 = 不启用）', () => {
-  test('探测到真实主屏缩放 → 锁死 1（恒等映射，跨屏几何再无换算）', () => {
+describe('resolveForcedScale - what number to force (0 = not enabled)', () => {
+  test('Real main screen zoom detected → Locked 1 (identical mapping, no conversion of cross-screen geometry)', () => {
     assert.equal(resolveForcedScale({ primaryScale: 2 }), 1);
     assert.equal(resolveForcedScale({ primaryScale: 1.5 }), 1);
   });
 
-  test('探测失败 → 0：宁可退回修复前的逐屏 DIP 行为，也不做没有补偿的缩放', () => {
+  test('Detection failed → 0: Would rather return to the screen-by-screen DIP behavior before the repair than do uncompensated zooming', () => {
     assert.equal(resolveForcedScale({ primaryScale: 0 }), 0);
     assert.equal(resolveForcedScale({}), 0);
   });
 
-  test('正数覆盖优先（排障用，会踩 main.js 注释里说的那个 bug）', () => {
+  test('Prioritize positive number coverage (for troubleshooting, it will step on the main.js bug mentioned in the comment)', () => {
     assert.equal(resolveForcedScale({ forceDsf: '2', primaryScale: 2 }), 2);
     assert.equal(resolveForcedScale({ forceDsf: 1.75, primaryScale: 0 }), 1.75);
   });
 
-  test('覆盖值非法（0 / 负数 / 非数字）不生效，回落正常路径', () => {
+  test('Invalid coverage value (0 / negative number / non-number) does not take effect, fallback normal path', () => {
     assert.equal(resolveForcedScale({ forceDsf: '0', primaryScale: 2 }), 1);
     assert.equal(resolveForcedScale({ forceDsf: '-1', primaryScale: 2 }), 1);
     assert.equal(resolveForcedScale({ forceDsf: 'abc', primaryScale: 2 }), 1);
@@ -76,29 +82,29 @@ describe('resolveForcedScale —— 要强制成几（0 = 不启用）', () => {
   });
 });
 
-describe('resolvePetScale —— 渲染端 CONFIG.scale', () => {
-  test('未启用（forcedScale=0）→ 等于宿主给的基准，不补偿', () => {
+describe('resolvePetScale —— renderer CONFIG.scale', () => {
+  test('Not enabled (forcedScale =0) → equal to the baseline given by host, no compensation', () => {
     assert.equal(resolvePetScale({ baseScale: '1', primaryScale: 2, forcedScale: 0 }), 1);
   });
 
-  test('主屏探测失败（primaryScale=0）→ 也不补偿（分母为 0 是 NaN 的来源）', () => {
+  test('Main screen detection failed (primaryScale =0) → no compensation (the denominator is 0 is the source of NaN)', () => {
     assert.equal(resolvePetScale({ baseScale: '1', primaryScale: 0, forcedScale: 1 }), 1);
     assert.equal(resolvePetScale({ baseScale: '1', primaryScale: 0, forcedScale: 0 }), 1);
   });
 
-  test('启用后按 primary/forced 放大回原观感（150% 屏 → ×1.5）', () => {
+  test('After enabling, press primary/forced to zoom back to the original look and feel (150% screen → ×1.5)', () => {
     assert.equal(resolvePetScale({ baseScale: '1', primaryScale: 1.5, forcedScale: 1 }), 1.5);
     assert.equal(resolvePetScale({ baseScale: '2', primaryScale: 1.5, forcedScale: 1 }), 3);
   });
 
-  test('base 缺省/非法 → 回落 1', () => {
+  test('base default/invalid → fallback 1', () => {
     assert.equal(resolvePetScale({}), 1);
     assert.equal(resolvePetScale({ baseScale: '', primaryScale: 2, forcedScale: 0 }), 1);
     assert.equal(resolvePetScale({ baseScale: 'oops', primaryScale: 2, forcedScale: 0 }), 1);
   });
 });
 
-/** 与 main.js 接线同序地跑完整条链路：启用判定 → 强制值 → 渲染端缩放 */
+/** Run the entire link in the same sequence as the main.js wiring: enable judgment → force value → renderer scaling */
 function petScaleOf(platform: string, primaryScale: number, forceDsf?: string): number {
   const enabled = shouldLinearize({ platform, dpiProbe: false, forceDsf });
   const primary = enabled ? primaryScale : 0;
@@ -106,28 +112,28 @@ function petScaleOf(platform: string, primaryScale: number, forceDsf?: string): 
   return resolvePetScale({ baseScale: '1', primaryScale: primary, forcedScale: forced });
 }
 
-describe('端到端不变量 —— 用户真正看到的那件事', () => {
-  const SIZE = 462; // 内置默认配置（assets/config.jsonc）的宠物宽度
+describe('End-to-end invariants – what the user actually sees', () => {
+  const SIZE = 462; // Pet width of built-in default configuration (assets/config.jsonc)
 
-  test('macOS(Retina 2x)：宠物尺寸必须等于配置值 —— 修复前这里量到 924 点', () => {
+  test('macOS ( Retina 2 x ): pet size must be equal to configured value - before fix this measured to 924 points', () => {
     assert.equal(SIZE * petScaleOf('darwin', 2), 462);
   });
 
-  test('macOS：探测失败 / 没缓存也不受影响（不启用就永不补偿）', () => {
+  test('macOS: Detection failed / No cache will be affected (will never compensate if not enabled)', () => {
     assert.equal(SIZE * petScaleOf('darwin', 0), 462);
   });
 
-  test('Windows 150% 屏：仍按 1.5 补偿（主屏观感与修复前逐像素相同）', () => {
+  test('Windows 150% screen: Still compensated by 1.5 (the main screen looks and feels the same pixel by pixel as before repair)', () => {
     assert.equal(SIZE * petScaleOf('win32', 1.5), 693);
   });
 
-  test('Windows 100% 屏：探测到 1 → 强制 1 → 补偿退化为 ×1（无变化）', () => {
+  test('Windows 100% screen: detected 1 → forced 1 → compensation degraded to ×1 (no change)', () => {
     assert.equal(SIZE * petScaleOf('win32', 1), 462);
   });
 });
 
-describe('源码守卫 —— main-dpi.js 只接线，规则住在 dpi-linearization.js', () => {
-  /** 主进程源码：main.js 是装配根，行为散在 main/ 下的模块里，守卫要读全份。 */
+describe('Source code guard - main-dpi.js is only wired, the rules live in dpi-linearization.js', () => {
+  /** main process source code: main.js is the assembly root, and the behaviors are scattered in modules under main /. The guard must read the entire copy. */
   const mainSource = (dir: string): string =>
     [
       readSource(dir + 'main.js'),
@@ -136,39 +142,45 @@ describe('源码守卫 —— main-dpi.js 只接线，规则住在 dpi-lineariza
         .map((name) => readSource(dir + 'main/' + name)),
     ].join('\n');
   const main = mainSource(helper);
-  // DPI/指针已拆到 main-dpi.js：规则接线看那份，装配仍看 main.js
+  // DPI / The pointer has been removed to main-dpi.js: refer to the wiring rules, and the assembly still refers to main.js
   const dpi = readSource(helper + 'main/dpi.js');
 
-  test('main-dpi.js 必须 require 新模块', () => {
-    assert.ok(/require\('\.\.\/dpi-linearization\.js'\)/.test(dpi), '必须 require dpi-linearization.js');
+  test('main-dpi.js requires require new module', () => {
+    assert.ok(/require\('\.\.\/dpi-linearization\.js'\)/.test(dpi), 'Required require dpi-linearization.js');
   });
 
-  test('三条规则都从模块取，不得内联', () => {
-    assert.ok(/shouldLinearize\(/.test(dpi), '启用判定必须走 shouldLinearize');
-    assert.ok(/resolveForcedScale\(/.test(dpi), '强制值必须走 resolveForcedScale');
-    assert.ok(/resolvePetScale\(/.test(dpi), '渲染端缩放必须走 resolvePetScale');
-    assert.ok(!/PRIMARY_SCALE \/ FORCED_SCALE/.test(dpi), '补偿公式不允许再内联在 main.js 里');
+  test('All three rules are taken from the module and cannot be inlined.', () => {
+    assert.ok(/shouldLinearize\(/.test(dpi), 'shouldLinearize must be used to enable the judgment');
+    assert.ok(/resolveForcedScale\(/.test(dpi), 'The forced value must be resolveForcedScale');
+    assert.ok(/resolvePetScale\(/.test(dpi), 'renderer scaling must be resolvePetScale');
+    assert.ok(
+      !/PRIMARY_SCALE \/ FORCED_SCALE/.test(dpi),
+      'Compensation formula is no longer allowed to be inlined in main.js',
+    );
   });
 
-  test('强制 DSF 的 switch 必须在 shouldLinearize 判定之内（否则 macOS 又被放大）', () => {
+  test('switch of DSF must be within the judgment of shouldLinearize (otherwise macOS will be amplified again)', () => {
     const guardAt = dpi.indexOf('shouldLinearize(');
     const switchAt = dpi.indexOf("appendSwitch('force-device-scale-factor'");
-    assert.ok(guardAt >= 0 && switchAt >= 0, '两处都必须在位');
-    assert.ok(switchAt > guardAt, 'switch 必须排在判定之后（同一分支内）');
+    assert.ok(guardAt >= 0 && switchAt >= 0, 'Both places must be in place');
+    assert.ok(switchAt > guardAt, 'switch must be ranked after the judgment (within the same branch)');
   });
 
-  test('renderer 侧页面缩放仍取自 petScale()（两端共用一个来源）', () => {
-    assert.ok(/setZoomFactor\(scale\)/.test(main), '窗口缩放必须来自 petScale()');
-    assert.ok(/const scale = dpi\.petScale\(\)/.test(main), 'petScale() 必须在建窗前求值一次');
+  test('renderer side page scaling is still taken from petScale() (both ends share the same source)', () => {
+    assert.ok(/setZoomFactor\(scale\)/.test(main), 'Window scaling must come from petScale ()');
+    assert.ok(
+      /const scale = dpi\.petScale\(\)/.test(main),
+      'petScale () must be evaluated once before building the window',
+    );
   });
 });
 
-describe('守卫：dpi-linearization.js 必须在发布必需清单里', () => {
-  test('prepack-check.js 的 required 含它（main.js require，缺了会启动即崩）', () => {
+describe('Guard: dpi-linearization.js must be in the release required list', () => {
+  test('required of prepack-check.js contains it (main.js require, if it is missing, it will crash at startup)', () => {
     const src = readSource('../../scripts/prepack-check.js');
     assert.ok(
       /'runtime\/electron-helper\/dpi-linearization\.js'/.test(src),
-      '漏了它，npm 包里就少一个 main.js 必需的模块',
+      'If it is missing, the npm package is missing a necessary module for main.js',
     );
   });
 });

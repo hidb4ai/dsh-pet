@@ -1,13 +1,16 @@
 /**
- * 对话标记解析单元测试 —— 钉住「模型选图 / 选动作」的取舍规则：
- * - 命中池内 → 采纳并从正文剥离标记（标记不得留在用户可见文本里）；
- * - 池外名称（模型幻觉）→ 不配图且正文原样保留（绝不因解析失败丢回复）；
- * - 只回标记不回正文 → 视为没选（否则气泡会空掉）。
+ * Dialog mark parsing unit test - verify the selection rules of "model image selection/action selection":
+ * - in the hit pool → adopt and strip the markup from the text (the markup must not remain in the user-visible text);
+ * - Name outside the pool (model illusion) → no pictures and keep the text as it is (reply will never be lost due to
+ * parsing failure);
+ * - Only the mark is returned and the text is not returned → It is regarded as unselected (otherwise the bubble will
+ * be empty).
  *
- * 两个解析函数都是纯函数、无 LLM 依赖（选图在 memes.ts、选动作在 chat-action.ts），故本测试只 import 它们——
- * 避免拉起 chat.ts 的 @deepseek-ai/dsh-llm 依赖链。
+ * Both analytical functions are pure functions and have no LLM dependencies (picture selection is in memes.ts, action
+ * selection is in chat-action.ts), so this test only import them - to avoid pulling up the @deepseek-ai/dsh-llm
+ * dependency chain of chat.ts.
  *
- * 跑法：node --experimental-strip-types --test src/host/chat.test.ts
+ * Running method: node --experimental-strip-types --test src/host/chat.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,50 +24,50 @@ const POOL: MemeEntry[] = [
   { name: '就一碗', desc: '蹭饭大碗' },
 ];
 
-describe('extractChatImage —— 模型选图的采纳与剥离', () => {
-  test('命中池内 → 保留正文、返回图片名、剥离标记', () => {
+describe('extractChatImage - Adoption and stripping of model selections', () => {
+  test('Hit pool → keep text, return image name, strip mark', () => {
     const r = extractChatImage('今天好累啊，我先瘫了\n[图:死掉了]', POOL);
     assert.equal(r.text, '今天好累啊，我先瘫了');
     assert.equal(r.image, '死掉了');
   });
 
-  test('标记与正文同行也能剥（模型不总换行）', () => {
+  test('Marks can also be stripped if they are in line with the text (the model does not always wrap)', () => {
     const r = extractChatImage('来我家吃饭吧就一碗 [图:就一碗]', POOL);
     assert.equal(r.text, '来我家吃饭吧就一碗');
     assert.equal(r.image, '就一碗');
   });
 
-  test('无标记 → 原样返回，不配图（对话配图是可选点缀）', () => {
+  test('Unmarked → Return as is without pictures (dialogue pictures are optional embellishments)', () => {
     const r = extractChatImage('嗯嗯，我明白了', POOL);
     assert.equal(r.text, '嗯嗯，我明白了');
     assert.equal(r.image, undefined);
   });
 
-  test('池外名称（模型幻觉）→ 不配图，且正文原样保留（含标记也不吞正文）', () => {
+  test('Name outside the pool (model illusion) → No pictures, and the text remains as it is (including tags and does not swallow the text)', () => {
     const raw = '哈哈好的\n[图:不存在的表情包]';
     const r = extractChatImage(raw, POOL);
     assert.equal(r.image, undefined);
-    assert.equal(r.text, raw); // 不剥离：既然没采纳，就不动原文
+    assert.equal(r.text, raw); // No stripping: Since it has not been adopted, the original text will not be touched.
   });
 
-  test('只回标记没有正文 → 视为没选（避免气泡空掉）', () => {
+  test('Only reply with mark and no text → regarded as unselected (to prevent the bubble from emptying)', () => {
     const r = extractChatImage('[图:可爱]', POOL);
     assert.equal(r.image, undefined);
     assert.equal(r.text, '[图:可爱]');
   });
 
-  test('全角冒号 / 多余空白 / 名称前后空格都能识别', () => {
+  test('Full-width colon / extra white space / spaces before and after the name are recognized', () => {
     assert.equal(extractChatImage('好的\n[图：可爱]', POOL).image, '可爱');
     assert.equal(extractChatImage('好的\n[图:  死掉了  ]', POOL).image, '死掉了');
   });
 
-  test('空池 → 解析不出任何图（开关关闭时的实际路径）', () => {
+  test('Empty pool → No graph can be parsed (the actual path when the switch is turned off)', () => {
     const r = extractChatImage('好的\n[图:可爱]', []);
     assert.equal(r.image, undefined);
     assert.equal(r.text, '好的\n[图:可爱]');
   });
 
-  test('标记在中间（非结尾）不认 —— 只认结尾，避免误伤正文里的方括号', () => {
+  test('Marks in the middle (not at the end) will not be recognized - only the end will be recognized to avoid accidentally damaging the square brackets in the text.', () => {
     const raw = '[图:可爱] 然后呢？';
     const r = extractChatImage(raw, POOL);
     assert.equal(r.image, undefined);
@@ -72,8 +75,8 @@ describe('extractChatImage —— 模型选图的采纳与剥离', () => {
   });
 });
 
-describe('memeCatalog —— 给模型看的候选清单', () => {
-  test('一行一张：名称 + 冒号 + 描述，供模型按语境挑选', () => {
+describe('memeCatalog - Candidate list for models to see', () => {
+  test('One line per line: name + colon + description, for model selection based on context', () => {
     const cat = memeCatalog(POOL);
     assert.ok(cat.includes('- 可爱：卖萌立绘'));
     assert.ok(cat.includes('- 死掉了：累瘫阵亡'));
@@ -82,10 +85,10 @@ describe('memeCatalog —— 给模型看的候选清单', () => {
   });
 });
 
-describe('图与动作标记共存 —— 两个开关同时开启时的剥离顺序', () => {
+describe('Coexistence of graphics and action markers - peeling sequence when both switches are turned on at the same time', () => {
   const NAMES = ['优雅女仆舞', '原地小憩沉眠'];
 
-  test('两个标记同时出现：各取一个，正文只剩文字', () => {
+  test('Two markers appear at the same time: take one of each, leaving only the text in the text', () => {
     const acted = extractChatAction('好呀～看我转一圈！\n[动作:优雅女仆舞]\n[图:可爱]', NAMES);
     const picked = extractChatImage(acted.text, POOL);
     assert.equal(acted.action, '优雅女仆舞');
@@ -93,7 +96,7 @@ describe('图与动作标记共存 —— 两个开关同时开启时的剥离�
     assert.equal(picked.text, '好呀～看我转一圈！');
   });
 
-  test('顺序反过来（图在前、动作在后）同样剥得干净', () => {
+  test('The order is reversed (picture in front, action in the back) and the skin will be peeled off as well.', () => {
     const acted = extractChatAction('好呀\n[图:可爱]\n[动作:原地小憩沉眠]', NAMES);
     const picked = extractChatImage(acted.text, POOL);
     assert.equal(acted.action, '原地小憩沉眠');
@@ -101,7 +104,7 @@ describe('图与动作标记共存 —— 两个开关同时开启时的剥离�
     assert.equal(picked.text, '好呀');
   });
 
-  test('只写动作：配图解析保持原样，不凭空配图', () => {
+  test('write-only action: keep the image parsing as it is, do not add images out of thin air', () => {
     const acted = extractChatAction('嗯嗯\n[动作:优雅女仆舞]', NAMES);
     const picked = extractChatImage(acted.text, POOL);
     assert.equal(acted.action, '优雅女仆舞');
@@ -109,7 +112,7 @@ describe('图与动作标记共存 —— 两个开关同时开启时的剥离�
     assert.equal(picked.text, '嗯嗯');
   });
 
-  test('只写图：动作解析不采纳（动作开关关闭时的实际路径）', () => {
+  test('write-only diagram: Action analysis is not adopted (actual path when the action switch is turned off)', () => {
     const acted = extractChatAction('嗯嗯\n[图:可爱]', []);
     const picked = extractChatImage(acted.text, POOL);
     assert.equal(acted.action, undefined);
@@ -117,7 +120,7 @@ describe('图与动作标记共存 —— 两个开关同时开启时的剥离�
     assert.equal(picked.text, '嗯嗯');
   });
 
-  test('动作名无效、图名也无效：动作标记剥掉，图标记按配图规则原样保留', () => {
+  test('The action name is invalid, and the picture name is also invalid: the action mark is peeled off, and the picture mark is retained as it is according to the picture matching rules.', () => {
     const acted = extractChatAction('嗯\n[动作:自创动作]\n[图:池外图]', NAMES);
     const picked = extractChatImage(acted.text, POOL);
     assert.equal(acted.action, undefined);

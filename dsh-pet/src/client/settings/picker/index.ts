@@ -1,6 +1,7 @@
 /**
- * 模型选择器的出口：行模型、浮层定位、浮层面板与选择器组件本身。
- * 外部只经这里取用，不深路径引用组内文件——搜索语义或定位规则改动时不必摸到调用方。
+ * Exports of model selector: row model, overlay positioning, overlay panel and selector component itself. External
+ * files are only accessed here, and files in the group are not referenced by deep paths - there is no need to touch
+ * caller when search semantics or positioning rules are changed.
  * @module dsh-pet/src/client/settings/picker
  */
 export {

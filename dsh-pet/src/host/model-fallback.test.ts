@@ -1,14 +1,17 @@
 /**
- * 生成侧的「模型回落」测试 —— 钉住 A 方案的实际行为（issue #75）：
- * 条目配置的 whisperModel / chatModel 优先；它调用失败（凭据被删 / 模型下架 / 该服务商没配 key）
- * 时回落到当前对话的模型重试一次；仍失败才把最后一次（当前对话模型）的失败原因抛出去。
+ * "Model fallback" test on the generation side - verify the actual behavior of the A scheme (issue #75): whisperModel
+ * / chatModel of the entry configuration takes precedence; it fails to call fallback (the credentials are deleted /
+ * the model is removed / the service provider is not equipped with key) Go to the current dialogue model and try
+ * again; if it still fails, throw out the reason for the last failure (the current dialogue model).
  *
- * 用假 ctx.llm.stream 驱动（不碰真服务商、不联网）：按 provider 决定这次是抛错、返回空流还是正常文本，
- * 并记录每次调用的 provider/model——回落的顺序与次数就是本文件要钉的不变式。
+ * Use the fake ctx.llm.stream driver (not touching the real service provider, not connected to the Internet): Press
+ * provider to decide whether to throw an error, return an empty stream or normal text this time, and record the
+ * provider/model for each call - the order and number of fallbacks are the invariants to be nailed in this document.
  *
- * 另外钉住调用形状：每次调用都带调用身份 sessionId；「没拿到正文」时报流终止块里的真实原因。
+ * In addition, the verify call shape: each call has the calling identity sessionId; the real reason for "not getting
+ * the text" is reported in the stream termination block.
  *
- * 跑法：node --experimental-strip-types --test src/host/model-fallback.test.ts
+ * Running method: node --experimental-strip-types --test src/host/model-fallback.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,16 +21,16 @@ import { generateChat } from './chat.ts';
 import { PET_CALL_IDENTITY } from './llm-call.ts';
 import type { ModelRef } from './model-selection.ts';
 
-/** 一次调用的行为：ok = 正常出文本；throw = 流里抛错；empty = 空流且无终止块；fail = 流以 error 终止且无正文 */
+/** Behavior of a call: ok = normal text output; throw = error thrown in the stream; empty = empty stream with no termination block; fail = stream terminated with error and no text */
 type Behavior = 'ok' | 'throw' | 'empty' | 'fail';
 
 const CONFIGURED: ModelRef = { provider: 'configured', model: 'cheap-model' };
 const CURRENT: ModelRef = { provider: 'current', model: 'main-model' };
 
-/** 造一个假 ctx：currentSelection 返回 current（'throw' = 抛错），llm.stream 按 provider 决定行为 */
+/** Make a fake ctx: currentSelection returns current (' throw ' = throw an error), llm.stream behaves according to provider */
 function fakeCtx(current: ModelRef | 'throw', behavior: Record<string, Behavior>) {
   const calls: ModelRef[] = [];
-  /** 每次调用的完整参数（含 sessionId） */
+  /** Complete parameters for each call (including sessionId) */
   const options: Record<string, unknown>[] = [];
   const ctx = {
     agentDefaultModel: {
@@ -37,7 +40,7 @@ function fakeCtx(current: ModelRef | 'throw', behavior: Record<string, Behavior>
       },
     },
     llm: {
-      // 声明"无 reasoning 元数据"：supportsReasoningOff 返回 false，不附加 reasoningEffort
+      // Claim "No reasoning metadata": supportsReasoningOff returns false without appending reasoningEffort
       resolveModelInfo: async () => ({}),
       stream: (o: ModelRef) => {
         calls.push({ provider: o.provider, model: o.model });
@@ -64,61 +67,69 @@ function fakeCtx(current: ModelRef | 'throw', behavior: Record<string, Behavior>
   return { ctx, calls, options };
 }
 
-describe('generateWhisper —— 配置模型优先、失败回落当前对话', () => {
-  test('配置的模型可用 → 只调它一次，不碰当前对话的模型', async () => {
+describe('generateWhisper - Configuration model priority, failure fallback current conversation', () => {
+  test('The configured model is available → only adjust it once, without touching the model of the current conversation', async () => {
     const { ctx, calls } = fakeCtx(CURRENT, { configured: 'ok', current: 'ok' });
     const r = await generateWhisper(ctx, { system: '人设', preferred: CONFIGURED });
     assert.deepEqual(r, { ok: true, text: '你好呀' });
-    assert.deepEqual(calls, [CONFIGURED], '配置可用时不得再调当前对话的模型');
+    assert.deepEqual(
+      calls,
+      [CONFIGURED],
+      'The model of the current conversation must not be adjusted when the configuration is available.',
+    );
   });
 
-  test('配置的模型抛错 → 回落到当前对话的模型重试一次', async () => {
+  test('The configured model throws an error → fallback to the model of the current conversation and try again', async () => {
     const { ctx, calls } = fakeCtx(CURRENT, { configured: 'throw', current: 'ok' });
     const r = await generateWhisper(ctx, { system: '人设', preferred: CONFIGURED });
-    assert.deepEqual(r, { ok: true, text: '你好呀' }, '回落成功应返回正常文本');
-    assert.deepEqual(calls, [CONFIGURED, CURRENT], '顺序必须是「配置的 → 当前对话的」');
+    assert.deepEqual(r, { ok: true, text: '你好呀' }, 'normal text should be returned if fallback is successful');
+    assert.deepEqual(calls, [CONFIGURED, CURRENT], 'The order must be "configured → current conversation"');
   });
 
-  test('配置的模型返回空流（模型未返回文本）→ 同样回落', async () => {
+  test('The configured model returns an empty stream (the model does not return text) → the same fallback', async () => {
     const { ctx, calls } = fakeCtx(CURRENT, { configured: 'empty', current: 'ok' });
     const r = await generateWhisper(ctx, { system: '人设', preferred: CONFIGURED });
     assert.deepEqual(r, { ok: true, text: '你好呀' });
     assert.deepEqual(calls, [CONFIGURED, CURRENT]);
   });
 
-  test('两个都失败 → 返回最后一次（当前对话模型）的失败原因', async () => {
+  test('Both failed → Return the reason for the last (current dialogue model) failure', async () => {
     const { ctx, calls } = fakeCtx(CURRENT, { configured: 'throw', current: 'throw' });
     const r = await generateWhisper(ctx, { system: '人设', preferred: CONFIGURED });
     assert.equal(r.ok, false);
     assert.equal(r.ok === false && r.reason, 'generate-error');
-    assert.equal(r.ok === false && r.message, 'current 不可用', '报错应来自当前对话的模型（用户真正在用的那个）');
+    assert.equal(
+      r.ok === false && r.message,
+      'current 不可用',
+      'The error should come from the model of the current conversation (the one the user is actually using)',
+    );
     assert.deepEqual(calls, [CONFIGURED, CURRENT]);
   });
 
-  test('没配模型（留空）→ 只调当前对话的模型一次（旧行为逐字不变）', async () => {
+  test('No model assigned (leave blank) → only adjust the model of the current conversation once (the old behavior remains unchanged verbatim)', async () => {
     const { ctx, calls } = fakeCtx(CURRENT, { current: 'ok' });
     const r = await generateWhisper(ctx, { system: '人设' });
     assert.deepEqual(r, { ok: true, text: '你好呀' });
     assert.deepEqual(calls, [CURRENT]);
   });
 
-  test('两边都拿不到模型 → provider-missing，且一次都不调用 LLM', async () => {
+  test('Neither side can get the model → provider-missing, and LLM is not called once', async () => {
     const { ctx, calls } = fakeCtx('throw', {});
     const r = await generateWhisper(ctx, { system: '人设' });
     assert.deepEqual(r, { ok: false, reason: 'provider-missing', message: '当前对话未配置模型' });
     assert.deepEqual(calls, []);
   });
 
-  test('配置的模型与当前对话相同 → 去重，失败时只试一次', async () => {
+  test('The configured model is the same as the current conversation → deduplicate, only try once on failure', async () => {
     const { ctx, calls } = fakeCtx(CONFIGURED, { configured: 'throw' });
     const r = await generateWhisper(ctx, { system: '人设', preferred: CONFIGURED });
     assert.equal(r.ok, false);
-    assert.deepEqual(calls, [CONFIGURED], '同一个模型不得试两遍（白等一个超时）');
+    assert.deepEqual(calls, [CONFIGURED], 'The same model cannot be tried twice (waiting for a timeout in vain)');
   });
 });
 
-describe('generateChat —— 同一套回落规则（chatModel）', () => {
-  test('配置的模型抛错 → 回落到当前对话的模型', async () => {
+describe('generateChat - the same set of fallback rules (chatModel)', () => {
+  test('The configured model throws an error → fallback to the model of the current conversation', async () => {
     const { ctx, calls } = fakeCtx(CURRENT, { configured: 'throw', current: 'ok' });
     const r = await generateChat({
       ctx,
@@ -132,7 +143,7 @@ describe('generateChat —— 同一套回落规则（chatModel）', () => {
     assert.deepEqual(calls, [CONFIGURED, CURRENT]);
   });
 
-  test('留空 → 只用当前对话的模型（旧行为）', async () => {
+  test('Leave blank → only use the model of the current conversation (old behavior)', async () => {
     const { ctx, calls } = fakeCtx(CURRENT, { current: 'ok' });
     const r = await generateChat({
       ctx,
@@ -146,7 +157,7 @@ describe('generateChat —— 同一套回落规则（chatModel）', () => {
     assert.deepEqual(calls, [CURRENT]);
   });
 
-  test('两边都拿不到模型 → provider-missing，且一次都不调用 LLM', async () => {
+  test('Neither side can get the model → provider-missing, and LLM is not called once', async () => {
     const { ctx, calls } = fakeCtx('throw', {});
     const r = await generateChat({
       ctx,
@@ -161,25 +172,25 @@ describe('generateChat —— 同一套回落规则（chatModel）', () => {
   });
 });
 
-describe('调用形状 —— 调用身份与真实失败原因', () => {
-  test('对话调用带调用身份 sessionId', async () => {
+describe('Call shape - calling identity and real failure reason', () => {
+  test('Dialog call with calling identity sessionId', async () => {
     const { ctx, options } = fakeCtx(CURRENT, { current: 'ok' });
     await generateChat({ ctx, system: '人设', history: [], userText: '在吗', pool: [], preferred: undefined });
     assert.equal(options.length, 1);
     assert.equal(options[0].sessionId, PET_CALL_IDENTITY);
   });
 
-  test('碎碎念调用带同一身份，回落两次也不换值', async () => {
+  test('Whisper is called with the same identity, but fallback does not change the value twice.', async () => {
     const { ctx, options } = fakeCtx(CURRENT, { configured: 'empty', current: 'ok' });
     await generateWhisper(ctx, { system: '人设', preferred: CONFIGURED });
     assert.deepEqual(
       options.map((o) => o.sessionId),
       [PET_CALL_IDENTITY, PET_CALL_IDENTITY],
-      '回落两次也必须用同一个身份',
+      'Fallback must use the same identity twice',
     );
   });
 
-  test('流以 error 终止且无正文 → 报终止块里的真实原因', async () => {
+  test('The stream terminates with error and has no text → report the real reason in the termination block', async () => {
     const { ctx } = fakeCtx(CURRENT, { current: 'fail' });
     const r = await generateChat({
       ctx,
@@ -193,7 +204,7 @@ describe('调用形状 —— 调用身份与真实失败原因', () => {
     assert.equal(r.ok === false && r.message, 'current 400：缺少必需的路由头');
   });
 
-  test('空流且无终止块 → 仍是"模型未返回文本"（旧行为逐字不变）', async () => {
+  test('Empty stream with no terminating block → still "Model did not return text" (old behavior unchanged verbatim)', async () => {
     const { ctx } = fakeCtx(CURRENT, { configured: 'empty', current: 'empty' });
     const r = await generateChat({
       ctx,

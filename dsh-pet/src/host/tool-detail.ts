@@ -1,8 +1,8 @@
 /**
- * 工具详情文案的公开出口：把一次工具调用折叠成气泡里的一句话。
+ * Public outlet for tool details copy: collapse a tool call into a sentence in a bubble.
  *
- * 只做再导出，数据在 ./tool-detail/copy，解析在 ./tool-detail/target。
- * 必须始终成立：气泡是上屏内容，参数值一律不出现。
+ * Only export again, the data is in ./tool-detail/copy and the analysis is in ./tool-detail/target. This must always
+ * be true: bubble is the content on the screen, and parameter values will never appear.
  * @module dsh-pet/src/host/tool-detail
  */
 export { toolDetailFromEvent } from './tool-detail/detail.ts';

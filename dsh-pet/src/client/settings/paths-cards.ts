@@ -1,9 +1,12 @@
 /**
- * 两张「落盘位置」展示卡：高级配置（配置文件、表情包、日志路径）与卸载与存储（清单 + 卸载命令）。
- * 数据同源于 `GET /config/meta`，读不到时两张卡都整块不出现——缺路径提示比给错路径更安全。
- * 只读展示，没有可编辑控件，因此不需要 busy。
- * 两张卡都是「标题行 + 折叠正文」，默认收起：页尾这两块不是每次都要看，收起后整页少滚一屏。
- * 开合状态只活在组件里，关掉设置页再打开还是收起——不写盘，也不与配置里的任何字段相关。
+ * Two "persist to disk location" display cards: advanced configuration (configuration files, emoticons, log paths) and
+ * unmount and storage (list + unmount command). The data originates from `GET /config/meta` . When it cannot be read,
+ * the two cards will not appear in one block - it is safer to give a missing path prompt than to give the wrong path.
+ * read-only display, no editable controls, so busy is not needed. Both cards are "title row + folded text" and are
+ * collapsed by default: these two blocks at the end of the page do not need to be read every time. After being
+ * collapsed, the entire page will be less scrolled. The open and closed state only lives in the component. Close the
+ * settings page and then open or close it - it does not write to the disk, and it is not related to any field in the
+ * configuration.
  * @module dsh-pet/src/client/settings/paths-cards
  */
 import type { FunctionComponent } from 'react';
@@ -11,31 +14,31 @@ import type { ConfigMeta } from './config/index.ts';
 import type { SettingsRuntime } from './runtime.ts';
 import { MONO_STACK, makeUiKit } from './ui.ts';
 
-/** 两张卡的共同输入。 */
+/** Common input of two cards. */
 export interface PathsCardProps {
-  /** 宿主给出的路径与存储清单。 */
+  /** The path and storage list given by host. */
   paths: ConfigMeta;
 }
 
-/** 一对落盘位置卡。 */
+/** A pair of persist to disk location cards. */
 export interface PathsCards {
-  /** 高级配置：默认配置、用户配置、动画目录、表情包目录与日志文件路径。 */
+  /** Advanced configuration: default configuration, user configuration, animation directory, emoticon directory and log file path. */
   ConfigMetaCard: FunctionComponent<PathsCardProps>;
-  /** 卸载与存储：插件落盘的全部位置 + 卸载步骤与命令。 */
+  /** unmount and storage: All locations of the plugin persist to disk + unmount steps and commands. */
   StorageCard: FunctionComponent<PathsCardProps>;
 }
 
-/** 折叠正文的 id：与按钮的 `aria-controls` 成对，两张卡各一份。 */
+/** id of the folded text: paired with `aria-controls` of the button, one copy for each of the two cards. */
 const BODY_ID = {
   meta: 'pet-cfg-paths-meta',
   storage: 'pet-cfg-paths-storage',
 } as const;
 
 /**
- * 造两张落盘位置卡。
+ * Create two persist to disk location cards.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 两个卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns Two card components.
  */
 export function makePathsCards(rt: SettingsRuntime): PathsCards {
   const { h, t, useState } = rt;
@@ -54,7 +57,7 @@ export function makePathsCards(rt: SettingsRuntime): PathsCards {
       line('todosFile', paths.todos),
       line('animationDir', paths.animations),
       line('memesDir', paths.memes),
-      // 日志文件路径 + 一句说明；其余位置的用途都在问号里，唯独这条写在明面上——反馈问题时要先找它。
+      // Log file path + a description; the purpose of the rest of the positions are all in question marks, but this one is written on the surface - you should look for it first when reporting problems.
       line('logFile', paths.logs),
       paths.logs ? h('div', { key: 'logNote', className: 'dsh-pet-cfg__note', children: t('logFileNote') }) : null,
     ];
@@ -70,19 +73,19 @@ export function makePathsCards(rt: SettingsRuntime): PathsCards {
 
   function StorageCard(props: PathsCardProps) {
     const { paths } = props;
-    // hook 必须在早退之前：storage 为空时整卡不渲染，但那时也走同一条 hook 路径。
+    // hook must precede early exit: When storage is empty, the entire card will not render, but it will also take the same hook path at that time.
     const [open, setOpen] = useState(false);
     const storage = paths.storage ?? [];
     if (storage.length === 0) return null;
     const body = [
-      // 存储位置清单：每条都是「路径（等宽、可选中复制）到作用」。
+      // Storage location list: Each item is "path (same width, optional copy) to function".
       ...storage.map((entry) =>
         h('div', {
           key: entry.key,
           className: 'dsh-pet-cfg__path',
           children: [
             h('b', { key: 'p', style: { fontFamily: MONO_STACK }, children: entry.path }),
-            // 尚未产生的目录标一下，避免用户去找不存在的文件夹。
+            // Mark directories that have not yet been created to prevent users from looking for non-existent folders.
             h('span', {
               key: 'd',
               children: ' — ' + t('storage.' + entry.key) + (entry.exists === false ? t('storageMissing') : ''),

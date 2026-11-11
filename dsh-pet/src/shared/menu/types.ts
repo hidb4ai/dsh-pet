@@ -1,21 +1,25 @@
 /**
- * 菜单节点类型：叶子、分支与挂载句柄。
+ * Menu node types: leaf, branch and mount handle.
  *
- * 纯类型声明，不含实现。
- * 必须始终成立：叶子带 action 或 anim（至少其一），分支必须带 children，二者不可兼得。
+ * Pure type declaration, no implementation. This must always be true: a leaf must have action or anim (at least one of
+ * them), a branch must have children, not both.
  * @module dsh-pet/src/shared/menu/types
  */
 import { type PetDisplay } from '../types.ts';
 
-/** 叶子：可点击的菜单项。 */
+/** Leaves: Clickable menu items. */
 export interface MenuLeaf {
   label: string;
-  /** 播放的动画名（点播动作）；action 优先于 anim */
+  /** Playback animation name (playback request action); action takes precedence over anim */
   anim?: string;
-  /** 自定义动作：打开网站 / 查看余额 / 立即碎碎念 / 打开对话弹窗 / 打开待办面板 / 回到初始位置 /
-   *  重载配置（桌面端专属，重启桌面 Helper 并按最新配置重建窗口）/ 改显示位置（目标值见 display，
-   *  两端都注入）/ 第三方菜单项（只把 owner 与 label 上报给注册方，具体做什么由它决定）。
-   *  手动触发均不受 whisperEnabled 影响——那个字段只关自动轮询。 */
+  /**
+   * Custom actions: open website / check balance / whisper immediately / open conversation pop-up window / open to-do
+   * panel / return to initial position / reload configuration (exclusive for desktop, restart desktop Helper and
+   * rebuild the window according to the latest configuration) / change display position (see display for target value,
+   * injected from both ends) / third-party menu item (only report owner and label to register Party, it determines
+   * what to do specifically). Manual triggering is not affected by whisperEnabled - that field only turns off
+   * automatic polling.
+   */
   action?:
     | 'open-site'
     | 'show-balance'
@@ -28,21 +32,26 @@ export interface MenuLeaf {
     | 'sleep'
     | 'wake'
     | 'third-party';
-  /** set-display 的目标显示位置（与设置页的下拉框同一套取值） */
+  /** Target display position of set-display (same set of values as the drop-down box on the settings page) */
   display?: PetDisplay;
-  /** third-party：注册它的 owner（身份键，只用于回传，不显示）；同一个 owner 的项收在同一分组下，
-   *  只有一项时跳过这层直接平铺。 */
+  /**
+   * third-party: register its owner (identity key, only used for return, not displayed); items of the same owner are
+   * collected under the same group. When there is only one item, this layer is skipped and tiled directly.
+   */
   owner?: string;
-  /** 项目右侧的灰色小字（如快捷键）：纯视觉提示，不参与文本匹配也不影响动作分发，缺省不占位。 */
+  /** The small gray text on the right side of the item (such as shortcut keys): purely visual prompt, does not participate in text matching and does not affect action distribution, and does not occupy space by default. */
   hint?: string;
-  /** 指定配图（表情包池内的名称）：与 action='whisper' 并用时表示「用这张图说一句」，
-   *  其余动作忽略它。名称由宿主在生成前校验是否仍在池内。 */
+  /**
+   * Specify the accompanying picture (the name in the emoticon pool): When used together with action =' whisper ', it
+   * means "use this picture to say something", and other actions will ignore it. The name is verified by the host to
+   * see if it is still in the pool before being generated.
+   */
   image?: string;
-  /** 该项左侧的缩略图地址（完整 URL，已编码）。缺省 = 只有文字，不占位。 */
+  /** Thumbnail address to the left of the item (full URL, encoded). Default = text only, no placeholder. */
   thumb?: string;
 }
 
-/** 分支：带子菜单的项。 */
+/** Branch: Item with submenu. */
 export interface MenuBranch {
   label: string;
   children: MenuNode[];
@@ -50,18 +59,18 @@ export interface MenuBranch {
 
 export type MenuNode = MenuLeaf | MenuBranch;
 
-/** 第三方菜单项（宿主经 /state 的 sections.menu 下发的快照，一条 = 一个可点项）。 */
+/** Third-party menu item (snapshot delivered by host via sections.menu of /state, one item = one clickable item). */
 export interface MenuMoreItem {
-  /** 注册方身份；同时也是一级分组名（显示用） */
+  /** register party identity; it is also the first-level group name (for display) */
   owner: string;
-  /** 项名（显示用，也是回传给注册方的标识） */
+  /** Item name (used for display and also the identifier returned to the register party) */
   label: string;
 }
 
-/** 右键菜单挂载句柄。 */
+/** Right-click menu to mount handle. */
 export interface ContextMenuMount {
-  /** 已挂载的根元素（document.body 下） */
+  /** Mounted root element (under document.body) */
   el: HTMLElement;
-  /** 关闭并清理（幂等） */
+  /** Close and clean up (idempotent) */
   close: () => void;
 }

@@ -27,7 +27,10 @@
         width: 100%;
         height: 100%;
       }
-      /* 宠物 sprite：绝对定位在画布内，由 renderer 按角落/边距或拖拽位置计算 left/top */
+      /*
+       * Pet sprite: Absolutely positioned within the canvas, calculated from renderer by corner/margin or drag
+       * position left/top
+       */
       .pet-sprite {
         position: absolute;
         left: 0;
@@ -49,9 +52,13 @@
         pointer-events: none;
         opacity: 0;
         transition: opacity 0.18s ease;
-        /* WebM 的「透明」背景实测 alpha 恒为 1/255（109 个素材逐一验证），
-           Chromium 按 0.4% 不透明度合成，浅色底上就是一层淡灰矩形。
-           扣掉一档即精确归零；本体只降一档（≤1/255），不可见。 */
+        /*
+         * WebM’s “transparent” background measured alpha is always 1/255 (109 assets are verified one by one),
+         *             Chromium Press 0.4% opacity synthesis, and there is a layer of light gray rectangle on the
+         * light background.
+         *            Deducting one gear will accurately return to zero; the main body only lowers one gear (≤1/255)
+         * and is invisible.
+         */
         filter: url(#dsh-pet-alpha-fix);
       }
       video.pet-video.is-front {
@@ -66,21 +73,33 @@
       .pet-hit.dragging {
         cursor: grabbing;
       }
-      /* 余额气泡：与浏览器 overlay 同一套视觉（白色圆润泡 + 峰/谷/错误着色）。
-         尺寸分两类锚点：盒子（宽度/内边距/圆角/尾巴/阴影/行间距）锚在字号 --f 上——字号调大盒子同步变大，
-         文字不会顶出白底；位置（bottom 偏移）仍锚在宠物宽度 var(--pet-size)，气泡始终贴着宠物头顶。
-         宽度必须写 width:max-content：气泡是 left:50% 的绝对定位盒，可用宽度只有包含块一半，
-         shrink-to-fit 会先被这道墙卡死（max-width 调多大都不生效）；写 max-content 后按内容取宽，
-         再由 max-width 收口，上限同时不超过宠物宽度（桌面窗口只比宠物大一圈，超了会被裁）。
-         字体经 renderer 注入上首软糖体 @font-face */
+      /*
+       * Balance bubble: The same set of visuals as browser overlay (white round bubble + peak/trough/error
+       * coloring).
+       *          The size is divided into two types of anchor points: the box (width/padding/rounded
+       * corners/tail/shadow/line spacing) is anchored on the font size - f - the box becomes larger
+       * simultaneously when the font size is increased.
+       *          The text will not pop out of the white background; the position (bottom offset) is still
+       * anchored at the pet width var (-- pet-size), and the bubble is always close to the top of the pet's head.
+       *          The width must be written as width:max-content: bubble is an absolutely positioned box of
+       * left:50 %, and the available width is only half of the containing block.
+       *           shrink-to-fit will be stuck by this wall first (max-width will not take effect no matter how
+       * big it is); write max-content and then take the width according to the content.
+       *          Then max-width centralize, the upper limit does not exceed the width of the pet (the desktop
+       * window is only one circle larger than the pet, if it exceeds it, it will be cut).
+       *          The font is injected into the Shangshou soft candy renderer @font - face
+       */
       .pet-bubble {
         position: absolute;
         left: 50%;
         transform: translateX(-50%);
         bottom: calc(100% - var(--pet-size, 462px) * 0.108);
         width: max-content;
-        /* 钉死 content-box：本文件全局设了 border-box，那会让 min/max-width 把内边距也算进去，
-           内容可用宽度被悄悄缩掉一圈（表现为「明明还有空位却折行」）。与浏览器 bubble.ts 同一口径 */
+        /*
+         * Pin content-box: This file sets border-box globally, which will cause min/max-width to include padding.
+         *            The available width of the content is quietly reduced by one circle (shown as "the line wraps
+         * even though there is still room"). Same conventions as browser bubble.ts
+         */
         box-sizing: content-box;
         min-width: calc(var(--f) * 5.7143);
         max-width: min(calc(var(--f) * 16), 100%);
@@ -88,8 +107,12 @@
         border-radius: calc(var(--f) * 0.7692);
         background: rgba(255, 255, 255, 0.92);
         color: #2b2b2b;
-        /* 字体族走全局配置变量（renderer.js 注入到 documentElement）：对话窗/得分弹窗挂在 body 下、
-           继承不到宠物根容器，气泡也统一从这里取；回退参数是变量未注入时的默认字体栈 */
+        /*
+         * The font family uses global configuration variables (renderer.js is injected into documentElement): the
+         * dialog window/score pop-up window is hung under body.
+         *            If the pet root container cannot be inherited, bubble is also taken from here; the fallback
+         * parameter is the default font stack when the variable is not injected.
+         */
         font-family: var(
           --dsh-pet-font-family,
           'ShangshouSoftCandy',
@@ -101,8 +124,12 @@
           'Microsoft YaHei',
           sans-serif
         );
-        /* 字号：正文取 --dsh-pet-font-bubble（sprite.js 按本宠物尺寸算好注入）；--f0 是收起态的字号，
-           --f 是当前生效值（展开态在 .is-expanded 里按 --f0 折算 60%），气泡内其余层级都从 --f 派生 */
+        /*
+         * Font size: Take the main text -- dsh-pet-font-bubble (sprite.js is calculated and injected according to
+         * the size of this pet); -- f0 is the font size in the collapsed state,
+         *            -- f is the current effective value (the expanded state is converted by 60% by -- f0 in .
+         * is-expanded), and the other levels in the bubble are derived from -- f
+         */
         --f0: var(--dsh-pet-font-bubble, calc(var(--pet-size, 462px) * 0.0455));
         --f: var(--f0);
         font-size: var(--f);
@@ -114,8 +141,11 @@
           0 1px 3px rgba(0, 0, 0, 0.08);
         opacity: 0;
         transition: opacity 0.25s ease;
-        /* 不锁 nowrap：折行只在内容真超过宽度上限时才发生；break-word 只在整词放不下时断，
-           不会把 85% / ¥12.34 这类数字拆到两行 */
+        /*
+         * Unlocked nowrap: line breaks only occur when the content exceeds the upper limit of width; break-word
+         * only breaks when the entire word cannot fit.
+         *            Will not split numbers like 85% / ¥12.34 into two lines
+         */
         white-space: normal;
         overflow-wrap: break-word;
       }
@@ -132,8 +162,12 @@
       .pet-bubble.is-on {
         opacity: 1;
       }
-      /* 碎碎念变体：与浏览器 overlay 一致 —— 字号缩到余额气泡的 0.75、宽度下限更窄（0.10 → 2.1978），
-         上限与余额气泡相同；宽度取宽/折行规则继承 .pet-bubble，高度随行数自然增长 */
+      /*
+       * whisper variant: consistent with browser overlay - the font size is reduced to 0.75 of the balance
+       * bubble, and the lower limit of the width is narrower (0.10 → 2.1978),
+       *          The upper limit is the same as the balance bubble; the width/wrap rules are inherited from .
+       * pet-bubble, and the height increases naturally with the number of lines.
+       */
       .pet-bubble.is-whisper {
         font-size: calc(var(--f) * 0.7473);
         min-width: calc(var(--f) * 2.1978);
@@ -145,7 +179,10 @@
         gap: calc(var(--f) * 0.6593);
         flex-wrap: wrap;
       }
-      /* 档位行由多个片段拼成：只允许在片段之间换行，片段内部不拆字 */
+      /*
+       * The gear line is composed of multiple fragments: only line breaks between fragments are allowed, and no
+       * word splitting is allowed within the fragments.
+       */
       .pet-bub-row > span {
         white-space: nowrap;
       }
@@ -166,23 +203,38 @@
       .pet-bub-tier-idle {
         color: #2e9e4f;
       }
-      /* ---- 展开态（点余额气泡后的完整额度）：每窗口一行，进度条长度 = 已用百分比 ----
-         与浏览器端 src/client/bubble.ts 的规则逐条对应（两端样式各存一份，数值必须同步） */
-      /* 可点：气泡默认 pointer-events:none（不挡下层应用），只有这张可展开的余额气泡才开命中。
-         光有 DOM 可点还不够——窗口级穿透由 main 的 setIgnoreMouseEvents 管，气泡矩形要经
-         syncInputRegions 上报给主进程，见 sprite.js */
+      /*
+       * ---- Expanded state (full balance after clicking the balance bubble): one line per window, progress bar
+       * length = used percentage ----
+       *          Corresponds to the rules of src/client/bubble.ts on the browser side one by one (one copy of the
+       * styles is saved at both ends, and the values must be synchronized)
+       */
+      /*
+       * Clickable: The bubble defaults to pointer-events:none (not blocking lower-layer applications). Only this
+       * expandable balance bubble can be hit.
+       *          It's not enough to have DOM clickable - the window-level click-through is made of main's
+       * setIgnoreMouseEvents tube, and the bubble rectangle needs to go through
+       *           syncInputRegions is reported to main process, see sprite.js
+       */
       .pet-bubble.is-clickable {
         pointer-events: auto;
         cursor: pointer;
       }
-      /* 收起态宽度上限 10.989em 排不下四列，展开态单独给一档更宽的：21em（60% 字号下 ≈265px）。
-         整体缩到收起字号的 60%：--f 是盒内所有尺寸的锚点（字号/内边距/圆角/进度条高度全跟着它缩） */
+      /*
+       * The maximum width of the collapsed state is 10.989 em, which cannot be arranged in four columns. The
+       * expanded state is given to a wider one: 21 em (at 60% font size ≈265 px).
+       *          Shrink the overall font size to 60%: -- f is the anchor point of all sizes in the box (font
+       * size/padding/rounded corners/progress bar height all shrink with it)
+       */
       .pet-bubble.is-expanded {
         --f: calc(var(--f0) * 0.6);
         width: min(calc(var(--f) * 21), 100%);
         max-width: 100%;
       }
-      /* 淡出：换内容前先降到透明（.25s，复用 opacity 那条过渡曲线），换完去掉这个类再淡入 */
+      /*
+       * Fade out: before changing the content, first reduce it to transparent (.25 s, reuse the opacity
+       * transition curve), remove this class after changing, and then fade in
+       */
       .pet-bubble.is-on.is-fading {
         opacity: 0;
       }
@@ -232,9 +284,14 @@
         font-size: calc(var(--f) * 0.7692);
         color: rgba(43, 43, 43, 0.6);
       }
-      /* 用量页（第三页）：三行两列占满展开态宽度，总量是唯一的大字。
-         配色只给进/出两处强调，其余沿用次级灰——同页里超过两种彩色会盖过数值本身。
-         与浏览器端 src/client/bubble.ts 的规则逐条对应，数值必须同步 */
+      /*
+       * Usage page (the third page): three rows and two columns occupy the expanded state width, and the total
+       * amount is the only big character.
+       *          The color scheme only emphasizes the entrance/exit points, and the rest uses secondary gray -
+       * more than two colors on the same page will overwhelm the value itself.
+       *          Corresponds to the rules of src/client/bubble.ts on the browser side one by one, and the values
+       * must be synchronized.
+       */
       .pet-bub-usage {
         display: flex;
         flex-direction: column;
@@ -280,7 +337,10 @@
         font-variant-numeric: tabular-nums;
         color: #1f1f1f;
       }
-      /* 进出比例条：两段按真实占比分宽，颜色与下面的数字一一对应；占比极小时只留一条细线，不放大 */
+      /*
+       * In and out ratio bar: The two sections are wide according to the actual ratio, and the colors correspond
+       * to the numbers below; when the ratio is extremely small, only a thin line is left and is not enlarged.
+       */
       .pet-bub-usage-bar {
         display: flex;
         height: calc(var(--f) * 0.3);
@@ -299,7 +359,10 @@
         height: 100%;
         background: #b4703c;
       }
-      /* 配置错误提示（大声报错，不做静默兜底）：配置缺失/非法时显示，每 5s 自动重试 */
+      /*
+       * Configuration error prompt (error report loudly, no silent fallback): displayed when the configuration is
+       * missing/illegal, and automatically retried every 5 s
+       */
       .pet-error {
         position: fixed;
         left: 50%;
@@ -328,7 +391,7 @@
     </style>
   </head>
   <body>
-    <!-- alpha 修正滤镜：见 video.pet-video 的 filter 注释 -->
+    <!-- alpha correction filter: see filter comments for video.pet-video -->
     <svg width="0" height="0" aria-hidden="true">
       <defs>
         <filter id="dsh-pet-alpha-fix">
@@ -340,9 +403,9 @@
     </svg>
     <div id="root"></div>
     <div id="pet-error" class="pet-error"></div>
-    <!-- 共享纯逻辑（src/shared 的 iife 构建产物，window.PetShared）——经经典 script，避开 file:// ESM 的 CORS 限制。
-         桌面端同模式拆分：shared-core（纯逻辑）→ constants（基础设施）→ sprite（宠物本体与几何）→ sprite-*（原型扩展，
-         须排在 sprite.js 之后）→ events（事件联动）→ renderer（启动入口） -->
+    <!-- Shared pure logic (iife build output of src/shared, window.PetShared) - via classic script, avoiding the CORS limitation of file://ESM.
+         The same mode split on the desktop: shared-core (pure logic) → constants (infrastructure) → sprite (pet body and geometry) → sprite -* (prototype extension,
+         Must be ranked after sprite.js) → events (event linkage) → renderer (start entry point) -->
     <script src="./shared-core.js"></script>
     <script src="./constants.js"></script>
     <script src="./sprite.js"></script>

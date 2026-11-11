@@ -1,14 +1,15 @@
 /**
- * 待办 wire 解析与排序的单元测试：脏数据不进渲染层，顺序以「未完成、到期近、无期限垫底」为准。
+ * To-be-doed unit test of wire parsing and sorting: Dirty data will not enter the rendering layer, and the order will
+ * be "unfinished, due soon, and indefinite at the bottom".
  *
- * 跑法：node --experimental-strip-types --test src/shared/todo/types.test.ts
+ * Running method: node --experimental-strip-types --test src/shared/todo/types.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseTodoItem, parseTodoList, sortTodoItems } from './types.ts';
 
-/** 造一条合法记录。 */
+/** Create a valid record. */
 const valid = {
   id: 'todo-1',
   text: '交周报',
@@ -19,8 +20,8 @@ const valid = {
   completedAt: null,
 };
 
-describe('parseTodoItem —— 单条收窄', () => {
-  test('合法记录逐字段读出', () => {
+describe('parseTodoItem——Single narrowing', () => {
+  test('Read valid records field by field', () => {
     const todo = parseTodoItem(valid);
     assert.deepEqual(todo, {
       id: 'todo-1',
@@ -33,13 +34,13 @@ describe('parseTodoItem —— 单条收窄', () => {
     });
   });
 
-  test('dueAt 可以缺省或 null；done 只认布尔', () => {
+  test('dueAt can be default or null; done only recognizes Boolean', () => {
     assert.equal(parseTodoItem({ ...valid, dueAt: null })?.dueAt, null);
     assert.equal(parseTodoItem({ ...valid, dueAt: undefined })?.dueAt, null);
     assert.equal(parseTodoItem({ ...valid, done: 'yes' })?.done, false);
   });
 
-  test('缺 id / 缺正文 / dueAt 非数字 → null', () => {
+  test('id is missing / text is missing / dueAt is not a number → null', () => {
     assert.equal(parseTodoItem({ ...valid, id: '' }), null);
     assert.equal(parseTodoItem({ ...valid, text: 42 }), null);
     assert.equal(parseTodoItem({ ...valid, dueAt: '1000' }), null);
@@ -48,8 +49,8 @@ describe('parseTodoItem —— 单条收窄', () => {
   });
 });
 
-describe('parseTodoList —— 整张清单', () => {
-  test('不是数组 → 空清单；坏条目跳过，好条目保留', () => {
+describe('parseTodoList - the entire list', () => {
+  test('Not an array → empty list; bad entries skipped, good entries retained', () => {
     assert.deepEqual(parseTodoList(null), []);
     assert.deepEqual(parseTodoList({ todos: [] }), []);
     const list = parseTodoList([valid, { id: '' }, { ...valid, id: 'todo-2' }]);
@@ -60,8 +61,8 @@ describe('parseTodoList —— 整张清单', () => {
   });
 });
 
-describe('sortTodoItems —— 展示顺序', () => {
-  test('未完成在前按到期先后，无期限垫底，已完成最后', () => {
+describe('sortTodoItems——Display order', () => {
+  test('Unfinished first, in order of expiration, indefinite, last', () => {
     const base = { done: false, createdAt: 1, updatedAt: 1, completedAt: null as number | null };
     const list = sortTodoItems([
       { ...base, id: 'done', text: '已完成', dueAt: 1, done: true, completedAt: 9 },
@@ -75,7 +76,7 @@ describe('sortTodoItems —— 展示顺序', () => {
     );
   });
 
-  test('同一到期时刻按创建先后', () => {
+  test('The same expiration time is based on the order of creation.', () => {
     const list = sortTodoItems([
       { id: 'b', text: 'b', dueAt: 5, done: false, createdAt: 2, updatedAt: 2, completedAt: null },
       { id: 'a', text: 'a', dueAt: 5, done: false, createdAt: 1, updatedAt: 1, completedAt: null },

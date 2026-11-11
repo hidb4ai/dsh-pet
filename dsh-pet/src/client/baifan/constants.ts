@@ -1,24 +1,25 @@
 /**
- * 「吃白饭」的常量：节奏参数、台词池与覆盖层样式。
+ * Freeloader constants: tempo parameters, line pools, and overlay styles.
  *
- * 台词与节奏是玩法的一部分，不开放给配置；用哪 5 段动画由 animations.baifan 决定，
- * 地址在 ./assets 里按「素材根 + 动画名」拼，与本插件其他动画同一条路。
+ * Lines and rhythm are part of the gameplay and are not open to configuration; which 5 animations are used is
+ * determined by animations.baifan. The address is spelled out in ./assets by "asset root + animation name", which is
+ * the same as other animations in this plugin.
  * @module dsh-pet/src/client/baifan/constants
  */
 
-/** 接口基址（与页面同源）。 */
+/** Interface base address (same origin as the page). */
 export const ROUTE = '/dsh-pet-7340';
 
-/** 菜单 owner：与原扩展同名，装过老扩展的用户升级后不会多出一份重复项。 */
+/** Menu owner: has the same name as the original extension. Users who have installed old extensions will not have a duplicate item after upgrading. */
 export const OWNER = 'dsh-pet-baifan';
 
-/** 菜单项文案；宿主按文案回传点击，属于协议的一部分。 */
+/** Menu item copy; host returns clicks according to the copy, which is part of the agreement. */
 export const LABEL = '吃白饭';
 
-/** 玩法 id：对应配置里的 animations.<id>。 */
+/** How to play id: corresponds to animations .< id > in the configuration. */
 export const ACTIVITY = 'baifan';
 
-/** 玩法自带的图片素材（包内 assets/pic/baifan）：米饭与空碗，不是动画名，不随配置变。 */
+/** The image asset that comes with the gameplay (assets/pic/baifan in the package): rice and empty bowl, is not an animation name and does not change with the configuration. */
 export const PIC = {
   bowlFull: ROUTE + '/pic/baifan/bowl-full.png',
   bowlEmpty: ROUTE + '/pic/baifan/bowl-empty.png',
@@ -26,11 +27,12 @@ export const PIC = {
 } as const;
 
 /**
- * 全部可调节奏。
+ * All adjustable rhythm.
  *
- * 坐标一律用**视口像素**算，只在调接口时归一化成 0–1——pose() 回的是归一化中心点，
- * 而米饭、气泡要按像素画在页面上，两边来回换算一次就够。
- * 注意这里没有「素材多长」：动画结束一律问 GET /playback/{id} 的回执，不吃定时器。
+ * The coordinates are always calculated using **viewport pixels**, and are only normalized to 0–1 when adjusting the
+ * interface - pose() returns the normalized center point, and rice and bubbles must be drawn on the page in pixels,
+ * and it is enough to convert both sides back and forth once. Note that there is no "How long is the asset" here: when
+ * the animation ends, a receipt of GET /playback /{ id } will be asked, and no timer will be used.
  */
 export const CFG = {
   groundOffset: 26,
@@ -63,7 +65,7 @@ export const CFG = {
   refWidth: 498,
 } as const;
 
-/** 台词池：只在合适的节拍上说一句，其余时间闭嘴，否则气泡会糊在演出上。 */
+/** Line pool: Only say one line at the right beat, and shut up the rest of the time, otherwise the bubble will get lost in the performance. */
 export const LINES = {
   start: ['开饭了——', '白饭时间到！', '饿了饿了饿了'],
   down: ['等我下去……', '下面有饭香', '让一让，我下去了'],
@@ -74,21 +76,21 @@ export const LINES = {
   full: ['嗝——还能吃！', '这点不够塞牙缝', '再来十份'],
 } as const;
 
-/** 样式表去重标记（与 dsh-pet 的 data-plugin-css 约定一致）。 */
+/** Stylesheet deduplicate tag (consistent with data-plugin-css convention of dsh-pet). */
 export const STYLE_TAG = 'dsh-pet-baifan/baifan.css';
 
-/** 覆盖层根节点 id，重复挂载时按它摘掉旧的。 */
+/** The root node of the overlay layer is id. Press it to remove the old one when mounting again. */
 export const ROOT_ID = 'dsh-pet-baifan-root';
 
-/** 覆盖层压在桌宠之上（桌宠 `.dsh-pet-root` 是 z-index:40）；只保证这一层关系。 */
+/** The overlay is laminated on the desktop pet (desktop pet `.dsh-pet-root` is z-index:40); only this layer of relationship is guaranteed. */
 const Z_INDEX = 50;
 
-/** 覆盖层与米饭、分数的样式。 */
+/** Overlay and rice, fraction style. */
 export const CSS = [
-  // 覆盖层由 shell.overlay 槽承载（AppFrame 的 [data-shell-overlay]，z-index:20），不是 body
-  // 直接子级：宿主给 macOS 写的 body > :not(#root){no-drag} 命中不到它，所以这里不声明
-  // -webkit-app-region——那条声明会在 Windows 上生成一块铺满全窗的 no-drag 排除区，
-  // 把标题栏拖拽带整条挖掉（#323 / #324）。
+  // The overlay is hosted by the shell.overlay slot ([data-shell-overlay] of AppFrame, z-index:20), not a direct child
+  // of body: host written to macOS body > : not (# root ){ no-drag } It cannot be hit, so it is not declared here.
+  // - webkit-app-region - That statement will generate a no-drag exclusion area covering the entire window on Windows,
+  // and drag the title bar to remove the entire strip (#323 / #324).
   '#dsh-pet-baifan-root{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:' + Z_INDEX + '}',
   '.bf-rice{position:absolute;transform-origin:50% 100%;will-change:transform,opacity;',
   'user-select:none;-webkit-user-drag:none;pointer-events:none}',

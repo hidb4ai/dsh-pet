@@ -1,44 +1,50 @@
 /**
- * 设置面板导航图标补丁：把「桌宠配置」那一行的兜底齿轮换成指定图标。
- * DSH 的导航图标按分区 id 硬编码白名单，且私有、外部拿不到引用，只能在 DOM 层做。
- * 只打 `data-*` 标记并用 `::before` + mask 画字形，不动 DOM 结构，否则 React 会对被替换的节点 removeChild 崩。
- * mask 是 data URI，即独立图像文档：宿主 0.2.2 起图标改成 sprite 引用（`<use>` 指向页面里的 `<symbol>`），
- * 必须先展开成自包含 SVG，否则 mask 全透明、齿轮又被盖住，那一行直接变成零图标。
- * sprite 由宿主在挂载后才注入，装配这一刻取不到，所以字形推迟到认出面板时才解析。
- * 认行只能靠标题文本：投影到 DOM 的只有 label，而 account 行条件出现、位置会漂，不能用 `:nth-child`。
- * 降级：缺 document / MutationObserver、取不到字形时不装（齿轮留着），认不出那一行时什么都不做，只告警。
+ * Settings panel navigation icon patch: Replace the fallback state in the "desktop pet configuration" row with the
+ * specified icon. The navigation icon of DSH is hard-coded in the whitelist according to the partition id, and it is
+ * private and cannot be referenced externally. It can only be done at the DOM layer. Only mark `data-*` and use
+ * `::before` + mask to draw glyphs, leaving the DOM structure unchanged, otherwise React will crash on the replaced
+ * node removeChild. mask is data URI, that is, an independent image document: starting from host 0.2.2, the icon is
+ * changed to sprite reference (`<use>` points to `<symbol>` in the page), which must first be expanded into a
+ * self-contained SVG, otherwise mask Fully transparent, the state is covered again, and the row directly becomes the
+ * zero icon. sprite is injected by the host after mounting, and cannot be obtained at the moment of assembly, so the
+ * glyph is delayed until the panel is recognized. The only way to identify rows is by relying on the title text: only
+ * label is projected to DOM, and account row conditions appear and the position drifts, so `:nth-child` cannot be
+ * used. Downgrade: Missing document / MutationObserver, not installing when the glyph cannot be obtained (the state is
+ * retained), nothing is done when the line is not recognized, only an warning is issued.
  * @module dsh-pet/src/client/nav-icon
  */
 
-/** 注入的样式表去重标记（与宠物页面 / 设置页同一套 `data-plugin-css` 约定）。 */
+/** Injected stylesheet deduplicate tag (same set of `data-plugin-css` conventions as pet page/settings page). */
 const STYLE_TAG = 'dsh-pet/nav-icon.css';
 
-/** 打在目标行 `<button>` 上的标记属性：React 从不 diff 它，重渲染 / 切语言都不会掉。 */
+/** The mark attribute hit on the target line `<button>`: React never diff It will not be lost regardless of re-rendering/all languages. */
 const MARK = 'data-dsh-pet-nav';
 
-/** 设置面板根节点：shell 用 `createPortal` 挂到 body 上。 */
+/** Set the panel root node: shell is connected to body using `createPortal`. */
 const PANEL_SELECTOR = '[data-shortcut-modal="settings"]';
 
 /**
- * 类名来自 CSS Modules，哈希前缀会随 DSH 构建变，只匹配 `navList` / `navCell` / `navLabel` 这些名字部分。
+ * The class name comes from CSS Modules, the hash prefix will change with the DSH build, and only matches the name
+ * parts `navList` / `navCell` / `navLabel` .
  */
 const LIST_SELECTOR = '[class*="navList"]';
 const CELL_SELECTOR = '[class*="navCell"]';
 const LABEL_SELECTOR = '[class*="navLabel"]';
 
-/** 换图标的目标：一行导航的标题与该行要画上的字形。 */
+/** The goal of changing the icon: the title of a row of navigation and the glyph to be drawn on the row. */
 export interface SectionNavIcon {
-  /** 目标行标题，与注册 `settings.section` 时的 label 同源；每次现取。 */
+  /** The target row title has the same origin as label when registering `settings.section`; it is fetched each time. */
   label: () => string;
-  /** 把图标渲成内联 SVG 源码；由调用方注入，本模块因此不依赖 react / react-dom。 */
+  /** Render the icon into inline SVG source code; injected by caller, this module therefore does not depend on react / react-dom. */
   renderSvg: () => string;
 }
 
 /**
- * 把内联 SVG 源码转成可作 CSS mask 的 data URI。
- * 需要补 `xmlns`（data URI 按独立图像文档解析，缺了不渲染）并把 `currentColor` 定成不透明黑（mask 只看 alpha）。
- * @param svg - 内联 SVG 源码。
- * @returns `url("data:image/svg+xml,...")`；源码为空时返回空串。
+ * Convert the inline SVG source code into data URI that can be used as CSS mask. It is necessary to add `xmlns` (data
+ * URI is parsed according to independent image files, and will not be rendered if missing) and set `currentColor` to
+ * opaque black (mask only looks at alpha).
+ * @param svg - Inline SVG source code.
+ * @returns `url("data:image/svg+xml,...")` ; Returns an empty string when the source code is empty.
  */
 export function svgMaskUri(svg: string): string {
   const source = svg.trim();
@@ -49,26 +55,27 @@ export function svgMaskUri(svg: string): string {
   return 'url("data:image/svg+xml,' + encodeURIComponent(namespaced.split('currentColor').join('#000')) + '")';
 }
 
-/** 宿主文档里 `<symbol>` 的定义：展开 `<use>` 时要搬过去的属性和内容。 */
+/** The definition of `<symbol>` in the host document: the attributes and content to be moved when expanding `<use>`. */
 export interface SpriteSymbol {
-  /** 逐个搬过去的属性（viewBox、fill、stroke 等），宿主加什么就带什么。 */
+  /** Move the attributes (viewBox, fill, stroke, etc.) one by one, and bring whatever is added to the host. */
   readonly attrs: Readonly<Record<string, string>>;
-  /** `<symbol>` 的子内容。 */
+  /** Sub-content of `<symbol>`. */
   readonly content: string;
 }
 
-/** 按 id 取 `<symbol>`；取不到返回 undefined，调用方据此保留兜底齿轮。 */
+/** Press id to get `<symbol>`; if it cannot be obtained, it returns undefined, and the caller retains the fallback state accordingly. */
 export type SymbolLookup = (id: string) => SpriteSymbol | undefined;
 
 /**
- * 把 SVG 里的 `<use href="#id">` 展开成自包含图形。
+ * Expand `<use href="#id">` in SVG into a self-contained graphic.
  *
- * data URI 是一份独立图像文档，`<use>` 在里面找不到宿主文档的 `<symbol>`；不展开就只剩一片空白。
- * 只展开第一个引用：图标字形不会引用多个 symbol。
+ * data URI is an independent image document, `<use>` cannot find the host document `<symbol>` in it; if it is not
+ * expanded, there will be only a blank space. Expand only the first reference: the icon glyph will not reference
+ * multiple symbol .
  *
- * @param svg - 渲染出的内联 SVG 源码；没有引用的（老版本内联 `<path>`）原样返回。
- * @param lookup - 按 id 取 `<symbol>` 的查找函数。
- * @returns 自包含的 SVG 源码；引用的 symbol 取不到时返回 undefined。
+ * @param svg - Rendered inline SVG source code; unquoted (old version inline `<path>` ) is returned as is.
+ * @param lookup - Find function to get `<symbol>` by id.
+ * @returns self-contained SVG source code; when the referenced symbol cannot be obtained, undefined is returned.
  */
 export function expandUseRefs(svg: string, lookup: SymbolLookup): string | undefined {
   const ref = /<use\b[^>]*\s(?:xlink:)?href="#([^"]+)"/i.exec(svg);
@@ -82,9 +89,10 @@ export function expandUseRefs(svg: string, lookup: SymbolLookup): string | undef
 }
 
 /**
- * 造一个「按 id 取 `<symbol>`」的查找器：搬属性时跳过 id，内容原样带过去。
- * @param find - 按 id 查元素的函数，通常是 `document.getElementById`。
- * @returns `expandUseRefs` 需要的查找函数；查不到时返回 undefined。
+ * Create a finder that "press id to get `<symbol>` ": skip id when transferring attributes, and bring the content as
+ * it is.
+ * @param find - Function to find the element by id, usually `document.getElementById` .
+ * The search function required by @returns `expandUseRefs` ; if not found, undefined is returned.
  * @internal
  */
 export function symbolIn(find: (id: string) => Element | null): SymbolLookup {
@@ -101,7 +109,7 @@ export function symbolIn(find: (id: string) => Element | null): SymbolLookup {
   };
 }
 
-/** 换字形用的 CSS：盖住齿轮，用 `::before` + mask 画上我们的图标。 */
+/** Use CSS to change the glyph: cover the state and draw our icon with `::before` + mask. */
 function cssFor(glyph: string): string {
   return [
     '/* 「桌宠配置」行的导航图标：盖住齿轮，换成本模块的图形 */',
@@ -117,7 +125,7 @@ function cssFor(glyph: string): string {
   ].join('\n');
 }
 
-/** 注入样式表（只注入一次）。 */
+/** Inject stylesheet (only once). */
 function injectCss(doc: Document, glyph: string): void {
   if (doc.querySelector('style[data-plugin-css="' + STYLE_TAG + '"]') !== null) return;
   const tag = doc.createElement('style');
@@ -127,36 +135,37 @@ function injectCss(doc: Document, glyph: string): void {
   doc.head.appendChild(tag);
 }
 
-/** 异常 → 单行文案（告警用）。 */
+/** Abnormal → Single line copy (for warning). */
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * 把设置面板导航里目标分区的兜底齿轮换成指定图标。
- * @param target - 目标行标题与字形渲染器。
- * @returns 断开观察者的清理函数；已注入的样式与标记留在原地，不影响正确性。
+ * Change the fallback state of the target partition in the settings panel navigation to the specified icon.
+ * @param target - Target row title and glyph renderer.
+ * @returns Disconnects the observer's cleanup function; injected styles and markup remain in place, without affecting
+ * correctness.
  */
 export function installSectionNavIcon(target: SectionNavIcon): () => void {
   const doc = typeof document === 'undefined' ? undefined : document;
   const Observer = typeof MutationObserver === 'undefined' ? undefined : MutationObserver;
   if (doc === undefined || Observer === undefined || doc.body === null) {
-    console.warn('[dsh-pet] 设置页导航图标不可用：缺少 document / body / MutationObserver（齿轮照旧）');
+    console.warn('[dsh-pet] Settings icon unavailable: document, body or MutationObserver missing; retaining the gear');
     return () => {};
   }
 
-  // sprite 由宿主在挂载后注入，装配这一刻取不到（见模块头），所以推迟到认出面板时再解析。
+  // sprite is injected by the host after mounting and cannot be obtained at the moment of assembly (see the module header), so it is postponed to be parsed until the panel is recognized.
   let injected = false;
   let warnedGlyph = false;
 
-  /** 告警只报一次：面板反复开关会反复走到同一条失败路径。 */
+  /** The warning is only reported once: repeated switching of the panel will lead to the same failed path repeatedly. */
   const warnGlyph = (reason: string): void => {
     if (warnedGlyph) return;
     warnedGlyph = true;
-    console.warn('[dsh-pet] 设置页导航图标不可用：' + reason + '（齿轮照旧）');
+    console.warn('[dsh-pet] Settings navigation icon unavailable:' + reason + '(retaining the default gear)');
   };
 
-  /** 解析并注入换字形样式；成功一次后不再重算，失败时留待面板下次出现再试。 */
+  /** Parse and inject the changing glyph style; it will not be recalculated after one success, and if it fails, wait until the panel appears next time and try again. */
   const ensureCss = (): void => {
     if (injected) return;
     let glyph: string;
@@ -182,10 +191,10 @@ export function installSectionNavIcon(target: SectionNavIcon): () => void {
     injected = true;
   };
 
-  // 认不出那一行是预期内的（比如 DSH 改了标题来源），只记一次不刷屏。
+  // Can't recognize which line is expected (for example, DSH changed the title source), just remember it once and don't refresh the screen.
   let warned = false;
 
-  /** 给面板里标题匹配的那一行打标记（幂等；已打过的不再读标题）。 */
+  /** Mark the row in the panel whose title matches (idempotent; the title will no longer be read if it has been marked). */
   const markPanel = (panel: Element): void => {
     try {
       const wanted = target.label();
@@ -199,12 +208,12 @@ export function installSectionNavIcon(target: SectionNavIcon): () => void {
     } catch (error) {
       if (!warned) {
         warned = true;
-        console.warn('[dsh-pet] 设置页导航图标补丁异常，本次跳过（齿轮照旧）：' + describe(error));
+        console.warn('[dsh-pet] Settings icon patch failed; retaining the default gear:' + describe(error));
       }
     }
   };
 
-  // 两段式观察：body 只盯直接子节点，命中面板后改盯面板子树——聊天区 DOM 抖动频繁，全文档扫太贵。
+  // Two-stage observation: body only stares at the direct child node, and after hitting the panel, it changes to the panel subtree - the chat area DOM jitters frequently, and scanning the entire document is too expensive.
   let watched: Element | undefined;
   let panelObserver: MutationObserver | undefined;
 
@@ -218,7 +227,7 @@ export function installSectionNavIcon(target: SectionNavIcon): () => void {
     }
     markPanel(panel);
     if (panel === watched) return;
-    // 面板第一次出现（或重新打开）时才试解析字形：sprite 到这时通常已经挂载。
+    // Try to parse glyphs when the panel first appears (or is reopened): sprite is usually mounted by this time.
     ensureCss();
     panelObserver?.disconnect();
     watched = panel;
@@ -228,7 +237,7 @@ export function installSectionNavIcon(target: SectionNavIcon): () => void {
     panelObserver.observe(panel, { childList: true, subtree: true });
   };
 
-  // 插件可能在面板已打开时装配（刷新 / 热更新），所以先同步扫一遍。
+  // The plugin may be assembled when the panel is open (refresh/hot update), so scan it synchronously first.
   sync();
   const bodyObserver = new Observer(sync);
   bodyObserver.observe(doc.body, { childList: true });

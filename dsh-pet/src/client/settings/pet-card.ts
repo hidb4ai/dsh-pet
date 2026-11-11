@@ -1,8 +1,10 @@
 /**
- * 选中宠物的配置卡：头像、名字 / 大小 / 显示位置、角落与偏移、四个功能开关、实例级人设。
- * 只编辑 main 条目的实例字段：条目级字段由成品配置回落，卡里不出现也不回写；文件宠物永不进这张卡。
- * 纯展示 + 回调，状态全在设置页外壳；`onChange` 的补丁形状即提交形状的预览。
- * 头像格与两组字段在 ./pet-card-parts，本文件只做编排。
+ * Select the pet's configuration card: avatar, name/size/display position, corners and offsets, four function
+ * switches, instance-level persona. Only edit the instance fields of the main entry: the entry-level fields are
+ * configured with fallback by the resolved value, and will not appear in the card or be written back; file pets will
+ * never enter this card. Pure display + callback, the status is all in the settings page shell; the patch shape of
+ * `onChange` is a preview of the submitted shape. The avatar grid and two sets of fields are in ./pet-card-parts. This
+ * file is only for arrangement.
  * @module dsh-pet/src/client/settings/pet-card
  */
 import type { ChangeEvent, FunctionComponent } from 'react';
@@ -11,40 +13,40 @@ import type { SettingsRuntime } from './runtime.ts';
 import { INPUT_CLASS, makeUiKit } from './ui.ts';
 import { makePetAvatarCell, makePetIdentityFields, makePetPositionFields, type PetPatch } from './pet-card-parts.ts';
 
-/** 宠物卡的全部输入。 */
+/** All input of pet cards. */
 export interface PetCardProps {
-  /** 当前选中的宠物；`null` 表示列表为空。 */
+  /** The currently selected pet; `null` means the list is empty. */
   pet: Pet | null;
-  /** 表单是否禁用（保存中或配置还没加载好）。 */
+  /** Is the form disabled (it is being saved or the configuration has not been loaded yet). */
   busy: boolean;
-  /** 保存 / 同步的最近一次反馈，就近显示在卡片右上角。 */
+  /** The latest saved/synchronized feedback is displayed in the upper right corner of the card. */
   msg: { kind: 'ok' | 'err' | ''; text: string };
-  /** 条目级人设正文，作为实例人设输入框的 placeholder。 */
+  /** Entry-level persona text, placeholder as instance persona input box. */
   entryPrompt: string;
-  /** 头像预览地址（已带破缓存版本号）；没上传过时宿主回的就是默认 logo。 */
+  /** The avatar preview address (the cache version number has been broken); when it is not uploaded, the host returns the default logo. */
   avatarSrc: string;
-  /** 头像正在上传：遮罩常显且文件框禁用。 */
+  /** The avatar is being uploaded: the mask is always displayed and the file box is disabled. */
   avatarBusy: boolean;
-  /** 选中一张新头像；内置条目没有这个能力，传 undefined 时只显示预览、不可点。 */
+  /** Select a new avatar; the built-in entry does not have this capability. When undefined is uploaded, only a preview is displayed and cannot be clicked. */
   onAvatar?: (file: File) => void;
-  /** 改选中宠物的字段。 */
+  /** Change the selected pet field. */
   onChange: (patch: PetPatch) => void;
-  /** 就近保存。 */
+  /** Save nearby. */
   onSave: () => void;
-  /** 删除当前宠物（先弹确认）。 */
+  /** Delete the current pet (confirm first). */
   onRemove: () => void;
 }
 
 /**
- * 造宠物配置卡。
+ * Create a pet configuration card.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns card assembly.
  */
 export function makePetCard(rt: SettingsRuntime): FunctionComponent<PetCardProps> {
   const { h, t } = rt;
   const { tip, q, field, toggleCell } = makeUiKit({ h, t });
-  // 部件工厂在装配时各调一次：组件类型跨渲染稳定，卡片重渲染不会重建它们。
+  // Component factories are adjusted once each during assembly: component types are stable across renders, and card re-rendering will not rebuild them.
   const AvatarCell = makePetAvatarCell(rt);
   const IdentityFields = makePetIdentityFields(rt);
   const PositionFields = makePetPositionFields(rt);
@@ -60,12 +62,12 @@ export function makePetCard(rt: SettingsRuntime): FunctionComponent<PetCardProps
           children: [
             h('span', { key: 't', className: 'dsh-pet-cfg__cardTitle', children: t('petCardTitle') }),
             q(t('petCardHint')),
-            // 右侧动作组：auto margin 挂在这层 wrapper 上，保存结果出现 / 消失时按钮位置不会跳。
+            // Right action group: auto margin is hung on this layer wrapper. The button position will not jump when the saved result appears/disappears.
             h('div', {
               key: 'acts',
               style: { marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' },
               children: [
-                // 保存结果就近反馈（与页面底部同一份 msg 状态），否则在卡片上点保存看不到结果。
+                // Save the result to the nearest feedback (the same msg status as the bottom of the page), otherwise you will not see the result when you click Save on the card.
                 msg.text
                   ? h('span', {
                       key: 'msg',
@@ -73,7 +75,7 @@ export function makePetCard(rt: SettingsRuntime): FunctionComponent<PetCardProps
                       children: msg.text,
                     })
                   : null,
-                // 就近保存：宠物这一块改完就地存盘，不必滚到底部的「保存」；悬浮按钮即出快捷键气泡。
+                // Save nearby: save the pet in place after making changes, no need to scroll to "Save" at the bottom; the shortcut bubble will pop up from the floating button.
                 h('button', {
                   key: 'sv',
                   type: 'button',
@@ -96,7 +98,7 @@ export function makePetCard(rt: SettingsRuntime): FunctionComponent<PetCardProps
           ],
         }),
 
-        // 顶部一行：头像作左列，右侧是 2×2 的输入网格。
+        // Top row: avatars in the left column, and a 2×2 input grid on the right.
         h('div', {
           className: 'dsh-pet-cfg__topRow',
           children: [
@@ -124,9 +126,9 @@ export function makePetCard(rt: SettingsRuntime): FunctionComponent<PetCardProps
           ],
         }),
 
-        // 人设（可选，实例级）：写在这只宠物上的 whisperPrompt，空 = 跟随所属条目的人设。
-        // 只存储与回显，不在这里拼 system；拼装（名字声明 + 时间背景）在宿主半侧。
-        // 占位符直接用条目人设正文，让「跟随的是什么」可见；人设没有长度上限，右下角只显示字数。
+        // Optional per-pet persona: an empty whisperPrompt inherits the containing entry's persona.
+        // Store and display it here; the host builds the system prompt with the pet name and time context.
+        // Show the inherited persona as placeholder text. There is no length limit; display only a character count.
         field(
           t('personaLabel'),
           h('div', {

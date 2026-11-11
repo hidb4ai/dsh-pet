@@ -1,8 +1,9 @@
 /**
- * 对话：/chat 读写对话记忆并调用模型生成回复。
+ * Dialogue: / chat reads and writes the dialogue memory and calls the model to generate a reply.
  *
- * 不拼装提示词（归 ./chat）；图片入参的形状与 base64 校验归 ./image-attachment。
- * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
+ * Do not assemble the prompt word (return to ./chat); the shape of the picture input parameter is checked with base64
+ * and return to ./image-attachment. Dependency (PetRouteDeps) is passed in explicitly, and the module does not read
+ * global information or create status.
  * @module dsh-pet/src/host/routes/chat
  */
 import { readAllConfig, sliceMemoryRounds } from '../config.ts';
@@ -13,17 +14,18 @@ import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
 import { failResult, invalidJson, methodNotAllowed, okResult } from './result.ts';
 
-/** 图片准入结论；`ref` 缺省表示这次请求没带图。 */
+/** Image admission conclusion; `ref` defaults to indicating that no image was included in this request. */
 type ImageAdmission =
   { readonly ok: true; readonly ref?: PetImageRef } | { readonly ok: false; readonly res: RouteResult };
 
-/** 对话领域：未命中返回 undefined，命中返回应答。 */
+/** Dialog field: undefined is returned for misses, and response is returned for hits. */
 export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { configPaths, log, memoryPath, memoryRounds, readMemory, requirePet } = deps;
   const { body, method, rest, url } = input;
 
-  // 已删宠物的残留历史：配置里已经没有这只宠物，GET /chat 读不到它，也就清不掉。
-  // GET 列出（只给条数与最后时间，不给正文），DELETE 一次性清空。
+  // The remaining history of the deleted pet: This pet is no longer in the configuration. GET /chat cannot read it,
+  // so it cannot be cleared. GET lists (only the number and last time are given, but no text is given), DELETE is
+  // cleared at one time.
   if (rest === 'chat/memory') {
     if (method !== 'GET' && method !== 'DELETE') return methodNotAllowed();
     try {
@@ -34,9 +36,10 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
     }
   }
 
-  // 对话：GET /chat 读最近记忆窗口（截尾 chatMemoryRounds 轮，一次读、不是轮询），
-  // POST /chat 携带历史生成回复并写入记忆，DELETE /chat 删除记忆（按轮或整只）。
-  // 记忆唯一读写方是 host（memory.json），浏览器与桌面天然共享同一份。
+  // Dialogue: GET /chat reads the latest memory window (truncate chatMemoryRounds rounds, read once, not polling),
+  // POST /chat carries the history to generate replies and writes them into the memory, DELETE /chat deletes the
+  // memory (by rounds or whole). The only reader and writer of memory is host (memory.json), and the browser and
+  // desktop naturally share the same copy.
   if (rest === 'chat/powercontext' && deps.memoryStatus && deps.syncMemory) {
     if (method !== 'GET' && method !== 'POST') return methodNotAllowed();
     const who = requirePet(url.searchParams, () => readAllConfig(configPaths));
@@ -52,8 +55,9 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
   if (rest === 'chat') {
     if (method !== 'GET' && method !== 'POST' && method !== 'DELETE') return methodNotAllowed();
     try {
-      // `?rounds=`：GET 专属的查看参数——只决定这次读多少轮（不写记忆，也不改变后续对话
-      // 往上下文里带多少，所以 POST 不认它）。与 surface 同一处境：参数级校验放在读盘之前。
+      // `?rounds=` : GET exclusive viewing parameters - only determines how many rounds to read this time (it does not
+      // write the memory, nor does it change how much subsequent dialogue is brought into the context, so POST does
+      // not recognize it). Same situation as surface: parameter level verification is placed before disk reading.
       const roundsRaw = method === 'GET' ? url.searchParams.get('rounds') : null;
       let roundsOverride: number | null = null;
       if (roundsRaw !== null && roundsRaw.trim() !== '') {
@@ -63,34 +67,39 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
         }
         roundsOverride = n;
       }
-      // `?ts=`（可重复，DELETE 专属）：只删命中的轮。缺省 = 清空整只；同样在读盘之前校验。
+      // `?ts=` (repeatable, exclusive to DELETE): Only the hit round is deleted. Default = clear the entire disk; also verified before reading the disk.
       let tsList: number[] | undefined;
       if (method === 'DELETE') {
         const parsed = parseTsList(url.searchParams.getAll('ts'));
         if (parsed === null) return failResult('bad-request', 'ts 必须是非负整数（毫秒时间戳）');
         tsList = parsed.length > 0 ? parsed : undefined;
       }
-      // pet 必填且必须真实存在：空串会让人设/配图按 main 条目取，记忆以那个（不存在的）id
-      // 新建一个分桶，回复写进没人消费的 `pets[""].say`，还回 ok:true。
-      // 惰性 + 记忆化：pet 空串时完全不读配置；GET 分支复用同一次读取。
+      // pet is required and must actually exist: an empty string will cause the persona/picture to be retrieved
+      // according to the main entry, and the memory will create a new bucket based on the (non-existent) id, and the
+      // reply will be written into `pets[""].say` that no one consumes, and ok:true will be returned. Lazy +
+      // memoization: pet does not read the configuration at all when the string is empty; GET branch reuses the same
+      // read.
       let cfgCache: Record<string, Record<string, unknown>> | undefined;
       const cfg = (): Record<string, Record<string, unknown>> => (cfgCache ??= readAllConfig(configPaths));
-      // surface 只对 POST 校验：GET 是读记忆、DELETE 是存储管理，跟宠物显示在哪一端无关
+      // surface only checks POST: GET is for reading memory, DELETE is for storage management, it has nothing to do with which end the pet is displayed on
       const who = requirePet(url.searchParams, cfg, { surface: method === 'POST' });
       if (!who.ok) return who.res;
       const petId = who.petId;
       if (method === 'GET') {
         const mem = await readMemory();
         const rawMessages = mem[who.entry]?.[petId]?.messages;
-        // 记忆文件是合法 JSON 但 messages 不是数组时，slice() 会抛 slice is not a function：
-        // 按空历史处理并记一行日志，不因为一条坏数据让整个历史接口报错。
+        // When the memory file is valid JSON but messages is not an array, slice() will throw slice is not a
+        // function: Process as empty history and record a line of log, so that the entire history interface will not
+        // report an error because of a piece of bad data.
         const list = Array.isArray(rawMessages) ? rawMessages.filter((m) => m && typeof m.content === 'string') : [];
         if (rawMessages !== undefined && !Array.isArray(rawMessages)) {
-          log.error(`[dsh-pet] 记忆结构异常（messages 不是数组）pet=${petId}，按空历史处理：${memoryPath}`);
+          log.error(
+            `[dsh-pet] Invalid memory structure (messages is not an array) pet=${petId}; treating history as empty: ${memoryPath}`,
+          );
         }
-        // 传了 ?rounds= 就用传的（含 0 = 空历史），没传才回落到配置
+        // Passed ? rounds = Just use the passed one (including 0 = empty history). If not passed, fallback to the configuration.
         const rounds = roundsOverride ?? memoryRounds(who.conf);
-        // 与 chatWithPet 同一语义：rounds = 0 → 空历史（slice(-0) 会返回整个数组，见上）
+        // Same semantics as chatWithPet: rounds = 0 → empty history (slice (-0) will return the entire array, see above)
         const messages = sliceMemoryRounds(list, rounds);
         const memory = chatMemoryConfigValid(who.conf.chatMemory) ? who.conf.chatMemory : DEFAULT_CHAT_MEMORY;
         const context =
@@ -102,7 +111,7 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
       if (method === 'DELETE') return okResult(await deps.deleteHistory(petId, tsList));
       return await postChat(deps, petId, body);
     } catch (e) {
-      // 配置已由 readAllConfig 保证正确（不再有 config-error 分支）；其余（IO/LLM）→ generate-error
+      // Configuration guaranteed correct by readAllConfig (no more config-error branch); rest ( IO/LLM ) → generate-error
       return failResult('generate-error', e instanceof Error ? e.message : String(e));
     }
   }
@@ -111,16 +120,17 @@ export async function handleChatRoutes(deps: PetRouteDeps, input: RouteInput): P
 }
 
 /**
- * 解析 DELETE 的 `?ts=`（可重复）。
+ * Resolving `?ts=` from DELETE (repeatable).
  *
- * @param raws - 查询串里所有 `ts` 的原值。
- * @returns 去重后的时间戳数组；任一值不是非负整数时返回 `null`（调用方转 bad-request）。
+ * @param raws - the original values of all `ts` in the query string.
+ * @returns timestamp array after deduplicate; when any value is not a non-negative integer, `null` is returned (caller
+ * is converted to bad-request).
  */
 function parseTsList(raws: readonly string[]): number[] | null {
   const out: number[] = [];
   for (const raw of raws) {
     const n = Number(raw);
-    // 空串不能当 0：Number('') === 0 会静默删掉 ts=0 的轮
+    // Empty string cannot be used as 0: Number ('') === 0 will silently delete the round of ts =0
     if (raw.trim() === '' || !Number.isInteger(n) || n < 0) return null;
     out.push(n);
   }
@@ -128,12 +138,13 @@ function parseTsList(raws: readonly string[]): number[] | null {
 }
 
 /**
- * POST /chat：解析文本与可选图片，交给对话层生成回复。
+ * POST /chat: Parse the text and optional images, and pass them to the dialogue layer to generate a reply.
  *
- * @param deps - 路由依赖。
- * @param petId - 已校验存在的宠物 id。
- * @param body - 请求体原文；不是合法 JSON 时回 400。
- * @returns 与加入图片前同形的应答：成功只带 `text`（配图时另有 `image`）。
+ * @param deps - route dependency.
+ * @param petId - Verified existence of pet id.
+ * @param body - The original text of the request body; if it is not a valid JSON, 400 will be returned.
+ * @returns has the same shape as before adding the picture: Successfully only brings `text` (there is also `image` in
+ * the picture).
  */
 async function postChat(deps: PetRouteDeps, petId: string, body: string | undefined): Promise<RouteResult> {
   let parsed: Record<string, unknown>;
@@ -145,25 +156,26 @@ async function postChat(deps: PetRouteDeps, petId: string, body: string | undefi
   const text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
   if (!text) return failResult('bad-request', '消息为空');
   if (text.length > 2000) return failResult('bad-request', '消息过长（限 2000 字）');
-  // 图片缺省时直接返回空结论，下面的调用与加入图片前逐字一致（回归测试钉的就是这条）
+  // By default, the picture directly returns an empty conclusion. The following call is the same as before adding the picture (this is the key point of the regression test)
   const admitted = await admitImage(deps, parsed.attachment);
   if (!admitted.ok) return admitted.res;
   return okResult(await deps.chatWithPet(petId, text, admitted.ref));
 }
 
 /**
- * 校验图片入参并交给宿主附件服务落盘。
+ * Verify the image input parameters and hand them to the host attachment service for persist to disk.
  *
- * @param deps - 路由依赖（附件服务经 optionalService 软取，不进 inject）。
- * @param raw - 请求体里的 `attachment` 原始值；`undefined` 表示没传图。
- * @returns 已落盘的图片引用，或可直接返回的失败应答。
+ * @param deps - route dependency (the accessory service is soft-fetched through optionalService, not inject).
+ * @param raw - The original value of `attachment` in the request body; `undefined` means that the image was not
+ * transmitted.
+ * @returns Image reference that has been persisted to disk, or a failure response that can be returned directly.
  */
 async function admitImage(deps: PetRouteDeps, raw: unknown): Promise<ImageAdmission> {
   if (raw === undefined) return { ok: true };
   const parsed = parseImageAttachment(raw);
   if (!parsed.ok) return { ok: false, res: failResult('bad-request', parsed.message) };
   const sink = deps.optionalService('attachments') as PetImageSink | undefined;
-  // 独立模式没有附件服务：图片能力直接不可用，不做假存储（契约见 API.md）
+  // There is no attachment service in standalone mode: the picture capability is directly unavailable and no false storage is performed (see API.md for the contract)
   if (typeof sink?.saveImages !== 'function') {
     return { ok: false, res: failResult('bad-request', '当前模式不支持图片（缺少附件服务）') };
   }
@@ -176,7 +188,7 @@ async function admitImage(deps: PetRouteDeps, raw: unknown): Promise<ImageAdmiss
     if (ref === undefined) return { ok: false, res: failResult('generate-error', '附件服务未返回图片引用') };
     return { ok: true, ref };
   } catch (e) {
-    // 存储失败不是调用方的参数问题：回 generate-error，避免被当成 bad-request 而排错方向
+    // The storage failure is not a parameter problem of the caller: return generate-error to avoid being regarded as bad-request and debug the direction.
     return { ok: false, res: failResult('generate-error', e instanceof Error ? e.message : String(e)) };
   }
 }

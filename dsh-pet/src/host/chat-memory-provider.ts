@@ -1,30 +1,32 @@
 /**
- * 对话记忆的第三方实现注册表：单槽，后注册覆盖先注册。
+ * Third-party implementation of dialogue memory register table: single slot, the latter register overwrites the first
+ * register.
  *
- * 一个槽而不是 Map：记忆后端是二选一（原生 / 第三方），两个 recall 同时改内容会互相冲突，
- * 两个 capture 同时上传会重复写。模块单例：注册返回 disposer，测试用 resetChatMemoryProviders 复位。
- * 只登记与查找，不调用、不校验补丁、不落盘。
+ * One slot instead of Map: The memory backend is a choice of two (native/third-party). If two recall change the
+ * content at the same time, they will conflict with each other. If two capture are uploaded at the same time, they
+ * will be written repeatedly. Module singleton: register returns disposer and is reset with resetChatMemoryProviders
+ * for testing. Only registration and search, no calling, no patch verification, no persist to disk.
  * @module dsh-pet/src/host/chat-memory-provider
  */
 
-/** 原生实现的标识；第三方不能占用它（槽为空即原生路径）。 */
+/** Identification of the native implementation; third parties cannot occupy it (the slot is empty, which means the native path). */
 export const NATIVE_MEMORY_ID = 'native';
 
-/** 传给召回钩子的历史消息：只给对话所需的三个字段，不带图片引用与动作名。 */
+/** Historical messages passed to recall hook: only the three fields required for the conversation are given, without image references and action names. */
 export interface ChatTurn {
   readonly role: 'user' | 'assistant';
   readonly content: string;
   readonly ts: number;
 }
 
-/** 本轮将要发给模型的内容；召回钩子拿它做修改。 */
+/** The content that will be sent to the model this round; recall hook uses it to modify it. */
 export interface ChatContent {
   readonly system: string;
   readonly history: readonly ChatTurn[];
   readonly userText: string;
 }
 
-/** 召回钩子的返回：只覆盖返回了的字段，没返回的保持原值。 */
+/** The return of recall hook: only the returned fields are overwritten, and the original values that are not returned are kept. */
 export interface ChatContentPatch {
   readonly system?: string;
   readonly history?: readonly ChatTurn[];
@@ -32,28 +34,32 @@ export interface ChatContentPatch {
 }
 
 /**
- * 第三方记忆实现：对话前修改内容、落盘后接收，两者都是可选的。
+ * Third-party memory implementation: modify content before dialogue and receive after persist to disk, both are
+ * optional.
  *
- * 只实现 recall = 只读记忆；只实现 capture = 只记不查；两者都实现 = 完整后端。
+ * Only implement recall = read-only memory; implement only capture = only remember but not check; implement both =
+ * complete backend.
  */
 export interface ChatMemoryProvider {
-  /** 唯一标识；参与日志，换实现不会命中旧状态。 */
+  /** Unique identifier; participating in the log, the implementation will not hit the old state. */
   readonly id: string;
   /**
-   * 对话前修改内容：返回要覆盖的字段，核心合并后再交给模型。
+   * Modify content before dialogue: Return the fields to be covered, merge the core and then hand it to the model.
    *
-   * 抛错或超时由核心降级为“不修改”，不影响回复；返回 undefined 等同不修改。
-   * @param input - 本轮问题、人设与截好的近期历史。
-   * @returns 要覆盖的字段；不改任何字段时返回 undefined。
+   * If an error is thrown or timeout occurs, the core downgrades it to "no modification", which does not affect the
+   * reply; returning undefined is equivalent to no modification.
+   * @param input - Current round of questions, persona and screenshots of recent history.
+   * @returns Fields to be overwritten; undefined is returned when no fields are changed.
    */
   recall?(
     input: ChatContent & { readonly petId: string },
   ): Promise<ChatContentPatch | undefined> | ChatContentPatch | undefined;
   /**
-   * 落盘后接收这一轮问答。
+   * persist to disk and then receive this round of questions and answers.
    *
-   * 核心不等待：返回值被忽略，抛错只记日志，不影响回复。
-   * @param input - 本轮问答与元信息；action/image 只是名字，不含素材本体。
+   * The core does not wait: the return value is ignored, and errors are only logged and do not affect the reply.
+   * @param input - This round of Q&A and meta-information; action/image is just the name and does not contain the
+   * asset itself.
    */
   capture?(input: {
     readonly petId: string;
@@ -65,22 +71,24 @@ export interface ChatMemoryProvider {
   }): void | Promise<void>;
 }
 
-/** 当前生效的第三方实现；null = 没注册，走原生路径。 */
+/** The currently effective third-party implementation; null = no register, take the native path. */
 let current: ChatMemoryProvider | null = null;
 
 /**
- * 注册一个第三方记忆实现，覆盖当前生效的那个。
+ * Register a third-party memory implementation, overriding the one currently in effect.
  *
- * @param def - 实现定义；`recall` 与 `capture` 至少要有一个是函数。
- * @returns 注销函数；只在「当前仍是这一份」时才清空，迟到的注销不会顶掉后来者。
- * @throws {TypeError} 定义非法、id 为空、id 占用原生标识或两个方法都缺失时。
+ * @param def - Implementation definition; at least one of `recall` and `capture` must be a function.
+ * @returns logout function; it is only cleared when "this is still the current share". Late logout will not overthrow
+ * latecomers.
+ * When @throws { TypeError } is invalidly defined, id is empty, id occupies a native identifier, or both methods are
+ * missing.
  */
 export function registerChatMemoryProvider(def: ChatMemoryProvider): () => void {
-  if (!def || typeof def !== 'object') throw new TypeError('memory provider 定义必须是对象');
-  if (typeof def.id !== 'string' || def.id.length === 0) throw new TypeError('id 必须是非空字符串');
-  if (def.id === NATIVE_MEMORY_ID) throw new TypeError('不能占用原生实现标识: ' + NATIVE_MEMORY_ID);
+  if (!def || typeof def !== 'object') throw new TypeError('Memory provider definition must be an object');
+  if (typeof def.id !== 'string' || def.id.length === 0) throw new TypeError('id must be a nonempty string');
+  if (def.id === NATIVE_MEMORY_ID) throw new TypeError('Cannot use the native implementation ID: ' + NATIVE_MEMORY_ID);
   if (typeof def.recall !== 'function' && typeof def.capture !== 'function') {
-    throw new TypeError('recall 与 capture 至少要有一个是函数');
+    throw new TypeError('At least one of recall or capture must be a function');
   }
   current = def;
   return () => {
@@ -88,22 +96,23 @@ export function registerChatMemoryProvider(def: ChatMemoryProvider): () => void 
   };
 }
 
-/** 当前该用哪个第三方实现；没注册时返回 null，调用方据此走原生路径。 */
+/** Which third-party implementation should be used currently? If there is no register, null will be returned, and the caller will take the native path accordingly. */
 export function activeChatMemoryProvider(): ChatMemoryProvider | null {
   return current;
 }
 
 /**
- * 列出可用实现，用于排障「为什么没走我注册的那个」。
+ * List the available implementations for troubleshooting "Why didn't I register the one?"
  *
- * @returns `builtin` 恒为原生标识；`external` 是当前生效的第三方 id（没有则为空数组）。
+ * @returns `builtin` is always the native identifier; `external` is the currently effective third-party id (if not, it
+ * is an empty array).
  */
 export function listChatMemoryProviders(): { builtin: string[]; external: string[] } {
   return { builtin: [NATIVE_MEMORY_ID], external: current ? [current.id] : [] };
 }
 
 /**
- * 清空注册，供测试隔离用例。
+ * clear register for testing isolation cases.
  * @internal
  */
 export function resetChatMemoryProviders(): void {

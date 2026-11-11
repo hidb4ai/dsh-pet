@@ -1,9 +1,10 @@
 /**
- * DSH 账号路由（provider id deepseek-account）：免费额度与平台登录的账户金额。
+ * DSH account route (provider id deepseek-account): free quota and platform login account amount.
  *
- * 没有 API Key，也不发 HTTP：凭证是 DSH 账号服务持有的授权记录，只经调用方注入的
- * resolveAccount 取快照。展示口径与 deepseek-official 一致，差异只在取数。
- * 档位基准与峰谷取自 ./deepseek-common.ts。
+ * There is no API Key, nor HTTP: the certificate is the authorization record held by the DSH account service, and only
+ * resolveAccount injected by the caller takes a snapshot. The display conventions are consistent with
+ * deepseek-official, the difference is only in the number. The state benchmark and peak and valley are taken from
+ * ./deepseek-common.ts.
  *
  * @module dsh-pet/src/host/balance/providers/deepseek-account
  */
@@ -12,26 +13,26 @@ import { money, obj, sumMoney } from '../internal.ts';
 import type { AccountBalanceSnapshot, BalanceProvider, BalanceSuccess } from '../types.ts';
 
 /**
- * 账号余额快照 → 成功结果（纯函数，测试可直接喂真实结构）。
- * @param snapshot - 账号服务返回的快照；未登录时为 null 或 undefined。
- * @param provider - 回填结果的 provider id。
- * @returns money 形态，每个币种一条钱包。
- * @throws 未登录、查询失败、无充值钱包或金额非法时，不伪造 0 余额
+ * Account balance snapshot → successful result (pure function, the test can directly feed the real structure).
+ * @param snapshot - Snapshot returned by the account service; when not logged in, it is null or undefined.
+ * @param provider - Backfill the result of provider id .
+ * @returns money format, one wallet for each currency.
+ * @throws will not forge 0 balance when not logged in, query failed, no recharge wallet or the amount is invalid.
  */
 export function parseAccountBalance(
   snapshot: AccountBalanceSnapshot | null | undefined,
   provider: string,
 ): BalanceSuccess {
-  if (!snapshot) throw new Error('dsh-pet: 账号未登录（deepseek-account）');
-  if (snapshot.status !== 'ready') throw new Error('dsh-pet: 账号余额查询失败');
+  if (!snapshot) throw new Error('dsh-pet: account is not signed in (deepseek-account)');
+  if (snapshot.status !== 'ready') throw new Error('dsh-pet: account balance request failed');
   const wallets = Array.isArray(snapshot.value) ? snapshot.value : [];
-  // 充值钱包为空 = 没有可展示的余额（如只送不充的新号），报错而非显示 ¥0.00。
-  if (wallets.length === 0) throw new Error('dsh-pet: 账号没有充值钱包余额');
-  // 全部钱包按币种搬出，由展示层决定显示哪些；只取首条会把排在前面的空 USD 钱包当成余额。
+  // The recharge wallet is empty = there is no balance to display (such as only sending a new account without recharging), and an error is reported instead of displaying ¥0.00.
+  if (wallets.length === 0) throw new Error('dsh-pet: account has no prepaid wallet balance');
+  // All wallets are moved out by currency, and the display layer determines which ones are displayed; only taking the first one will treat the empty USD wallet in front as the balance.
   const candidates = wallets.map((w) => obj(w as unknown)).filter((w): w is Record<string, unknown> => w !== undefined);
-  if (candidates.length === 0) throw new Error('dsh-pet: 账号钱包结构非法');
+  if (candidates.length === 0) throw new Error('dsh-pet: invalid account wallet structure');
 
-  // 同币种可能有多条钱包，按币种累加，不丢钱。
+  // Sum wallets by currency; multiple wallets may share the same currency.
   const toppedUpBy = new Map<string, string>();
   for (const w of candidates) {
     const currency = typeof w.currency === 'string' && w.currency.length > 0 ? w.currency : 'CNY';
@@ -39,7 +40,7 @@ export function parseAccountBalance(
     const prev = toppedUpBy.get(currency);
     toppedUpBy.set(currency, prev === undefined ? amount : sumMoney(prev, amount));
   }
-  // 币种非法的赠金钱包无法归属，跳过，不硬配。
+  // The gift wallet with invalid currency cannot be assigned, skipped, and will not be hard-matched.
   const grantedBy = new Map<string, string>();
   for (const raw of Array.isArray(snapshot.bonusWallets) ? snapshot.bonusWallets : []) {
     const w = obj(raw as unknown);
@@ -48,7 +49,7 @@ export function parseAccountBalance(
     const prev = grantedBy.get(w.currency);
     grantedBy.set(w.currency, prev === undefined ? amount : sumMoney(prev, amount));
   }
-  // 只出现在赠金钱包里的币种也补一条：余额真实可用，不能因没有充值钱包而消失。
+  // Add one additional point for currencies that only appear in the gift wallet: the balance is real and usable and cannot disappear because there is no recharge wallet.
   for (const currency of grantedBy.keys()) {
     if (!toppedUpBy.has(currency)) toppedUpBy.set(currency, '0.00');
   }
@@ -58,7 +59,7 @@ export function parseAccountBalance(
     const fullBalance = deepseekFullBalance(currency);
     return {
       currency,
-      // 与官方路由同构：total = 赠送 + 充值，这里由两个钱包相加。
+      // Isomorphic to the official route: total = gift + recharge, here the two wallets are added together.
       total: sumMoney(granted, toppedUp),
       granted,
       toppedUp,
@@ -73,13 +74,13 @@ export function parseAccountBalance(
   };
 }
 
-/** DSH 账号路由的内置定义。 */
+/** Built-in definition of DSH account route. */
 export const deepseekAccount: BalanceProvider = {
   id: 'deepseek-account',
   credential: { mode: 'none' },
   async fetch({ provider, resolveAccount }) {
-    // 上游已保证 none 路由的 resolveAccount 在场；此处只在不变量被破坏时触发。
-    if (!resolveAccount) throw new Error('dsh-pet: 缺少账号服务（' + provider + '）');
+    // The upstream has guaranteed the presence of resolveAccount of the none route; this is only triggered when the invariant is destroyed.
+    if (!resolveAccount) throw new Error('dsh-pet: account service missing (' + provider + '）');
     return parseAccountBalance(await resolveAccount(), provider);
   },
 };

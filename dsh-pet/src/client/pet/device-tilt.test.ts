@@ -1,8 +1,9 @@
 /**
- * 体感换算的单元测试：钉住三角函数映射、死区、横屏旋转、摇一摇的力度/方向，
- * 以及权限申请只问用得上的那一种传感器。
+ * Unit test for somatosensory conversion: verify trigonometric function mapping, dead zone, horizontal screen
+ * rotation, shake strength/direction, and permission application only asks for which sensor is used.
  *
- * 只测纯函数与可注入的全局对象——真实传感器与事件订阅要设备，不在这里覆盖。
+ * Only pure functions and injectable global objects - real sensors and events subscribe to devices - are tested and
+ * are not covered here.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,80 +19,83 @@ import {
 
 const FLAT: TiltSample = { beta: 0, gamma: 0 };
 
-describe('tiltGravity —— 倾斜角度到重力向量', () => {
-  test('没有倾斜 → 零向量', () => {
+describe('tiltGravity - tilt angle to gravity vector', () => {
+  test('No tilt → zero vector', () => {
     assert.deepEqual(tiltGravity(FLAT, FLAT, 1400), { gx: 0, gy: 0 });
   });
 
-  test('死区内 → 零向量（手抖不该让宠物一直滑）', () => {
+  test('In the dead zone → zero vector (trembling hands should not keep pets sliding)', () => {
     const near: TiltSample = { beta: TILT_DEAD_ZONE_DEG - 0.5, gamma: TILT_DEAD_ZONE_DEG - 0.5 };
     assert.deepEqual(tiltGravity(near, FLAT, 1400), { gx: 0, gy: 0 });
   });
 
-  test('左右倾 30° → 水平分量是重力的一半', () => {
+  test('Tilt left and right 30° → horizontal component is half of gravity', () => {
     const out = tiltGravity({ beta: 0, gamma: 30 }, FLAT, 1400);
-    assert.ok(Math.abs(out.gx - 700) < 1e-9, `应为 700，实际 ${out.gx}`);
+    assert.ok(Math.abs(out.gx - 700) < 1e-9, `Should be 700, actual ${out.gx}`);
     assert.equal(out.gy, 0);
   });
 
-  test('竖直 90° → 取满重力（配置值就是上限）', () => {
+  test('Vertical 90° → Take full gravity (the configuration value is the upper limit)', () => {
     const out = tiltGravity({ beta: 90, gamma: 0 }, FLAT, 1400);
-    assert.ok(Math.abs(out.gy - 1400) < 1e-9, `应为 1400，实际 ${out.gy}`);
+    assert.ok(Math.abs(out.gy - 1400) < 1e-9, `Should be 1400, actual ${out.gy}`);
   });
 
-  test('横屏（屏幕角 90°）→ 轴要换过来', () => {
+  test('Horizontal screen (screen angle 90°) → the axis needs to be changed', () => {
     const out = tiltGravity({ beta: 0, gamma: 30 }, FLAT, 1400, 90);
-    assert.ok(Math.abs(out.gx) < 1e-9, `横屏时水平倾斜不该进 gx，实际 ${out.gx}`);
-    assert.ok(Math.abs(out.gy + 700) < 1e-9, `应为 -700，实际 ${out.gy}`);
+    assert.ok(
+      Math.abs(out.gx) < 1e-9,
+      `The horizontal tilt should not go to gx when the screen is in landscape orientation, but actually ${out.gx}`,
+    );
+    assert.ok(Math.abs(out.gy + 700) < 1e-9, `Should be -700, actual ${out.gy}`);
   });
 
-  test('重力为 0 或负数 → 零向量（不会凭空产生加速度）', () => {
+  test('Gravity is 0 or negative → zero vector (no acceleration will be generated out of thin air)', () => {
     assert.deepEqual(tiltGravity({ beta: 30, gamma: 30 }, FLAT, 0), { gx: 0, gy: 0 });
     assert.deepEqual(tiltGravity({ beta: 30, gamma: 30 }, FLAT, -100), { gx: 0, gy: 0 });
   });
 
-  test('基线附近跨越 ±90° 时取最近的角差，不反向', () => {
+  test('When the baseline spans ±90°, the nearest angle difference is taken and does not reverse.', () => {
     const out = tiltGravity({ beta: 0, gamma: -89 }, { beta: 0, gamma: 89 }, 1400);
-    assert.ok(out.gx > 0, `跨过 ±90 仍应指向同一侧，实际 ${out.gx}`);
+    assert.ok(out.gx > 0, `Across ±90 it should still point to the same side, actual ${out.gx}`);
   });
 });
 
-describe('shakeImpulse —— 摇一摇的冲量', () => {
-  test('低于阈值 → null', () => {
+describe('shakeImpulse——The impulse of shaking', () => {
+  test('Below threshold → null', () => {
     assert.equal(shakeImpulse(SHAKE_THRESHOLD - 1, 0, 0, 1), null);
     assert.equal(shakeImpulse(0, 0, 0, 1), null);
   });
 
-  test('只有垂直方向（横向为零）→ null（方向不可用，不随机乱甩）', () => {
+  test('Only vertical direction (horizontal direction is zero) → null (direction is not available, no random throwing)', () => {
     assert.equal(shakeImpulse(0, 0, 100, 1), null);
   });
 
-  test('方向与甩动方向一致（沿横向/纵向加速度向量）', () => {
+  test('The direction is consistent with the swing direction (along the lateral/longitudinal acceleration vector)', () => {
     const out = shakeImpulse(30, 40, 0, 1);
     assert.ok(out);
     assert.ok(out.vx > 0 && out.vy > 0);
-    assert.ok(Math.abs(out.vy / out.vx - 40 / 30) < 1e-9, '方向应为 3:4');
+    assert.ok(Math.abs(out.vy / out.vx - 40 / 30) < 1e-9, 'Orientation should be 3:4');
   });
 
-  test('力度 = 基准 × throwPower', () => {
+  test('Velocity = Base × throwPower', () => {
     const once = shakeImpulse(30, 40, 0, 1);
     const twice = shakeImpulse(30, 40, 0, 2);
     assert.ok(once && twice);
-    assert.ok(Math.abs(twice.vx - once.vx * 2) < 1e-9, '总力度翻倍应让冲量翻倍');
+    assert.ok(Math.abs(twice.vx - once.vx * 2) < 1e-9, 'Doubling the total force should double the impulse');
     assert.ok(Math.abs(twice.vy - once.vy * 2) < 1e-9);
   });
 
-  test('加速度越大力度越大，但有上限', () => {
+  test('The greater the acceleration, the greater the force, but there is an upper limit.', () => {
     const soft = shakeImpulse(20, 0, 0, 1);
     const hard = shakeImpulse(100, 0, 0, 1);
     const insane = shakeImpulse(10000, 0, 0, 1);
     assert.ok(soft && hard && insane);
-    assert.ok(hard.vx > soft.vx, '加速度更大应更猛');
-    assert.equal(hard.vx, insane.vx, '超过封顶后不再涨');
+    assert.ok(hard.vx > soft.vx, 'Greater acceleration should be stronger');
+    assert.equal(hard.vx, insane.vx, 'No more increase after exceeding the cap');
   });
 });
 
-/** 临时装上假的传感器构造器（模拟 iOS 13+ 的 requestPermission）；返回撤销函数。 */
+/** Temporarily install a fake sensor constructor (emulating iOS 13+'s requestPermission); return the undo function. */
 function stubSensorGlobals(stubs: Record<string, unknown>): () => void {
   const previous = new Map<string, unknown>();
   for (const [key, value] of Object.entries(stubs)) {
@@ -103,7 +107,7 @@ function stubSensorGlobals(stubs: Record<string, unknown>): () => void {
   };
 }
 
-/** 造一个会记录被问过哪种、并返回指定结果的假构造器。 */
+/** Create a fake constructor that will record what kind of question was asked and return the specified result. */
 function fakeCtor(label: string, asked: string[], answer: string): { requestPermission: () => Promise<string> } {
   return {
     requestPermission: async () => {
@@ -113,8 +117,8 @@ function fakeCtor(label: string, asked: string[], answer: string): { requestPerm
   };
 }
 
-describe('requestMotionPermission —— 只问用得上的种类', () => {
-  test('只开倾斜：只申请 deviceorientation', async () => {
+describe('requestMotionPermission —— Just ask about the useful type', () => {
+  test('Only open tilt: only apply for deviceorientation', async () => {
     const asked: string[] = [];
     const restore = stubSensorGlobals({
       DeviceOrientationEvent: fakeCtor('tilt', asked, 'granted'),
@@ -128,7 +132,7 @@ describe('requestMotionPermission —— 只问用得上的种类', () => {
     }
   });
 
-  test('只开摇一摇：只申请 devicemotion', async () => {
+  test('Only open shake: only apply for devicemotion', async () => {
     const asked: string[] = [];
     const restore = stubSensorGlobals({
       DeviceOrientationEvent: fakeCtor('tilt', asked, 'granted'),
@@ -142,7 +146,7 @@ describe('requestMotionPermission —— 只问用得上的种类', () => {
     }
   });
 
-  test('两个都关：不申请任何权限，直接成功', async () => {
+  test('Both are off: no application for any permissions, direct success', async () => {
     const asked: string[] = [];
     const restore = stubSensorGlobals({
       DeviceOrientationEvent: fakeCtor('tilt', asked, 'denied'),
@@ -156,7 +160,7 @@ describe('requestMotionPermission —— 只问用得上的种类', () => {
     }
   });
 
-  test('任一种被拒 → false', async () => {
+  test('Either one is rejected → false', async () => {
     const asked: string[] = [];
     const restore = stubSensorGlobals({
       DeviceOrientationEvent: fakeCtor('tilt', asked, 'granted'),
@@ -164,13 +168,13 @@ describe('requestMotionPermission —— 只问用得上的种类', () => {
     });
     try {
       assert.equal(await requestMotionPermission({ tilt: true, shake: true }), false);
-      assert.deepEqual(asked, ['tilt', 'shake'], '两种都要问过再下结论');
+      assert.deepEqual(asked, ['tilt', 'shake'], 'You need to ask both questions before drawing a conclusion.');
     } finally {
       restore();
     }
   });
 
-  test('事件类型不存在（HTTP 非安全上下文）→ false', async () => {
+  test('Event type does not exist (HTTP non-security context) → false', async () => {
     const restore = stubSensorGlobals({ DeviceOrientationEvent: undefined, DeviceMotionEvent: undefined });
     try {
       assert.equal(await requestMotionPermission({ tilt: true, shake: true }), false);

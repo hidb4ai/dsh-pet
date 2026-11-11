@@ -1,19 +1,20 @@
 /**
- * Q 弹挤压（src/client/pet/motion/squash.ts）的契约测试：逐帧缩放且结束帧复原 origin 与镜像；
- * 新的挤压取消旧的（迟到的帧不再写样式）；系统开了「减少动效」时完全不改样式。
- * 用假 rAF / performance.now / matchMedia 驱动，不依赖真实动画时钟。
+ * Contract test of Q elastic extrusion (src/client/pet/motion/squash.ts): frame-by-frame scaling and end-frame
+ * restoration of origin and mirroring; the new extrusion cancels the old one (late frames no longer write styles); the
+ * style is not changed at all when the system turns on "Reduce Motion Effect". Use fake rAF / performance.now /
+ * matchMedia driver, do not rely on real animation clock.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createSquashDriver } from './squash.ts';
 
-/** 假视频元素：只留被写的三个 style 字段。 */
+/** Fake video element: only three style fields are left written. */
 function fakeVideo() {
   return { style: { transform: '', transformOrigin: '' } } as unknown as HTMLVideoElement;
 }
 
-/** 装一套假时钟与 rAF，返回推进一帧的入口与还原函数。 */
+/** Install a fake clock and rAF, and return the entry point and restoration function that advances one frame. */
 function withFakeFrames(options: { reducedMotion?: boolean } = {}) {
   const previousRaf = globalThis.requestAnimationFrame;
   const previousCancel = globalThis.cancelAnimationFrame;
@@ -32,20 +33,20 @@ function withFakeFrames(options: { reducedMotion?: boolean } = {}) {
     pending = pending.filter((entry) => entry.id !== id);
   };
   performance.now = () => now;
-  // Node 里没有 window：只补上被测代码用到的 matchMedia。
+  // There is no window in Node: only add matchMedia used by the code under test.
   (globalThis as { window?: unknown }).window = {
     matchMedia: (query: string) => ({ matches: options.reducedMotion === true, media: query }),
   };
 
   return {
-    /** 推进若干毫秒并跑掉当前排队的帧。 */
+    /** Advance a number of milliseconds and run off the currently queued frame. */
     tick(ms: number): void {
       now += ms;
       const due = pending;
       pending = [];
       for (const entry of due) entry.cb();
     },
-    /** 还有没有排队中的帧。 */
+    /** Are there any frames queued? */
     get queued(): number {
       return pending.length;
     },
@@ -58,28 +59,28 @@ function withFakeFrames(options: { reducedMotion?: boolean } = {}) {
   };
 }
 
-describe('createSquashDriver —— Q 弹挤压', () => {
-  test('逐帧压扁，结束帧复原 origin 与镜像', () => {
+describe('createSquashDriver —— Q elastic extrusion', () => {
+  test('Flatten frame by frame, end frame restoration origin and mirror', () => {
     const frames = withFakeFrames();
     try {
       const el = fakeVideo();
       const driver = createSquashDriver({ facing: () => 'right' });
       driver.start(el);
       frames.tick(0);
-      assert.equal(el.style.transformOrigin, 'bottom', '挤压期间以底边为原点');
-      assert.ok(el.style.transform.includes('scaleY('), '逐帧写纵向缩放');
-      assert.ok(el.style.transform.includes('scaleX(-1)'), '朝向是右时要保留镜像');
+      assert.equal(el.style.transformOrigin, 'bottom', 'Use the bottom edge as the origin during extrusion');
+      assert.ok(el.style.transform.includes('scaleY('), 'Write vertical scaling frame by frame');
+      assert.ok(el.style.transform.includes('scaleX(-1)'), 'Keep the mirror image when the orientation is right');
 
-      frames.tick(10_000); // 远超时长，落到结束帧
-      assert.equal(el.style.transformOrigin, '', 'origin 复原');
-      assert.equal(el.style.transform, 'scaleX(-1)', '结束只留镜像');
-      assert.equal(frames.queued, 0, '结束后不再排队');
+      frames.tick(10_000); // far exceeded the duration and fell to the end frame
+      assert.equal(el.style.transformOrigin, '', 'origin recovery');
+      assert.equal(el.style.transform, 'scaleX(-1)', 'End and leave only the image');
+      assert.equal(frames.queued, 0, 'No more queuing after the end');
     } finally {
       frames.restore();
     }
   });
 
-  test('新的挤压取消旧的：旧帧迟到也要作废', () => {
+  test('The new extrusion cancels the old one: the old frame will be invalidated if it is late.', () => {
     const frames = withFakeFrames();
     try {
       const first = fakeVideo();
@@ -91,15 +92,19 @@ describe('createSquashDriver —— Q 弹挤压', () => {
 
       driver.start(second);
       frames.tick(50);
-      // 旧元素不该再被写；它停在取消前那一帧。
-      assert.equal(first.style.transform, firstTransform, '被取消的那次不再写样式');
-      assert.ok(second.style.transform.includes('scaleY('), '新的一次继续跑');
+      // The old element should no longer be written; it stopped at the frame before cancellation.
+      assert.equal(
+        first.style.transform,
+        firstTransform,
+        'The style will no longer be written the time it was cancelled.',
+      );
+      assert.ok(second.style.transform.includes('scaleY('), 'Continue running a new time');
     } finally {
       frames.restore();
     }
   });
 
-  test('stop 后不再写样式', () => {
+  test('No more writing styles after stop', () => {
     const frames = withFakeFrames();
     try {
       const el = fakeVideo();
@@ -116,7 +121,7 @@ describe('createSquashDriver —— Q 弹挤压', () => {
     }
   });
 
-  test('减少动效：完全不碰样式', () => {
+  test('Reduce motion effects: no style at all', () => {
     const frames = withFakeFrames({ reducedMotion: true });
     try {
       const el = fakeVideo();
@@ -124,7 +129,7 @@ describe('createSquashDriver —— Q 弹挤压', () => {
       driver.start(el);
       assert.equal(el.style.transform, '');
       assert.equal(el.style.transformOrigin, '');
-      assert.equal(frames.queued, 0, '一次帧都不该排');
+      assert.equal(frames.queued, 0, 'One frame should not be queued');
     } finally {
       frames.restore();
     }

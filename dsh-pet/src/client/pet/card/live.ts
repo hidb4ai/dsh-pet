@@ -1,7 +1,8 @@
 /**
- * 卡片装配根的迟绑槽：动画链、运动驱动与浮层动作在创建上有先后，却要互相取值。
- * 只在 card-runtime 里填充；消费方都在渲染之后的回调里读，渲染期间不读。
- * 不负责状态：这里全是驱动实例与调用入口，响应式状态归 card-state。
+ * Late binding slot of card assembly root: animation chain, motion driver and floating layer action are created
+ * sequentially, but they need to take values from each other. Only fill in card-runtime; consumers read it in the
+ * callback after rendering, but not during rendering. Not responsible for the state: here are all driver instances and
+ * call entry points, and the responsive state belongs to card-state.
  * @module dsh-pet/src/client/pet/card/live
  */
 import type { OwnAnimation } from '../animation/animation.ts';
@@ -12,30 +13,30 @@ import type { PositionFollow } from '../motion/position-follow.ts';
 import type { SquashDriver } from '../motion/squash.ts';
 import type { Walk } from '../motion/walk.ts';
 
-/** 装配根迟绑的驱动与服务：先创建的一方经它回调后创建的一方。 */
+/** Assembling root-bound drivers and services: the party created first is called back by the party created later. */
 export interface CardLive {
-  /** 动画链：先于运动驱动创建，回调里要读走位、拖拽与挤压。 */
+  /** Animation chain: Created before the motion driver, the callback needs to read the movement, dragging and squeezing. */
   ownAnim: OwnAnimation;
-  /** 走位。 */
+  /** Movement. */
   walk: Walk;
-  /** 抛掷飞行。 */
+  /** Throwing flight. */
   flight: Flight;
-  /** 位置跟随。 */
+  /** Position following. */
   posFollow: PositionFollow;
-  /** 指针拖拽。 */
+  /** Pointer dragging. */
   drag: Drag;
-  /** Q 弹挤压。 */
+  /** Q elastic extrusion. */
   squash: SquashDriver;
-  /** 动画流：指令处理之后创建，拖拽与本地解冻要经它恢复档位。 */
+  /** Animation flow: Created after command processing, dragging and local unfreezing need to restore states through it. */
   flow: AnimationFlow | null;
-  /** 当前宠物中心的视口坐标（含角落兜底）。 */
+  /** Viewport coordinates of the current pet center (including corner fallback). */
   center: () => { x: number; y: number };
-  /** 停走位与位置跟随。 */
+  /** Stop-and-go position and position following. */
   stopMove: () => void;
-  /** 把悬浮提示摆到光标旁。 */
+  /** Place the hover tip next to the cursor. */
   placeTip: (x: number, y: number) => void;
-  /** 悬浮提示当前是否点亮。 */
+  /** Whether the floating prompt is currently lit. */
   tipOn: () => boolean;
-  /** 本地解冻并释放宿主锁。 */
+  /** Local unfreeze and release host lock. */
   releaseLock: () => void;
 }

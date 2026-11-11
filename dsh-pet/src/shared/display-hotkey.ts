@@ -1,25 +1,27 @@
 /**
- * 显示位置的数字键：`1` 仅网页、`2` 仅桌面、`3` 两者、`4` 都不。
+ * Number keys showing location: `1` web page only, `2` desktop only, `3` both, `4` neither.
  *
- * 顺序与右键「显示位置」子菜单同源（见 {@link displayMenuBranch}），菜单键帽也由这里出。
- * 每个键作用于鼠标停着的那只宠物；`3`/`4` 会让它从网页端消失，因此这两个键是单向门。
+ * The sequence has the same origin as the right-click "Display Position" submenu (see {@link displayMenuBranch} ), and
+ * the menu keycaps also come from here. Each key acts on the pet the mouse is parked on; `3` / `4` will make it
+ * disappear from the web page, so these two keys are one-way doors.
  * @module dsh-pet/src/shared/display-hotkey
  */
 import { isBareKey } from './hotkey.ts';
 import type { HotkeyEvent } from './hotkey.ts';
 import type { PetDisplay } from './types.ts';
 
-/** 数字键对应的显示位置，下标从 1 起；改顺序等于改快捷键，必须同步菜单。 */
+/** The display position corresponding to the numeric keys starts from 1; changing the order is equivalent to changing the shortcut keys, and the menu must be synchronized. */
 export const DISPLAY_ORDER = ['web', 'desktop', 'both', 'none'] as const satisfies readonly PetDisplay[];
 
-/** 菜单项右侧的键帽文案；下标与 {@link DISPLAY_ORDER} 对齐。 */
+/** The keycap copy on the right side of the menu item; the subscript is aligned with {@link DISPLAY_ORDER}. */
 export const DISPLAY_HOTKEY_HINTS: readonly string[] = DISPLAY_ORDER.map((_, index) => String(index + 1) + ' 键');
 
 /**
- * 这次按键该切到哪个显示位置。
+ * Which display position should be switched to by pressing the button this time.
  *
- * @param e - 键盘事件。
- * @returns `1`-`4` 对应的显示位置；不是这四个裸键（或在输入框里打字）时 undefined。
+ * @param e - keyboard event.
+ * The display position corresponding to @returns `1` - `4` ; when it is not these four bare keys (or typing in the
+ * input box) undefined.
  */
 export function displayOfHotkey(e: HotkeyEvent): PetDisplay | undefined {
   for (let index = 0; index < DISPLAY_ORDER.length; index += 1) {

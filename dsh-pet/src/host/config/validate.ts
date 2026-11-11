@@ -1,8 +1,9 @@
 /**
- * 字段校验：每个字段一个 `xValid`，只管形状与取值范围。
+ * Field verification: one `xValid` for each field, regardless of shape and value range.
  *
- * 校验失败只记一次告警并返回 false，由调用方回退默认值。
- * 必须始终成立：校验规则与读取侧同一套，写回时不得放宽。
+ * If the verification fails, only one warning will be recorded and false will be returned. The caller will fall back to
+ * the default value. This must always be true: the verification rules are the same as those on the reading side and
+ * must not be relaxed when writing back.
  * @module dsh-pet/src/host/config/validate
  */
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../shared/fonts.ts';
@@ -10,10 +11,10 @@ import { isKnownVoice } from '../voice/voices.ts';
 import { FONT_FAMILY_SET } from './constants.ts';
 import { chatMemoryConfigValid } from '../../shared/chat-memory-config.ts';
 
-/** 内置玩法动画的槽位数：`animations.baifan` 必须恰好这么多个（顺序是玩法契约，见 shared/types 的 Animations）。 */
+/** The number of slots for the built-in gameplay animation: `animations.baifan` must be exactly this many (the order is the gameplay contract, see shared/types’s Animations). */
 const ACTIVITY_SLOTS = 5;
 
-/** animations 段完整性校验（与旧 assertAnimationsHost 同一套规则；不 throw，非法返回 false） */
+/** animations segment integrity check (same set of rules as the old assertAnimationsHost; not throw, invalid return false) */
 function animationsValid(a: unknown): boolean {
   if (!a || typeof a !== 'object') return false;
   const anims = a as Record<string, unknown>;
@@ -37,8 +38,8 @@ function animationsValid(a: unknown): boolean {
   for (const pool of Object.values(evEntries)) {
     if (!Array.isArray(pool) || pool.length === 0) return false;
     for (const slot of pool) {
-      // 档位槽位：单个动画名或候选数组（档内随机抽 1，见 shared/pickers pickSlot）；
-      // 空字符串 / 空数组 / 成员为空串的数组均非法
+      // Gear slot: a single animation name or a candidate array (randomly select 1 in the file, see shared/pickers
+      // pickSlot); empty character strings/empty arrays/arrays whose members are empty strings are invalid
       if (typeof slot === 'string') {
         if (slot.length === 0) return false;
       } else if (Array.isArray(slot)) {
@@ -53,16 +54,21 @@ function animationsValid(a: unknown): boolean {
   }
   const balance = evEntries.balance;
   if (!Array.isArray(balance) || balance.length === 0) return false;
-  // baifan 可选：没写 = 该条目没有这个玩法。写了才校验形状——槽位数不对会让玩法
-  // 按位置取到 undefined，表现成「点了没反应」，比不配更难解释。
+  // baifan Optional: Not written = This entry does not have this gameplay. Verify the shape after writing - the wrong
+  // number of slots will cause the gameplay to get undefined according to the position, which will appear as "no
+  // response when clicking", which is more difficult to explain than not matching.
   if (anims.baifan !== undefined && !activitySlotsValid(anims.baifan)) return false;
-  // sleep 可选：pet pack 不写也合法（不同角色的睡觉素材不一样，不能强求）。
-  // 写了才校验形状——一个空套或空段会让状态机「进去了但没动画播」，比不配更难解释。
+  // sleep Optional: pet pack It is valid not to write it (the sleeping assets of different characters are different
+  // and cannot be forced). Verify the shape after writing - an empty set or segment will cause the state machine to
+  // "enter but no animation will play", which is more difficult to explain than not matching.
   return anims.sleep === undefined || sleepValid(anims.sleep);
 }
 
-/** sleep 段校验：非空套数组，每套都必须有非空的 start / loop / end 字符串数组。
- *  未写由调用方放行（可选字段）；这里只处理「写了」的形态。 */
+/**
+ * sleep segment check: non-empty set of arrays, each set must have a non-empty start / loop / end character string
+ * array. If it is not written, it will be released by the caller (optional field); only the "written" state will be
+ * processed here.
+ */
 function sleepValid(value: unknown): boolean {
   if (!Array.isArray(value) || value.length === 0) return false;
   for (const set of value) {
@@ -79,14 +85,16 @@ function sleepValid(value: unknown): boolean {
   return true;
 }
 
-/** baifan 段校验：恰好 {@link ACTIVITY_SLOTS} 个非空动画名。
- *  写少写多都算非法——槽位按索引取，缺一个就是那个时机没有动画可播。 */
+/**
+ * baifan segment verification: Exactly {@link ACTIVITY_SLOTS} non-empty animation names. It is invalid to write less
+ * or more - the slots are retrieved by index, and if one is missing, there is no animation to play at that time.
+ */
 function activitySlotsValid(value: unknown): boolean {
   if (!Array.isArray(value) || value.length !== ACTIVITY_SLOTS) return false;
   return value.every((name) => typeof name === 'string' && name.length > 0);
 }
 
-/** animationWeights 段校验（idle/turn/move 三个非负数字） */
+/** animationWeights segment check (idle/turn/move three non-negative numbers) */
 function weightsValid(w: unknown): boolean {
   if (!w || typeof w !== 'object') return false;
   const weights = w as Record<string, unknown>;
@@ -97,9 +105,11 @@ function weightsValid(w: unknown): boolean {
   return true;
 }
 
-/** physics 段校验：gravity ≥ 0（0 = 无重力，合法）、restitution ∈ [0,1]、groundFriction ≥ 0（均为有限数字）、
- *  ceilingBounce / petCollision 为布尔、throwPower > 0（有限数字）。
- *  hapticEnabled / tiltGravity / shakeThrow 为可选布尔（旧配置没有这几个键）。 */
+/**
+ * physics segment check: gravity ≥ 0 (0 = no gravity, valid), restitution ∈ [0,1], groundFriction ≥ 0 (both are finite
+ * numbers), ceilingBounce / petCollision are Boolean, throwPower > 0 (limited numbers). hapticEnabled / tiltGravity /
+ * shakeThrow are optional Boolean (the old configuration does not have these keys).
+ */
 export function physicsValid(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const p = value as Record<string, unknown>;
@@ -119,17 +129,19 @@ export function physicsValid(value: unknown): boolean {
     Number.isFinite(tp) &&
     tp > 0 &&
     typeof p.petCollision === 'boolean' &&
-    // 可选：旧配置（与手写配置）没有这三个键，各按默认处理（三个都按开处理），
-    // 缺键不算整段非法。
+    // Optional: The old configuration (and handwriting configuration) does not have these three keys, and each is
+    // processed by default (press on for all three). The missing key does not count as invalid.
     (p.hapticEnabled === undefined || typeof p.hapticEnabled === 'boolean') &&
     (p.tiltGravity === undefined || typeof p.tiltGravity === 'boolean') &&
     (p.shakeThrow === undefined || typeof p.shakeThrow === 'boolean')
   );
 }
 
-/** font 段校验：family ∈ 预设白名单、size 为区间内的有限数字、followPet 为布尔。
- *  与 physics 同口径：整段校验——任一子键缺失/非法即整段非法（告警 + 取默认），
- *  不做「缺子键逐个补默认」；对象字段一律整段替换。 */
+/**
+ * font segment check: family ∈ preset white list, size is a limited number in the interval, followPet is Boolean. Same
+ * conventions as physics: whole section verification - if any subkey is missing/invalid, the entire section is invalid
+ * (warning + default), there is no "default for missing subkeys one by one"; object fields are replaced in entirety.
+ */
 export function fontValid(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const f = value as Record<string, unknown>;
@@ -139,9 +151,12 @@ export function fontValid(value: unknown): boolean {
   return typeof f.followPet === 'boolean';
 }
 
-/** whisperModel / chatModel 段校验：{ provider, model } 两个字符串，
- *  要么都留空（= 跟随当前对话的模型）要么都非空——只填一半会拼出「用 A 家的模型名去问 B 家」
- *  这种必然失败的组合，按非法处理（告警 + 取默认）。 */
+/**
+ * whisperModel / chatModel segment verification: { provider , model } Two character strings, either left blank (=
+ * follow the model of the current conversation) or both are non-blank - filling in only half will construct "Use the
+ * model name of the A family to ask the B family." This combination is bound to fail and is treated as invalid (warning
+ * + Take the default).
+ */
 export function modelSelectionValid(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const m = value as Record<string, unknown>;
@@ -149,7 +164,7 @@ export function modelSelectionValid(value: unknown): boolean {
   return (m.provider.trim() === '') === (m.model.trim() === '');
 }
 
-/** workStatusTexts 段校验：二维数组——外层每项都是非空字符串数组（档位文案，每档可多句随机）；空数组不可用 */
+/** workStatusTexts segment verification: two-dimensional array - each item in the outer layer is a non-empty character string array (state copy, each state can have multiple random sentences); empty arrays are not available */
 function workStatusTextsValid(value: unknown): boolean {
   if (!Array.isArray(value) || value.length === 0) return false;
   for (const group of value) {
@@ -161,7 +176,7 @@ function workStatusTextsValid(value: unknown): boolean {
   return true;
 }
 
-/** 顶层标量字段的合法性（非法与缺失同处理：取默认值 + 告警） */
+/** Validity of top-level scalar fields (invalid and missing are treated the same: default value + warning) */
 export function topFieldValid(key: string, value: unknown): boolean {
   switch (key) {
     case 'chatMemory':
@@ -173,34 +188,34 @@ export function topFieldValid(key: string, value: unknown): boolean {
       return Number.isFinite(n) && n >= 0;
     }
     case 'chatImageLimit': {
-      // 对话配图张数上限：非负数字（0 = 不限制）；小数按消费者 Math.floor 取整
+      // The upper limit of the number of dialogue pictures: non-negative number (0 = no limit); decimals are rounded according to the consumer Math.floor
       const n = Number(value);
       return Number.isFinite(n) && n >= 0;
     }
     case 'notificationsEnabled':
       return typeof value === 'boolean';
     case 'clickSoundEnabled':
-      // 点击音效开关（全局布尔，只读 main 条目）：与 notificationsEnabled 同一套校验
+      // Click sound effect switch (global Boolean, read-only main entry): same set of verification as notificationsEnabled
       return typeof value === 'boolean';
     case 'whisperImageEnabled':
       return typeof value === 'boolean';
     case 'voiceEnabled':
-      // 语音播报开关（全局布尔）：只决定念不念，不影响气泡与记忆
+      // Voice broadcast switch (global Boolean): only determines whether to read or not, does not affect bubbles and memory
       return typeof value === 'boolean';
     case 'voiceName':
-      // 音色必须是白名单内的 id；写错即非法，读取侧回落到默认音色并告警
+      // The voice must be id in the whitelist; if written incorrectly, it is invalid. The reading side will fallback to the default voice and an warning will be issued.
       return typeof value === 'string' && isKnownVoice(value);
     case 'voiceVolume':
-      // 播放音量系数：0–1 的有限数，与 Audio.volume 同量纲；越界即非法（不夹取，读取侧回落默认）
+      // Playback volume coefficient: a finite number of 0–1, the same dimension as Audio.volume; out of bounds is invalid (no clamping, read side fallback default)
       return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
     case 'voiceWhisperEnabled':
-      // 周期碎碎念的语音开关（全局布尔）：只决定念不念，不影响气泡与记忆
+      // Periodic whisper voice switch (global Boolean): only determines whether to read or not, does not affect bubbles and memory
       return typeof value === 'boolean';
     case 'voiceTodoEnabled':
-      // 待办提醒的语音开关（全局布尔）：同上
+      // Voice switch for to-do reminder (global Boolean): Same as above
       return typeof value === 'boolean';
     case 'voiceNotifyEnabled':
-      // 工作状态播报开关（全局布尔）：只决定完成 / 出错 / 等确认三档念不念，不影响系统通知弹窗
+      // Working status broadcast switch (global Boolean): only determines whether to read the three levels of completion / error / waiting for confirmation, and does not affect the system notification pop-up window
       return typeof value === 'boolean';
     case 'chatImageEnabled':
       return typeof value === 'boolean';
@@ -209,7 +224,7 @@ export function topFieldValid(key: string, value: unknown): boolean {
     case 'confineToScreen':
       return typeof value === 'boolean';
     case 'trayEnabled':
-      // 桌面模式系统托盘开关（main 条目顶层；helper 读它决定建不建托盘图标）
+      // Desktop mode system system tray switch (main entry top level; helper reads it to decide whether to build a system tray icon)
       return typeof value === 'boolean';
     case 'animations':
       return animationsValid(value);
@@ -229,7 +244,7 @@ export function topFieldValid(key: string, value: unknown): boolean {
     case 'sleepRefuseTexts':
     case 'sleepStartTexts':
     case 'sleepEndTexts': {
-      // 睡觉三组台词（条目级）：非空字符串数组，随机挑一句；空数组/空串会让「说话」变成静默失败
+      // Three sets of lines for sleeping (entry level): non-empty character string array, randomly select a line; empty array/empty string will cause "speaking" to become silent failure
       if (!Array.isArray(value) || value.length === 0) return false;
       return value.every((text) => typeof text === 'string' && text.length > 0);
     }
@@ -239,8 +254,9 @@ export function topFieldValid(key: string, value: unknown): boolean {
 }
 
 /**
- * eventsRefreshSec 段校验：事件名 → 间隔秒（正的有限数字）。
- * 这是整段替换字段：缺的键由消费端各自兜底（1800 / 300），多写的键原样保留；空对象合法。
+ * eventsRefreshSec segment check: event name → interval seconds (positive finite number). This is the entire
+ * replacement field: missing keys are fallbacked by consumers (1800 / 300), and overwritten keys are retained as they
+ * are; empty objects are valid.
  */
 function eventsRefreshSecValid(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

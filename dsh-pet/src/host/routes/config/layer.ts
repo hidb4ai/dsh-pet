@@ -1,30 +1,33 @@
 /**
- * 配置层的定位：把「条目名」解析成该层要写的文件、目录与磁盘原对象。
+ * Positioning of the configuration layer: parse the "entry name" into the files, directories and disk original objects
+ * to be written by the layer.
  *
- * 两条写端点（单只 display、整条目实例）共用这一份归属规则，否则「main 写用户层、文件宠物写
- * 自己的配置文件」会被各写一遍，改一处漏一处。
- * 不读合并成品、不校验宠物字段：entry 是否合法、找不到文件该报什么 reason，都由调用方决定。
+ * The two write endpoints (single display, the entire entry instance) share this attribution rule, otherwise "main
+ * writes the user layer, the file pet writes its own configuration file" will be written once each, and one change
+ * will miss the other. The merged product is not read and the pet field is not verified: whether entry is valid and
+ * what reason should be reported if the file cannot be found are all decided by the caller.
  * @module dsh-pet/src/host/routes/config/layer
  */
 import { readPetConfigEntry, readUserConfig } from '../../config.ts';
 import type { PetRouteDeps } from '../types.ts';
 
-/** 要写的那一层：文件路径、所在目录，以及该文件在磁盘上的原对象（透传递归用）。 */
+/** The layer to be written: the file path, the directory where it is located, and the original object of the file on the disk (transparent transfer). */
 export interface ConfigLayer {
   readonly path: string;
   readonly dir: string;
   readonly existing: Record<string, unknown> | undefined;
 }
 
-/** 定位结果：命中给出该层；未命中只说明「文件不存在」，具体 reason 由调用方按端点语义决定。 */
+/** Positioning result: A hit gives the layer; a miss only means "the file does not exist". The specific reason is determined by the caller according to the endpoint semantics. */
 export type ConfigLayerLookup = { readonly ok: true; readonly layer: ConfigLayer } | { readonly ok: false };
 
 /**
- * 定位目标层：`main` → 用户主配置，其余 → 文件宠物自己的配置。
+ * Locate the target layer: `main` → user master configuration, the rest → file pet’s own configuration.
  *
- * @param deps - 路由层依赖（路径集）。
- * @param entry - 宠物所属条目名（合并后由宿主反查得出，不接受调用方指定）。
- * @returns 命中给出该层；条目配置文件不存在时给出 `ok: false`。
+ * @param deps - route layer dependency (path set).
+ * @param entry - The name of the entry to which the pet belongs (obtained by host reverse check after merging, caller
+ * specification is not accepted).
+ * @returns hits give the layer; `ok: false` is given when the entry profile does not exist.
  */
 export function resolveConfigLayer(deps: PetRouteDeps, entry: string): ConfigLayerLookup {
   if (entry === 'main') {

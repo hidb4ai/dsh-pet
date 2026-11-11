@@ -50,7 +50,9 @@ jobs:
       - name: Validate package and release version
         id: metadata
         run: |
-          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          # Chromium child processes need a writable temp directory outside runner-owned mounts.
+          install -d -m 1777 /data/codex-tmp
+          echo "TMPDIR=/data/codex-tmp" >> "$GITHUB_ENV"
           node scripts/release-metadata.mjs
 
       - name: Setup pnpm

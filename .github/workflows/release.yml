@@ -20,10 +20,16 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    # Includes browsers and system dependencies without depending on apt mirror availability.
+    # Keep the image version aligned with Playwright in dsh-pet/pnpm-lock.yaml.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
     timeout-minutes: 30
     defaults:
       run:
+        shell: bash
         working-directory: dsh-pet
     outputs:
       archive: ${{ steps.metadata.outputs.archive }}
@@ -44,7 +50,9 @@ jobs:
       - name: Validate package and release version
         id: metadata
         run: |
-          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          # Chromium child processes need a writable temp directory outside runner-owned mounts.
+          install -d -m 1777 /data/codex-tmp
+          echo "TMPDIR=/data/codex-tmp" >> "$GITHUB_ENV"
           node scripts/release-metadata.mjs
 
       - name: Setup pnpm
@@ -64,10 +72,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/release"
           npm pack --pack-destination "$RUNNER_TEMP/release"
 
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
-
       - name: UI and script tests
+        env:
+          DEBUG: pw:browser
         run: pnpm test:ui
 
       - name: Test installed package

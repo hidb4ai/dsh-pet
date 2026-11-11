@@ -71,6 +71,8 @@ jobs:
           npm pack --pack-destination "$RUNNER_TEMP/release"
 
       - name: UI and script tests
+        env:
+          DEBUG: pw:browser
         run: pnpm test:ui
 
       - name: Test installed package

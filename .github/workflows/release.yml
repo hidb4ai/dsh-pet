@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
       run:
@@ -63,6 +63,14 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/release"
           npm pack --pack-destination "$RUNNER_TEMP/release"
+
+      # The runner's Azure mirror can fail DNS resolution and stall apt's fallback handling.
+      - name: Use Ubuntu archive for browser dependencies
+        run: |
+          sudo sed -i \
+            -e 's|mirror+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu/|g' \
+            -e 's|http://azure\.archive\.ubuntu\.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' \
+            /etc/apt/sources.list.d/ubuntu.sources
 
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium

@@ -21,9 +21,15 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # Includes browsers and system dependencies without depending on apt mirror availability.
+    # Keep the image version aligned with Playwright in dsh-pet/pnpm-lock.yaml.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
     timeout-minutes: 30
     defaults:
       run:
+        shell: bash
         working-directory: dsh-pet
     outputs:
       archive: ${{ steps.metadata.outputs.archive }}
@@ -63,17 +69,6 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/release"
           npm pack --pack-destination "$RUNNER_TEMP/release"
-
-      # The runner's Azure mirror can fail DNS resolution and stall apt's fallback handling.
-      - name: Use Ubuntu archive for browser dependencies
-        run: |
-          sudo sed -i \
-            -e 's|mirror+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu/|g' \
-            -e 's|http://azure\.archive\.ubuntu\.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' \
-            /etc/apt/sources.list.d/ubuntu.sources
-
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
 
       - name: UI and script tests
         run: pnpm test:ui

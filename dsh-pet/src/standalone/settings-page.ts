@@ -1,9 +1,9 @@
 /**
- * 本机设置页的三份静态资源：HTML、CSS 与脚本。
+ * Three static resources of the local settings page: HTML, CSS and script.
  *
- * 只在本机回环上由 ./server 提供；不包含构建步骤，也不依赖外部 CDN。
- * 必须始终成立：脚本从地址片段读一次令牌后立刻清掉片段；页面不内联脚本与样式，
- * 以便 CSP 保持 default-src 'none'。
+ * Only provided by ./server on the native loopback; contains no build steps and does not rely on external CDN. Must
+ * always be true: the script reads the token from the address fragment once and then clears the fragment immediately;
+ * the page does not inline scripts and styles, so that CSP remains default-src ' none '.
  * @module dsh-pet/src/standalone/settings-page
  */
 import { CORNER_SET } from '../host/config/constants.ts';
@@ -31,10 +31,10 @@ import { setupModelsScript } from './settings-page/script/setup-models.ts';
 
 export { settingsPage, settingsStyle };
 
-/** 头像长边上限：与 client/settings/avatar-upload.ts 的 AVATAR_MAX_SIDE 对齐；页面脚本 import 不到，由测试钉住。 */
+/** The upper limit of the long side of the avatar: aligned with AVATAR_MAX_SIDE of client/settings/avatar-upload.ts; the page script import is less than, verified by the test. */
 export const AVATAR_MAX_SIDE_PX = 512;
 
-/** 整页脚本：公共层 + 控件 + 头像 + 宠物/全局/AI 三个面板 + 模型选择 + 启动。 */
+/** Full page script: common layer + control + avatar + pet/global/AI three panels + model selection + startup. */
 export const settingsScript = [
   '(function () {',
   coreScript(ROUTE_SEGMENT, {

@@ -1,55 +1,57 @@
 /**
- * 宠物盒的几何：由宽度推出半宽半高、脚垫与左右余量，并换算归一化中心 ↔ 包围盒左上角。
- * 位置指令用归一化比例、拖拽与抛掷用左上角像素，两个方向必须互逆，否则松手会跳位。
- * 纯计算：视口、盒尺寸与画布基准都由调用方传入，不读 `window`。
- * 换算本身不夹取；越界摆放的可见下限由 {@link clampReachableBox} 在提交位置时保证。
+ * The geometry of the pet box: From the width, the half-width, half-height, foot pads and left and right margins are
+ * derived, and the normalized center ↔ upper left corner of the bounding box is converted. The position command uses
+ * the normalized ratio, and the drag and throw use the upper left corner pixel. The two directions must be opposite to
+ * each other, otherwise the position will jump when you let go. Pure calculation: the viewport, box size and canvas
+ * datum are all passed in by caller, and `window` is not read. The conversion itself does not clamp; the visible lower
+ * limit of out-of-bounds placement is guaranteed by {@link clampReachableBox} when submitting the position.
  * @module dsh-pet/src/client/pet/motion/geometry
  */
 import { CANVAS_H, FEET_Y, HIT_BOX, MIN_REACHABLE_PX } from '../../../shared/constants.ts';
 import { bodyPixelBox } from '../../../shared/physics.ts';
 import type { CSSProperties } from 'react';
 
-/** 视口尺寸。 */
+/** Viewport size. */
 export interface Viewport {
   width: number;
   height: number;
 }
 
-/** 宠物盒的半宽与半高（高度按 16:9 由宽度推出）。 */
+/** Half-width and half-height of the pet box (the height is derived from the width in 16:9). */
 export interface HalfSize {
   w: number;
   h: number;
 }
 
-/** 归一化中心（0..1，相对视口）。 */
+/** Normalized center (0..1, relative to the viewport). */
 export interface Center {
   rx: number;
   ry: number;
 }
 
-/** 包围盒左上角像素坐标。 */
+/** Pixel coordinates of the upper left corner of the bounding box. */
 export interface BoxPoint {
   x: number;
   y: number;
 }
 
-/** 宠物盒的派生度量（px），全部由宽度按固定画布基准推出。 */
+/** Derived measurements of the pet box ( px ), all derived from the width on a fixed canvas basis. */
 export interface PetMetrics {
-  /** 盒半宽。 */
+  /** Box half width. */
   halfW: number;
-  /** 盒半高，按 16:9 由宽度推出。 */
+  /** Box half height, pushed out by width at 16:9. */
   halfH: number;
-  /** 舞台脚底垫高：命中框与碰撞 body 框都按它上移。 */
+  /** The stage foot is raised: the hit box and the collision body box are moved up according to it. */
   bottomPad: number;
-  /** 左右透明边余量：漫游夹取按身体贴边，宠物能走到屏幕边缘而身体不越界。 */
+  /** Left and right transparent edge margin: When roaming and pinching, press the body close to the edge, and the pet can go to the edge of the screen without crossing the boundary. */
   sideAllow: number;
 }
 
 /**
- * 按宠物宽度算出盒子度量。
+ * Calculate the box measurement based on the width of the pet.
  *
- * @param size - 宠物宽度 px。
- * @returns 四个派生量，随宽度线性缩放。
+ * @param size - pet width px.
+ * @returns Four derived quantities, scaling linearly with width.
  */
 export function derivePetMetrics(size: number): PetMetrics {
   return {
@@ -61,45 +63,47 @@ export function derivePetMetrics(size: number): PetMetrics {
 }
 
 /**
- * 归一化中心 → 包围盒左上角像素。
+ * Normalized center → the upper left corner pixel of the bounding box.
  *
- * @param center - 宠物中心相对视口的比例。
- * @param viewport - 视口尺寸。
- * @param half - 盒的半宽半高。
- * @returns 根节点 `left`/`top` 该写的像素值。
+ * @param center - The ratio of the center of the pet relative to the viewport.
+ * @param viewport - Viewport size.
+ * @param half - Half width and half height of the box.
+ * @returns Root node `left` / `top` The pixel value to be written.
  */
 export function centerToBox(center: Center, viewport: Viewport, half: HalfSize): BoxPoint {
   return { x: center.rx * viewport.width - half.w, y: center.ry * viewport.height - half.h };
 }
 
 /**
- * 包围盒左上角像素 → 归一化中心；{@link centerToBox} 的逆运算。
+ * The upper left corner pixel of the bounding box → normalized center; the inverse operation of {@link centerToBox} .
  *
- * @param box - 根节点当前的 `left`/`top`（px）。
- * @param viewport - 视口尺寸。
- * @param half - 盒的半宽半高。
- * @returns 可提交给 `customPos` 的归一化中心。
+ * @param box - The root node's current `left` /`top` (px).
+ * @param viewport - Viewport size.
+ * @param half - Half width and half height of the box.
+ * @returns can be submitted to the normalization center for `customPos` .
  */
 export function boxToRatio(box: BoxPoint, viewport: Viewport, half: HalfSize): Center {
   return { rx: (box.x + half.w) / viewport.width, ry: (box.y + half.h) / viewport.height };
 }
 
 /**
- * 把越界摆放的盒子收到「命中区至少还可见 {@link MIN_REACHABLE_PX}」。
+ * The box placed out of bounds receives "the hit area is still visible at least {@link MIN_REACHABLE_PX} ".
  *
- * 只压单轴的一侧，不要求完整可见：宠物仍能挂在边缘，只是不会整只消失。
+ * Pressing only one side of the single axis does not require complete visibility: the pet will still hang on the edge,
+ * but it will not disappear entirely.
  *
- * @param box - 待提交的盒左上角（px）。
- * @param viewport - 视口尺寸。
- * @param body - 命中区的两个输入：宠物宽度与舞台脚垫。
- * @returns 夹取后的盒左上角；本来就在范围内时原值返回。
+ * @param box - The upper left corner of the box to be submitted ( px ).
+ * @param viewport - Viewport size.
+ * @param body - Two inputs to the hit zone: pet width and stage pad.
+ * @returns The upper left corner of the box after clamping; the original value is returned when it is already within
+ * the range.
  */
 export function clampReachableBox(
   box: BoxPoint,
   viewport: Viewport,
   body: { size: number; bottomPad: number },
 ): BoxPoint {
-  // 命中区相对盒原点的偏移直接问 bodyPixelBox：本文件不重复 HIT_BOX 的比例换算。
+  // The offset of the hit area relative to the box origin is directly asked by bodyPixelBox: This document does not repeat the scale conversion of HIT_BOX.
   const inset = bodyPixelBox({ x: 0, y: 0, size: body.size, bottomPad: body.bottomPad });
   const minX = MIN_REACHABLE_PX - inset.right;
   const maxX = viewport.width - inset.left - MIN_REACHABLE_PX;
@@ -113,51 +117,55 @@ export function clampReachableBox(
 }
 
 /**
- * 单轴夹取：视口与命中区加起来还容不下两倍下限时区间反向，改为居中，避免夹到错误的一侧。
+ * Single-axis clamping: The viewport and hit area combined cannot accommodate twice the lower limit time interval
+ * reversal, so it is changed to center to avoid clamping to the wrong side.
  *
- * @param value - 待夹坐标（px）。
- * @param lo - 允许下限（px）。
- * @param hi - 允许上限（px）。
- * @param centered - 区间反向时的居中坐标（px）。
- * @returns 夹取后的坐标（px）。
+ * @param value - coordinates to be clamped (px).
+ * @param lo - lower allowed limit (px).
+ * @param hi - Allowed upper limit (px).
+ * @param centered - The center coordinate when the interval is reversed ( px ).
+ * @returns coordinates after clamping (px).
  */
 function clampAxis(value: number, lo: number, hi: number, centered: number): number {
   return lo > hi ? centered : Math.min(Math.max(value, lo), hi);
 }
 
 /**
- * 舞台内联样式：脚底垫高恒定生效，拖拽中也不取消。
+ * Stage inline style: foot pad height is always in effect and will not be canceled during dragging.
  *
- * 拖拽的抓取偏移按根节点包围盒量（不含这段位移），一旦取消，视频会相对光标
- * 整体上跳 bottomPad、松手再落回；位移恒定，抓取点才始终落在光标下。
+ * The dragging and grabbing offset is based on the bounding box of the root node (excluding this displacement). Once
+ * canceled, the video will jump bottomPad relative to the cursor as a whole, let go and then fall back; the
+ * displacement is constant, and the grabbing point will always fall under the cursor.
  */
 export function petStageStyle(bottomPad: number): CSSProperties {
   return { transform: 'translateY(' + bottomPad + 'px)' };
 }
 
 /**
- * 根节点的定位内联样式。
+ * Compute inline positioning styles for the root node.
  *
- * 有 customPos 时按归一化中心换算成 px 定位；没有时返回空对象，交给角落与边距的 CSS 变量定位。
- * 此处只做换算，不夹取：落点保留「挂在边缘」的自由，可见下限在提交位置时由 {@link clampReachableBox} 保证。
+ * Convert customPos from a normalized center to pixels. Without it, return an empty object and let corner/margin CSS
+ * variables position the pet.
+ * Do not clamp here: edge overlap is allowed. {@link clampReachableBox} enforces minimum visibility when committing a
+ * position.
  *
- * @param customPos - 用户拖拽后的归一化中心；null 表示仍按角落定位。
- * @param viewport - 视口尺寸。
- * @param half - 盒的半宽半高。
- * @returns 可直接并入根节点 style 的定位字段；未定位时为空对象。
+ * @param customPos - Normalized center after dragging; null keeps corner positioning.
+ * @param viewport - Viewport dimensions.
+ * @param half - Half the box width and height.
+ * @returns Fields to merge into the root style, or an empty object without a custom position.
  */
 export function petRootStyle(customPos: Center | null, viewport: Viewport, half: HalfSize): CSSProperties {
   if (!customPos) return {};
   return {
     left: customPos.rx * viewport.width - half.w + 'px',
     top: customPos.ry * viewport.height - half.h + 'px',
-    // 角落定位按 data-corner 写 left/right 与 top/bottom；另一侧不归零，两套定位会同时生效、位置跳回角落。
+    // For corner positioning, press data-corner to write left/right and top/bottom; the other side does not return to zero, and the two sets of positioning will take effect at the same time, and the position will jump back to the corner.
     right: 'auto',
     bottom: 'auto',
   };
 }
 
-/** 命中区样式：把 640×360 画布上的命中框换算成相对宠物盒的百分比。 */
+/** Hit area style: Convert the hit box on the 640×360 canvas into a percentage relative to the pet box. */
 export const PET_HIT_STYLE: CSSProperties = {
   left: (HIT_BOX.x0 / 640) * 100 + '%',
   top: (HIT_BOX.y0 / 360) * 100 + '%',

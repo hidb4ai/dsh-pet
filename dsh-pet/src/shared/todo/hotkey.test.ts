@@ -1,7 +1,7 @@
 /**
- * 待办面板的悬停快捷键（src/shared/todo/hotkey.ts）：只认裸按的 D。
+ * The hover shortcut key (src/shared/todo/hotkey.ts) of the to-do panel: only the naked pressed D is recognized.
  *
- * 按键的通用规则由 shared/hotkey 的测试钉住，这里只验「哪个键」这一条。
+ * The general rules of key pressing are verified by shared/hotkey's test. Here only the "which key" is tested.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,32 +9,35 @@ import assert from 'node:assert/strict';
 import { TODO_HOTKEY_HINT, isTodoHotkey } from './hotkey.ts';
 import type { HotkeyEvent } from '../hotkey.ts';
 
-/** 一个最小的键盘事件替身。 */
+/** A minimal keyboard event double. */
 function ev(over: Partial<HotkeyEvent> = {}): HotkeyEvent {
   return { key: 'd', ctrlKey: false, metaKey: false, altKey: false, target: null, ...over };
 }
 
-describe('isTodoHotkey —— 裸按 D 才开关面板', () => {
-  test('d 与 D 都算', () => {
+describe('isTodoHotkey —— Press D to switch the panel', () => {
+  test('d and D both count', () => {
     assert.equal(isTodoHotkey(ev({ key: 'd' })), true);
     assert.equal(isTodoHotkey(ev({ key: 'D' })), true);
   });
 
-  test('对话的 T 不算', () => {
+  test('Dialogue T does not count', () => {
     assert.equal(isTodoHotkey(ev({ key: 't' })), false);
   });
 
-  test('带修饰键不算', () => {
+  test('Modifier keys are not counted', () => {
     assert.equal(isTodoHotkey(ev({ ctrlKey: true })), false);
     assert.equal(isTodoHotkey(ev({ altKey: true })), false);
   });
 
-  test('在输入框里打字不算', () => {
+  test('Typing in the input box does not count', () => {
     const input = { tagName: 'INPUT' } as unknown as EventTarget;
     assert.equal(isTodoHotkey(ev({ target: input })), false);
   });
 
-  test('菜单提示与按键说的是同一个键', () => {
-    assert.ok(TODO_HOTKEY_HINT.startsWith('D'), `提示应写明 D，实得 ${TODO_HOTKEY_HINT}`);
+  test('The menu prompt and button refer to the same key', () => {
+    assert.ok(
+      TODO_HOTKEY_HINT.startsWith('D'),
+      `The prompt should state D, but the actual value is ${TODO_HOTKEY_HINT}`,
+    );
   });
 });

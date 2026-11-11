@@ -1,7 +1,7 @@
 /**
- * 卸载清理：摘监听、停定时器、结束挂起等待，顺序不可调换。
+ * unmount cleanup: remove the monitor, stop the timer, end the pending wait, the order cannot be exchanged.
  *
- * 不做启动（装配末尾单独 startHelper），不持有资源句柄。
+ * No startup is performed (startHelper alone at the end of the assembly), and the resource handle is not held.
  * @module dsh-pet/src/host/plugin/lifecycle
  */
 import type { PetLookup } from './pet-lookup.ts';
@@ -11,9 +11,9 @@ import type { WorkStatusBridge } from './work-status-bridge.ts';
 import type { HostSetup } from './setup.ts';
 import type { HostContext } from './context.ts';
 
-/** 卸载清理的输入。 */
+/** unmount sanitized input. */
 export type LifecycleInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<PetLookup, 'lock'> &
   Pick<DesktopHelper, 'markDisposed'> &
@@ -23,19 +23,21 @@ export type LifecycleInput = {
   Pick<DesktopHelper, 'stopHelper'> &
   Pick<WorkStatusBridge, 'stopWorkStatusFlush'>;
 
-/** 注册卸载清理；返回的清理函数由 ctx.effect 收集。 */
+/** register unmount cleanup; the returned cleanup function is collected by ctx.effect. */
 export function registerLifecycle(deps: LifecycleInput): void {
   const { ctx, lock, markDisposed, playback, state, stopDownloadSlotTimer, stopHelper, stopWorkStatusFlush } = deps;
-  // 随插件生命周期清理：桌面 Helper 回收（异步下载完成后不再拉起）+ 结束所有挂起的等待
-  // （回执与 /state 长轮询不结束的话，插件重载会留下一批悬挂响应，各自要等到超时才收尾）。
+  // Cleaning up with the plugin lifecycle: desktop Helper recycling (no longer pulled up after the asynchronous
+  // download is completed) + ending all pending waits (if the receipt and / state long polling do not end, plugin
+  // reloading will leave a batch of hanging responses, and each will have to wait until timeout before cleanup).
   ctx.effect(() => () => {
     markDisposed();
-    // 工作状态的补写定时器：卸载后它到点已经没有意义（叶子连同长轮询一起收尾），清掉免得挂着
+    // The rewriting timer of working status: it has no meaning after unmounting (the leaves are cleanup together with long polling), clear it to avoid hanging
     stopWorkStatusFlush();
-    // 下载日志的「清槽」定时器：同上，卸载后它到点已经没有意义
+    // Download log "clear slot" timer: Same as above, it has no meaning after unmounting.
     stopDownloadSlotTimer();
-    // 占用锁：卸载时把锁全撤掉并写一次叶子——不写的话渲染端要等 TTL 到点才解除静止
-    // （写叶子必须在 state.cancelAll() 之前：那之后挂起的等待者已经收尾了）。
+    // Lock occupation: When unmounting, remove all locks and write the leaves once - otherwise, the renderer will wait
+    // until TTL reaches the point before releasing the static state (the leaves must be written before state.cancelAll
+    // (): after that, the pending waiters have been cleaned up).
     lock.releaseAll();
     playback.cancelAll();
     state.cancelAll();

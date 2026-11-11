@@ -1,8 +1,10 @@
 /**
- * 桌面 Helper 的组合根：把宠物列表、进程拉起、重启串行化三块拼成对外能力。
+ * The combined root of desktop Helper: the pet list, process pull-up, and restart serialization are combined into
+ * external capabilities.
  *
- * 只做装配，不含逻辑；三块的分工见 ./desktop/ 下各自模块头。
- * 必须始终成立：requestRestart 是唯一的重启入口，内部串行且不重叠。
+ * Only assembly, no logic; for the division of labor among the three blocks, please see the respective module headers
+ * under ./desktop/. Must always hold: requestRestart is the only restart entry point, is internally serial and does
+ * not overlap.
  * @module dsh-pet/src/host/plugin/desktop-helper
  */
 import { createDesktopPets } from './desktop/pets.ts';
@@ -13,9 +15,9 @@ import type { DesktopHelperDeps } from './desktop/types.ts';
 export type { DesktopHelperDeps };
 
 /**
- * 创建桌面 Helper 的全部能力。
- * @param deps - 装配期对象与桌面侧需要的动作函数。
- * @returns 启动、停止、请求重启与素材根解析。
+ * Full ability to create desktop Helper.
+ * @param deps - The action function required by the assembly phase object and the desktop side.
+ * @returns starts, stops, requests restart and asset root resolution.
  */
 export function createDesktopHelper(deps: DesktopHelperDeps) {
   const pets = createDesktopPets(deps);
@@ -31,5 +33,5 @@ export function createDesktopHelper(deps: DesktopHelperDeps) {
   };
 }
 
-/** 桌面 Helper 生命周期的产出（供下游工厂按需 Pick）。 */
+/** Desktop Helper lifecycle output (for downstream factories to demand Pick). */
 export type DesktopHelper = ReturnType<typeof createDesktopHelper>;

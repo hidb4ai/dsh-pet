@@ -1,8 +1,9 @@
 /**
- * 档位百分比入口与档位索引：宠物动画的驱动依据。
+ * Gear percentage entry point and state index: the driving basis for pet animation.
  *
- * 百分比口径按形态分派给各自的 handler（windows 取三窗口最大，money 与 points 按基准折算），
- * 这里只保留入口与服务商无关的档位切分。
+ * The percentage conventions are assigned to the respective handler according to the form (windows takes the largest
+ * of the three windows, money and points are converted according to the benchmark), here only the entry point is
+ * retained and the state segmentation has nothing to do with the service provider.
  *
  * @module dsh-pet/src/shared/balance/percent
  */
@@ -11,19 +12,21 @@ import { HANDLERS } from './handlers/index.ts';
 import type { BalanceView } from './types.ts';
 
 /**
- * 取已用百分比（0 = 未消耗，100 = 耗尽）；给不出百分比语义的形态返回 undefined，不替服务商猜一个。
+ * Get the used percentage (0 = not consumed, 100 = exhausted); return undefined for a form that cannot provide
+ * percentage semantics, and do not guess one for the service provider.
  *
- * 具体口径见各 handler：windows 取三窗口最大，money 按各币种自己的基准折算后叠加（不需要汇率），
- * points 按同一单位内的比值折算。
+ * See each handler for specific conventions: windows takes the largest of the three windows, money is converted
+ * according to each currency's own benchmark and then superimposed (no exchange rate is required), points is converted
+ * according to the ratio within the same unit.
  */
 export function balancePercent(v: BalanceView): number | undefined {
   return HANDLERS[v.shape].percent(v);
 }
 
 /**
- * 已用百分比对应的档位索引：20% 一档，仅恰好 100% 取最高档 5。
+ * The state index corresponding to the used percentage: 20% first state, only 100% is the highest state 5.
  *
- * 索引与成品配置里的余额档位动画一一对应。
+ * The index corresponds to the balance state animation in the resolved configuration one-to-one.
  */
 export function balanceEventIndex(p: number): number {
   if (p === 100) return 5;

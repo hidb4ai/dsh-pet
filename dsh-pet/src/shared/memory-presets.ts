@@ -1,14 +1,14 @@
-/** 两种设置界面共用的服务预设；模型只是起点，账户可用性由发现与连接检查确认。 */
+/** Service defaults shared by both setup interfaces; the model is only the starting point, account availability is confirmed by discovery and connection checks. */
 export interface ModelPreset {
   readonly id: string;
   readonly name: string;
   readonly baseUrl: string;
   readonly model: string;
-  /** 未提供向量预设的服务只能用于生成；自定义兼容服务允许手动填写。 */
+  /** Services that do not provide vector presets can only be used for generation; custom compatible services allow manual filling. */
   readonly embedding?: { readonly model: string; readonly dimension: number; readonly sendDimensions: boolean };
 }
 
-/** 只列出当前适配的 OpenAI 兼容接口；LiteLLM 网关由用户自行部署。 */
+/** Only the currently adapted OpenAI compatible interfaces are listed; LiteLLM gateways are deployed by users themselves. */
 export const MODEL_PRESETS: readonly ModelPreset[] = [
   { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' },
   {
@@ -71,12 +71,12 @@ export const MODEL_PRESETS: readonly ModelPreset[] = [
   },
 ];
 
-/** 比较完整地址，路径不同的同域服务也不能共享已保存密钥。 */
+/** Comparing the complete address, services in the same domain with different paths cannot share the saved key. */
 export function sameModelEndpoint(left: string, right: string): boolean {
   return !!left && left.replace(/\/+$/, '') === right.replace(/\/+$/, '');
 }
 
-/** 本机无认证服务仍需满足 SDK 的非空 Key 契约；远程服务绝不自动填占位值。 */
+/** The local non-authentication service still needs to satisfy the non-empty Key contract of SDK; the remote service will never automatically fill in the place value. */
 export function localModelKey(baseUrl: string): string {
   try {
     const url = new URL(baseUrl);

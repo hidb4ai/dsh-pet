@@ -1,4 +1,4 @@
-/** 本机记忆向导的中英文文案；其他语言沿用英文回退。 */
+/** Chinese and English text of the local memory wizard; other languages will fall back to English. */
 export const memorySetupEn = {
   memorySetupTitle: 'Local long-term memory',
   memorySetupHint:
@@ -78,7 +78,7 @@ export const memorySetupEn = {
   memorySetupStage_cancelled: 'Preparation cancelled; existing data is retained.',
 };
 
-/** 中文与英文保持相同键集，阶段来自真实服务状态。 */
+/** Chinese and English keep the same key set, and the stages are from the real service state. */
 export const memorySetupZh: Record<keyof typeof memorySetupEn, string> = {
   memorySetupTitle: '本机长期记忆',
   memorySetupHint: '在 DSH 中配置 PowerContext。已有远程服务仍可在模型设置中连接。',

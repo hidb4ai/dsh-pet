@@ -1,34 +1,37 @@
 'use strict';
 /**
- * userData 目录决策：原目录不可写时退回到 $DSH_HOME 下的自有 profile。
+ * userData directory decision: fall back to its own profile under $DSH_HOME when the original directory is not
+ * writable.
  *
- * 只算路径与可写性，不碰 Electron；可写性必须实际写文件验证——
- * Windows 上 fs.access 只反映只读属性、不校验 ACL，受限令牌下会假阳性。
+ * Only the path and writability are calculated, and Electron is not touched; the writability must be verified by
+ * actually writing the file - fs.access on Windows only reflects the read-only attribute and does not verify ACL,
+ * which will cause false positives under restricted tokens.
  */
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-/** 可写性探测用的临时文件名；写完立即删除。 */
+/** Temporary file name used for writability detection; delete immediately after writing. */
 const PROBE_NAME = '.dsh-pet-write-probe';
 
 /**
- * DSH 主目录：DSH_HOME 优先，未设回落到 ~/.dsh（与宿主 dshHomeDir 同口径）。
+ * DSH home directory: DSH_HOME takes priority, no fallback is set to ~/. dsh (same conventions as host dshHomeDir).
  *
- * @param {NodeJS.ProcessEnv} [env] - 环境变量，缺省 process.env。
- * @param {string} [home] - 用户主目录，缺省 os.homedir()。
- * @returns {string} 绝对路径。
+ * @param { NodeJS.ProcessEnv } [ env ] - environment variable, default process.env.
+ * @param { string } [ home ] - User home directory, default os.homedir().
+ * @returns { string } absolute path.
  */
 function dshHomeDir(env = process.env, home = os.homedir()) {
   return env.DSH_HOME || path.join(home, '.dsh');
 }
 
 /**
- * 尝试把目录准备成可写状态：建目录、写探测文件、再删除。
+ * Try to prepare the directory into a writable state: create the directory, write the detection file, and then delete
+ * it.
  *
- * @param {string} dir - 目标目录。
- * @param {object} fileSystem - fs 兼容对象。
- * @returns {{ ok: boolean, error: Error | null }} 失败时带原始错误。
+ * @param { string } dir - Target directory.
+ * @param { object } fileSystem - fs compatible objects.
+ * @returns {{ ok : boolean , error : Error | null }} fails with the original error.
  */
 function tryPrepareDir(dir, fileSystem) {
   try {
@@ -43,25 +46,28 @@ function tryPrepareDir(dir, fileSystem) {
 }
 
 /**
- * 目录是否真的可写。
+ * Is the directory really writable?
  *
- * @param {string} dir - 目标目录。
- * @param {object} [deps] - `{ fs }`：测试注入的 fs 兼容对象。
- * @returns {boolean} 三步都成功才为 true。
+ * @param { string } dir - Target directory.
+ * @param { object } [ deps ] - `{ fs }` : Test injected fs compatible object.
+ * @returns { boolean } Only when all three steps are successful will it be true.
  */
 function isWritableDir(dir, deps = {}) {
   return tryPrepareDir(dir, deps.fs || fs).ok;
 }
 
 /**
- * 决定 helper 最终使用的 userData 目录：原目录可写就用原目录，否则用 DSH 目录下的 profile。
+ * Determine the userData directory ultimately used by helper: If the original directory is writable, use the original
+ * directory, otherwise use profile under the DSH directory.
  *
- * @param {object} input - 决策输入。
- * @param {string} input.currentDir - app.getPath('userData') 的当前值。
- * @param {string} input.dshHome - DSH 主目录（见 {@link dshHomeDir}）。
- * @param {boolean} input.appMode - 是否独立应用模式；与 DSH helper 分开 profile，避免互踢。
- * @param {object} [input.fs] - 测试注入的 fs 兼容对象。
- * @returns {{ dir: string, fallback: boolean, error: Error | null }} 最终目录、是否回退、回退失败原因。
+ * @param { object } input - Decision input.
+ * @param { string } input.currentDir - The current value of app.getPath (' userData ').
+ * @param { string } input.dshHome - DSH home directory (see {@link dshHomeDir} ).
+ * @param { boolean } input.appMode - whether to use standalone mode; separate profile from DSH helper to avoid
+ * kicking each other.
+ * @param { object } [ input.fs ] - Tests the injected fs compatible object.
+ * @returns {{ dir : string , fallback : boolean , error : Error | null }} Final directory, whether to roll back, and
+ * why the rollback failed.
  */
 function resolveUserDataDir(input) {
   const fileSystem = input.fs || fs;

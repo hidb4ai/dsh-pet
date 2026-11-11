@@ -1,10 +1,12 @@
 /**
- * 写回计划（diffPackWrites）的契约测试。
+ * Contract test for writeback plan (diffPackWrites).
  *
- * 三条契约：
- *   1. 只把「真的改了」的种类层列入计划，没改的一个请求都不发；
- *   2. main 永不进计划——它连同全局字段每次保存都整包写 PUT /config；
- *   3. 计划里带的是该种类的**全部**实例，漏一只就等于把它删掉。
+ * Three contracts:
+ * 1. Only include the category layers that have been "really changed" into the plan, and do not send a single request
+ * for those that have not been changed;
+ * 2. main will never enter the plan - it, together with the global fields, will write the entire package PUT /config
+ * every time it is saved;
+ * 3. The plan contains **all** instances of this type. Missing one is equivalent to deleting it.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +15,7 @@ import { diffPackWrites } from './pack-writes.ts';
 import type { ConfigEntry } from './read.ts';
 import type { Pet } from '../../../shared/types.ts';
 
-/** 一只字段齐全的实例。 */
+/** An instance with complete fields. */
 const pet = (id: string, over: Partial<Pet> = {}): Pet => ({
   id,
   name: id,
@@ -27,19 +29,19 @@ const pet = (id: string, over: Partial<Pet> = {}): Pet => ({
   ...over,
 });
 
-/** 加载快照：main 一只 + glm 一只。 */
+/** Loading snapshot: main one + glm one. */
 const loaded = (): ConfigEntry[] => [
   { key: 'main', kind: 'main', pets: [pet('m1', { assetRoot: 'main' })] },
   { key: 'glm', kind: 'pack', pets: [pet('g1', { assetRoot: 'glm' })] },
 ];
 
-describe('diffPackWrites —— 编辑列表 → 要写回的种类层', () => {
-  test('没有改动：计划为空，一个请求都不发', () => {
+describe('diffPackWrites - Edit list → Category layer to be written back', () => {
+  test('No changes: The plan is empty and no request is sent.', () => {
     const current = loaded().flatMap((entry) => entry.pets);
     assert.deepEqual(diffPackWrites(loaded(), current), []);
   });
 
-  test('改了某个种类的一个字段：只列该种类', () => {
+  test('A field of a certain category was changed: only this category is listed', () => {
     const current = [pet('m1', { assetRoot: 'main' }), pet('g1', { assetRoot: 'glm', size: 360 })];
     const plan = diffPackWrites(loaded(), current);
     assert.equal(plan.length, 1);
@@ -47,12 +49,12 @@ describe('diffPackWrites —— 编辑列表 → 要写回的种类层', () => {
     assert.equal(plan[0].pets[0].size, 360);
   });
 
-  test('main 的改动不进计划（走 PUT /config）', () => {
+  test('The change of main does not enter the plan (go to PUT /config)', () => {
     const current = [pet('m1', { assetRoot: 'main', size: 500 }), pet('g1', { assetRoot: 'glm' })];
     assert.deepEqual(diffPackWrites(loaded(), current), []);
   });
 
-  test('新增一只：计划里带该种类的全部实例', () => {
+  test('Add a new one: all instances of this type are included in the plan', () => {
     const current = [
       pet('m1', { assetRoot: 'main' }),
       pet('g1', { assetRoot: 'glm' }),
@@ -62,18 +64,18 @@ describe('diffPackWrites —— 编辑列表 → 要写回的种类层', () => {
     assert.deepEqual(
       plan[0].pets.map((item) => item.id),
       ['g1', 'g2'],
-      '整段替换语义：漏传的实例会被删掉',
+      'Entire paragraph replacement semantics: missing instances will be deleted',
     );
   });
 
-  test('只改 sizePercent 也算改动（指纹必须覆盖它，否则改百分比会静默不落盘）', () => {
+  test('Only changing sizePercent is considered a change (the fingerprint must cover it, otherwise the percentage change will be silent and will not persist to disk)', () => {
     const current = [pet('m1', { assetRoot: 'main' }), pet('g1', { assetRoot: 'glm', sizePercent: 40 })];
     const plan = diffPackWrites(loaded(), current);
     assert.equal(plan.length, 1);
     assert.equal(plan[0].pets[0].sizePercent, 40);
   });
 
-  test('只是调换实例顺序也算改动', () => {
+  test('Just changing the order of instances is considered a change.', () => {
     const before = loaded();
     before[1].pets.push(pet('g2', { assetRoot: 'glm' }));
     const current = [

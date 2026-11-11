@@ -1,9 +1,11 @@
 /**
- * 容器与设置页共享桥（src/client/settings/bridge.ts）的契约测试。
+ * Contract test between container and settings page sharing bridge (src/client/settings/bridge.ts).
  *
- * 两条契约：
- *   1. 缺省即安全：设置页可能在容器装配前就保存，`reload()` 必须是可调用的空函数，`current` 必须是空数组；
- *   2. 双方拿到的是同一个对象：容器替换 `reload` / 写入 `current` 后，设置页读到的必须是新值（单例，不是快照）。
+ * Two contracts:
+ * 1. The default is safe: the settings page may be saved before the container is assembled, `reload()` must be a
+ * callable empty function, and `current` must be an empty array;
+ * 2. Both parties get the same object: after the container replaces `reload` / writes `current` , the settings page
+ * must read the new value (single instance, not snapshot).
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +13,7 @@ import assert from 'node:assert/strict';
 import { petBridge } from './bridge.ts';
 import type { Pet } from '../../shared/types.ts';
 
-/** 每个用例都从缺省形状开始，并把桥还原，避免用例之间互相污染。 */
+/** Each use case starts from the default shape and restores the bridge to avoid mutual contamination between use cases. */
 function withBridge(run: () => void): void {
   const saved = { current: petBridge.current, reload: petBridge.reload, template: petBridge.template };
   petBridge.current = [];
@@ -26,8 +28,8 @@ function withBridge(run: () => void): void {
   }
 }
 
-describe('petBridge —— 容器与设置页的共享桥', () => {
-  test('缺省形状：空列表、未定义模板、可调用的空 reload', () => {
+describe('petBridge - Shared bridge between containers and settings pages', () => {
+  test('Default shape: empty list, undefined template, callable empty reload', () => {
     withBridge(() => {
       assert.deepEqual(petBridge.current, []);
       assert.equal(petBridge.template, undefined);
@@ -36,11 +38,11 @@ describe('petBridge —— 容器与设置页的共享桥', () => {
     });
   });
 
-  test('共享同一对象：容器写入后设置页立刻读到新值', () => {
+  test('Sharing the same object: the settings page reads the new value immediately after the container is written.', () => {
     withBridge(() => {
       const seen: Array<Record<string, Record<string, unknown>> | undefined> = [];
       petBridge.reload = (merged) => seen.push(merged);
-      // 只关心 id：容器写入的宠物对象其余字段与本用例无关。
+      // Only concerned with id: the remaining fields of the pet object written by the container are irrelevant to this use case.
       const pet = { id: 'pet-1' } as unknown as Pet;
       petBridge.current = [pet];
       petBridge.template = pet;
@@ -48,7 +50,11 @@ describe('petBridge —— 容器与设置页的共享桥', () => {
       assert.equal(petBridge.current.length, 1);
       assert.equal(petBridge.template?.id, 'pet-1');
       petBridge.reload({ main: { pets: [] } });
-      assert.deepEqual(seen, [{ main: { pets: [] } }], '设置页保存后必须把成品聚合交给容器');
+      assert.deepEqual(
+        seen,
+        [{ main: { pets: [] } }],
+        'After saving the settings page, the finished aggregate must be handed over to the container.',
+      );
     });
   });
 });

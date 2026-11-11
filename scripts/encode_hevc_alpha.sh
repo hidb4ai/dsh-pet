@@ -1,29 +1,29 @@
 #!/bin/zsh
 # ============================================================================
-# HEVC-with-Alpha 批量编码（sunkeycn 方案，macOS 原生 AVFoundation）
+# HEVC-with-Alpha batch encoding (sunkeycn scheme, macOS native AVFoundation)
 #
-# 原理：ffmpeg 只负责把 VP9-alpha webm 解码成原始 BGRA 帧（stdin 管道），
-#       真正的 HEVC-with-Alpha 编码交给 swift 程序（AVAssetWriter +
-#       AVVideoCodecType.hevcWithAlpha）——苹果原生 API，产物由 Safari 原生
-#       验证支持（issue 贡献者已在 Safari 实测）。
+# Principle: ffmpeg is only responsible for decoding VP9-alpha webm into the original BGRA frame (stdin pipeline),
+# The real HEVC-with-Alpha encoding is handed over to the swift program (AVAssetWriter +
+# AVVideoCodecType.hevcWithAlpha) - Apple's native API, the product is native to Safari
+# Verification support (issue contributor has tested on Safari).
 #
-# 用法：
-#   ./encode_hevc_alpha.sh [素材目录] [输出目录]
-#   默认素材 = .（兼容流水线 clone 主仓库后的 assets/webm 或 assets/thumb）
-#   默认输出 = ./dist
+# Usage:
+# ./encode_hevc_alpha.sh [asset directory] [output directory]
+# Default asset = . (compatible with assets/webm or assets/thumb after the main warehouse of the pipeline clone)
+# Default output = ./ dist
 #
-# 依赖（macOS runner）：
-#   - ffmpeg（解码 webm：本脚本优先用 $FFMPEG_BIN，其次 PATH 中的 ffmpeg）
-#   - xcrun + swiftc（系统自带，编译编码器）
-#   - hevc_alpha_encoder.swift（与本脚本同目录）
+# Dependency (macOS runner):
+# - ffmpeg (Decoding webm: This script uses $FFMPEG_BIN first, followed by ffmpeg in PATH)
+# - xcrun + swiftc (built-in system, compiled encoder)
+# - hevc_alpha_encoder.swift (same directory as this script)
 #
-# 断点续跑：输出 mov 比源 webm 新则跳过（与主仓库素材链脚本同款模式）。
+# Resume running from breakpoint: If the output mov is newer than the source webm, it will be skipped (the same mode as the main warehouse asset chain script).
 # ============================================================================
 
 set -euo pipefail
 
-# ---- 参数：素材目录 / 输出目录 ----
-# 兼容两种素材布局：直接给目录，或相对 main-repo/（流水线 clone 主仓库后）
+# ---- Parameters: asset directory / output directory ----
+# Compatible with two asset layouts: directly to the directory, or relative to main-repo / (after the assembly line clone main warehouse)
 if [[ -n "$1" ]]; then
   asset_dir=$1
 else
@@ -55,7 +55,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ---- ffmpeg 定位 ----
+# ---- ffmpeg positioning ----
 if [[ -n ${FFMPEG_BIN:-} ]]; then
   ffmpeg_bin=$FFMPEG_BIN
 elif command -v ffmpeg >/dev/null 2>&1; then
@@ -69,7 +69,7 @@ if [[ ! -x "$ffmpeg_bin" ]]; then
   exit 1
 fi
 
-# ---- 编译 Swift 编码器（macOS 原生 AVFoundation + VideoToolbox）----
+# ---- Compile Swift encoder (macOS native AVFoundation + VideoToolbox)----
 xcrun swiftc -O -suppress-warnings \
   -framework AVFoundation \
   -framework CoreVideo \
@@ -77,7 +77,7 @@ xcrun swiftc -O -suppress-warnings \
   "$encoder_src" \
   -o "$encoder_bin"
 
-# ---- 批量编码 ----
+# ---- Batch encoding ----
 mkdir -p "$out_dir"
 webm_files=("$asset_dir"/*.webm(N))
 if (( ${#webm_files} == 0 )); then
@@ -97,7 +97,7 @@ for source_file in "${webm_files[@]}"; do
   temp_output="$out_dir/${source_file:t:r}.tmp.mov"
   rm -f "$temp_output"
   print "[$(( converted + skipped + 1))/${#webm_files}] ${source_file:t}"
-  # ffmpeg：libvpx-vp9 解码（保留 alpha）→ 原始 BGRA 帧 → swift 编码器
+  # ffmpeg: libvpx-vp9 decoding (retaining alpha) → original BGRA frame → swift encoder
   "$ffmpeg_bin" \
     -hide_banner \
     -loglevel error \

@@ -1,19 +1,20 @@
 /**
- * 对话图片的挑选与本地预览：判断是不是图、读成 data URL 给缩略图。
- * 不压缩、不编码、不发网络——真正送图的那一步在接入时另加，预算逻辑也会落在这里。
+ * Selection and local preview of conversation pictures: Determine whether it is a picture and read data URL as a
+ * thumbnail. No compression, no encoding, no sending over the Internet - the step of actually sending the image is
+ * added when accessing, and the budget logic will also fall here.
  * @module dsh-pet/src/shared/chat/image-pick
  */
 
-/** 与宿主附件服务白名单一致的图片类型。 */
+/** Image type consistent with host attachment service whitelist. */
 export const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
 
-/** 图片媒体类型。 */
+/** Image media type. */
 export type PetImageMediaType = (typeof IMAGE_TYPES)[number];
 
-/** `<input type=file>` 的 accept 值，与 {@link IMAGE_TYPES} 保持同一份事实。 */
+/** The accept value of `<input type=file>` maintains the same fact as {@link IMAGE_TYPES}. */
 export const IMAGE_ACCEPT = IMAGE_TYPES.join(',');
 
-/** 扩展名兜底：拖拽或部分系统来源不给 `file.type`。 */
+/** Extension fallback: Drag and drop or some system sources do not give `file.type`. */
 const IMAGE_EXT: Record<string, PetImageMediaType> = {
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -23,10 +24,11 @@ const IMAGE_EXT: Record<string, PetImageMediaType> = {
 };
 
 /**
- * 文件的图片媒体类型：声明类型在白名单内就用它，否则按扩展名兜底。
+ * Image media type of the file: Use it if the declared type is in the whitelist, otherwise fallback according to the
+ * extension.
  *
- * @param file - 用户选中、拖入或粘贴的文件。
- * @returns 白名单内的类型；认不出返回 undefined。
+ * @param file - Files selected, dragged or pasted by the user.
+ * @returns is a type in the whitelist; if not recognized, undefined is returned.
  */
 export function imageMediaTypeOf(file: File): PetImageMediaType | undefined {
   const declared = String(file.type || '').toLowerCase();
@@ -39,23 +41,23 @@ export function imageMediaTypeOf(file: File): PetImageMediaType | undefined {
 }
 
 /**
- * 这个文件是不是可发送的图片。
+ * Is this file a sendable image?
  *
- * @param file - 用户选中或拖入的文件。
- * @returns 声明类型在白名单内，或扩展名命中兜底表时为 true。
+ * @param file - Files selected or dragged in by the user.
+ * The declared type @returns is in the whitelist, or true when the extension hits the fallback table.
  */
 export function isImageFile(file: File): boolean {
   return imageMediaTypeOf(file) !== undefined;
 }
 
-/** 这次拖拽是否带着文件（决定 dragover 要不要 preventDefault）。 */
+/** Whether the drag and drop will carry the file this time (deciding whether dragover or preventDefault). */
 export function dragHasFiles(e: { readonly dataTransfer: DataTransfer | null }): boolean {
   const types = e.dataTransfer?.types;
   if (!types) return false;
   return Array.from(types).includes('Files');
 }
 
-/** 拖入的文件里第一张可发送的图片；没有返回 undefined。 */
+/** The first sendable picture in the dragged file; undefined is not returned. */
 export function firstImageFile(dataTransfer: DataTransfer | null): File | undefined {
   const files = dataTransfer?.files;
   if (!files) return undefined;
@@ -65,20 +67,22 @@ export function firstImageFile(dataTransfer: DataTransfer | null): File | undefi
   return undefined;
 }
 
-/** 剪贴板数据的结构子集：只需要 files 与 items，测试可以喂假对象。 */
+/** Structural subset of clipboard data: only files and items are required, and the test can feed fake objects. */
 export interface ClipboardLike {
   readonly files?: ArrayLike<File> | null;
   readonly items?: ArrayLike<{ readonly kind: string; getAsFile(): File | null }> | null;
 }
 
 /**
- * 剪贴板里第一张可发送的图片。
+ * The first sendable picture in the clipboard.
  *
- * 先看 `files`（截图工具、资源管理器复制文件都会填），再回退 `items`：
- * 个别来源只把图放进 items（`kind === 'file'`），只读 files 会表现为"粘了没反应"且不报错。
+ * First look at `files` (the screenshot tool and resource manager will fill in the file when copying it), and then go
+ * back to `items` : Some sources only put the image into items (`kind === 'file'`), and read-only files will appear as
+ * "sticky and unresponsive" without reporting an error.
  *
- * @param data - 粘贴事件的 clipboardData 或其结构子集。
- * @returns 第一张图片；纯文本粘贴返回 undefined（调用方据此不拦截默认行为）。
+ * @param data - clipboardData or a subset of its structure that pastes events.
+ * @returns first image; plain text paste returns undefined (the caller does not intercept the default behavior
+ * accordingly).
  */
 export function firstImageFromClipboard(data: ClipboardLike | null | undefined): File | undefined {
   if (!data) return undefined;

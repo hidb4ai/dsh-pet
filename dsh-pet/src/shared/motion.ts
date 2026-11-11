@@ -1,15 +1,16 @@
 /**
- * 移动几何、角落定位与窗口落位：纯计算，无 DOM / ref，可独立单测。
- * 移动规划归一化为视口比例，px 换算由调用方完成；角落定位返回宠物根节点左上角的像素坐标。
- * 不负责 rAF 驱动与样式写入，那些在各端的薄壳里。
- * 依赖共享层的选择函数与显示器几何，保证两端算出同一条路线。
+ * Moving geometry, corner positioning and window positioning: pure calculation, no DOM / ref, can be measured
+ * independently. Movement planning is normalized to the viewport ratio, and px conversion is completed by caller;
+ * corner positioning returns the pixel coordinates of the upper left corner of the pet root node. Not responsible for
+ * the rAF driver and style writing, those in the thin shell at each end. Relying on the selection function of the
+ * shared layer and the display geometry ensures that both ends calculate the same route.
  * @module dsh-pet/src/shared/motion
  */
 import { randomBetween } from './pickers.ts';
 import { rectAtPoint, rectBottom, rectRight } from './displays.ts';
 import type { Corner, Rect } from './types.ts';
 
-/** 一次移动的几何参数（比例坐标）。 */
+/** Geometric parameters (proportional coordinates) of a movement. */
 export interface MovePlan {
   startRatio: number;
   startYRatio: number;
@@ -17,10 +18,15 @@ export interface MovePlan {
   totalRatio: number;
 }
 
-/** 计算一次移动的起点/终点比例坐标；目标越出边界（含边距）时返回 null。
- *  sideAllow = 左右透明边余量：边界按身体贴边而不是按整个视频盒贴边，宠物能走到屏幕边缘、身体不越界。
- *  areas 传入时（桌面多显示器）改判工作区并集：缝隙两侧都有屏即可骑缝走过，外接矩形的空洞走不进去；
- *  不传时按 W/H 单矩形判定，浏览器半侧行为不变。 */
+/**
+ * Calculate the proportional coordinates of the starting point/end point of a movement; when the target exceeds the
+ * boundary (including margins), null is returned.
+ * sideAllow = Left and right transparent edge margin: The border is based on the body edge instead of the entire video
+ * box edge. The pet can go to the edge of the screen without the body crossing the boundary. When areas is passed in
+ * (desktop with multiple monitors), the workspace union is changed: there are screens on both sides of the gap and you
+ * can walk through the gap, but the hole in the circumscribed rectangle cannot be walked in; when it is not passed, it
+ * is judged as W/H single rectangle, and the browser side behavior remains unchanged.
+ */
 export const planMove = (o: {
   cx: number;
   cy: number;
@@ -31,21 +37,21 @@ export const planMove = (o: {
   maxDist: number;
   margin: number;
   halfW: number;
-  /** 可选：身体相对视频盒左/右各留多少像素（默认 0 = 按视频盒贴边） */
+  /** Optional: How many pixels should be left on the left/right side of the body relative to the video box (default 0 = according to the video box welt) */
   sideAllow?: number;
-  /** 可选：显示器工作区列表（与 cx/cy 同坐标系）。给了就按并集判定落点可达性 */
+  /** Optional: Display workspace list (same coordinate system as cx/cy). If given, press Union to determine the reachability of the landing point. */
   areas?: Rect[];
 }): MovePlan | null => {
   const side = o.sideAllow ?? 0;
   const distance = randomBetween(o.minDist, o.maxDist);
   const target = o.cx + o.dir * distance;
   if (o.areas && o.areas.length > 0) {
-    // 身体左右缘各外扩 margin 后都得落在某块屏上（可以分属不同屏 = 允许骑缝行走）
+    // The left and right edges of the body must fall on a certain screen after expanding margin (can belong to different screens = walking on seams is allowed)
     const bodyHalf = o.halfW - side;
     if (!rectAtPoint(o.areas, target - bodyHalf - o.margin, o.cy)) return null;
     if (!rectAtPoint(o.areas, target + bodyHalf + o.margin, o.cy)) return null;
   } else {
-    // margin 语义 =「身体到屏幕边缘的安全距」：盒中心可到 margin + halfW - side（身体左缘 = margin）
+    // margin semantics = "Safe distance from the body to the edge of the screen": the center of the box can reach margin + halfW - side (left edge of the body = margin)
     const leftBound = o.margin + o.halfW - side;
     const rightBound = o.W - o.margin - o.halfW + side;
     if (target < leftBound || target > rightBound) return null;
@@ -59,9 +65,11 @@ export const planMove = (o: {
 };
 
 /**
- * 角落 + 边距 → 宠物根节点左上角像素坐标，与浏览器半侧 overlay 的 CSS 角落语义一致。
- * area 传入时角落取那块屏而不是视口外接矩形：不规则布局下外接矩形的角落可能不属于任何屏，
- * 配了该角落的宠物会开机即隐身，所以桌面端必须传主屏工作区。不传时按 W/H，overlay 行为不变。
+ * Corner + margin → pixel coordinate of the upper left corner of the pet root node, which is consistent with the CSS
+ * corner semantics of the browser side overlay. When area is passed in, the corner is taken from the screen instead of
+ * the viewport's external rectangle: in an irregular layout, the corner of the external rectangle may not belong to
+ * any screen. Pets equipped with this corner will be invisible when powered on, so the desktop must be transferred to
+ * the main screen workspace. If you press W/H when not transmitting, the behavior of overlay will remain unchanged.
  */
 export const anchorPixel = (o: {
   corner: Corner;
@@ -70,7 +78,7 @@ export const anchorPixel = (o: {
   size: number;
   W: number;
   H: number;
-  /** 可选：角落所属的工作区矩形（与调用方同坐标系）；缺省用 {0,0,W,H} */
+  /** Optional: the work area rectangle to which the corner belongs (same coordinate system as caller); the default is {0,0, W, H} */
   area?: Rect;
 }): { x: number; y: number } => {
   const height = (o.size * 9) / 16;
@@ -91,58 +99,64 @@ export const anchorPixel = (o: {
   }
 };
 
-/** 窗口落位结果：窗口左上角 + 本体相对窗口原点的偏移。 */
+/** Window placement result: upper left corner of the window + offset of the body relative to the origin of the window. */
 export interface WindowFit {
-  /** 窗口左上角：期望值被钳进工作区后的位置（与 area 同坐标系）。 */
+  /** The upper left corner of the window: the position of the desired value after being clamped into the work area (same coordinate system as area). */
   x: number;
   y: number;
-  /** 本体原点相对窗口原点的偏移：没被钳制时等于余量，被钳制时变化，越界时为负。 */
+  /** The offset of the origin of the body relative to the origin of the window: equal to the margin when not clamped, changes when clamped, and negative when out of bounds. */
   offsetX: number;
   offsetY: number;
 }
 
-/** 越界允许量：本体盒可以超出工作区的像素数，由命中区与可见下限算出。 */
+/** Overrun allowance: The number of pixels that the body box can exceed the working area, calculated from the hit area and the visible lower limit. */
 export interface ReachInset {
-  /** 向左越界的允许量（px）。 */
+  /** Allowable amount of left out-of-bounds (px). */
   left: number;
-  /** 向右越界的允许量（px）。 */
+  /** Allowable amount of out-of-bounds to the right (px). */
   right: number;
-  /** 向上越界的允许量（px）。 */
+  /** Allowable amount of upward out-of-bounds (px). */
   top: number;
-  /** 向下越界的允许量（px）。 */
+  /** Allowable amount of downward out-of-bounds (px). */
   bottom: number;
 }
 
-/** 单轴钳制：窗口比工作区还大（max < min）时贴住起点，与窗口管理器的行为一致。 */
+/** Single-axis clamping: When the window is larger than the work area (max < min), it sticks to the starting point, consistent with the behavior of the window manager. */
 const clampAxis = (want: number, min: number, max: number): number => Math.min(Math.max(want, min), Math.max(min, max));
 
 /**
- * 本体位置 → 窗口落位：窗口尺寸固定，本体在窗口内的偏移随之变化。
+ * Body position → Window placement: The window size is fixed, and the offset of the body within the window changes
+ * accordingly.
  *
  * @remarks
- * 钳窗口的平台允许的窗口位置不含工作区外，探不出去的那一截转成本体在窗口内的偏移，本体落脚点因此
- * 不受钳制影响；`area` 缺省表示该平台不钳窗口，此时偏移恒等于余量。越界那截由窗口裁掉，与网页端
- * 的可见下限同一条规则：宠物能挂出去，但命中区永远留一角可点。
- * @param o - 几何输入：本体位置、窗口与本体尺寸、期望余量、越界允许量、所在屏工作区。
- * @returns 窗口落位与本体偏移；调用方按 { x, y, width, height } 摆窗口，按偏移摆本体。
+ * The allowable window position of the platform for clamping the window does not include outside the work area, and
+ * the part that cannot be explored is converted into the offset of the body within the window, so the foothold of the
+ * body is not affected by clamping; `area` default means that the platform does not clamp the window, and the offset
+ * is always equal to the margin. The section that crosses the boundary is cut off by the window, which is the same
+ * rule as the visible lower limit on the web page: pets can be hung out, but a corner of the hit area is always left
+ * to be clicked.
+ * @param o - Geometry input: body position, window and body size, expected margin, out-of-bounds allowance, and screen
+ * work area.
+ * @returns The window position is offset from the main body; the caller presses { x , y , width , height } to move the
+ * window, and the caller presses the offset to move the main body.
  */
 export const fitWindowInArea = (o: {
-  /** 本体左上角的期望位置（与 area 同坐标系）。 */
+  /** The desired position of the upper left corner of the body (same coordinate system as area). */
   bodyX: number;
   bodyY: number;
-  /** 窗口尺寸（含余量；钳制不改尺寸）。 */
+  /** Window size (including margin; clamping does not change the size). */
   width: number;
   height: number;
-  /** 本体盒宽，决定本体能摆到哪。 */
+  /** The width of the main body box determines where the main body can be placed. */
   bodyWidth: number;
-  /** 本体盒高（含脚底透明垫，与窗口高度同基准）。 */
+  /** Main body box height (including transparent pads on the soles of the feet, which is the same as the height of the window). */
   bodyHeight: number;
-  /** 期望余量 = 窗口原点到本体原点。 */
+  /** Expected margin = window origin to body origin. */
   insetX: number;
   insetY: number;
-  /** 越界允许量；缺省 0，本体完全留在工作区内。 */
+  /** Out-of-bounds allowance; default 0, the body remains completely within the work area. */
   reach?: ReachInset;
-  /** 窗口所在屏的工作区；缺省表示该平台不钳窗口，窗口原样探出屏幕。 */
+  /** The working area of the screen where the window is located; the default means that the platform does not clamp the window and the window sticks out of the screen as it is. */
   area?: Rect;
 }): WindowFit => {
   const wantX = o.bodyX - o.insetX;
@@ -150,10 +164,10 @@ export const fitWindowInArea = (o: {
   if (!o.area) return { x: wantX, y: wantY, offsetX: o.insetX, offsetY: o.insetY };
   const area = o.area;
   const reach = o.reach ?? { left: 0, right: 0, top: 0, bottom: 0 };
-  // 本体能摆到哪：工作区再外扩 reach。越界那截由窗口裁掉，命中区仍留一角可点
+  // Where can the main body be placed: The work area will be expanded to reach. The section that crosses the boundary is cut off by the window, leaving a corner of the hit area that can be clicked.
   const bodyX = clampAxis(o.bodyX, area.x - reach.left, rectRight(area) - o.bodyWidth + reach.right);
   const bodyY = clampAxis(o.bodyY, area.y - reach.top, rectBottom(area) - o.bodyHeight + reach.bottom);
-  // 窗口只跟着本体走，但被系统钳在工作区内；差出来的那截就是本体在窗口内的偏移
+  // The window only follows the main body, but is clamped in the work area by the system; the difference is the offset of the main body within the window.
   const x = clampAxis(bodyX - o.insetX, area.x, rectRight(area) - o.width);
   const y = clampAxis(bodyY - o.insetY, area.y, rectBottom(area) - o.height);
   return { x, y, offsetX: bodyX - x, offsetY: bodyY - y };

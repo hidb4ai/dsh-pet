@@ -1,10 +1,12 @@
 /**
- * 确认弹窗（src/client/settings/dialog.ts）的契约测试。
+ * Contract test of confirmation pop-up window (src/client/settings/dialog.ts).
  *
- * 三条契约：
- *   1. 四种场景各有自己的文案与按钮组合：只剩一只时不给「确认」；同步与删除的确认色不同；
- *   2. 点遮罩、取消、「知道了」都只关闭，不触发动作；点确认才回调；
- *   3. 删除文案里带出当前宠物 id，损坏文案里带出真实写入路径（用户要照着去备份）。
+ * Three contracts:
+ * 1. Each of the four scenarios has its own text and button combination: no "confirm" will be given when there is only
+ * one left; the confirmation colors for synchronization and deletion are different;
+ * 2. Clicking Mask, Cancel, or "Got it" will only close it and will not trigger an action; click Confirm to callback;
+ * 3. The current pet id is brought out in the deletion copy, and the real writing path is brought out in the damage
+ * copy (the user must follow this to back up).
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,7 +37,7 @@ const texts = (tree: unknown): string[] =>
 const buttons = (tree: unknown): Node[] =>
   flatten(tree).filter((node) => node.tag === 'button' && node.props.type === 'button');
 
-/** 渲染一个场景，返回节点树与回调计数。 */
+/** Render a scene and return the node tree and callback count. */
 function render(dialog: Exclude<DialogState, null>, selId = 'pet-2'): { tree: unknown; calls: string[] } {
   const calls: string[] = [];
   const props: DialogProps = {
@@ -47,17 +49,17 @@ function render(dialog: Exclude<DialogState, null>, selId = 'pet-2'): { tree: un
   return { tree: Dialog(props), calls };
 }
 
-describe('SettingsDialog —— 确认弹窗', () => {
-  test('删除：带宠物 id，取消 + 危险色确认', () => {
+describe('SettingsDialog —— Confirmation pop-up window', () => {
+  test('Delete: bring pet id, cancel + dangerous color confirmation', () => {
     const { tree } = render({ kind: 'remove' }, 'pet-2');
-    assert.ok(texts(tree).includes('confirmRemove'), '文案走 confirmRemove（内含 {id} 占位）');
+    assert.ok(texts(tree).includes('confirmRemove'), 'The copywriting is confirmRemove (contains { id } placeholder)');
     assert.ok(texts(tree).includes('confirmTitle'));
     const all = buttons(tree);
     assert.equal(all.length, 2);
     assert.equal(all[1].props.className, 'dsh-pet-cfg__btn is-danger');
   });
 
-  test('只剩一只：只给「知道了」，没有确认按钮', () => {
+  test('Only one left: only "got it", no confirmation button', () => {
     const { tree } = render({ kind: 'lastOne' });
     const all = buttons(tree);
     assert.equal(all.length, 1);
@@ -65,29 +67,29 @@ describe('SettingsDialog —— 确认弹窗', () => {
     assert.ok(texts(tree).includes('atLeastOne'));
   });
 
-  test('某种类只剩一只：也只给「知道了」，文案带出种类名', () => {
+  test('There is only one left of a certain type: only "got it", the copy brings out the type name', () => {
     const { tree } = render({ kind: 'lastOfKind', entry: 'glm' });
     const all = buttons(tree);
-    assert.equal(all.length, 1, '没有可确认的动作');
+    assert.equal(all.length, 1, 'No confirmable action');
     assert.equal(all[0].props.children, 'ok');
-    assert.ok(texts(tree).includes('lastOfKind'), '文案走 lastOfKind（内含 {entry} 占位）');
+    assert.ok(texts(tree).includes('lastOfKind'), 'Copywriting is lastOfKind (contains { entry } placeholder)');
   });
 
-  test('同步：确认按钮是主色（不是危险色）', () => {
+  test('Synchronization: the confirmation button is the main color (not the danger color)', () => {
     const { tree } = render({ kind: 'sync' });
     const all = buttons(tree);
     assert.equal(all[1].props.className, 'dsh-pet-cfg__btn is-primary');
     assert.equal(all[1].props.children, 'sync');
   });
 
-  test('损坏：标题与正文都换成损坏那套，正文里带真实路径', () => {
+  test('Damaged: The title and text are replaced with the damaged ones, and the text contains the real path.', () => {
     const { tree } = render({ kind: 'corrupt', path: 'C:/x/main-config.jsonc' });
     assert.ok(texts(tree).includes('corruptTitle'));
-    assert.ok(texts(tree).includes('corruptBody'), '正文走 corruptBody（内含 {path} 占位）');
+    assert.ok(texts(tree).includes('corruptBody'), 'The main text is corruptBody (containing { path } placeholder)');
     assert.equal(buttons(tree)[1].props.children, 'corruptConfirm');
   });
 
-  test('取消、知道了、点遮罩都只关闭；确认才回调', () => {
+  test('Cancel, got it, and click mask are all closed; only callback is confirmed.', () => {
     const remove = render({ kind: 'remove' });
     (buttons(remove.tree)[0].props.onClick as () => void)();
     assert.deepEqual(remove.calls, ['dismiss']);
@@ -98,6 +100,10 @@ describe('SettingsDialog —— 确认弹窗', () => {
 
     const confirm = render({ kind: 'remove' });
     (buttons(confirm.tree)[1].props.onClick as () => void)();
-    assert.deepEqual(confirm.calls, ['confirm'], '确认按钮不得顺带关闭（由外壳决定）');
+    assert.deepEqual(
+      confirm.calls,
+      ['confirm'],
+      'Confirm button must not be closed incidentally (determined by housing)',
+    );
   });
 });

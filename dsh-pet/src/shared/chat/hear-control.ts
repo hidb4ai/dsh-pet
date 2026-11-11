@@ -1,9 +1,11 @@
 /**
- * 「按住说话」的控件：话筒按钮的四种状态、录音、识别结果落点。
+ * "Press and hold to talk" controls: four states of the microphone button, recording, and recognition result
+ * placement.
  *
- * 单独成模块是因为它有独立的失败模式与生命周期：麦克风被拒、采到静音、宿主没开识别、
- * 网络失败各不相同，且带着一个四态状态机与两个定时器——和「上传图片、截屏」没有共同变化原因。
- * 不建 DOM、不管弹窗开合、不发送；元素与提示行由调用方（chat/dom）交进来。
+ * It is a separate module because it has independent failure modes and lifecycles: microphone rejected, muted, host
+ * not recognized, network failure are different, and it has a four-state state machine and two timers - there is no
+ * common change reason with "uploading pictures, taking screenshots". DOM is not created, the pop-up window is opened
+ * and closed, and is not sent; the elements and prompt lines are handed in by the caller (chat/dom).
  * @module dsh-pet/src/shared/chat/hear-control
  */
 import {
@@ -18,73 +20,73 @@ import {
   type HearRecorder,
 } from '../hear.ts';
 
-/** 录音阶段的四态：`starting` 是等麦克风授权的那一小段，`transcribing` 是等识别结果。 */
+/** Four states in the recording stage: `starting` is the short section waiting for microphone authorization, and `transcribing` is waiting for the recognition result. */
 type HearState = 'idle' | 'starting' | 'recording' | 'transcribing';
 
-/** 提示行的三种用法：常驻显示、收起、显示后自动收起。 */
+/** There are three ways to use the prompt line: permanent display, folding, and automatic folding after display. */
 export interface HearHint {
-  /** 常驻显示，直到 hide。 */
+  /** Displayed permanently until hide. */
   show: (text: string) => void;
   hide: () => void;
-  /** 显示并在一小段时间后自动收起。 */
+  /** Display and automatically close after a short period of time. */
   flash: (text: string) => void;
 }
 
-/** 控件需要的元素与回调。 */
+/** The control requires an element with a callback. */
 export interface HearControlOptions {
-  /** 话筒按钮：状态画在它的 `data-hear` 上，pointer 事件也由本模块绑定。 */
+  /** Microphone button: The status is drawn on its `data-hear`, and the pointer event is also bound by this module. */
   readonly micBtn: HTMLButtonElement;
-  /** 识别结果的落点：文字插在光标处。 */
+  /** The landing point of the recognition result: the text is inserted at the cursor. */
   readonly input: HTMLTextAreaElement;
-  /** 进度与失败提示都走这一行。 */
+  /** Both progress and failure prompts go to this line. */
   readonly hint: HearHint;
-  /** 插入文字后重算输入框尺寸。 */
+  /** Recalculate the input box size after inserting text. */
   readonly resizeInput: () => void;
-  /** 识别地址；空串表示这个入口没接识别。 */
+  /** Identification address; an empty string indicates that this entry point is not recognized. */
   readonly hearUrl: string;
 }
 
-/** 控件对外只暴露四个动作。 */
+/** The control only exposes four actions to the outside world. */
 export interface HearControl {
-  /** 开录；录不了时给一句原因，已在录时什么都不做。 */
+  /** Start recording; if recording fails, give a reason and do nothing while recording. */
   start: () => void;
-  /** 收尾；没在录时什么都不做。 */
+  /** cleanup; do nothing when not recording. */
   stop: () => void;
-  /** 此刻是否真的在采集：快捷键要按它决定这一下是开还是关。 */
+  /** Whether it is really collecting at this moment: press the shortcut key to decide whether it is on or off. */
   isHearing: () => boolean;
-  /** 停掉正在进行的录音并清计时器；关闭弹窗时调用。 */
+  /** Stop the ongoing recording and clear the timer; called when closing the pop-up window. */
   dispose: () => void;
 }
 
 /**
- * 造一个按住说话控件。
+ * Create a hold-to-talk control.
  *
- * @param opts - 话筒按钮、输入框、提示行、尺寸重算与识别地址。
- * @returns 开始、收尾与释放三个动作。
+ * @param opts - microphone button, input box, prompt line, size recalculation and identification address.
+ * @returns has three actions: start, cleanup and release.
  */
 export function createHearControl(opts: HearControlOptions): HearControl {
   const { micBtn, input, hint, resizeInput, hearUrl } = opts;
   let hearState: HearState = 'idle';
   let recorder: HearRecorder | null = null;
   let hearTimer = 0;
-  /** 还没拿到麦克风就松手了：等 startRecording 一返回立刻收尾，避免麦克风一直开着。 */
+  /** Let go before getting the microphone: cleanup immediately after startRecording returns to avoid leaving the microphone on. */
   let wasReleasedEarly = false;
 
-  /** 按钮外观：录音阶段画红，识别阶段禁用（避免连点开两次）。 */
+  /** Button appearance: painted red during the recording phase and disabled during the recognition phase (to avoid clicking it twice). */
   const paint = (): void => {
     if (hearState === 'starting' || hearState === 'recording') micBtn.dataset.hear = 'recording';
     else delete micBtn.dataset.hear;
     micBtn.disabled = hearState === 'transcribing';
   };
 
-  /** 现在录不了的原因；能录时给空串。 */
+  /** The reason why it cannot be recorded now; when it can be recorded, it will give an empty string. */
   const blockedReason = (): string => {
     if (!canRecord()) return '当前地址不支持录音：用 https 或 localhost 打开才有麦克风';
     if (hearUrl === '') return '这个入口没有接上识别地址';
     return '';
   };
 
-  /** 把识别结果接在光标处（替换当前选区），并把焦点交回输入框。 */
+  /** Connect the recognition result at the cursor (replace the current selection), and return the focus to the input box. */
   const insertText = (text: string): void => {
     const from = input.selectionStart ?? input.value.length;
     const to = input.selectionEnd ?? from;
@@ -92,11 +94,11 @@ export function createHearControl(opts: HearControlOptions): HearControl {
     const caret = from + text.length;
     input.setSelectionRange(caret, caret);
     resizeInput();
-    // 桌面端靠 focusin 向主进程补一次系统键盘焦点（X11 上 DOM 焦点不等于键盘焦点）
+    // The desktop side relies on focusin to replenish the system keyboard focus to the main process (DOM focus on X11 is not equal to the keyboard focus)
     input.focus();
   };
 
-  /** 失败原因翻成人话；宿主给的 message 有就附上，方便对着日志排查。 */
+  /** Translate the reason for failure into adult language; attach the message given by the host to facilitate troubleshooting in the log. */
   const describeFailure = (outcome: Extract<HearOutcome, { ok: false }>): string => {
     if (outcome.reason === 'unsupported') return '这个宿主没开语音识别';
     if (outcome.reason === 'bad-request') return '音频没通过宿主校验';
@@ -104,14 +106,15 @@ export function createHearControl(opts: HearControlOptions): HearControl {
     return '识别失败：' + (outcome.message || '未知原因');
   };
 
-  /** 收尾：停采集 → 判误触 → 判静音 → 送宿主 → 文字落进输入框。失败只提示，不动已输入的文字。 */
+  /** cleanup: stop collection → judge as false touch → judge as mute → send host → text falls into the input box. If it fails, it will only prompt and the entered text will not be affected. */
   const stop = async (): Promise<void> => {
     const current = recorder;
     if (!current) return;
     recorder = null;
     window.clearInterval(hearTimer);
-    // 误触（按一下就松）：静默丢弃。弹窗留着、提示不留——录到几十毫秒跟麦克风好坏无关，
-    // 报「没听到声音」只会把人引到错误的方向。
+    // Accidental touch (press and release): silently discard. Keep the pop-ups and not the prompts - recording for
+    // tens of milliseconds has nothing to do with the quality of the microphone. Reporting "no sound heard" will only
+    // lead people in the wrong direction.
     if (current.elapsedMs() < MIN_RECORD_MS) {
       current.cancel();
       hearState = 'idle';
@@ -129,11 +132,11 @@ export function createHearControl(opts: HearControlOptions): HearControl {
         return;
       }
       if (clip.peak < SILENCE_PEAK) {
-        // 麦克风开着却没信号（设备静音 / 耳机没戴上）：不白送一次识别
+        // The microphone is on but there is no signal (the device is muted/the headphones are not put on): Don’t give up the recognition once in vain.
         hint.flash('没听到声音，检查一下麦克风');
         return;
       }
-      if (!input.isConnected) return; // 等结果的这会儿弹窗被关了
+      if (!input.isConnected) return; // The pop-up window has been closed while waiting for the result.
       const outcome = await hearAudio(hearUrl, toBase64(clip.wave));
       if (!input.isConnected) return;
       if (!outcome.ok) {
@@ -155,7 +158,7 @@ export function createHearControl(opts: HearControlOptions): HearControl {
     }
   };
 
-  /** 开录：先要麦克风，拿到了才开始计时。 */
+  /** Start recording: Ask for the microphone first, and then start timing when you get it. */
   const start = async (): Promise<void> => {
     const blocked = blockedReason();
     if (blocked !== '') {
@@ -163,8 +166,9 @@ export function createHearControl(opts: HearControlOptions): HearControl {
       return;
     }
     if (hearState !== 'idle') return;
-    // 焦点交还出去：按住说话不看焦点，可输入框一旦吃着键盘，落进来的 v 就会变成字符。
-    // 识别完由 insertText 重新聚焦，回车发送照旧。
+    // Return the focus: press and hold to speak without looking at the focus. Once the input box touches the keyboard,
+    // the v that falls in will become character. After recognition, insertText will refocus and press Enter to send as
+    // usual.
     if (document.activeElement === input) input.blur();
     hearState = 'starting';
     wasReleasedEarly = false;
@@ -188,7 +192,7 @@ export function createHearControl(opts: HearControlOptions): HearControl {
       const rec = recorder;
       if (!rec) return;
       if (rec.elapsedMs() >= MAX_RECORD_MS) {
-        void stop(); // 上限到了自动收尾，不必等松手
+        void stop(); // Automatically cleanup when the upper limit is reached, no need to wait to let go
         return;
       }
       const total = Math.floor(rec.elapsedMs() / 1000);
@@ -198,16 +202,16 @@ export function createHearControl(opts: HearControlOptions): HearControl {
 
   micBtn.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    e.preventDefault(); // 别把焦点从输入框抢走，也别触发选区
+    e.preventDefault(); // Don’t take the focus away from the input box, and don’t trigger the selection
     try {
-      // 捕获指针：松手时鼠标可能已经移出按钮甚至移出窗口，靠它才收得到 pointerup
+      // Capture pointer: When you let go, the mouse may have moved out of the button or even out of the window, relying on it to receive pointerup
       micBtn.setPointerCapture(e.pointerId);
     } catch {
-      /* 指针已经不在了（窗口失焦/合成事件）：收不到松手就等 24 秒上限兜底 */
+      /* The pointer is no longer in focus (window out of focus/synthesis event): if you can’t let go, wait for the upper limit of 24 seconds fallback */
     }
     void start();
   });
-  /** 松手或指针被系统抢走（切窗口）都算说完；还在等麦克风时先记下，等它回来立刻收尾。 */
+  /** If you let go or the pointer is snatched away by the system (cutting the window), it will be considered finished; while you are still waiting for the microphone, make a note of it, and cleanup immediately when it comes back. */
   const onRelease = (): void => {
     if (hearState === 'starting') {
       wasReleasedEarly = true;
@@ -224,7 +228,7 @@ export function createHearControl(opts: HearControlOptions): HearControl {
     isHearing: () => hearState === 'recording',
     dispose: () => {
       window.clearInterval(hearTimer);
-      // 关弹窗时麦克风必须立刻松手：录音中直接丢弃，不等识别
+      // The microphone must be released immediately when closing the pop-up window: it is discarded directly during recording without waiting for recognition.
       if (recorder) {
         recorder.cancel();
         recorder = null;

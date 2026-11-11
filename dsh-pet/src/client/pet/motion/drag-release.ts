@@ -1,8 +1,10 @@
 /**
- * 松手结算：判断这次拖拽是原地放下、甩抛还是弹弓，并给出起飞的初速。
- * 不写 DOM、不读时钟：包围盒、轨迹与时刻都由调用方传入，便于单测与两端共用同一口径。
- * 依赖 shared/physics 的初速估算与弹弓换算。
- * 不变量：弹弓只看拉距（与手速无关）；非弹弓时轨迹估算不出速度就是原地放下。
+ * Settlement after letting go: Determine whether the drag is put down on the spot, thrown or slingshot, and the
+ * initial velocity of take-off is given. Do not write DOM and do not read the clock: the bounding box, trajectory and
+ * time are all passed in by the caller, which facilitates single testing and both ends share the same conventions.
+ * Rely on shared/physics's muzzle velocity estimation and slingshot conversion. Invariant: The slingshot only depends
+ * on the draw distance (it has nothing to do with hand speed); when it is not a slingshot, the trajectory cannot
+ * estimate the speed, so just put it down on the spot.
  * @module dsh-pet/src/client/pet/motion/drag-release
  */
 import {
@@ -15,41 +17,41 @@ import {
 import type { BoxPoint } from './geometry.ts';
 import type { PhysicsParams } from '../../../shared/types.ts';
 
-/** 松手结算的输入。 */
+/** Input of release settlement. */
 export interface ReleaseInput {
-  /** 松手时的包围盒左上角（取弹簧跟随的实时值，不是指针目标）。 */
+  /** The upper left corner of the bounding box when letting go (take the real-time value of the spring follower, not the pointer target). */
   box: BoxPoint;
-  /** 按下时的宠物中心（px），弹弓拉向量的起点。 */
+  /** The center of the pet when pressed ( px ), the starting point of the slingshot pull vector. */
   anchor: { x: number; y: number };
-  /** 盒半宽半高（px）。 */
+  /** Box half width and half height (px). */
   half: { w: number; h: number };
-  /** 宠物宽度（px），弹弓参考拉距按它缩放。 */
+  /** Pet width (px), the slingshot reference draw length is scaled according to it. */
   size: number;
-  /** 本次是否为弹弓（按下间隔够短）。 */
+  /** Is it a slingshot this time (the pressing interval is short enough). */
   sling: boolean;
-  /** 指针轨迹采样。 */
+  /** Pointer trajectory sampling. */
   trail: readonly DragSample[];
-  /** 松手时刻（ms）。 */
+  /** Release time (ms). */
   now: number;
-  /** 该宠物的物理参数。 */
+  /** The physical parameters of this pet. */
   physics: PhysicsParams;
 }
 
-/** 松手去向。 */
+/** Where to go if you let go. */
 export type ReleaseDecision =
   | { kind: 'sling'; dist: number; power: number; velocity: { vx: number; vy: number } }
   | { kind: 'throw'; velocity: { vx: number; vy: number } }
   | { kind: 'place' };
 
 /**
- * 决定松手之后怎么落。
+ * Decide how to let go after letting go.
  *
- * @param input - 包围盒、按下点、轨迹与物理参数。
- * @returns 弹弓（含拉距与力度，便于日志）、甩抛或原地放下。
+ * @param input - Bounding box, pressed point, trajectory and physical parameters.
+ * @returns slingshot (including draw length and strength, easy to log), throw it or put it down on the spot.
  */
 export function decideRelease(input: ReleaseInput): ReleaseDecision {
   if (input.sling) {
-    // 力度取拉距（与手速无关），方向与拉向相反；拉向量用宠物实际中心算。
+    // The strength is determined by the pulling distance (regardless of hand speed), and the direction is opposite to the pulling direction; the pulling vector is calculated using the actual center of the pet.
     const pullX = input.box.x + input.half.w - input.anchor.x;
     const pullY = input.box.y + input.half.h - input.anchor.y;
     const dist = Math.hypot(pullX, pullY);

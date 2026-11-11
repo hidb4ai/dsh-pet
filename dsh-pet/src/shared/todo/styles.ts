@@ -1,41 +1,47 @@
 /**
- * 待办面板的样式：面板本体是气泡槽里的一个气泡，外框沿用气泡的白底圆角与尾巴。
+ * The style of the to-do panel: the panel body is a bubble in the bubble slot, and the outer frame follows the
+ * bubble's white rounded corners and tail.
  *
- * 只有静态字符串与注入状态，不建 DOM、不读配置；尺寸全部锚在气泡字号 --f 上，
- * 因此 config.font 的字号与 followPet、以及宠物尺寸改了，面板跟着等比缩放。
- * 高度预算 TODO_PANEL_METRICS 与这里的系数同源：改任何一条都必须同步，否则桌面窗口上边距会算少。
+ * There are only static character strings and injection states, no DOM is created, no configuration is read; the sizes
+ * are all anchored on the bubble font size - f, so the font size of config.font is changed to followPet, and the pet
+ * size is changed, and the panel is scaled proportionally. The height budget TODO_PANEL_METRICS has the same origin as
+ * the coefficients here: any change must be synchronized, otherwise the top margin of the desktop window will be too
+ * small.
  * @module dsh-pet/src/shared/todo/styles
  */
 import { BUBBLE_OVERLAP_RATIO, resolveFontPx } from '../fonts.ts';
 import type { FontConfig } from '../types.ts';
 
-/** 面板根字号相对气泡字号的比例：默认配置（气泡 21.02px）下取整为 13px。 */
+/** The ratio of the panel root font size to the bubble font size: the default configuration (bubble 21.02 px) is rounded to 13 px. */
 export const TODO_FONT_SCALE = 0.618;
 
-/** 面板竖向预算（em，基准 = 面板根字号）：头部 + 表单 + 下半区，默认配置下约 329px。 */
+/** Panel vertical budget (em, base = panel root font size): header + form + lower half, about 329 px in default configuration. */
 export const TODO_PANEL_METRICS = {
-  /** 头部：上下内边距 + 标题行（行高 1.5 × 字号 1.077）。 */
+  /** Header: top and bottom padding + title line (line height 1.5 × font size 1.077). */
   head: 0.769 + 0.615 + 1.077 * 1.5,
-  /** 表单：正文框 + 间距 + 时间行 + 下内边距。 */
+  /** Form: text box + spacing + time line + bottom padding. */
   form: 0.462 * 2 + 1.4 + 0.462 + (0.462 * 2 + 1.4) + 0.769,
-  /** 清单态：上下内边距 + 两行条目（每行 = 内边距 + 正文 + 行距 + 时间标签）。 */
+  /** List state: top and bottom padding + two lines of entries (each line = padding + text + line spacing + time label). */
   list: 0.462 * 2 + 2 * (0.538 * 2 + 1.5 + 0.154 + 0.846 * 1.5),
-  /** 底部提示。 */
+  /** Bottom prompt. */
   hint: 0.462 + 0.692 + 0.846 * 1.5,
-  /** 日历态：内边距 + 标题行 + 星期行 + 六行日期 + 底部操作行 + 行间空隙。 */
+  /** Calendar status: padding + title row + weekday row + six rows of dates + bottom operation row + space between rows. */
   calendar: 1.077 + 1.077 * 1.5 + 0.846 * 1.5 + 6 * (1.4 + 0.231 * 2) + 5 * 0.154 + (0.923 * 1.5 + 0.462) + 0.308 * 3,
 } as const;
 
-/** 面板样式：头部 + 添加行 + 可滚动的清单 + 底部提示。 */
+/** Panel style: header + add row + scrollable list + bottom tip. */
 export const TODO_CSS = [
-  // 气泡变体：两端气泡的基础类不同（网页 .dsh-pet-bubble / 桌面 .pet-bubble），所以并列两条提高特异性，
-  // 不依赖注入顺序压过基础样式。宽度锚 --f（14.65 × 21.02 ≈ 308px），max() 给 220px 下限防止
-  // 小字号下输入框与按钮挤成一列，max-width 再把整体夹回视口。
+  // bubble variant: The basic classes of the bubbles at both ends are different (web page . dsh-pet-bubble / desktop .
+  // pet-bubble ), so paralleling the two improves specificity and does not rely on the injection order to overwhelm
+  // the basic style. Width anchor --f (14.65 × 21.02 ≈ 308 px), max() gives a lower limit of 220 px to prevent the
+  // input box and buttons from being squeezed into a row under the small font size, max-width and then clip the whole
+  // back to the viewport.
   '.dsh-pet-bubble.dsh-pet-todo-bubble,.pet-bubble.dsh-pet-todo-bubble{padding:0;',
   'width:max(220px,calc(var(--f)*14.65));max-width:calc(100vw - 16px);pointer-events:auto;cursor:default}',
-  // 面板本体：只负责竖向排布，外框（底色/圆角/阴影/尾巴）全部交给气泡，圆角用 inherit 对齐。
-  // 尺寸一律 em，基准是本行的 --t；自己改了 font-size 的元素内边距改用 calc(var(--t)*k)，
-  // 否则 em 会按它自己的字号再缩一遍。
+  // Panel body: only responsible for vertical arrangement, the outer frame (background color/rounded
+  // corners/shadow/tail) are all given to bubble, and the rounded corners are aligned with inherit. The size is always
+  // em, and the benchmark is the industry's --t; I changed the inner margin of the font-size element to use calc (var
+  // (--t)* k), otherwise em will be reduced again according to its own font size.
   '.dsh-pet-todo{--t:calc(var(--f)*' + TODO_FONT_SCALE + ');display:flex;flex-direction:column;',
   'box-sizing:border-box;border-radius:inherit;overflow:hidden;color:#2b2b2b;font-size:var(--t);',
   'line-height:1.5;user-select:none;',
@@ -56,7 +62,7 @@ export const TODO_CSS = [
   '.dsh-pet-todo-input:focus{border-color:rgba(64,128,255,.55);box-shadow:0 0 0 .154em rgba(64,128,255,.14)}',
   '.dsh-pet-todo-input::placeholder{color:rgba(43,43,43,.42)}',
   '.dsh-pet-todo-row{display:flex;align-items:center;gap:.462em}',
-  // 到期按钮：长得像输入框，点开是自绘日历；没选时文字偏淡，选了转深。
+  // Expiration button: It looks like an input box. If you click it, it will be a self-drawn calendar. When it is not selected, the text is light, and when it is selected, it becomes darker.
   '.dsh-pet-todo-due{flex:1;min-width:0;text-align:left;border:1px solid rgba(0,0,0,.12);border-radius:.615em;',
   'background:rgba(255,255,255,.9);padding:.462em .615em;font-size:1em;line-height:1.4;font-family:inherit;',
   'color:rgba(43,43,43,.55);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -68,7 +74,7 @@ export const TODO_CSS = [
   'padding:.462em .923em;cursor:pointer;font-family:inherit;white-space:nowrap}',
   '.dsh-pet-todo-add:hover{background:#3a6ce8}',
   '.dsh-pet-todo-add:disabled,.dsh-pet-todo-input:disabled{opacity:.55;cursor:default}',
-  // 内嵌日历：白底淡灰衬底，选中日实心主色，非本月日期变淡，今天描一圈。
+  // Embedded calendar: white background with light gray background, the selected day is solid main color, non-month dates are faded, and today is traced in a circle.
   '.dsh-pet-todo-cal{display:flex;flex-direction:column;gap:.308em;',
   'padding:.462em .615em .615em;background:rgba(43,43,43,.025)}',
   '.dsh-pet-todo-cal-head{display:flex;align-items:center;gap:.308em}',
@@ -77,9 +83,9 @@ export const TODO_CSS = [
   'font-size:1.154em;line-height:1;padding:.154em .385em;border-radius:.462em;cursor:pointer}',
   '.dsh-pet-todo-cal-nav:hover{background:rgba(0,0,0,.07);color:#2b2b2b}',
   '.dsh-pet-todo-cal-week,.dsh-pet-todo-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:.154em}',
-  // 日期行高固定，日历高度因此是常量（与 TODO_PANEL_METRICS.calendar 同源），折叠时才能算得准。
+  // The date row height is fixed, so the calendar height is constant (same origin as TODO_PANEL_METRICS.calendar) and can only be calculated accurately when folded.
   '.dsh-pet-todo-cal-grid{grid-auto-rows:1.862em}',
-  // 小时 24 格、分钟 12 格都排 6 列，行数少，整体居中。
+  // The 24 hours and 12 minutes are arranged in 6 columns. The number of rows is small and the whole is centered.
   '.dsh-pet-todo-cal-grid.is-hour,.dsh-pet-todo-cal-grid.is-minute{grid-template-columns:repeat(6,1fr);',
   'grid-auto-rows:1.6em;align-content:center}',
   '.dsh-pet-todo-cal-week{font-size:.846em;line-height:1.5;color:rgba(43,43,43,.45);text-align:center}',
@@ -94,15 +100,16 @@ export const TODO_CSS = [
   'line-height:1.5;padding:.231em .385em;border-radius:.462em;cursor:pointer}',
   '.dsh-pet-todo-cal-act:hover{background:rgba(74,125,255,.1)}',
   '.dsh-pet-todo-cal-grow{flex:1}',
-  // 时/分标签：点开就是对应的数字网格，再点一次退回日期。
+  // Hour/minute label: Click to open the corresponding number grid, click again to return to the date.
   '.dsh-pet-todo-cal-chip{border:1px solid rgba(0,0,0,.12);border-radius:.462em;background:rgba(255,255,255,.95);',
   'color:#2b2b2b;font-family:inherit;font-size:.923em;line-height:1.4;padding:.154em .385em;cursor:pointer;',
   'font-variant-numeric:tabular-nums}',
   '.dsh-pet-todo-cal-chip.is-on{border-color:rgba(74,125,255,.55);color:#4a7dff;',
   'box-shadow:0 0 0 .154em rgba(74,125,255,.14)}',
   '.dsh-pet-todo-cal-colon{color:rgba(43,43,43,.45)}',
-  // 下半区：两块内容各占一个折叠区，谁出现谁展开，面板高度跟着内容走，不留空白。
-  // 折叠用 grid-template-rows 的 0fr→1fr：内容高度是 auto 也能过渡，不用猜 max-height。
+  // Lower half area: Each of the two pieces of content occupies a folding area. Whoever appears will be expanded. The
+  // height of the panel follows the content, leaving no blank space. Folding uses grid-template-rows 0 fr → 1 fr: the
+  // content height is auto and can be transitioned, no need to guess max-height.
   '.dsh-pet-todo-lower{display:flex;flex-direction:column}',
   '.dsh-pet-todo-fold{display:grid;grid-template-rows:0fr;visibility:hidden;',
   'transition:grid-template-rows .18s ease,visibility 0s .18s}',
@@ -110,10 +117,10 @@ export const TODO_CSS = [
   '.dsh-pet-todo-fold.is-list{grid-template-rows:1fr;visibility:visible;transition-delay:0s}',
   '.dsh-pet-todo.is-picking .dsh-pet-todo-fold.is-cal{grid-template-rows:1fr;visibility:visible;',
   'transition-delay:0s}',
-  // 收起的那一侧等过渡走完再隐藏，否则内容会在半路上突然消失；visibility 同时挡掉键盘焦点。
+  // Hide the folded side until the transition is complete, otherwise the content will suddenly disappear halfway; visibility blocks the keyboard focus at the same time.
   '.dsh-pet-todo.is-picking .dsh-pet-todo-fold.is-list{grid-template-rows:0fr;visibility:hidden;',
   'transition-delay:0s,.18s}',
-  // 清单高度由 capListHeight 按两行写在行内；这里只保证超出就滚动、滚动不带动气泡外的东西。
+  // The height of the list is written in two lines by capListHeight; here it is only guaranteed to scroll if it exceeds the limit, and the scrolling will not bring things outside the bubble.
   '.dsh-pet-todo-list{list-style:none;margin:0;padding:.462em;overflow-y:auto;overscroll-behavior:contain;',
   'flex:0 1 auto;min-height:0;scrollbar-width:thin}',
   '.dsh-pet-todo-item{display:flex;align-items:flex-start;gap:.615em;padding:.538em .462em;border-radius:.615em}',
@@ -138,14 +145,14 @@ export const TODO_CSS = [
   '.dsh-pet-todo-err{flex:0 0 auto;padding:0 calc(var(--t)*0.923) calc(var(--t)*0.615);color:#d94f3d;',
   'font-size:.923em;white-space:pre-wrap;overflow-wrap:anywhere}',
   '.dsh-pet-todo-err[hidden]{display:none}',
-  // margin-top:auto 把提示钉在下半区底部：清单只有两行时，多出来的空当留在中间而不是堆在提示下面。
+  // margin-top:auto Pin prompts to the bottom of the bottom half: when the list only has two lines, the extra space should be left in the middle instead of stacked under the prompts.
   '.dsh-pet-todo-hint{margin-top:auto;padding:calc(var(--t)*0.462) calc(var(--t)*0.923) calc(var(--t)*0.692);',
   'color:rgba(43,43,43,.4);font-size:.846em;text-align:center}',
 ].join('');
 
 let todoCssInjected = false;
 
-/** 把面板样式注入文档一次；重复挂载不会重复插入。 */
+/** Inject the panel style into the document once; repeated mounting will not insert it repeatedly. */
 export function injectTodoCss(): void {
   if (todoCssInjected || typeof document === 'undefined') return;
   todoCssInjected = true;
@@ -156,14 +163,18 @@ export function injectTodoCss(): void {
   document.head.appendChild(tag);
 }
 
-/** 面板占用的窗口上边距（px）：桌面窗口余量必须容得下整块面板，否则面板顶端被窗口上沿切掉。
- *  算法与 {@link bubbleTopMarginPx} 同口径：面板底边同样落在宠物盒顶边下方 0.108 × 尺寸处。
- *  面板高度是常量（下半区固定），所以展开日历或出现错误行都不会改变窗口尺寸。
- *  @param font - 该宠物的 font 配置，缺失按默认口径。
- *  @param size - 该宠物的宽度 px。 */
+/**
+ * The upper margin of the window occupied by the panel (px): The desktop window margin must accommodate the entire
+ * panel, otherwise the top of the panel will be cut off by the upper edge of the window. The algorithm is the same as
+ * {@link bubbleTopMarginPx} conventions: the bottom edge of the panel also falls at 0.108 × size below the top edge of
+ * the pet box. The panel height is constant (the bottom half is fixed), so expanding the calendar or having an error
+ * row will not change the window size.
+ * @param font - font configuration of this pet, missing default conventions.
+ * @param size - The width of this pet px.
+ */
 export function todoPanelTopMarginPx(font: FontConfig | undefined, size: number): number {
   const m = TODO_PANEL_METRICS;
-  // 窗口余量按较高的那种状态算：面板高度会随状态变，但窗口尺寸不能跟着变。
+  // The window margin is calculated according to the higher state: the panel height will change with the state, but the window size cannot change accordingly.
   const panelPx =
     (m.head + m.form + Math.max(m.list + m.hint, m.calendar)) * resolveFontPx(font, size).bubble * TODO_FONT_SCALE;
   const overlap = (Number(size) || 0) * BUBBLE_OVERLAP_RATIO;

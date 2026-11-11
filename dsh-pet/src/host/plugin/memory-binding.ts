@@ -1,13 +1,13 @@
-/** 本机记忆的配置事务：只改默认条目的记忆字段，保留其它设置。 */
+/** Configuration transaction of local memory: only change the memory field of the default entry, and retain other settings. */
 import { DEFAULT_CHAT_MEMORY } from '../../shared/chat-memory-config.ts';
 
-/** 配置写入由宿主队列串行执行，变换读取的是落盘前的最新配置。 */
+/** Configuration writing is performed serially by the host queue, and the latest configuration before persist to disk is read. */
 export interface MemoryConfigStore {
   read(): Promise<Record<string, unknown>>;
   update(change: (main: Record<string, unknown>) => Record<string, unknown> | undefined): Promise<void>;
 }
 
-/** 将本机服务绑定到默认宠物条目；停用只解除同一服务的绑定。 */
+/** Bind native services to default pet entries; deactivation only unbinds the same service. */
 export function memoryConfigBinding(store: MemoryConfigStore) {
   return {
     async matches(url: string) {

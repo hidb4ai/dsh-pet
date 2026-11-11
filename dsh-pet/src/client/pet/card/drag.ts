@@ -1,7 +1,8 @@
 /**
- * 指针拖拽的装配：把当帧能力束成 DragCard，再交给驱动长期持有。
- * 依赖 motion 的运动面与迟绑槽里的动画流、锁与提示——它们创建得更晚，只在回调里读。
- * 只建一次：驱动自带指针状态机与捕获，重建会让按下中的手势丢失。
+ * Pointer drag assembly: Bundle the current frame capability into DragCard, and then hand it over to the driver for
+ * long-term holding. Rely on the animation flow, locks and cues in motion's motion surface and late binding slots -
+ * they are created later and are only read in the callback. Build only once: The driver comes with a pointer state
+ * machine and capture. Rebuilding will cause the pressed gesture to be lost.
  * @module dsh-pet/src/client/pet/card/drag
  */
 import { createDrag, type Drag, type DragCard } from '../motion/drag.ts';
@@ -13,45 +14,45 @@ import type { CardStateApi } from './state.ts';
 import type { RuntimePet } from '../types.ts';
 import type * as ReactNS from 'react';
 
-/** 注入的 react 能力。 */
+/** Injected react capability. */
 export interface CardDragRuntime {
-  /** 副作用；卸载时摘掉驱动的鼠标松开兜底监听。 */
+  /** side effect; remove the driver's mouse and release fallback monitoring when unmounting. */
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
-  /** 引用；拖拽驱动只造一次。 */
+  /** Quote; the drag driver is only built once. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }
 
-/** 拖拽装配的输入。 */
+/** Input for drag-and-drop assembly. */
 export interface CardDragInput {
-  /** 卡状态：动画名与几何的最新值。 */
+  /** Card status: latest values of animation name and geometry. */
   card: CardStateApi;
-  /** 成品配置的最新值。 */
+  /** Latest value of resolved configuration. */
   cfgRef: ReactNS.MutableRefObject<RuntimePet>;
-  /** 装配根迟绑槽。 */
+  /** Assemble root binding groove. */
   live: ReactNS.MutableRefObject<CardLive>;
-  /** 运动面：飞行、走位、包围盒都经它。 */
+  /** Motion surface: flight, movement, and bounding boxes all pass through it. */
   motion: CardMotion;
-  /** 宠物根节点。 */
+  /** Pet root node. */
   root: () => HTMLDivElement | null;
-  /** 等新首帧就位后再压 Q 弹。 */
+  /** Wait for the new first frame to be in place before pressing Q. */
   pendingSquash: ReactNS.MutableRefObject<boolean>;
-  /** 归一化中心写入口。 */
+  /** Normalization center writes entry point. */
   setCustomPos: CardStateApi['actions']['setCustomPos'];
-  /** 换源播一次。 */
+  /** Change the source once. */
   setOnce: (on: boolean) => void;
-  /** 换成指定动画。 */
+  /** Change to the specified animation. */
   setAnim: (anim: string) => void;
-  /** 递增换源序号，强制重播。 */
+  /** Increment the source sequence number and force replay. */
   bumpSeq: () => void;
-  /** 悬浮提示显隐。 */
+  /** The floating prompt is shown and hidden. */
   setTipOn: (on: boolean) => void;
 }
 
 /**
- * 造拖拽装配的 hook。
+ * Create drag assembly of hook.
  *
- * @param rt - 注入的 react 能力。
- * @returns 接收装配输入的 hook，返回本卡的拖拽驱动。
+ * @param rt - Injected react capabilities.
+ * @returns receives the hook input from the assembly and returns the drag driver of this card.
  */
 export function createCardDrag(rt: CardDragRuntime) {
   const { useRef, useEffect } = rt;
@@ -60,7 +61,7 @@ export function createCardDrag(rt: CardDragRuntime) {
     const { bumpSeq, card, cfgRef, live, motion, pendingSquash, root, setAnim, setCustomPos } = input;
     const { setOnce, setTipOn } = input;
 
-    // 拖拽驱动每次事件取的当帧能力：逐渲染重建，驱动长期持有这个 getter。
+    // The drag driver takes the current frame capability for each event: rendering-by-render reconstruction, and the driver holds this getter for a long time.
     const dragCard = (): DragCard => {
       const metrics = motion.metrics();
       return {
@@ -69,10 +70,10 @@ export function createCardDrag(rt: CardDragRuntime) {
         halfW: metrics.halfW,
         halfH: metrics.halfH,
         physics: cfgRef.current.physics,
-        // 睡着时不给拖拽动画：可以拖、位置跟手，但保持睡姿（空池 = 驱动退化为只拖不换源）
+        // No drag animation when sleeping: you can drag, and the position follows the hand, but the sleeping position is maintained (empty pool = the driver degrades to only dragging without changing the source)
         dragAnims: (live.current.flow?.sleeping() ?? false) ? [] : cfgRef.current.animations.drag,
         clickAnims: cfgRef.current.animations.clicks,
-        // 松手同理：睡着时不给回 idle 的动画，否则拖一下就把睡姿换掉了
+        // Same as letting go: the idle animation will not be returned when falling asleep, otherwise the sleeping position will be changed by dragging it.
         idleAnims: (live.current.flow?.sleeping() ?? false) ? [] : cfgRef.current.animations.idle,
         currentAnim: card.animRef.current,
         setOnce: (on) => setOnce(on),
@@ -100,7 +101,7 @@ export function createCardDrag(rt: CardDragRuntime) {
           const viewport = { width: window.innerWidth, height: window.innerHeight };
           const half = { w: metrics.halfW, h: metrics.halfH };
           const reached = clampReachableBox(box, viewport, metrics);
-          // 拖拽期间 follow 直接改 DOM；夹取后的比例可能与上次渲染相同，React 会跳过 style 写入。
+          // During dragging, follow is directly changed to DOM; the proportion after clamping may be the same as the last rendering, and React will skip the writing of style.
           const rootEl = root();
           if (rootEl) {
             rootEl.style.left = reached.x + 'px';
@@ -117,7 +118,7 @@ export function createCardDrag(rt: CardDragRuntime) {
     const dragRef = useRef<Drag | null>(null);
     dragRef.current ??= createDrag(dragCard);
     const drag = dragRef.current;
-    // 卸载即摘掉 window 上的鼠标松开兜底：驱动活得比卡片久，不摘会打到已卸掉的节点。
+    // To unmount, release the mouse on window. Fallback: The driver outlives the card. If it is not removed, the removed node will be hit.
     useEffect(() => () => drag.dispose(), [drag]);
     live.current.drag = drag;
     return drag;

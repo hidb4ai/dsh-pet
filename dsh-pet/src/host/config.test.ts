@@ -1,12 +1,14 @@
 /**
- * host 配置合并单元测试 —— 钉住 animations.events 槽位「string | string[]」校验：
- * 数组槽位（档内随机候选）必须放行；空字符串 / 空数组 / 数字 / 对象等非法槽位
- * 必须整段回退内置默认（否则会导致 events 全丢）。
+ * host configuration merge unit test - verify animations.events slot "string | string []" verification: Array slots
+ * (random candidates in the file) must be released; invalid slots such as empty character strings/empty
+ * arrays/numbers/objects must be rolled back to the built-in default in the entire section (otherwise it will cause
+ * all events to be lost).
  *
- * 走完整的 readAllConfig 管线（内置默认 + 用户主配置合并，与生产同一路径），
- * 不单独导出校验函数。用临时目录隔离真实文件。
+ * Follow the complete readAllConfig pipeline (built-in default + user main configuration merged, the same path as
+ * production), and do not export the verification function separately. Use temporary directories to isolate real
+ * files.
  *
- * 跑法：node --experimental-strip-types --test src/host/config.test.ts
+ * Running method: node --experimental-strip-types --test src/host/config.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +29,7 @@ import {
   type ConfigPaths,
 } from './config.ts';
 
-/** 内置默认配置的完整最小形态（animations 整段必须合法——合并是整段替换/整段回退） */
+/** Complete minimal form of built-in default configuration (animations entire section must be valid - merging is entire section replacement/entire section rollback) */
 const BASE = {
   pets: [
     {
@@ -74,14 +76,14 @@ const BASE = {
   workStatusTexts: [['在干活']],
 };
 
-/** 与 BASE.animations 同构、仅替换 events 的用户层 animations（顶层字段整段替换，故必须完整） */
+/** User layer animations that is isomorphic to BASE.animations and only replaces events (the top-level field is replaced in its entirety, so it must be complete) */
 function animationsWithEvents(events: unknown): Record<string, unknown> {
   return { ...BASE.animations, events };
 }
 
 interface Suite {
   overlay: Record<string, unknown>;
-  /** 期望合并后 events.workStatus 与哪个对象一致 */
+  /** Which object is expected to be consistent with events.workStatus after merging? */
   expectWorkStatus: unknown[];
 }
 
@@ -91,7 +93,7 @@ function cases(suite: Suite): void {
     const paths: ConfigPaths = {
       defaultFile: join(dir, 'default.jsonc'),
       userFile: join(dir, 'main-config.jsonc'),
-      petDir: join(dir, 'pet'), // 不存在 = 无文件宠物，scanPetFiles 兜底
+      petDir: join(dir, 'pet'), // Does not exist = no file pet, scanPetFiles fallback
     };
     writeFileSync(paths.defaultFile, JSON.stringify(BASE));
     writeFileSync(paths.userFile, JSON.stringify(suite.overlay));
@@ -105,19 +107,19 @@ function cases(suite: Suite): void {
   }
 }
 
-describe('readAllConfig —— events 槽位 string | string[] 校验', () => {
-  test('字符串槽位原样放行（原行为不变）', () => {
+describe('readAllConfig —— events slot string | string [] Verification', () => {
+  test('The character string slot is released as it is (the original behavior remains unchanged)', () => {
     cases({
       overlay: { animations: animationsWithEvents({ workStatus: ['工作A', '工作B'] }) },
       expectWorkStatus: ['工作A', '工作B'],
     });
   });
 
-  test('数组槽位放行（档内随机候选，完整向后兼容字符串）', () => {
+  test('Array slot release (random candidate in file, fully backward compatible with character string)', () => {
     cases({
       overlay: {
         animations: animationsWithEvents({
-          balance: BASE.animations.events.balance, // 既有规则：events.balance 必填非空数组（用户改 workStatus 会保留）
+          balance: BASE.animations.events.balance, // Existing rules: events.balance is a required non-empty array (if the user changes workStatus, it will be retained)
           whisper: BASE.animations.events.whisper,
           workStatus: [['工作思考', '开始工作'], '认真工作', '长时间工作看表', '工作被打扰', '工作结束', '摸鱼被抓'],
         }),
@@ -126,28 +128,28 @@ describe('readAllConfig —— events 槽位 string | string[] 校验', () => {
     });
   });
 
-  test('空字符串槽位非法 → animations 整段回退默认', () => {
+  test('The empty character string slot is invalid → animations The entire segment falls back to the default', () => {
     cases({
       overlay: { animations: animationsWithEvents({ workStatus: ['工作A', ''] }) },
       expectWorkStatus: BASE.animations.events.workStatus,
     });
   });
 
-  test('空数组槽位非法 → 整段回退默认', () => {
+  test('Invalid empty array slot → fallback to default for the entire section', () => {
     cases({
       overlay: { animations: animationsWithEvents({ workStatus: [['工作A'], []] }) },
       expectWorkStatus: BASE.animations.events.workStatus,
     });
   });
 
-  test('数组内空字符串成员非法 → 整段回退默认', () => {
+  test('The empty character string member in the array is invalid → fall back to the default for the entire section', () => {
     cases({
       overlay: { animations: animationsWithEvents({ workStatus: [['工作A', ''], '工作B'] }) },
       expectWorkStatus: BASE.animations.events.workStatus,
     });
   });
 
-  test('数字/对象槽位非法 → 整段回退默认', () => {
+  test('Invalid number/object slot → fallback to default for the entire section', () => {
     for (const bad of [42 as unknown, { name: 'x' } as unknown, null as unknown, true as unknown]) {
       cases({
         overlay: { animations: animationsWithEvents({ workStatus: [bad, '工作B'] }) },
@@ -157,8 +159,8 @@ describe('readAllConfig —— events 槽位 string | string[] 校验', () => {
   });
 });
 
-describe('readAllConfig —— events 缺失仍回退默认（既有行为不回退）', () => {
-  test('用户层完全没写 animations → 用内置默认', () => {
+describe('readAllConfig —— events will still fall back to the default if it is missing (the existing behavior will not fall back)', () => {
+  test('animations is not written at all in the user layer → use the built-in default', () => {
     cases({
       overlay: { whisperPrompt: '改个提示词' },
       expectWorkStatus: BASE.animations.events.workStatus,
@@ -166,25 +168,25 @@ describe('readAllConfig —— events 缺失仍回退默认（既有行为不回
   });
 });
 
-describe('readAllConfig —— animations.sleep（可选段）校验', () => {
-  /** 用给定 sleep 覆盖内置默认的 animations，读回成品里 main 条目的 animations */
+describe('readAllConfig —— animations.sleep (optional section) verification', () => {
+  /** Overwrite the built-in default animations with the given sleep, and read back the animations of the main entry in the resolved value */
   function mergedAnimations(sleep: unknown): Record<string, unknown> {
     const animations = sleep === undefined ? BASE.animations : { ...BASE.animations, sleep };
     return readAllConfig(withBase({}, { animations })).main.animations as Record<string, unknown>;
   }
 
-  test('合法的一整套原样保留（start / loop / end 三个候选数组）', () => {
+  test('The entire valid set is retained as is (three candidate arrays start / loop / end)', () => {
     const sleep = [{ start: ['蹲-开始'], loop: ['蹲-循环'], end: ['蹲-起来'] }];
     assert.deepEqual(mergedAnimations(sleep).sleep, sleep);
   });
 
-  test('不写 sleep：合法，该条目只是没有睡觉功能（其余动画不受影响）', () => {
+  test('Do not write sleep: valid, this entry just does not have a sleep function (other animations are not affected)', () => {
     const anim = mergedAnimations(undefined);
     assert.equal(anim.sleep, undefined);
     assert.deepEqual(anim.idle, BASE.animations.idle);
   });
 
-  test('非法形态整段回退默认：空套数组 / 空段 / 缺段 / 空串成员 / 非字符串成员 / 非数组', () => {
+  test('Invalid form of whole segment fallback default: empty array/empty segment/missing segment/empty string member/non-character string member/non-array', () => {
     const bad: unknown[] = [
       [],
       [{ start: [], loop: ['蹲-循环'], end: ['蹲-起来'] }],
@@ -194,11 +196,15 @@ describe('readAllConfig —— animations.sleep（可选段）校验', () => {
       'sleep',
     ];
     for (const sleep of bad) {
-      assert.deepEqual(mergedAnimations(sleep), BASE.animations, `非法 sleep 必须整段回退：${JSON.stringify(sleep)}`);
+      assert.deepEqual(
+        mergedAnimations(sleep),
+        BASE.animations,
+        `Illegal sleep must be rolled back in its entirety: ${JSON.stringify(sleep)}`,
+      );
     }
   });
 
-  test('种类文件自己写 animations 但不写 sleep：合法，只是该种类没有睡觉功能', () => {
+  test('Write animations in the category file yourself but do not write sleep: valid, but this category does not have a sleep function', () => {
     const paths = withBase({});
     mkdirSync(paths.petDir, { recursive: true });
     writeFileSync(
@@ -211,31 +217,35 @@ describe('readAllConfig —— animations.sleep（可选段）校验', () => {
     );
     const pig = readAllConfig(paths).pig.animations as Record<string, unknown>;
     assert.equal(pig.sleep, undefined);
-    assert.deepEqual(pig.idle, BASE.animations.idle, '没写 sleep 不得让整份 animations 失效');
+    assert.deepEqual(
+      pig.idle,
+      BASE.animations.idle,
+      'Failure to write sleep shall not invalidate the entire animations',
+    );
   });
 });
 
-describe('readAllConfig —— animations.baifan（内置玩法动画，可选段）校验', () => {
-  /** 用给定 baifan 覆盖内置默认的 animations，读回成品里 main 条目的 animations */
+describe('readAllConfig —— animations.baifan (built-in gameplay animation, optional segment) verification', () => {
+  /** Overwrite the built-in default animations with the given baifan, and read back the animations of the main entry in the resolved value */
   function mergedAnimations(baifan: unknown): Record<string, unknown> {
     const animations = baifan === undefined ? BASE.animations : { ...BASE.animations, baifan };
     return readAllConfig(withBase({}, { animations })).main.animations as Record<string, unknown>;
   }
 
-  /** 合法的五个槽位（顺序即玩法契约，见 shared/types 的 Animations） */
+  /** Five valid slots (the order is the gameplay contract, see Animations of shared/types) */
   const SLOTS = ['跑向底部', '侧身追', '期待', '吃碗饭', '吃饭团'];
 
-  test('合法的五个名字原样保留', () => {
+  test('The five valid names are retained as they are.', () => {
     assert.deepEqual(mergedAnimations(SLOTS).baifan, SLOTS);
   });
 
-  test('不写 baifan：合法，该条目只是没有这个玩法（其余动画不受影响）', () => {
+  test('Do not write baifan: valid, this entry just does not have this gameplay (other animations are not affected)', () => {
     const anim = mergedAnimations(undefined);
     assert.equal(anim.baifan, undefined);
     assert.deepEqual(anim.idle, BASE.animations.idle);
   });
 
-  test('非法形态整段回退默认：少一个 / 多一个 / 空串 / 非字符串 / 非数组', () => {
+  test('Invalid form of whole segment fallback default: one less / one more / empty string / non-character string / non-array', () => {
     const bad: unknown[] = [
       ['跑向底部', '侧身追', '期待', '吃碗饭'],
       [...SLOTS, '吃饭团'],
@@ -247,13 +257,13 @@ describe('readAllConfig —— animations.baifan（内置玩法动画，可选�
       assert.deepEqual(
         mergedAnimations(baifan),
         BASE.animations,
-        `非法 baifan 必须整段回退：${JSON.stringify(baifan)}`,
+        `Illegal baifan must be rolled back in its entirety: ${JSON.stringify(baifan)}`,
       );
     }
   });
 });
 
-/** 跑一趟 readAllConfig：base 为内置默认（可注入表情包开关），overlay 为用户层 */
+/** Take a trip to readAllConfig: base is the built-in default (emoticon switch can be injected), overlay is the user layer */
 function withBase(baseExtra: Record<string, unknown>, overlay?: Record<string, unknown>): ConfigPaths {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-config-test-'));
   const paths: ConfigPaths = {
@@ -266,12 +276,12 @@ function withBase(baseExtra: Record<string, unknown>, overlay?: Record<string, u
   return paths;
 }
 
-/** 跑一趟 saveUserConfig：返回写入用户层的对象（null = 被 sanitize 拒绝） */
+/** Make a trip to saveUserConfig: Return the object written to the user layer (null = rejected by sanitize) */
 function saveOnce(body: Record<string, unknown>, existing?: Record<string, unknown>): Record<string, unknown> | null {
   return saveUserConfig(body, existing) as Record<string, unknown> | null;
 }
 
-/** 建一套路径：默认文件 = BASE；用户层原文由调用方给（可带注释） */
+/** Create a set of paths: default file = BASE; the original text of the user layer is given by caller (can be commented) */
 function pathsWithUser(raw: string | null): { paths: ConfigPaths; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-user-config-'));
   const paths: ConfigPaths = {
@@ -285,15 +295,15 @@ function pathsWithUser(raw: string | null): { paths: ConfigPaths; dir: string } 
   return { paths, dir };
 }
 
-describe('migrateUserConfig —— 老用户 main-config.json → main-config.jsonc', () => {
-  /** 只在旧路径写一份用户层（模拟升级前的老用户） */
+describe('migrateUserConfig ——Old user main-config.json → main-config.jsonc', () => {
+  /** Only write a copy of the user layer in the old path (simulating the old user before upgrade) */
   function legacyOnly(raw: string): { paths: ConfigPaths; dir: string } {
     const { paths, dir } = pathsWithUser(null);
     writeFileSync(paths.legacyUserFile as string, raw);
     return { paths, dir };
   }
 
-  test('旧文件存在、新文件不存在 → 重命名（内容一字不动），旧文件消失', () => {
+  test('The old file exists but the new file does not exist → Rename (the content remains unchanged) and the old file disappears', () => {
     const raw = '// 老用户的配置\n{\n  "physics": ' + JSON.stringify(BASE.physics) + '\n}\n';
     const { paths, dir } = legacyOnly(raw);
     try {
@@ -302,41 +312,45 @@ describe('migrateUserConfig —— 老用户 main-config.json → main-config.js
         migrateUserConfig(paths, (m) => logs.push(m)),
         true,
       );
-      assert.equal(existsSync(paths.legacyUserFile as string), false, '旧文件应已重命名走');
-      assert.equal(readFileSync(paths.userFile, 'utf8'), raw, '新文件内容必须与旧文件逐字节一致');
-      assert.equal(logs.length, 1, '迁移应留一条日志');
+      assert.equal(existsSync(paths.legacyUserFile as string), false, 'Old files should have been renamed away');
+      assert.equal(
+        readFileSync(paths.userFile, 'utf8'),
+        raw,
+        'The content of the new file must be consistent byte by byte with the old file',
+      );
+      assert.equal(logs.length, 1, 'A log should be left during migration');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('新文件已存在 → 什么都不做（绝不用旧文件覆盖新文件）', () => {
+  test('New file already exists → do nothing (never overwrite new file with old file)', () => {
     const { paths, dir } = pathsWithUser('{ "physics": ' + JSON.stringify(BASE.physics) + ' }\n');
     try {
       writeFileSync(paths.legacyUserFile as string, '{ "physics": { "gravity": 1 } }');
       assert.equal(migrateUserConfig(paths), false);
-      assert.equal(existsSync(paths.legacyUserFile as string), true, '旧文件保持原样');
-      assert.equal(readUserConfig(paths)?.physics !== undefined, true, '生效的仍是新文件');
+      assert.equal(existsSync(paths.legacyUserFile as string), true, 'Old files remain intact');
+      assert.equal(readUserConfig(paths)?.physics !== undefined, true, 'The new file is still effective');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('旧文件不存在 → 什么都不做（首次使用）', () => {
+  test('Old file does not exist → do nothing (first use)', () => {
     const { paths, dir } = pathsWithUser(null);
     try {
       assert.equal(migrateUserConfig(paths), false);
-      assert.equal(existsSync(paths.userFile), false, '不凭空造文件');
+      assert.equal(existsSync(paths.userFile), false, 'Don’t create documents out of thin air');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('未迁移（迁移失败/未跑）时读取回落旧路径：配置照样生效', () => {
+  test('Reading the fallback old path when migration has not been performed (migration failed/not run): the configuration still takes effect.', () => {
     const { paths, dir } = legacyOnly('{ "physics": ' + JSON.stringify(BASE.physics) + ' }\n');
     try {
-      assert.equal(readUserConfig(paths)?.physics !== undefined, true, '读回落旧 .json');
-      assert.equal(userConfigUnparsable(paths), false, '旧路径合法 → 不是损坏');
+      assert.equal(readUserConfig(paths)?.physics !== undefined, true, 'Read fallback old . json');
+      assert.equal(userConfigUnparsable(paths), false, 'The old path is legal → not damaged');
       assert.deepEqual(readAllConfig(paths).main.physics, BASE.physics);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -344,18 +358,22 @@ describe('migrateUserConfig —— 老用户 main-config.json → main-config.js
   });
 });
 
-describe('userConfigUnparsable —— 保存前的损坏预检（损坏时必须弹窗，不许静默丢配置）', () => {
-  test('真损坏（语法错误）→ true：宿主据此回 409，不写盘', () => {
+describe('userConfigUnparsable - Pre-check for damage before saving (a window must pop up when damaged, and silent loss of configuration is not allowed)', () => {
+  test('True damage (syntax error) → true: The host returns 409 accordingly and does not write to the disk.', () => {
     const { paths, dir } = pathsWithUser('{ "physics": { 这不是 JSON');
     try {
       assert.equal(userConfigUnparsable(paths), true);
-      assert.equal(readUserConfig(paths), undefined, '前置：损坏时确实读不出既有字段（白名单重建会丢内容）');
+      assert.equal(
+        readUserConfig(paths),
+        undefined,
+        'Prefix: Existing fields cannot be read when damaged (whitelist reconstruction will lose content)',
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('带注释但合法（同步写入的原文）→ false：不是损坏，正常保存', () => {
+  test('Annotated but valid (original text written synchronously) → false: Not damaged, saved normally', () => {
     const { paths, dir } = pathsWithUser('// 注释\n{\n  "physics": ' + JSON.stringify(BASE.physics) + '\n}\n');
     try {
       assert.equal(userConfigUnparsable(paths), false);
@@ -364,7 +382,7 @@ describe('userConfigUnparsable —— 保存前的损坏预检（损坏时必须
     }
   });
 
-  test('文件不存在 → false：首次保存没有东西可丢，不打扰用户', () => {
+  test('The file does not exist → false: There is nothing to lose when saving for the first time, so it does not disturb the user.', () => {
     const { paths, dir } = pathsWithUser(null);
     try {
       assert.equal(userConfigUnparsable(paths), false);
@@ -374,22 +392,22 @@ describe('userConfigUnparsable —— 保存前的损坏预检（损坏时必须
   });
 });
 
-describe('readUserConfig —— 用户层读取必须容忍 JSONC 注释（保存丢字段的回归）', () => {
-  test('「同步」写入的带注释原文：readUserConfig 解析得出（严格 JSON.parse 会 undefined）', () => {
+describe('readUserConfig - Userland reads must tolerate the JSONC annotation (return to save missing fields)', () => {
+  test('The annotated original text written by "Synchronization": readUserConfig is analyzed (strictly JSON.parse will be undefined)', () => {
     const { paths, dir } = pathsWithUser(
       '// 顶部注释\n{\n  /* 块注释 */\n  "physics": ' + JSON.stringify(BASE.physics) + '\n}\n',
     );
     try {
       assert.throws(() => JSON.parse(readFileSync(paths.userFile, 'utf8')), '前置：严格 JSON.parse 确实读不了');
       const existing = readUserConfig(paths);
-      assert.ok(existing, '带注释的用户层必须能被 readUserConfig 解析');
+      assert.ok(existing, 'Annotated user layer must be parsable by readUserConfig');
       assert.deepEqual(existing.physics, BASE.physics);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('带注释的用户层 + 保存：高级字段（animations/physics/memes）全部保留', () => {
+  test('Annotated User Layer + Save: Advanced fields (animations/physics/memes) all retained', () => {
     const { paths, dir } = pathsWithUser(
       '// 用户手改的配置\n{\n' +
         '  "animations": ' +
@@ -403,16 +421,16 @@ describe('readUserConfig —— 用户层读取必须容忍 JSONC 注释（保�
         string,
         unknown
       >;
-      assert.deepEqual(out.animations, BASE.animations, 'animations 不得在保存时丢失');
-      assert.deepEqual(out.physics, BASE.physics, 'physics 不得在保存时丢失');
-      assert.deepEqual(out.memes, { 可爱: '我改过的描述' }, '手写的 memes 不得在保存时丢失');
-      assert.equal(out.notificationsEnabled, true, '白名单字段仍以请求体为准');
+      assert.deepEqual(out.animations, BASE.animations, 'animations must not be lost when saving');
+      assert.deepEqual(out.physics, BASE.physics, 'physics must not be lost when saving');
+      assert.deepEqual(out.memes, { 可爱: '我改过的描述' }, 'Handwritten memes must not be lost when saving');
+      assert.equal(out.notificationsEnabled, true, 'The whitelist fields are still subject to the request body.');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('用户层不存在 / 损坏 → undefined（按无既有字段处理，不阻塞保存）', () => {
+  test('User layer does not exist/is damaged → undefined (processed as no existing fields, does not block saving)', () => {
     const missing = pathsWithUser(null);
     try {
       assert.equal(readUserConfig(missing.paths), undefined);
@@ -428,24 +446,24 @@ describe('readUserConfig —— 用户层读取必须容忍 JSONC 注释（保�
   });
 });
 
-describe('saveUserConfig —— 系统托盘开关（trayEnabled）', () => {
-  test('非法值整包拒绝（与其它全局布尔同口径，不静默丢用户输入）', () => {
+describe('saveUserConfig ——System system tray switch (trayEnabled)', () => {
+  test('Reject the entire package of invalid values (same conventions as other global booleans, do not silently discard user input)', () => {
     assert.equal(saveUserConfig({ pets: PETS, trayEnabled: 'false' }, undefined), null);
     assert.equal(saveUserConfig({ pets: PETS, trayEnabled: 0 }, undefined), null);
   });
 
-  test('请求体没带 → 透传磁盘旧值（不得把用户关掉的托盘又打开）', () => {
+  test('The request body is not included → Transparently transmit the old disk value (the system tray that the user has closed must not be opened again)', () => {
     const out = saveUserConfig({ pets: PETS }, { trayEnabled: false }) as Record<string, unknown>;
     assert.equal(out.trayEnabled, false);
   });
 
-  test('请求体带了 → 以请求体为准', () => {
+  test('The request body is brought → The request body shall prevail', () => {
     const out = saveUserConfig({ pets: PETS, trayEnabled: false }, { trayEnabled: true }) as Record<string, unknown>;
     assert.equal(out.trayEnabled, false);
   });
 });
 
-describe('JSONC 配置读取：字符串中的注释标记与转义', () => {
+describe('JSONC configuration reading: comment mark and escape in character string', () => {
   const prompts = [
     '请原样解释 // 示例 这段文字',
     '请原样解释 /* 示例 */ 这段文字',
@@ -456,7 +474,7 @@ describe('JSONC 配置读取：字符串中的注释标记与转义', () => {
   ];
 
   for (const whisperPrompt of prompts) {
-    test(`读取与合并原样保留 ${JSON.stringify(whisperPrompt)}`, () => {
+    test(`Read and merge preserve ${JSON.stringify(whisperPrompt)} verbatim`, () => {
       const overlay = { whisperPrompt, metadata: { '/* 字段名 */': '// 字段值' } };
       const { paths, dir } = pathsWithUser('// 外部行注释\n' + JSON.stringify(overlay) + '\n/* 外部块注释 */');
       try {
@@ -469,7 +487,7 @@ describe('JSONC 配置读取：字符串中的注释标记与转义', () => {
     });
   }
 
-  test('注释中的引号和注释标记不影响 CRLF、CR 与文件末尾行注释', () => {
+  test('Quotation marks and comment marks in comments do not affect CRLF, CR and end-of-file line comments', () => {
     const { paths, dir } = pathsWithUser(
       '// " /* 行注释\r\n{\r  /* " // 块注释\r\n */ "chatMemoryRounds": 3\r}\r// 文件末尾',
     );
@@ -480,7 +498,7 @@ describe('JSONC 配置读取：字符串中的注释标记与转义', () => {
     }
   });
 
-  test('读取后保存保留提示词内容及高级配置', () => {
+  test('Save and retain prompt word content and advanced configuration after reading', () => {
     const overlay = { whisperPrompt: '解释 // 和 /* */', physics: BASE.physics, animations: BASE.animations };
     const { paths, dir } = pathsWithUser(JSON.stringify(overlay));
     try {
@@ -494,7 +512,7 @@ describe('JSONC 配置读取：字符串中的注释标记与转义', () => {
   });
 
   for (const raw of ['{"chatMemoryRounds": 1/* 注释 */2}', '{"chatMemoryRounds": 3} /* 未结束']) {
-    test(`拒绝损坏的配置 ${raw}`, () => {
+    test(`Reject corrupted configuration ${raw}`, () => {
       const { paths, dir } = pathsWithUser(raw);
       try {
         assert.equal(readUserConfig(paths), undefined);
@@ -585,59 +603,59 @@ describe('saveUserConfig pet IDs', () => {
   });
 });
 
-describe('saveUserConfig —— 表情包配图开关（白名单 + 透传保留）', () => {
-  test('两个配图开关随请求体写入', () => {
+describe('saveUserConfig —— Meme image switch (whitelist + transparent transmission reservation)', () => {
+  test('Two image switches are written with the request body', () => {
     const out = saveOnce({ pets: PETS, whisperImageEnabled: true, chatImageEnabled: true });
     assert.equal(out?.whisperImageEnabled, true);
     assert.equal(out?.chatImageEnabled, true);
   });
 
-  test('未传开关时不写入（不凭空造字段）', () => {
+  test('No writing when the switch is not passed (no fields created out of thin air)', () => {
     const out = saveOnce({ pets: PETS });
     assert.equal('whisperImageEnabled' in (out ?? {}), false);
     assert.equal('chatImageEnabled' in (out ?? {}), false);
   });
 
-  test('开关传非布尔 → 整体拒绝（宿主回 400）', () => {
+  test('Switch passes non-boolean → overall rejection (host returns 400)', () => {
     assert.equal(saveOnce({ pets: PETS, whisperImageEnabled: 'yes' }), null);
     assert.equal(saveOnce({ pets: PETS, chatImageEnabled: 1 }), null);
   });
 
-  test('手写的 memes 映射表被透传保留（设置页保存不抹掉）', () => {
+  test('The handwritten memes mapping table is retained by transparent transmission (the setting page is saved and not erased)', () => {
     const memes = { 可爱: '我改过的描述' };
     const out = saveOnce({ pets: PETS, whisperImageEnabled: false }, { pets: PETS, memes });
     assert.deepEqual(out?.memes, memes);
   });
 
-  test('请求体的开关值覆盖磁盘旧值（不被 existing 反向覆盖）', () => {
+  test('The switch value of the request body overwrites the old value on the disk (not reversely overwritten by existing)', () => {
     const out = saveOnce(
       { pets: PETS, whisperImageEnabled: true },
       { pets: PETS, whisperImageEnabled: false, chatImageEnabled: true },
     );
-    assert.equal(out?.whisperImageEnabled, true); // 请求体优先
-    assert.equal(out?.chatImageEnabled, true); // 未传的旧值仍透传保留
+    assert.equal(out?.whisperImageEnabled, true); // Request body takes priority
+    assert.equal(out?.chatImageEnabled, true); // The old values that have not been transmitted are still transparently transmitted and retained.
   });
 });
 
-describe('saveUserConfig —— 对话动作联动开关（白名单 + 透传保留）', () => {
-  test('随请求体写入，缺省不凭空造字段', () => {
+describe('saveUserConfig —— Dialogue action linkage switch (whitelist + transparent transmission reservation)', () => {
+  test('Written with the request body, fields are not created out of thin air by default.', () => {
     const out = saveOnce({ pets: PETS, chatAnimationEnabled: false });
     assert.equal(out?.chatAnimationEnabled, false);
     assert.equal('chatAnimationEnabled' in (saveOnce({ pets: PETS }) ?? {}), false);
   });
 
-  test('传非布尔 → 整体拒绝（宿主回 400）', () => {
+  test('Passing non-boolean → overall rejection (host returns 400)', () => {
     assert.equal(saveOnce({ pets: PETS, chatAnimationEnabled: 'yes' }), null);
   });
 
-  test('请求体传了就覆盖磁盘旧值', () => {
+  test('The old value on the disk will be overwritten after the request body is transferred.', () => {
     const out = saveOnce({ pets: PETS, chatAnimationEnabled: true }, { pets: PETS, chatAnimationEnabled: false });
     assert.equal(out?.chatAnimationEnabled, true);
   });
 });
 
-describe('readAllConfig —— 对话动作联动开关合并（用户层可覆盖 / 非法回退默认）', () => {
-  test('内置默认 true；用户层写 false → 读 false', () => {
+describe('readAllConfig ——Dialogue action linkage switch merge (can be overridden by user layer/invalid fallback to default)', () => {
+  test('Built-in default true; user layer writes false → reads false', () => {
     assert.equal(readAllConfig(withBase({ chatAnimationEnabled: true })).main.chatAnimationEnabled, true);
     assert.equal(
       readAllConfig(withBase({ chatAnimationEnabled: true }, { chatAnimationEnabled: false })).main
@@ -646,7 +664,7 @@ describe('readAllConfig —— 对话动作联动开关合并（用户层可覆�
     );
   });
 
-  test('用户层写了非法值 → 回退内置默认', () => {
+  test('The user layer wrote an invalid value → fall back to the built-in default', () => {
     assert.equal(
       readAllConfig(withBase({ chatAnimationEnabled: true }, { chatAnimationEnabled: 'yes' })).main
         .chatAnimationEnabled,
@@ -655,67 +673,68 @@ describe('readAllConfig —— 对话动作联动开关合并（用户层可覆�
   });
 });
 
-describe('readAllConfig —— 表情包开关合并（缺失取默认 / 非法回退默认）', () => {
-  test('内置默认有值 → 用户层没写时读得到', () => {
+describe('readAllConfig - Merge the emoticon switch (if missing, take the default/invalid fallback to the default)', () => {
+  test('The built-in default value → can be read when the user layer is not writing.', () => {
     const merged = readAllConfig(withBase({ whisperImageEnabled: true, chatImageEnabled: false }));
     assert.equal(merged.main.whisperImageEnabled, true);
     assert.equal(merged.main.chatImageEnabled, false);
   });
 
-  test('用户层写了非法值 → 回退内置默认', () => {
+  test('The user layer wrote an invalid value → fall back to the built-in default', () => {
     const merged = readAllConfig(
       withBase({ whisperImageEnabled: true, chatImageEnabled: false }, { whisperImageEnabled: 'yes' }),
     );
-    assert.equal(merged.main.whisperImageEnabled, true); // 回退默认 true
+    assert.equal(merged.main.whisperImageEnabled, true); // Fall back to default true
   });
 });
 
-describe('saveUserConfig —— 抛掷锁定开关（白名单 + 透传保留）', () => {
-  test('随请求体写入', () => {
+describe('saveUserConfig —— Throw lock switch (white list + transparent transmission reservation)', () => {
+  test('Write with request body', () => {
     const out = saveOnce({ pets: PETS, confineToScreen: true });
     assert.equal(out?.confineToScreen, true);
   });
 
-  test('未传时不写入（不凭空造字段）', () => {
+  test('Do not write when not transmitted (do not create fields out of thin air)', () => {
     const out = saveOnce({ pets: PETS });
     assert.equal('confineToScreen' in (out ?? {}), false);
   });
 
-  test('传非布尔 → 整体拒绝（宿主回 400）', () => {
+  test('Passing non-boolean → overall rejection (host returns 400)', () => {
     assert.equal(saveOnce({ pets: PETS, confineToScreen: 'yes' }), null);
   });
 
-  test('请求体的值覆盖磁盘旧值；未传时透传磁盘旧值', () => {
+  test('The value of the request body overwrites the old value on the disk; if it is not transmitted, the old value on the disk is transparently transmitted.', () => {
     const overwritten = saveOnce({ pets: PETS, confineToScreen: true }, { pets: PETS, confineToScreen: false });
-    assert.equal(overwritten?.confineToScreen, true); // 请求体优先
+    assert.equal(overwritten?.confineToScreen, true); // Request body takes priority
     const kept = saveOnce({ pets: PETS }, { pets: PETS, confineToScreen: true });
-    assert.equal(kept?.confineToScreen, true); // 未传的旧值仍透传保留
+    assert.equal(kept?.confineToScreen, true); // The old values that have not been transmitted are still transparently transmitted and retained.
   });
 });
 
-describe('saveUserConfig —— 宠物固定 fixedEnabled（per-pet 白名单）', () => {
-  /** 取落盘后的第 n 只宠物 */
+describe('saveUserConfig - pet fixed fixedEnabled (per-pet whitelist)', () => {
+  /** Get the n pet after persist to disk */
   const petAt = (out: Record<string, unknown> | null, n = 0): Record<string, unknown> =>
     (out?.pets as Record<string, unknown>[])[n];
 
-  test('随请求体逐宠物写入（不在白名单就会被保存悄悄丢掉——physics 的老 bug 同款）', () => {
+  test("Pets are written along with the request body (if they are not in the whitelist, they will be saved and quietly discarded - the same model as physics's old bug)", () => {
     const out = saveOnce({ pets: [{ ...PETS[0], fixedEnabled: true }] });
-    assert.equal(petAt(out).fixedEnabled, true, 'fixedEnabled 必须在 saveUserConfig 的白名单里');
+    assert.equal(petAt(out).fixedEnabled, true, 'fixedEnabled must be in the whitelist of saveUserConfig');
   });
 
-  test('未传时落盘即缺失（读取侧取内置默认，不凭空造值）', () => {
-    // 显式构造一只「没写 fixedEnabled」的宠物：落盘对象里该键为 undefined（JSON.stringify 丢弃），
-    // 合并读取时再由内置默认补上——设置页不传它时不得凭空写一个 false 进去
+  test('The persist to disk is missing when it is not transmitted (the built-in default is used when reading, and the value is not created out of thin air)', () => {
+    // Explicitly construct a pet with "fixedEnabled not written": The key in the persist to disk object is undefined
+    // (JSON.stringify is discarded), and it will be filled in by the built-in default when merging and reading - when
+    // the setting page does not pass it, you must not write a false out of thin air.
     const bare: Record<string, unknown> = { ...PETS[0] };
     delete bare.fixedEnabled;
     assert.equal(petAt(saveOnce({ pets: [bare] })).fixedEnabled, undefined);
   });
 
-  test('传非布尔 → 整体拒绝（宿主回 400）', () => {
+  test('Passing non-boolean → overall rejection (host returns 400)', () => {
     assert.equal(saveOnce({ pets: [{ ...PETS[0], fixedEnabled: 'yes' }] }), null);
   });
 
-  test('逐实例独立：一只 true 一只 false 都按各自的值落盘', () => {
+  test('Instance-by-instance independence: one true and one false persist to disk according to their respective values.', () => {
     const out = saveOnce({
       pets: [
         { ...PETS[0], id: 'a', fixedEnabled: true },
@@ -728,39 +747,40 @@ describe('saveUserConfig —— 宠物固定 fixedEnabled（per-pet 白名单）
   });
 });
 
-describe('readAllConfig —— 实例级人设 whisperPrompt（实例覆盖 / 不填生效值）', () => {
+describe('readAllConfig ——Instance level persona whisperPrompt (instance override/leave no effective value filled in)', () => {
   const petAt = (merged: Record<string, Record<string, unknown>>, n = 0): Record<string, unknown> =>
     (merged.main.pets as Record<string, unknown>[])[n];
 
-  test('实例写了 → 原样带出（消费端据此取代条目人设）', () => {
+  test('The instance is written → brought out unchanged (consumer replaces the entry persona accordingly)', () => {
     const merged = readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], whisperPrompt: '我是猫娘' }] }));
     assert.equal(petAt(merged).whisperPrompt, '我是猫娘');
-    // 条目级那份仍在：两者靠 petPersona 二选一，合并器不做合并
+    // The entry-level share is still there: choose one of the two by petPersona, and the merger does not merge.
     assert.equal(merged.main.whisperPrompt, BASE.whisperPrompt);
   });
 
-  test('没写 → 结果里**没有**该键（回落条目由消费端做，合并器不填生效值）', () => {
-    // 合并器一旦把条目人设填进每只实例，/pet-display（拿合并结果回调 saveUserConfig 写盘）
-    // 就会把"跟随条目"固化成显式覆盖，之后改条目人设这些实例不再跟着变——这条钉住它。
+  test('Not written → There is **no** this key in the result (the fallback entry is made by the consumer, and the combiner does not fill in the effective value)', () => {
+    // Once the merger fills in the entry persona into each instance, / pet-display (take the merge result callback
+    // saveUserConfig and write it to disk) will solidify the "following entry" into an explicit override, and then
+    // change the entry persona and these instances will no longer change - this verify it.
     const pet = petAt(readAllConfig(withBase({})));
     assert.equal('whisperPrompt' in pet, false);
   });
 
-  test('空串 / 纯空白 → 当没写（设置页清空输入框后提交的就是空串）', () => {
+  test('Empty string / pure blank → when nothing is written (the empty string is submitted after the clear input box on the setting page)', () => {
     for (const value of ['', '   \n\t ']) {
       const pet = petAt(readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], whisperPrompt: value }] })));
-      assert.equal('whisperPrompt' in pet, false, `${JSON.stringify(value)} 应被当作没写`);
+      assert.equal('whisperPrompt' in pet, false, `${JSON.stringify(value)} should be treated as not written`);
     }
   });
 
-  test('显式写了非字符串 → 当没写，不抛错（脏值绝不进渲染层）', () => {
+  test('A non-character string is explicitly written → If it is not written, no error will be thrown (dirty values will never enter the rendering layer)', () => {
     for (const value of [42, { a: 1 }, ['x'], true]) {
       const pet = petAt(readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], whisperPrompt: value }] })));
-      assert.equal('whisperPrompt' in pet, false, `${JSON.stringify(value)} 应被忽略`);
+      assert.equal('whisperPrompt' in pet, false, `${JSON.stringify(value)} should be ignored`);
     }
   });
 
-  test('逐实例独立：两只宠物各写各的，不互相传染', () => {
+  test('Instance-by-instance independence: two pets each write their own, and do not infect each other.', () => {
     const merged = readAllConfig(
       withBase(
         {},
@@ -778,131 +798,153 @@ describe('readAllConfig —— 实例级人设 whisperPrompt（实例覆盖 / �
   });
 });
 
-describe('saveUserConfig —— 实例级人设 whisperPrompt（白名单 + 清空 = 删除覆盖）', () => {
+describe('saveUserConfig - instance-level persona whisperPrompt (whitelist + clear = delete override)', () => {
   const petAt = (out: Record<string, unknown> | null, n = 0): Record<string, unknown> =>
     (out?.pets as Record<string, unknown>[])[n];
 
-  test('非空字符串 → trim 后落盘（不在白名单就会被保存悄悄丢掉——physics 的老 bug 同款）', () => {
+  test('After non-empty character string → trim, persist to disk (if it is not in the whitelist, it will be saved and quietly discarded - physics is the same as the old bug)', () => {
     const out = saveOnce({ pets: [{ ...PETS[0], whisperPrompt: '  我是猫娘\n' }] });
-    assert.equal(petAt(out).whisperPrompt, '我是猫娘', 'whisperPrompt 必须在 saveUserConfig 的白名单里');
+    assert.equal(petAt(out).whisperPrompt, '我是猫娘', 'whisperPrompt must be in the whitelist of saveUserConfig');
   });
 
-  test('空串 / 纯空白 → 不写该键（= 删除这只宠物的覆盖、回落条目）', () => {
+  test('Empty string / pure blank → do not write the key (= delete the override, fallback entry for this pet)', () => {
     for (const value of ['', '   ']) {
       assert.equal(
         'whisperPrompt' in petAt(saveOnce({ pets: [{ ...PETS[0], whisperPrompt: value }] })),
         false,
-        `${JSON.stringify(value)} 不该落盘`,
+        `${JSON.stringify(value)} should not persist to disk`,
       );
     }
   });
 
-  test('未传 → 不凭空造字段（旧客户端 / 设置页不传时不得写一个空人设）', () => {
+  test('Not transmitted → Do not create fields out of thin air (old client/settings page must not write an empty persona when it is not transmitted)', () => {
     assert.equal('whisperPrompt' in petAt(saveOnce({ pets: [{ ...PETS[0] }] })), false);
   });
 
-  test('传了非字符串 → 整体拒绝（宿主回 400，不静默丢用户输入）', () => {
+  test('A non-character string is passed → overall rejection (the host returns 400 and does not silently discard user input)', () => {
     assert.equal(saveOnce({ pets: [{ ...PETS[0], whisperPrompt: 42 }] }), null);
   });
 
-  test('/pet-display 式往返：合并结果直接喂回 save，人设不丢（也不会被写成空串）', () => {
+  test('/ pet-display type round trip: the merged result is directly fed back to save, persona is not lost (nor will it be written as an empty string)', () => {
     const merged = readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], whisperPrompt: '我是猫娘' }] }));
     const layerPets = merged.main.pets as Record<string, unknown>[];
     assert.equal(petAt(saveOnce({ pets: layerPets })).whisperPrompt, '我是猫娘');
   });
 });
 
-describe('配置合并与保存 —— sizePercent（合法才落键，缺省按默认 20 消费）', () => {
+describe('Configuration merging and saving - sizePercent (the key will be dropped only if it is valid, and the default consumption is 20)', () => {
   const petAt = (merged: Record<string, Record<string, unknown>>): Record<string, unknown> =>
     (merged.main.pets as Record<string, unknown>[])[0];
 
-  test('实例写了合法百分比 → 原样带出', () => {
+  test('The valid percentage is written in the instance → brought out as it is', () => {
     const pet = petAt(readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], sizePercent: 40 }] })));
     assert.equal(pet.sizePercent, 40);
   });
 
-  test('没写 → 不落键（渲染侧按默认 20，文件不长多余的键；无用户层时形状也一致）', () => {
+  test('No writing → No key drop (default is 20 when rendering side presses, the file does not have extra keys; the shape is consistent even when there is no user layer)', () => {
     assert.equal('sizePercent' in petAt(readAllConfig(withBase({}))), false);
   });
 
-  test('非数字或小于 1 → 不落键并告警，不抛错', () => {
+  test('Non-digit or less than 1 → Do not drop the key and alert, do not throw an error', () => {
     for (const value of [0, -5, '40', null, { a: 1 }, true]) {
       const pet = petAt(readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], sizePercent: value }] })));
-      assert.equal('sizePercent' in pet, false, `${JSON.stringify(value)} 应被忽略`);
+      assert.equal('sizePercent' in pet, false, `${JSON.stringify(value)} should be ignored`);
     }
   });
 
-  test('边界值与超过 100 都合法（不设上限）', () => {
+  test('Both boundary values and values exceeding 100 are valid (no upper limit)', () => {
     for (const value of [1, 100, 150]) {
       const pet = petAt(readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], sizePercent: value }] })));
       assert.equal(pet.sizePercent, value);
     }
   });
 
-  test('saveUserConfig：合法百分比落盘（不在白名单就会被保存悄悄丢掉）', () => {
+  test('saveUserConfig: valid percentage persist to disk (if it is not in the whitelist, it will be saved and quietly discarded)', () => {
     const out = saveOnce({ pets: [{ ...PETS[0], sizePercent: 40 }] });
     assert.equal((out?.pets as Record<string, unknown>[])[0].sizePercent, 40);
   });
 
-  test('saveUserConfig：未传 → 不凭空造字段', () => {
+  test('saveUserConfig: Not transmitted → Do not create fields out of thin air', () => {
     const out = saveOnce({ pets: PETS });
     assert.equal('sizePercent' in (out?.pets as Record<string, unknown>[])[0], false);
   });
 
-  test('saveUserConfig：传了非法值 → 整体拒绝（宿主回 400，不静默丢输入）', () => {
+  test('saveUserConfig: An invalid value is passed → overall rejection (the host returns 400, and the input is not lost silently)', () => {
     for (const value of [0, -1, '40']) {
-      assert.equal(saveOnce({ pets: [{ ...PETS[0], sizePercent: value }] }), null, `${JSON.stringify(value)} 应被拒绝`);
+      assert.equal(
+        saveOnce({ pets: [{ ...PETS[0], sizePercent: value }] }),
+        null,
+        `${JSON.stringify(value)} should be rejected`,
+      );
     }
   });
 
-  test('合并结果直接喂回 save：百分比往返不丢', () => {
+  test('The merged result is directly fed back to save: the percentage is not lost in the round trip.', () => {
     const merged = readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], sizePercent: 40 }] }));
     const layerPets = merged.main.pets as Record<string, unknown>[];
     assert.equal((saveOnce({ pets: layerPets })?.pets as Record<string, unknown>[])[0].sizePercent, 40);
   });
 });
 
-describe('saveUserConfig —— 物理参数 physics（白名单 + 透传保留）', () => {
+describe('saveUserConfig ——Physical parameters physics (whitelist + transparent transmission reservation)', () => {
   const PHYS: Record<string, unknown> = BASE.physics;
 
-  test('整段随请求体写入（设置页「物理」区）', () => {
+  test('The entire segment is written with the request body ("Physical" area of the settings page)', () => {
     const out = saveOnce({ pets: PETS, physics: PHYS });
-    assert.deepEqual(out?.physics, PHYS, 'physics 必须按请求体整段写入');
+    assert.deepEqual(out?.physics, PHYS, 'physics must be written in the entire request body');
   });
 
-  test('未传时透传磁盘旧值；磁盘上也没有则不凭空造字段', () => {
+  test('The old disk value is transparently transmitted when it has not been transmitted; if it does not exist on the disk, the field is not created out of thin air.', () => {
     const kept = saveOnce({ pets: PETS }, { pets: PETS, physics: { ...PHYS, gravity: 2000 } });
-    assert.deepEqual(kept?.physics, { ...PHYS, gravity: 2000 }, '未传 physics 时必须原样保留磁盘上的手改值');
-    assert.equal('physics' in (saveOnce({ pets: PETS }) ?? {}), false, '磁盘上也没有时不得凭空写入');
+    assert.deepEqual(
+      kept?.physics,
+      { ...PHYS, gravity: 2000 },
+      'When physics is not transmitted, the manually modified value on the disk must be retained as it is.',
+    );
+    assert.equal(
+      'physics' in (saveOnce({ pets: PETS }) ?? {}),
+      false,
+      'It is not allowed to write out of thin air when there is nothing on the disk.',
+    );
   });
 
-  test('请求体覆盖磁盘旧值（与四个全局开关同一语义）', () => {
+  test('The request body overwrites the old value on disk (same semantics as the four global switches)', () => {
     const out = saveOnce({ pets: PETS, physics: { ...PHYS, throwPower: 2 } }, { pets: PETS, physics: PHYS });
     assert.equal((out?.physics as Record<string, unknown>).throwPower, 2);
   });
 
-  test('hapticEnabled：缺键合法（旧配置按默认开），非布尔整段拒绝', () => {
+  test('hapticEnabled: The missing key is valid (the old configuration is enabled by default), and the entire non-Boolean section is rejected.', () => {
     const missing: Record<string, unknown> = { ...PHYS };
     delete missing.hapticEnabled;
     const kept = saveOnce({ pets: PETS, physics: missing });
-    assert.ok(kept, '缺键不该被整段拒绝');
-    assert.equal('hapticEnabled' in (kept?.physics as Record<string, unknown>), false, '没写就不凭空补键');
-    assert.ok(saveOnce({ pets: PETS, physics: { ...PHYS, hapticEnabled: false } }), '显式关了要能落盘');
+    assert.ok(kept, 'Missing keys should not be rejected as a whole');
+    assert.equal(
+      'hapticEnabled' in (kept?.physics as Record<string, unknown>),
+      false,
+      'If the key is not written, the key will not be filled out of the air.',
+    );
+    assert.ok(
+      saveOnce({ pets: PETS, physics: { ...PHYS, hapticEnabled: false } }),
+      'If explicitly turned off, it must be able to persist to disk.',
+    );
     assert.equal(saveOnce({ pets: PETS, physics: { ...PHYS, hapticEnabled: 'yes' } }), null);
   });
 
-  test('tiltGravity / shakeThrow：缺键合法（走默认），非布尔整段拒绝', () => {
+  test('tiltGravity / shakeThrow: Missing key is valid (default), non-Boolean whole segment is rejected', () => {
     const missing: Record<string, unknown> = { ...PHYS };
     delete missing.tiltGravity;
     delete missing.shakeThrow;
-    assert.ok(saveOnce({ pets: PETS, physics: missing }), '缺键不该被整段拒绝');
-    assert.ok(saveOnce({ pets: PETS, physics: { ...PHYS, tiltGravity: true } }), '单独开倾斜要能落盘');
-    assert.ok(saveOnce({ pets: PETS, physics: { ...PHYS, shakeThrow: true } }), '单独开摇一摇要能落盘');
+    assert.ok(saveOnce({ pets: PETS, physics: missing }), 'Missing keys should not be rejected as a whole');
+    assert.ok(
+      saveOnce({ pets: PETS, physics: { ...PHYS, tiltGravity: true } }),
+      'When turning on tilt alone, it must be able to persist to disk',
+    );
+    assert.ok(saveOnce({ pets: PETS, physics: { ...PHYS, shakeThrow: true } }), 'Shake alone to persist to disk');
     assert.equal(saveOnce({ pets: PETS, physics: { ...PHYS, tiltGravity: 'on' } }), null);
     assert.equal(saveOnce({ pets: PETS, physics: { ...PHYS, shakeThrow: 1 } }), null);
   });
 
-  test('非法值 → 整体拒绝（宿主回 400；与读取侧 physicsValid 同一套规则）', () => {
+  test('Invalid value → overall rejection (host returns 400; the same set of rules as the read side physicsValid)', () => {
     const bad: Array<[string, unknown]> = [
       ['restitution > 1', { ...PHYS, restitution: 1.5 }],
       ['restitution < 0', { ...PHYS, restitution: -0.1 }],
@@ -918,76 +960,92 @@ describe('saveUserConfig —— 物理参数 physics（白名单 + 透传保留�
       ['physics 非对象', 'yes'],
     ];
     for (const [name, value] of bad) {
-      assert.equal(saveOnce({ pets: PETS, physics: value }), null, `${name} 必须被拒绝`);
+      assert.equal(saveOnce({ pets: PETS, physics: value }), null, `${name} must be rejected`);
     }
   });
 });
 
-describe('saveUserConfig —— 动作频率 animationWeights（白名单 + 透传保留）', () => {
+describe('saveUserConfig —— Action frequency animationWeights (white list + transparent transmission reservation)', () => {
   const WEIGHTS = { idle: 30, turn: 5, move: 5 };
 
-  test('整段随请求体写入（设置页「动作频率」卡）', () => {
+  test('The entire segment is written with the request body ("Action Frequency" card on the setting page)', () => {
     const out = saveOnce({ pets: PETS, animationWeights: WEIGHTS });
-    assert.deepEqual(out?.animationWeights, WEIGHTS, 'animationWeights 必须按请求体整段写入');
+    assert.deepEqual(out?.animationWeights, WEIGHTS, 'animationWeights must be written in the entire request body');
   });
 
-  test('未传时透传磁盘旧值；磁盘上也没有则不凭空造字段', () => {
+  test('The old disk value is transparently transmitted when it has not been transmitted; if it does not exist on the disk, the field is not created out of thin air.', () => {
     const kept = saveOnce({ pets: PETS }, { pets: PETS, animationWeights: WEIGHTS });
-    assert.deepEqual(kept?.animationWeights, WEIGHTS, '未传时必须原样保留磁盘上的手改值');
-    assert.equal('animationWeights' in (saveOnce({ pets: PETS }) ?? {}), false, '磁盘上也没有时不得凭空写入');
+    assert.deepEqual(
+      kept?.animationWeights,
+      WEIGHTS,
+      'The manually modified value on the disk must be retained as it is before being transferred.',
+    );
+    assert.equal(
+      'animationWeights' in (saveOnce({ pets: PETS }) ?? {}),
+      false,
+      'It is not allowed to write out of thin air when there is nothing on the disk.',
+    );
   });
 
-  test('数值归一化：字符串也按数字落盘', () => {
+  test('Numerical normalization: character strings are also numerically persisted to disk', () => {
     const out = saveOnce({ pets: PETS, animationWeights: { idle: '30', turn: 5, move: 5 } });
     assert.deepEqual(out?.animationWeights, WEIGHTS);
   });
 
-  test('非法值 → 整体拒绝（负数与非对象是脏值）', () => {
+  test('Invalid value → overall rejection (negative numbers and non-objects are dirty values)', () => {
     assert.equal(saveOnce({ pets: PETS, animationWeights: { idle: -1, turn: 5, move: 5 } }), null);
     assert.equal(saveOnce({ pets: PETS, animationWeights: '30' }), null);
   });
 });
 
-describe('saveUserConfig —— 碎碎念 / 对话模型（白名单 + 透传保留）', () => {
+describe('saveUserConfig —— whisper / dialogue model (whitelist + transparent transmission reservation)', () => {
   const WM = { provider: 'deepseek', model: 'deepseek-chat' };
   const CM = { provider: 'opencode', model: 'big-model' };
 
-  test('整段随请求体写入（设置页「AI 模型」两个下拉框）', () => {
+  test('The entire paragraph is written with the request body (two drop-down boxes of "AI Model" on the setting page)', () => {
     const out = saveOnce({ pets: PETS, whisperModel: WM, chatModel: CM });
-    assert.deepEqual(out?.whisperModel, WM, 'whisperModel 必须按请求体写入');
-    assert.deepEqual(out?.chatModel, CM, 'chatModel 必须按请求体写入');
+    assert.deepEqual(out?.whisperModel, WM, 'whisperModel must be written according to the request body');
+    assert.deepEqual(out?.chatModel, CM, 'chatModel must be written according to the request body');
   });
 
-  test('留空（跟随当前对话）也是合法值，照常落盘', () => {
+  test('Leaving it blank (following the current conversation) is also a valid value, persist to disk as usual', () => {
     const empty = { provider: '', model: '' };
     const out = saveOnce({ pets: PETS, whisperModel: empty, chatModel: empty });
     assert.deepEqual(out?.whisperModel, empty);
     assert.deepEqual(out?.chatModel, empty);
   });
 
-  test('未传时透传磁盘旧值；磁盘上也没有则不凭空造字段', () => {
+  test('The old disk value is transparently transmitted when it has not been transmitted; if it does not exist on the disk, the field is not created out of thin air.', () => {
     const kept = saveOnce({ pets: PETS }, { pets: PETS, whisperModel: WM, chatModel: CM });
-    assert.deepEqual(kept?.whisperModel, WM, '未传时必须原样保留磁盘上的手改值');
+    assert.deepEqual(
+      kept?.whisperModel,
+      WM,
+      'The manually modified value on the disk must be retained as it is before being transferred.',
+    );
     assert.deepEqual(kept?.chatModel, CM);
     const fresh = saveOnce({ pets: PETS }) ?? {};
-    assert.equal('whisperModel' in fresh, false, '磁盘上也没有时不得凭空写入');
+    assert.equal(
+      'whisperModel' in fresh,
+      false,
+      'It is not allowed to write out of thin air when there is nothing on the disk.',
+    );
     assert.equal('chatModel' in fresh, false);
   });
 
-  test('请求体覆盖磁盘旧值（与四个全局开关同一语义）', () => {
+  test('The request body overwrites the old value on disk (same semantics as the four global switches)', () => {
     const out = saveOnce({ pets: PETS, whisperModel: WM }, { pets: PETS, whisperModel: CM });
     assert.deepEqual(out?.whisperModel, WM);
   });
 
-  test('落盘时归一化：两侧空白 trim，请求体多带的键不写进用户层', () => {
+  test('Normalization when persisting to disk: blank trim on both sides, keys with multiple fields in the request body are not written into the user layer', () => {
     const out = saveOnce({
       pets: PETS,
       whisperModel: { provider: ' deepseek ', model: ' deepseek-chat ', reasoningEffort: 'high' },
     });
-    assert.deepEqual(out?.whisperModel, WM, '只保留 provider/model 两个 trim 过的字符串');
+    assert.deepEqual(out?.whisperModel, WM, 'Only retain provider/model and two trim character strings');
   });
 
-  test('非法值 → 整体拒绝（宿主回 400；与读取侧 modelSelectionValid 同一套规则）', () => {
+  test('Invalid value → overall rejection (host returns 400; the same set of rules as the read side modelSelectionValid)', () => {
     const bad: Array<[string, unknown]> = [
       ['只填服务商', { provider: 'deepseek', model: '' }],
       ['只填模型', { provider: '', model: 'deepseek-chat' }],
@@ -999,51 +1057,59 @@ describe('saveUserConfig —— 碎碎念 / 对话模型（白名单 + 透传保
       ['null', null],
     ];
     for (const [name, value] of bad) {
-      assert.equal(saveOnce({ pets: PETS, whisperModel: value }), null, `whisperModel ${name} 必须被拒绝`);
-      assert.equal(saveOnce({ pets: PETS, chatModel: value }), null, `chatModel ${name} 必须被拒绝`);
+      assert.equal(saveOnce({ pets: PETS, whisperModel: value }), null, `whisperModel ${name} must be rejected`);
+      assert.equal(saveOnce({ pets: PETS, chatModel: value }), null, `chatModel ${name} must be rejected`);
     }
   });
 });
 
-describe('saveUserConfig —— 语音细分开关（白名单 + 透传保留）', () => {
-  test('随请求体写入（设置页「语音播报」卡的两个开关）', () => {
+describe('saveUserConfig - Voice subdivision switch (whitelist + transparent transmission reservation)', () => {
+  test('Write with the request body (the two switches of the "Voice Broadcast" card on the settings page)', () => {
     const out = saveOnce({ pets: PETS, voiceWhisperEnabled: true, voiceTodoEnabled: true });
     assert.equal(out?.voiceWhisperEnabled, true);
     assert.equal(out?.voiceTodoEnabled, true);
   });
 
-  test('false 是合法值，照常落盘', () => {
+  test('false is a valid value, persist to disk as usual', () => {
     const out = saveOnce({ pets: PETS, voiceWhisperEnabled: false, voiceTodoEnabled: false });
-    assert.equal(out?.voiceWhisperEnabled, false, 'false 不能被当成「没传」而走透传');
+    assert.equal(out?.voiceWhisperEnabled, false, 'false cannot be regarded as "not passed" and passed through.');
     assert.equal(out?.voiceTodoEnabled, false);
   });
 
-  test('未传时透传磁盘旧值；磁盘上也没有则不凭空造字段', () => {
+  test('The old disk value is transparently transmitted when it has not been transmitted; if it does not exist on the disk, the field is not created out of thin air.', () => {
     const kept = saveOnce({ pets: PETS }, { pets: PETS, voiceWhisperEnabled: true, voiceTodoEnabled: true });
-    assert.equal(kept?.voiceWhisperEnabled, true, '未传时必须原样保留磁盘上的手改值');
+    assert.equal(
+      kept?.voiceWhisperEnabled,
+      true,
+      'The manually modified value on the disk must be retained as it is before being transferred.',
+    );
     assert.equal(kept?.voiceTodoEnabled, true);
     const fresh = saveOnce({ pets: PETS }) ?? {};
-    assert.equal('voiceWhisperEnabled' in fresh, false, '磁盘上也没有时不得凭空写入');
+    assert.equal(
+      'voiceWhisperEnabled' in fresh,
+      false,
+      'It is not allowed to write out of thin air when there is nothing on the disk.',
+    );
     assert.equal('voiceTodoEnabled' in fresh, false);
   });
 
-  test('非布尔 → 整体拒绝（宿主回 400；与读取侧 topFieldValid 同一套规则）', () => {
+  test('Non-Boolean → overall rejection (host returns 400; the same set of rules as the read side topFieldValid)', () => {
     for (const value of ['true', 1, null, {}, []]) {
       assert.equal(
         saveOnce({ pets: PETS, voiceWhisperEnabled: value }),
         null,
-        `voiceWhisperEnabled ${JSON.stringify(value)} 必须被拒绝`,
+        `voiceWhisperEnabled ${JSON.stringify(value)} must be rejected`,
       );
       assert.equal(
         saveOnce({ pets: PETS, voiceTodoEnabled: value }),
         null,
-        `voiceTodoEnabled ${JSON.stringify(value)} 必须被拒绝`,
+        `voiceTodoEnabled ${JSON.stringify(value)} must be rejected`,
       );
     }
   });
 });
 
-test('长期记忆可直接用于旧配置；设置往返保存且拒绝内嵌凭据', () => {
+test('Long-term memory works directly with old configurations; settings round-trip save and reject inline credentials', () => {
   const { paths, dir } = pathsWithUser('{}');
   try {
     const main = readAllConfig(paths).main;
@@ -1059,61 +1125,81 @@ test('长期记忆可直接用于旧配置；设置往返保存且拒绝内嵌�
   }
 });
 
-describe('saveUserConfig —— 工作状态播报开关（白名单 + 透传保留）', () => {
-  test('随请求体写入（设置页「语音播报」卡的第四个开关）', () => {
+describe('saveUserConfig - Working status broadcast switch (whitelist + transparent transmission reservation)', () => {
+  test('Write with the request body (the fourth switch of the "Voice Broadcast" card on the settings page)', () => {
     const out = saveOnce({ pets: PETS, voiceNotifyEnabled: true });
     assert.equal(out?.voiceNotifyEnabled, true);
   });
 
-  test('false 是合法值，照常落盘', () => {
+  test('false is a valid value, persist to disk as usual', () => {
     const out = saveOnce({ pets: PETS, voiceNotifyEnabled: false });
-    assert.equal(out?.voiceNotifyEnabled, false, 'false 不能被当成「没传」而走透传');
+    assert.equal(out?.voiceNotifyEnabled, false, 'false cannot be regarded as "not passed" and passed through.');
   });
 
-  test('未传时透传磁盘旧值；磁盘上也没有则不凭空造字段', () => {
+  test('The old disk value is transparently transmitted when it has not been transmitted; if it does not exist on the disk, the field is not created out of thin air.', () => {
     const kept = saveOnce({ pets: PETS }, { pets: PETS, voiceNotifyEnabled: true });
-    assert.equal(kept?.voiceNotifyEnabled, true, '未传时必须原样保留磁盘上的手改值');
+    assert.equal(
+      kept?.voiceNotifyEnabled,
+      true,
+      'The manually modified value on the disk must be retained as it is before being transferred.',
+    );
     const fresh = saveOnce({ pets: PETS }) ?? {};
-    assert.equal('voiceNotifyEnabled' in fresh, false, '磁盘上也没有时不得凭空写入');
+    assert.equal(
+      'voiceNotifyEnabled' in fresh,
+      false,
+      'It is not allowed to write out of thin air when there is nothing on the disk.',
+    );
   });
 
-  test('非布尔 → 整体拒绝（与读取侧 topFieldValid 同一套规则）', () => {
+  test('Non-Boolean → Overall rejection (same set of rules as topFieldValid on the read side)', () => {
     for (const value of ['true', 1, null, {}, []]) {
       assert.equal(
         saveOnce({ pets: PETS, voiceNotifyEnabled: value }),
         null,
-        `voiceNotifyEnabled ${JSON.stringify(value)} 必须被拒绝`,
+        `voiceNotifyEnabled ${JSON.stringify(value)} must be rejected`,
       );
     }
   });
 });
 
-describe('saveUserConfig —— 对话历史条数 chatMemoryRounds（白名单 + 透传保留）', () => {
-  test('随请求体写入（设置页「AI 模型与对话上下文」的数字输入框）', () => {
+describe('saveUserConfig ——The number of conversation history items chatMemoryRounds (whitelist + transparent transmission retention)', () => {
+  test('Write with the request body (numeric input box of "AI Model and Dialog Context" on the settings page)', () => {
     const out = saveOnce({ pets: PETS, chatMemoryRounds: 9 });
-    assert.equal(out?.chatMemoryRounds, 9, 'chatMemoryRounds 必须在 saveUserConfig 的白名单里');
+    assert.equal(out?.chatMemoryRounds, 9, 'chatMemoryRounds must be in the whitelist of saveUserConfig');
   });
 
-  test('0 是合法值（= 不带历史进上下文），照常落盘', () => {
+  test('0 is a valid value (= does not bring history into the context), persist to disk as usual', () => {
     assert.equal(saveOnce({ pets: PETS, chatMemoryRounds: 0 })?.chatMemoryRounds, 0);
   });
 
-  test('落盘时归一化成数字（"9" → 9，与读取侧 topFieldValid 同一口径）', () => {
+  test('Normalized into numbers when persisting to disk ("9" → 9, the same conventions as topFieldValid on the read side)', () => {
     assert.equal(saveOnce({ pets: PETS, chatMemoryRounds: '9' })?.chatMemoryRounds, 9);
   });
 
-  test('未传时透传磁盘旧值；磁盘上也没有则不凭空造字段', () => {
+  test('The old disk value is transparently transmitted when it has not been transmitted; if it does not exist on the disk, the field is not created out of thin air.', () => {
     const kept = saveOnce({ pets: PETS }, { pets: PETS, chatMemoryRounds: 3 });
-    assert.equal(kept?.chatMemoryRounds, 3, '未传时必须原样保留磁盘上的手改值');
-    assert.equal('chatMemoryRounds' in (saveOnce({ pets: PETS }) ?? {}), false, '磁盘上也没有时不得凭空写入');
+    assert.equal(
+      kept?.chatMemoryRounds,
+      3,
+      'The manually modified value on the disk must be retained as it is before being transferred.',
+    );
+    assert.equal(
+      'chatMemoryRounds' in (saveOnce({ pets: PETS }) ?? {}),
+      false,
+      'It is not allowed to write out of thin air when there is nothing on the disk.',
+    );
   });
 
-  test('请求体覆盖磁盘旧值（与四个全局开关同一语义）', () => {
+  test('The request body overwrites the old value on disk (same semantics as the four global switches)', () => {
     const out = saveOnce({ pets: PETS, chatMemoryRounds: 9 }, { pets: PETS, chatMemoryRounds: 3 });
-    assert.equal(out?.chatMemoryRounds, 9, '请求体优先，不被 existing 反向覆盖');
+    assert.equal(
+      out?.chatMemoryRounds,
+      9,
+      'The request body takes priority and will not be reversely overwritten by existing',
+    );
   });
 
-  test('非法值 → 整体拒绝（宿主回 400；与读取侧 topFieldValid 同一套规则）', () => {
+  test('Invalid value → overall rejection (host returns 400; the same set of rules as the read side topFieldValid)', () => {
     const bad: Array<[string, unknown]> = [
       ['负数', -1],
       ['非数字字符串', 'many'],
@@ -1122,37 +1208,49 @@ describe('saveUserConfig —— 对话历史条数 chatMemoryRounds（白名单 
       ['NaN', NaN],
     ];
     for (const [name, value] of bad) {
-      assert.equal(saveOnce({ pets: PETS, chatMemoryRounds: value }), null, `${name} 必须被拒绝`);
+      assert.equal(saveOnce({ pets: PETS, chatMemoryRounds: value }), null, `${name} must be rejected`);
     }
   });
 });
 
-describe('saveUserConfig —— 对话配图张数上限 chatImageLimit（白名单 + 透传保留）', () => {
-  test('随请求体写入（设置页「AI 模型与对话上下文」的数字输入框）', () => {
+describe('saveUserConfig——The upper limit of the number of dialogue pictures chatImageLimit (whitelist + transparent transmission reservation)', () => {
+  test('Write with the request body (numeric input box of "AI Model and Dialog Context" on the settings page)', () => {
     const out = saveOnce({ pets: PETS, chatImageLimit: 8 });
-    assert.equal(out?.chatImageLimit, 8, 'chatImageLimit 必须在 saveUserConfig 的白名单里');
+    assert.equal(out?.chatImageLimit, 8, 'chatImageLimit must be in the whitelist of saveUserConfig');
   });
 
-  test('0 是合法值（= 不限制，全部发给模型），照常落盘', () => {
+  test('0 is a valid value (= no limit, all sent to the model), persist to disk as usual', () => {
     assert.equal(saveOnce({ pets: PETS, chatImageLimit: 0 })?.chatImageLimit, 0);
   });
 
-  test('落盘时归一化成数字（"8" → 8，与读取侧 topFieldValid 同一口径）', () => {
+  test('Normalize to numbers when persisting to disk ("8" → 8, the same conventions as topFieldValid on the read side)', () => {
     assert.equal(saveOnce({ pets: PETS, chatImageLimit: '8' })?.chatImageLimit, 8);
   });
 
-  test('未传时透传磁盘旧值；磁盘上也没有则不凭空造字段', () => {
+  test('The old disk value is transparently transmitted when it has not been transmitted; if it does not exist on the disk, the field is not created out of thin air.', () => {
     const kept = saveOnce({ pets: PETS }, { pets: PETS, chatImageLimit: 3 });
-    assert.equal(kept?.chatImageLimit, 3, '未传时必须原样保留磁盘上的手改值');
-    assert.equal('chatImageLimit' in (saveOnce({ pets: PETS }) ?? {}), false, '磁盘上也没有时不得凭空写入');
+    assert.equal(
+      kept?.chatImageLimit,
+      3,
+      'The manually modified value on the disk must be retained as it is before being transferred.',
+    );
+    assert.equal(
+      'chatImageLimit' in (saveOnce({ pets: PETS }) ?? {}),
+      false,
+      'It is not allowed to write out of thin air when there is nothing on the disk.',
+    );
   });
 
-  test('请求体覆盖磁盘旧值（与四个全局开关同一语义）', () => {
+  test('The request body overwrites the old value on disk (same semantics as the four global switches)', () => {
     const out = saveOnce({ pets: PETS, chatImageLimit: 8 }, { pets: PETS, chatImageLimit: 3 });
-    assert.equal(out?.chatImageLimit, 8, '请求体优先，不被 existing 反向覆盖');
+    assert.equal(
+      out?.chatImageLimit,
+      8,
+      'The request body takes priority and will not be reversely overwritten by existing',
+    );
   });
 
-  test('非法值 → 整体拒绝（宿主回 400；与读取侧 topFieldValid 同一套规则）', () => {
+  test('Invalid value → overall rejection (host returns 400; the same set of rules as the read side topFieldValid)', () => {
     const bad: Array<[string, unknown]> = [
       ['负数', -1],
       ['非数字字符串', 'many'],
@@ -1161,28 +1259,28 @@ describe('saveUserConfig —— 对话配图张数上限 chatImageLimit（白名
       ['NaN', NaN],
     ];
     for (const [name, value] of bad) {
-      assert.equal(saveOnce({ pets: PETS, chatImageLimit: value }), null, `${name} 必须被拒绝`);
+      assert.equal(saveOnce({ pets: PETS, chatImageLimit: value }), null, `${name} must be rejected`);
     }
   });
 });
 
-describe('readAllConfig —— 模型选择合并（缺失取默认 / 非法回退默认）', () => {
+describe('readAllConfig - Model selection merge (default if missing/invalid fallback to default)', () => {
   const WM = { provider: 'deepseek', model: 'deepseek-chat' };
 
-  test('内置默认有值 → 用户层没写时读得到（默认 = 都空 = 跟随当前对话）', () => {
+  test('The built-in default value → can be read when the user layer is not writing (default = empty = follow the current conversation)', () => {
     const merged = readAllConfig(withBase({ whisperModel: WM, chatModel: WM }));
     assert.deepEqual(merged.main.whisperModel, WM);
     assert.deepEqual(merged.main.chatModel, WM);
   });
 
-  test('用户层写了 → 覆盖内置默认', () => {
+  test('The user layer writes → overwrites the built-in default', () => {
     const merged = readAllConfig(
       withBase({ whisperModel: WM }, { whisperModel: { provider: 'opencode', model: 'big-model' } }),
     );
     assert.deepEqual(merged.main.whisperModel, { provider: 'opencode', model: 'big-model' });
   });
 
-  test('用户层写了非法值 → 回退内置默认（只填一半 / 非字符串 / 非对象）', () => {
+  test('The user layer wrote an invalid value → fall back to the built-in default (only fill in half / non-character string / non-object)', () => {
     const bad: unknown[] = [
       { provider: 'deepseek', model: '' },
       { provider: '', model: 'deepseek-chat' },
@@ -1192,48 +1290,52 @@ describe('readAllConfig —— 模型选择合并（缺失取默认 / 非法回�
     ];
     for (const value of bad) {
       const merged = readAllConfig(withBase({ whisperModel: WM }, { whisperModel: value }));
-      assert.deepEqual(merged.main.whisperModel, WM, `${JSON.stringify(value)} 应回退内置默认`);
+      assert.deepEqual(
+        merged.main.whisperModel,
+        WM,
+        `${JSON.stringify(value)} should fall back to the built-in default`,
+      );
     }
   });
 });
 
-describe('readAllConfig —— 抛掷锁定合并（缺失取默认 / 非法回退默认）', () => {
-  test('内置默认有值 → 用户层没写时读得到', () => {
+describe('readAllConfig - Throw lock merge (default if missing/default if invalid)', () => {
+  test('The built-in default value → can be read when the user layer is not writing.', () => {
     const merged = readAllConfig(withBase({ confineToScreen: false }));
     assert.equal(merged.main.confineToScreen, false);
   });
 
-  test('用户层写了 true → 覆盖内置默认', () => {
+  test('The user layer writes true → overwrites the built-in default', () => {
     const merged = readAllConfig(withBase({ confineToScreen: false }, { confineToScreen: true }));
     assert.equal(merged.main.confineToScreen, true);
   });
 
-  test('用户层写了非法值 → 回退内置默认', () => {
+  test('The user layer wrote an invalid value → fall back to the built-in default', () => {
     const merged = readAllConfig(withBase({ confineToScreen: true }, { confineToScreen: 'yes' }));
-    assert.equal(merged.main.confineToScreen, true); // 回退默认 true
+    assert.equal(merged.main.confineToScreen, true); // Fall back to default true
   });
 });
 
-describe('readAllConfig —— 宠物固定合并（缺失取默认 / 非法回退默认 / 逐实例独立）', () => {
-  /** 取合并后第 n 只宠物 */
+describe('readAllConfig - Fixed merge of pets (default if missing/invalid fallback to default/instance-by-instance independence)', () => {
+  /** Get the nth pet after merging */
   const petAt = (merged: Record<string, Record<string, unknown>>, n = 0): Record<string, unknown> =>
     (merged.main.pets as Record<string, unknown>[])[n];
 
-  test('内置默认有值 → 用户层没写时读得到（默认 false = 保持原行为）', () => {
+  test('The built-in default value → can be read when the user layer is not writing (default false = maintain the original behavior)', () => {
     assert.equal(petAt(readAllConfig(withBase({}))).fixedEnabled, false);
   });
 
-  test('用户层写了 true → 覆盖内置默认', () => {
+  test('The user layer writes true → overwrites the built-in default', () => {
     const merged = readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], fixedEnabled: true }] }));
     assert.equal(petAt(merged).fixedEnabled, true);
   });
 
-  test('用户层写了非法值 → 回退内置默认（告警 + 默认，不让脏值进渲染层）', () => {
+  test('The user layer wrote an invalid value → fall back to the built-in default (warning + default, do not allow dirty values to enter the rendering layer)', () => {
     const merged = readAllConfig(withBase({}, { pets: [{ ...BASE.pets[0], fixedEnabled: 'yes' }] }));
     assert.equal(petAt(merged).fixedEnabled, false);
   });
 
-  test('逐实例独立：同一列表里两只宠物各取各的值（不是条目级、不共享）', () => {
+  test('Per-instance independence: two pets in the same list each take their own values (not entry level, not shared)', () => {
     const merged = readAllConfig(
       withBase(
         {},
@@ -1251,8 +1353,8 @@ describe('readAllConfig —— 宠物固定合并（缺失取默认 / 非法回�
   });
 });
 
-describe('syncUserConfigFromDefault —— 同步（内置默认原文写入用户层）', () => {
-  /** 默认文件写入给定原文；用户文件故意放在尚不存在的子目录里（验证父目录自建） */
+describe('syncUserConfigFromDefault - Synchronization (built-in default original text is written to the user layer)', () => {
+  /** The default file is written to the given original text; the user file is deliberately placed in a subdirectory that does not yet exist (verify that the parent directory is self-created) */
   function fixture(raw: string): { paths: ConfigPaths; dir: string } {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-sync-test-'));
     const paths: ConfigPaths = {
@@ -1264,21 +1366,25 @@ describe('syncUserConfigFromDefault —— 同步（内置默认原文写入用�
     return { paths, dir };
   }
 
-  test('逐字节复制默认文件原文（注释一并保留）', () => {
+  test('Copy the original text of the default file byte by byte (retain all comments)', () => {
     const raw = '// 顶部注释\n{\n  "pets": []\n}\n';
     const { paths, dir } = fixture(raw);
     try {
       syncUserConfigFromDefault(paths);
-      assert.equal(readFileSync(paths.userFile, 'utf8'), raw, '用户层必须是默认文件的原文（含注释）');
+      assert.equal(
+        readFileSync(paths.userFile, 'utf8'),
+        raw,
+        'The user layer must be the original text of the default file (including comments)',
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('用户目录不存在 → 自动创建（首次同步即可落盘）', () => {
+  test('The user directory does not exist → automatically created (the first synchronization can persist to disk)', () => {
     const { paths, dir } = fixture(JSON.stringify(BASE, null, 2));
     try {
-      assert.equal(existsSync(dirname(paths.userFile)), false, '前置：用户目录本不存在');
+      assert.equal(existsSync(dirname(paths.userFile)), false, 'Prefix: The user directory does not exist');
       syncUserConfigFromDefault(paths);
       assert.equal(existsSync(paths.userFile), true);
     } finally {
@@ -1286,25 +1392,26 @@ describe('syncUserConfigFromDefault —— 同步（内置默认原文写入用�
     }
   });
 
-  test('同步后的成品 = 没有用户层（与「删除用户配置」等价）', () => {
+  test('Finished product after synchronization = no user layer (equivalent to "Delete user configuration")', () => {
     const { paths, dir } = fixture(JSON.stringify(BASE, null, 2));
     try {
-      const before = readAllConfig(paths); // 无用户层：纯内置默认
+      const before = readAllConfig(paths); // No user layer: pure built-in default
       syncUserConfigFromDefault(paths);
-      // deepStrictEqual：值/结构必须完全一致。不看键顺序——用户层会走 mergePets 重建实例，
-      // 键序被规范化为 id 在前（纯外观差异；已用生产 assets/config.jsonc 实测确认值完全一致）。
+      // deepStrictEqual: The value/structure must be exactly the same. Don't look at the key sequence - the user layer
+      // will go to mergePets to rebuild the instance, and the key sequence is normalized to id first (pure appearance
+      // difference; the measured and confirmed values of the production assets/config.jsonc are exactly the same).
       assert.deepStrictEqual(readAllConfig(paths), before);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test('默认文件缺失 → 抛错，且不得留下半个用户层文件（宿主回 500）', () => {
+  test('The default file is missing → throw an error, and half of the user layer file must not be left (host returns 500)', () => {
     const { paths, dir } = fixture('{}');
     try {
       rmSync(paths.defaultFile, { force: true });
       assert.throws(() => syncUserConfigFromDefault(paths));
-      assert.equal(existsSync(paths.userFile), false, '失败时不得写出用户层文件');
+      assert.equal(existsSync(paths.userFile), false, 'User level files must not be written out on failure');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1312,17 +1419,18 @@ describe('syncUserConfigFromDefault —— 同步（内置默认原文写入用�
 });
 
 /**
- * 文件宠物条目的基座 —— 「全局默认 + 种类可覆盖」。
+ * The base of file pet entries - "Global default + type can be overridden".
  *
- * 判据：GLOBAL_DEFAULT_KEYS 列出的字段（physics / animationWeights / confineToScreen /
- * 两个配图开关 / 对话动作联动开关 / chatImageLimit / chatMemoryRounds / whisperModel /
- * chatModel / eventsRefreshSec 等）是用户级「成本 / 偏好 /
- * 环境 / 节奏」参数，用户层写了就对所有条目生效（含 pet pack）；种类文件自己写了就覆盖
- * 自己那份。其余顶层字段（人设 / 表情包 / 动画池 / 文案）的基座仍是内置默认——
- * 一个种类一份人设、一份池、一个表情包目录，各写一份才是 pet pack 的意义。
+ * Criteria: The fields listed in GLOBAL_DEFAULT_KEYS (physics / animationWeights / confineToScreen / two picture
+ * switches / dialogue action linkage switches / chatImageLimit / chatMemoryRounds / whisperModel / chatModel /
+ * eventsRefreshSec, etc.) are user-level "cost / preference / environment / "Rhythm" parameter, if written by the user
+ * layer, it will take effect on all entries (including pet pack); if the category file is written by yourself, it will
+ * overwrite its own share. The base of the other top-level fields (persona/meme/animation
+ * pool/text) is still the built-in default - one persona, one pool, and one meme directory for each
+ * type. Writing one copy for each is the meaning of pet pack.
  */
-describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类可覆盖', () => {
-  /** 内置默认必须含全部顶层键：mergeEntry 只遍历 base 的键，缺键则用户层的值也流不进来 */
+describe('File pet entry - global default (user layer as base) + type can be overridden', () => {
+  /** The built-in default must contain all top-level keys: mergeEntry only traverses the keys of base. If the key is missing, the value of the user layer will not flow in. */
   const BASE_FULL: Record<string, unknown> = {
     ...BASE,
     whisperImageEnabled: true,
@@ -1334,7 +1442,7 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
     chatModel: { provider: '', model: '' },
     memes: { 可爱: '卖萌' },
   };
-  /** 一个最小可用的种类文件（不含任何顶层条目级字段，全靠基座） */
+  /** A minimal usable kind file (does not contain any top-level entry-level fields, relies solely on the base) */
   const PACK: Record<string, unknown> = {
     pets: [
       {
@@ -1350,7 +1458,7 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
 
   const rec = (v: unknown): Record<string, unknown> => v as Record<string, unknown>;
 
-  /** 建一套路径：内置默认 = BASE_FULL；可选用户层 + 一个种类文件；跑完 readAllConfig 就清理临时目录 */
+  /** Create a set of paths: built-in default = BASE_FULL; optional user layer + a category file; clean the temporary directory after running readAllConfig */
   function merged(opts: {
     overlay?: Record<string, unknown>;
     pack?: Record<string, unknown>;
@@ -1375,7 +1483,7 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
     }
   }
 
-  test('用户层写了这些字段 → 种类条目逐个继承（不再只吃内置默认）', () => {
+  test('The user layer writes these fields → category entries are inherited one by one (no longer only the built-in default)', () => {
     const out = merged({
       overlay: {
         physics: { ...(BASE_FULL.physics as Record<string, unknown>), petCollision: true, gravity: 999 },
@@ -1393,25 +1501,29 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
       pack: PACK,
     });
     const pig = out.pig;
-    assert.equal(rec(pig.physics).petCollision, true, 'physics 应继承用户层');
+    assert.equal(rec(pig.physics).petCollision, true, 'physics should inherit the user layer');
     assert.equal(rec(pig.physics).gravity, 999);
-    assert.deepEqual(pig.animationWeights, { idle: 40, turn: 2, move: 3 }, 'animationWeights 应继承用户层');
+    assert.deepEqual(
+      pig.animationWeights,
+      { idle: 40, turn: 2, move: 3 },
+      'animationWeights should inherit the user layer',
+    );
     assert.equal(pig.confineToScreen, true);
     assert.equal(pig.whisperImageEnabled, false);
     assert.equal(pig.chatImageEnabled, false);
-    assert.equal(pig.chatAnimationEnabled, false, 'chatAnimationEnabled 应继承用户层');
-    assert.equal(pig.chatImageLimit, 4, 'chatImageLimit 应继承用户层');
+    assert.equal(pig.chatAnimationEnabled, false, 'chatAnimationEnabled should inherit the user layer');
+    assert.equal(pig.chatImageLimit, 4, 'chatImageLimit should inherit the user layer');
     assert.equal(pig.chatMemoryRounds, 9);
     assert.deepEqual(pig.whisperModel, { provider: 'p1', model: 'm1' });
     assert.deepEqual(pig.chatModel, { provider: 'p2', model: 'm2' });
     assert.deepEqual(pig.eventsRefreshSec, { balance: 900, whisper: 60 });
-    // 对照：main 条目一直就是用户层（行为不变）
+    // Control: The main entry is always the user layer (the behavior remains unchanged)
     assert.equal(rec(out.main.physics).gravity, 999);
     assert.deepEqual(out.main.animationWeights, { idle: 40, turn: 2, move: 3 });
     assert.equal(out.main.chatMemoryRounds, 9);
   });
 
-  test('种类文件自己写了 → 覆盖自己那份；没写的仍继承用户层', () => {
+  test("The type file is written by oneself → overwrites one's own copy; the one that is not written still inherits the user layer", () => {
     const out = merged({
       overlay: {
         physics: { ...(BASE_FULL.physics as Record<string, unknown>), gravity: 999 },
@@ -1429,16 +1541,24 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
       },
     });
     const pig = out.pig;
-    assert.equal(rec(pig.physics).gravity, 111, '种类自己写了 physics → 用自己那份');
-    assert.deepEqual(pig.animationWeights, { idle: 5, turn: 5, move: 5 }, '种类自己写了 animationWeights → 用自己那份');
-    assert.equal(pig.chatMemoryRounds, 2, '种类自己写了 chatMemoryRounds → 用自己那份');
-    assert.equal(pig.chatImageLimit, 6, '种类自己写了 chatImageLimit → 用自己那份');
-    assert.equal(pig.whisperImageEnabled, true, '种类自己写了开关 → 用自己那份');
-    assert.equal(pig.confineToScreen, true, '种类没写 → 仍继承用户层');
-    assert.deepEqual(pig.chatModel, { provider: '', model: '' }, '种类没写 → 继承用户层（这里与默认同值）');
+    assert.equal(rec(pig.physics).gravity, 111, 'I wrote the type myself physics → use my own share');
+    assert.deepEqual(
+      pig.animationWeights,
+      { idle: 5, turn: 5, move: 5 },
+      'I wrote the type myself animationWeights → use my own share',
+    );
+    assert.equal(pig.chatMemoryRounds, 2, 'I wrote the type myself chatMemoryRounds → use my own share');
+    assert.equal(pig.chatImageLimit, 6, 'I wrote the type myself chatImageLimit → use my own share');
+    assert.equal(pig.whisperImageEnabled, true, 'I wrote the switch myself for the type → use my own share');
+    assert.equal(pig.confineToScreen, true, 'The type is not written → still inherit the user layer');
+    assert.deepEqual(
+      pig.chatModel,
+      { provider: '', model: '' },
+      'Type not written → Inherit user layer (same value here as default)',
+    );
   });
 
-  test('不在白名单的字段：基座仍是内置默认（不继承用户层）', () => {
+  test('Fields not in the whitelist: the base is still the built-in default (does not inherit the user layer)', () => {
     const out = merged({
       overlay: {
         whisperPrompt: '用户层的人设',
@@ -1449,17 +1569,21 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
       pack: PACK,
     });
     const pig = out.pig;
-    assert.equal(pig.whisperPrompt, BASE.whisperPrompt, '人设：种类用内置默认，不吃用户层');
-    assert.deepEqual(pig.memes, BASE_FULL.memes, '表情包：种类用内置默认');
-    assert.deepEqual(pig.workStatusTexts, BASE.workStatusTexts, '文案：种类用内置默认');
-    // 对照：main 拿到的是用户层那份
+    assert.equal(
+      pig.whisperPrompt,
+      BASE.whisperPrompt,
+      'persona: Use the built-in default type and do not use the user layer',
+    );
+    assert.deepEqual(pig.memes, BASE_FULL.memes, 'Emoticon pack: use built-in default for type');
+    assert.deepEqual(pig.workStatusTexts, BASE.workStatusTexts, 'Copywriting: use built-in default for categories');
+    // Compare: main got the user layer share
     assert.equal(out.main.whisperPrompt, '用户层的人设');
     assert.deepEqual(out.main.memes, { 用户图: '用户层的表情包' });
-    // 同一个用户层里，白名单字段照样继承
+    // In the same user layer, the whitelist fields are still inherited.
     assert.equal(pig.chatMemoryRounds, 9);
   });
 
-  test('没有用户层 → 种类就是内置默认（等价于改动前的行为）', () => {
+  test('There is no user layer → the type is the built-in default (equivalent to the behavior before the change)', () => {
     const out = merged({ pack: PACK });
     const pig = out.pig;
     assert.deepEqual(pig.physics, BASE_FULL.physics);
@@ -1468,49 +1592,53 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
     assert.deepEqual(pig.chatModel, BASE_FULL.chatModel);
   });
 
-  test('用户层写了非法值 → 跳过该字段，种类仍拿内置默认（不抛错）', () => {
+  test('The user layer wrote an invalid value → skip this field, and the type still uses the built-in default (no error is thrown)', () => {
     const out = merged({ overlay: { physics: { gravity: -1 }, confineToScreen: true }, pack: PACK });
     const pig = out.pig;
-    assert.deepEqual(pig.physics, BASE_FULL.physics, '非法 physics 不得流进种类基座');
-    assert.equal(pig.confineToScreen, true, '同一用户层里的合法字段照常继承');
+    assert.deepEqual(pig.physics, BASE_FULL.physics, 'Illegal physics must not flow into the category base');
+    assert.equal(pig.confineToScreen, true, 'Legal fields in the same user layer are inherited as usual');
   });
 
-  test('种类文件写了非法值 → 回退到「用户层那份」而不是内置默认', () => {
+  test('An invalid value is written in the category file → Fall back to the "user level copy" instead of the built-in default', () => {
     const out = merged({
       overlay: { physics: { ...(BASE_FULL.physics as Record<string, unknown>), petCollision: true } },
       pack: { ...PACK, physics: { gravity: '不是数字' } },
     });
-    assert.equal(rec(out.pig.physics).petCollision, true, '非法覆盖 → 回退基座（= 用户层），不是内置默认');
+    assert.equal(
+      rec(out.pig.physics).petCollision,
+      true,
+      'Illegal override → fallback base (= user layer), not built-in default',
+    );
   });
 
-  test('eventsRefreshSec 也进全局默认：用户层写了 → 种类整段继承', () => {
+  test('eventsRefreshSec also enters the global default: written at the user level → type inheritance', () => {
     const out = merged({ overlay: { eventsRefreshSec: { balance: 900, whisper: 60 } }, pack: PACK });
     assert.deepEqual(out.pig.eventsRefreshSec, { balance: 900, whisper: 60 });
     assert.deepEqual(out.main.eventsRefreshSec, { balance: 900, whisper: 60 });
   });
 
-  test('eventsRefreshSec 是整段替换：种类写了自己的，就不再逐键合并基座', () => {
+  test('eventsRefreshSec is a whole paragraph replacement: if the type is written as its own, the base will no longer be merged key by key.', () => {
     const out = merged({
       overlay: { eventsRefreshSec: { balance: 900, whisper: 60 } },
       pack: { ...PACK, eventsRefreshSec: { balance: 111 } },
     });
-    // 旧的逐键深合并会把基座的 whisper: 60 补回来；整段替换下缺的键就是缺
+    // The old key-by-key deep merging will make up for the whisper: 60 of the base; the missing keys will be missing if the entire section is replaced.
     assert.deepEqual(out.pig.eventsRefreshSec, { balance: 111 });
   });
 
-  test('eventsRefreshSec 只写一半 → 缺的键不补（消费端各自兜底 1800 / 300）', () => {
+  test('eventsRefreshSec write-only half → missing keys will not be filled (consumers each fallback 1800 / 300)', () => {
     const out = merged({ overlay: { eventsRefreshSec: { whisper: 60 } }, pack: PACK });
     assert.deepEqual(out.pig.eventsRefreshSec, { whisper: 60 });
-    assert.equal('balance' in rec(out.pig.eventsRefreshSec), false, '不再自动补 balance');
+    assert.equal('balance' in rec(out.pig.eventsRefreshSec), false, 'No longer automatically compensate balance');
     assert.deepEqual(out.main.eventsRefreshSec, { whisper: 60 });
   });
 
-  test('eventsRefreshSec 里不认识的键不再被静默丢弃', () => {
+  test('Unknown keys in eventsRefreshSec are no longer silently discarded', () => {
     const out = merged({ overlay: { eventsRefreshSec: { balance: 900, foo: 10 } }, pack: PACK });
     assert.deepEqual(out.pig.eventsRefreshSec, { balance: 900, foo: 10 });
   });
 
-  test('eventsRefreshSec 整段非法 → 告警 + 回退基座（种类回到内置默认）', () => {
+  test('eventsRefreshSec The entire section is invalid → Warning + Return to base (type returns to built-in default)', () => {
     for (const bad of [{ whisper: -1 }, { whisper: 'x' }, 'not-an-object', [1, 2]] as unknown[]) {
       const out = merged({ overlay: { eventsRefreshSec: bad }, pack: PACK });
       assert.deepEqual(out.pig.eventsRefreshSec, BASE.eventsRefreshSec, JSON.stringify(bad));
@@ -1519,38 +1647,38 @@ describe('文件宠物条目 —— 全局默认（用户层作基座）+ 种类
   });
 });
 
-describe('sliceMemoryRounds —— chatMemoryRounds=0 必须真正不带历史（防 -0 陷阱回归）', () => {
-  // 4 条消息 = 2 轮（1 轮 = 1 问 1 答）
+describe('sliceMemoryRounds —— chatMemoryRounds =0 must be truly without history (to prevent -0 trap regression)', () => {
+  // 4 messages = 2 rounds (1 round = 1 question 1 answer)
   const msgs = ['u1', 'a1', 'u2', 'a2'];
 
-  test('rounds=0 → 空列表（曾因 slice(-0) 返回整个数组而带上全部历史）', () => {
+  test('rounds =0 → empty list (because slice (-0) returned the entire array and brought all the history)', () => {
     assert.deepEqual(sliceMemoryRounds(msgs, 0), []);
   });
 
-  test('rounds>0 → 截尾部 rounds 轮', () => {
+  test('rounds >0 → Truncate the tail rounds wheel', () => {
     assert.deepEqual(sliceMemoryRounds(msgs, 1), ['u2', 'a2']);
     assert.deepEqual(sliceMemoryRounds(msgs, 2), msgs);
   });
 
-  test('rounds 超过消息数 → 全量（不多不少）', () => {
+  test('rounds exceeds the number of messages → full amount (no more, no less)', () => {
     assert.deepEqual(sliceMemoryRounds(msgs, 99), msgs);
   });
 
-  test('负数 / NaN 兜底按 0 → 空列表（不产出荒谬的 slice 行为）', () => {
+  test('Negative numbers / NaN fallback Press 0 → empty list (does not produce ridiculous slice behavior)', () => {
     assert.deepEqual(sliceMemoryRounds(msgs, -1), []);
     assert.deepEqual(sliceMemoryRounds(msgs, Number.NaN), []);
   });
 
-  test('rounds 为小数 → 先向下取整再截（与 memoryRounds 的 Math.floor 一致）', () => {
+  test('rounds is a decimal → round down first and then truncate (consistent with Math.floor of memoryRounds)', () => {
     assert.deepEqual(sliceMemoryRounds(msgs, 1.9), ['u2', 'a2']);
   });
 
-  test('rounds=0 且消息列表原本为空 → 空', () => {
+  test('rounds =0 and the message list was originally empty → empty', () => {
     assert.deepEqual(sliceMemoryRounds([], 0), []);
   });
 });
 
-describe('removeRoundsByTs —— 按轮删除（一轮两条共享 ts，成对走）', () => {
+describe('removeRoundsByTs - Delete by round (two pairs in a round share ts, go in pairs)', () => {
   const msgs = [
     { content: 'u1', ts: 1000 },
     { content: 'a1', ts: 1000 },
@@ -1558,7 +1686,7 @@ describe('removeRoundsByTs —— 按轮删除（一轮两条共享 ts，成对�
     { content: 'a2', ts: 2000 },
   ];
 
-  test('命中的轮成对移除，其余原样保留', () => {
+  test('The hit rounds are removed in pairs, and the rest are kept as they are.', () => {
     const r = removeRoundsByTs(msgs, [1000]);
     assert.deepEqual(
       r.messages.map((m) => m.content),
@@ -1567,19 +1695,19 @@ describe('removeRoundsByTs —— 按轮删除（一轮两条共享 ts，成对�
     assert.equal(r.removed, 2);
   });
 
-  test('不存在的 ts → 不改动，removed=0', () => {
+  test('ts does not exist → do not change, removed =0', () => {
     const r = removeRoundsByTs(msgs, [999]);
     assert.deepEqual(r.messages, msgs);
     assert.equal(r.removed, 0);
   });
 
-  test('空集合 → 一条都不删（清空是调用方的另一条分支，不能靠空集合表达）', () => {
+  test('Empty set → delete none (clear is another branch of caller and cannot be expressed by an empty set)', () => {
     const r = removeRoundsByTs(msgs, []);
     assert.equal(r.messages.length, msgs.length);
     assert.equal(r.removed, 0);
   });
 
-  test('全部命中 → 空列表，removed 等于原长度', () => {
+  test('All hits → empty list, removed is equal to the original length', () => {
     const r = removeRoundsByTs(msgs, [1000, 2000]);
     assert.deepEqual(r.messages, []);
     assert.equal(r.removed, 4);

@@ -1,48 +1,49 @@
 /**
- * 「下一个自播动画」的决策：把掷骰结果与移动尝试折成「切哪个动画、日志里算什么类别」。
- * 只决定该做什么，不碰 ref、不 setState——调用方负责真正切动画并推进世代号。
- * 移动那一档由调用方先试一次走位：占用中就别重播、无法移动才退回原地动作。
+ * The decision of "next self-broadcast animation": fold the dice roll results and movement attempts into "which
+ * animation to cut and what category to count in the log". Just decide what to do, no ref, no setState - the caller is
+ * responsible for actually cutting the animation and advancing the generation number. The caller will try to move the
+ * position first: if it is occupied, do not replay it, and if it cannot move, return to the original position.
  * @module dsh-pet/src/client/pet/animation/next-animation
  */
 import { pick, pickCategoryAction, type RollKind } from '../../../shared/pickers.ts';
 import type { Animations } from '../../../shared/types.ts';
 
-/** 一次自播的决策结果。 */
+/** The decision result of a self-broadcast. */
 export interface NextAnimation {
-  /** 日志与调试用的类别：`IDLE` / `TURN` / `MOVES` 或分类动作的 id。 */
+  /** Categories for logging and debugging: `IDLE` / `TURN` / `MOVES` or id for classification actions. */
   kind: string;
-  /** 要切的动画名；走位占用中时为 `null`。 */
+  /** The name of the animation to be cut; when the position is occupied, it is `null`. */
   anim: string | null;
-  /** 是否真要 `setAnim`：走位档不切——走位自己已经切了，再切会重跑换源、打断那一步。 */
+  /** Do you really want `setAnim`: The moving position will not be switched - the moving position has already been switched. If you switch it again, you will restart the run and change the source, interrupting that step. */
   play: boolean;
 }
 
-/** 决策输入。 */
+/** Decision input. */
 export interface NextAnimationInput {
-  /** 掷骰得到的类别。 */
+  /** The category obtained by rolling the dice. */
   kind: RollKind;
-  /** 该宠物的动画池。 */
+  /** The animation pool for this pet. */
   animations: Animations;
-  /** 朝向：镜像会颠倒的分类动作在 facing=right 时要跳过。 */
+  /** Orientation: The classification action where the mirror image will be reversed should be skipped when facing = right. */
   facing: 'left' | 'right';
-  /** 当前正在播的动画名，用于「不连抽自己」。 */
+  /** The name of the animation currently being played is used for "Don't draw yourself continuously". */
   current: string;
-  /** 走位尝试结果，仅 `kind === 'move'` 时有意义：动作名 = 成功，`true` = 占用中，`false` = 无法移动。 */
+  /** The result of the movement attempt is only meaningful when `kind === 'move'`: action name = successful, `true` = occupied, `false` = unable to move. */
   move?: string | true | false;
 }
 
 /**
- * 决定下一个自播动画。
+ * Determine the next self-broadcast animation.
  *
- * @param input - 掷骰类别、动画池与走位结果。
- * @returns 类别、要切的动画名，以及「这次是否需要切」。
+ * @param input - Roll category, animation pool and positioning results.
+ * @returns category, the name of the animation to be cut, and "whether it needs to be cut this time."
  */
 export function decideNextAnimation(input: NextAnimationInput): NextAnimation {
   const { kind, animations, facing, current, move } = input;
   if (kind === 'idle') return { kind: 'IDLE', anim: pick(animations.idle, current), play: true };
   if (kind === 'turn') return { kind: 'TURN', anim: pick(animations.turn, current), play: true };
   if (kind === 'move' && move !== false && move !== undefined) {
-    // 占用中（true）不重播；成功则是那次走位已经切好的动作名，只用于日志。
+    // Occupied (true) is not replayed; success means the action name has been cut for that move, only used for logs.
     return { kind: 'MOVES', anim: typeof move === 'string' ? move : null, play: false };
   }
   const action = pickCategoryAction(animations.categories, animations.idle, facing, current);

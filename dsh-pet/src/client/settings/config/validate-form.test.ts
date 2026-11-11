@@ -1,10 +1,12 @@
 /**
- * 表单校验的契约测试。
+ * Contract testing for form validation.
  *
- * 三条契约：
- *   1. 规则与宿主一一对应：宠物宽高、物理区间、模型成对、对话额度非负、字体白名单——宿主会 400 的组合这里先拦；
- *   2. 顺序即提示优先级：一次只报第一条，不把整张表单的问题堆给用户；
- *   3. 合法输入必须放行（尤其是 0 这类「看起来像空值」的合法边界）。
+ * Three contracts:
+ * 1. The rules correspond to the host one-to-one: pet width and height, physical interval, model pairing, non-negative
+ * dialogue limit, font whitelist - the host will block combinations of 400 here first;
+ * 2. The order is the prompt priority: only the first item is reported at a time, and the entire form of questions is
+ * not piled on the user;
+ * 3. Valid input must be allowed (especially valid boundaries such as 0 that "look like null values").
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,7 +25,7 @@ const pet = (extra: Record<string, unknown> = {}): Pet =>
     ...extra,
   }) as unknown as Pet;
 
-/** 一份处处合法的表单；用例只改自己关心的那一项。 */
+/** A form that is valid everywhere; the use case only changes the item that it cares about. */
 const valid = (overrides: Partial<FormValues> = {}): FormValues => ({
   pets: [pet()],
   physics: { ...DEFAULT_PHYSICS },
@@ -35,12 +37,12 @@ const valid = (overrides: Partial<FormValues> = {}): FormValues => ({
   ...overrides,
 });
 
-describe('validateForm —— 保存前校验', () => {
-  test('全合法：返回 null', () => {
+describe('validateForm - Verify before saving', () => {
+  test('Fully valid: return null', () => {
     assert.equal(validateForm(valid()), null);
   });
 
-  test('宠物：宽度必须为正数、偏移必须是有限数', () => {
+  test('Pet: The width must be a positive number and the offset must be a finite number.', () => {
     assert.equal(validateForm(valid({ pets: [pet({ size: 0 })] })), 'invalid');
     assert.equal(validateForm(valid({ pets: [pet({ size: Number.NaN })] })), 'invalid');
     assert.equal(
@@ -49,43 +51,43 @@ describe('validateForm —— 保存前校验', () => {
     );
   });
 
-  test('宠物：百分比缺省或是不小于 1 的数字才合法（不设上限）', () => {
+  test('Pets: The default percentage or a number not less than 1 is valid (no upper limit)', () => {
     assert.equal(validateForm(valid({ pets: [pet({ sizePercent: 0 })] })), 'invalid');
     assert.equal(validateForm(valid({ pets: [pet({ sizePercent: 1 })] })), null);
     assert.equal(validateForm(valid({ pets: [pet({ sizePercent: 100 })] })), null);
-    assert.equal(validateForm(valid({ pets: [pet({ sizePercent: 150 })] })), null, '超过 100 合法');
-    assert.equal(validateForm(valid({ pets: [pet()] })), null, '缺省 = 只用 px，合法');
+    assert.equal(validateForm(valid({ pets: [pet({ sizePercent: 150 })] })), null, 'More than 100 is legal');
+    assert.equal(validateForm(valid({ pets: [pet()] })), null, 'Default = only use px, legal');
   });
 
-  test('物理参数：区间与正负都按宿主规则卡住', () => {
+  test('Physical parameters: interval and positive and negative are stuck according to host rules', () => {
     assert.equal(validateForm(valid({ physics: { ...DEFAULT_PHYSICS, gravity: -1 } })), 'invalidPhysics');
     assert.equal(validateForm(valid({ physics: { ...DEFAULT_PHYSICS, restitution: 1.5 } })), 'invalidPhysics');
     assert.equal(validateForm(valid({ physics: { ...DEFAULT_PHYSICS, throwPower: 0 } })), 'invalidPhysics');
     assert.equal(
       validateForm(valid({ physics: { ...DEFAULT_PHYSICS, gravity: 0, restitution: 0, throwPower: 0.01 } })),
       null,
-      '0 是合法边界（重力为零、完全弹性都没有下限限制误伤）',
+      '0 is the legal boundary (gravity is zero and full elasticity has no lower limit for accidental injury)',
     );
   });
 
-  test('模型：只写一半非法，两边都空（跟随当前对话）合法', () => {
+  test('Model: write-only half is invalid, both sides are empty (following the current conversation) is valid', () => {
     assert.equal(validateForm(valid({ whisperModel: { provider: 'openai', model: '' } })), 'invalidModel');
     assert.equal(validateForm(valid({ chatModel: { provider: '', model: 'gpt-4o' } })), 'invalidModel');
     assert.equal(validateForm(valid({ whisperModel: { provider: 'openai', model: 'gpt-4o' } })), null);
   });
 
-  test('对话额度：负数非法，0 合法（0 = 不限制）', () => {
+  test('Dialogue quota: Negative numbers are invalid, 0 is valid (0 = no limit)', () => {
     assert.equal(validateForm(valid({ chatMemory: -1 })), 'invalidChatMemory');
     assert.equal(validateForm(valid({ chatImageLimit: -1 })), 'invalidChatImageLimit');
     assert.equal(validateForm(valid({ chatMemory: 0, chatImageLimit: 0 })), null);
   });
 
-  test('字体：种类必须在白名单里，字号在闭区间内', () => {
+  test('Font: The type must be in the white list and the font size must be in the closed range.', () => {
     assert.equal(validateForm(valid({ font: { ...DEFAULT_FONT, size: FONT_SIZE_MAX + 1 } })), 'invalidFont');
     assert.equal(validateForm(valid({ font: { ...DEFAULT_FONT, family: 'not-a-font' as never } })), 'invalidFont');
   });
 
-  test('顺序即优先级：宠物不合格时不再报后面的物理参数', () => {
+  test('The order is the priority: when the pet fails, the subsequent physical parameters will no longer be reported.', () => {
     const values = valid({ pets: [pet({ size: 0 })], physics: { ...DEFAULT_PHYSICS, gravity: -1 } });
     assert.equal(validateForm(values), 'invalid');
   });

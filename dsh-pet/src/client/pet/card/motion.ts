@@ -1,7 +1,8 @@
 /**
- * 一张宠物卡的运动装配：包围盒、几何、自主走位、抛掷飞行、位置跟随与碰撞站场。
- * 不负责指针与菜单：拖拽驱动经迟绑槽回读，避免与运动驱动形成构造期环。
- * 三套驱动都只建一次，rAF 句柄与世代号在驱动内部，跨渲染存活。
+ * Motion assembly of a pet card: bounding box, geometry, autonomous positioning, throwing flight, position following
+ * and collision site. Not responsible for pointers and menus: the drag driver is late-bound to the readback slot to
+ * avoid forming a construction loop with the motion driver. The three sets of drivers are only built once. The rAF
+ * handle and generation number are inside the driver and survive across renderings.
  * @module dsh-pet/src/client/pet/card/motion
  */
 import { createFlight, type Flight, type FlightMetrics } from '../motion/flight.ts';
@@ -18,71 +19,71 @@ import type { PetCollisionSlot } from '../../../shared/physics.ts';
 import type { RuntimePet } from '../types.ts';
 import type * as ReactNS from 'react';
 
-/** 注入的 react 能力。 */
+/** Injected react capability. */
 export interface CardMotionRuntime {
-  /** 副作用；碰撞站场注册与注销。 */
+  /** side effect; collision between site register and logout. */
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
-  /** 引用；三套驱动只造一次。 */
+  /** Quote; Three sets of drivers are only built once. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }
 
-/** 运动装配的输入。 */
+/** Input of motion assembly. */
 export interface CardMotionInput {
-  /** 卡状态：自定义位置、朝向与动画名的最新值。 */
+  /** Card status: the latest values of customized position, orientation and animation name. */
   card: CardStateApi;
-  /** 成品配置的最新值。 */
+  /** Latest value of resolved configuration. */
   cfgRef: ReactNS.MutableRefObject<RuntimePet>;
-  /** 宠物间碰撞站场。 */
+  /** Collision between pets. */
   arena: ReactNS.MutableRefObject<{ slots: Record<string, PetCollisionSlot> }>;
-  /** 装配根迟绑槽。 */
+  /** Assemble root binding groove. */
   live: ReactNS.MutableRefObject<CardLive>;
-  /** 当帧几何（配置尺寸推出来）。 */
+  /** When frame geometry (configured dimensions are rolled out). */
   metrics: FlightMetrics;
-  /** 该宠物的走位池。 */
+  /** The moving pool of this pet. */
   moves: MovesConfig;
-  /** 本宠物 id：碰撞槽键与飞行排除自己都用它。 */
+  /** This pet id: Use it for collision slot keys and flight elimination. */
   petId: string;
-  /** 宠物根节点。 */
+  /** Pet root node. */
   root: () => HTMLDivElement | null;
-  /** 落位后提交归一化中心，交给 React 重排。 */
+  /** After placement, submit to the normalization center and hand it over to React for rearrangement. */
   setCustomPos: CardStateApi['actions']['setCustomPos'];
-  /** 换成走路动作并播一次。 */
+  /** Change to walking action and play it once. */
   setOnce: (on: boolean) => void;
-  /** 换成指定动画。 */
+  /** Change to the specified animation. */
   setAnim: (anim: string) => void;
 }
 
-/** 运动装配的产物：其它模块按需取用，不缓存整份。 */
+/** Products of motion devices: other modules are accessed on demand and the entire copy is not cached. */
 export interface CardMotion {
-  /** 当帧几何。 */
+  /** When frame geometry. */
   metrics: () => FlightMetrics;
-  /** 当前宠物中心的视口坐标。 */
+  /** The viewport coordinates of the current pet center. */
   center: () => { x: number; y: number };
-  /** 当前包围盒位置。 */
+  /** Current bounding box position. */
   box: () => { x: number; y: number } | null;
-  /** 写回包围盒位置。 */
+  /** Write back bounding box position. */
   setBox: (box: { x: number; y: number }) => void;
-  /** 停走位与位置跟随。 */
+  /** Stop-and-go position and position following. */
   stopMove: () => void;
-  /** 从给定左上角与初速起飞。 */
+  /** Take off from the given upper left corner and initial speed. */
   startThrow: (px: number, py: number, vx: number, vy: number) => void;
-  /** 抛掷指令：角度（度）与力度倍率。 */
+  /** Throwing command: angle (degree) and force multiplier. */
   applyThrow: (angleDeg: number, power: number) => void;
-  /** 自主走位。 */
+  /** Move independently. */
   walk: Walk;
-  /** 抛掷飞行。 */
+  /** Throwing flight. */
   flight: Flight;
-  /** 位置跟随。 */
+  /** Position following. */
   posFollow: PositionFollow;
-  /** Q 弹挤压。 */
+  /** Q elastic extrusion. */
   squash: SquashDriver;
 }
 
 /**
- * 造运动装配的 hook。
+ * hook of motion assembly.
  *
- * @param rt - 注入的 react 能力。
- * @returns 接收装配输入的 hook，返回本卡的运动驱动面。
+ * @param rt - Injected react capabilities.
+ * @returns receives the assembly input hook and returns to the motion driving surface of this card.
  */
 export function createCardMotion(rt: CardMotionRuntime) {
   const { useEffect, useRef } = rt;
@@ -90,21 +91,21 @@ export function createCardMotion(rt: CardMotionRuntime) {
   return function useCardMotion(input: CardMotionInput): CardMotion {
     const { arena, card, cfgRef, live, metrics, moves, petId, root, setAnim, setOnce, setCustomPos } = input;
 
-    /** 当帧走位参数：走位驱动长期持有，每渲染就地更新，避免把尺寸与动画池闭包进旧实例。 */
+    /** When frame movement parameters: the movement driver holds them for a long time and updates them in place every time it is rendered to avoid closing the size and animation pool into the old instance. */
     const motionRef = useRef<FlightMetrics>(metrics);
     motionRef.current = metrics;
     const movesRef = useRef<MovesConfig>(moves);
     movesRef.current = moves;
 
-    /** 包围盒：与拖拽、飞行共享，谁动谁写回。 */
+    /** Bounding box: shared with dragging and flying, whoever moves it will write back. */
     const boxRef = useRef<{ x: number; y: number } | null>(null);
 
-    // Q 弹挤压：rAF 句柄与世代号在驱动内部，镜像按当前朝向复原。
+    // Q bomb squeeze: rAF handle and generation number are inside the driver, and the image is restored according to the current orientation.
     const squashRef = useRef<SquashDriver | null>(null);
     squashRef.current ??= createSquashDriver({ facing: () => card.facingRef.current });
     const squash = squashRef.current;
 
-    /** 当前宠物中心的视口 X 坐标。 */
+    /** The viewport X coordinates of the current pet center. */
     const currentCenterX = (): number => {
       const cp = card.customPosRef.current;
       if (cp) return cp.rx * window.innerWidth;
@@ -112,7 +113,7 @@ export function createCardMotion(rt: CardMotionRuntime) {
       if (rootEl) return rootEl.getBoundingClientRect().left + motionRef.current.halfW;
       return window.innerWidth - 24 - motionRef.current.halfW;
     };
-    /** 当前宠物中心的视口 Y 坐标。 */
+    /** The viewport Y coordinates of the current pet center. */
     const currentCenterY = (): number => {
       const cp = card.customPosRef.current;
       if (cp) return cp.ry * window.innerHeight;
@@ -141,15 +142,15 @@ export function createCardMotion(rt: CardMotionRuntime) {
     });
     const walk = walkRef.current;
 
-    /** 停止自主走位与位置跟随。 */
+    /** Stop autonomous movement and position following. */
     const stopMove = (): void => {
       walkRef.current?.stop();
-      // 位置跟随的弹簧也是自主移动，停走路时必须一并停掉，否则两套运动同时改 DOM 位置。
+      // The position following spring also moves autonomously. It must be stopped when stopping and walking, otherwise the two sets of movements will change the DOM position at the same time.
       posFollowRef.current?.stop();
     };
 
     const flightRef = useRef<Flight | null>(null);
-    /** 触觉反馈：每张卡一个，冷却状态跟着卡片走；开关实时读配置。 */
+    /** Tactile feedback: one for each card, the cooling status follows the card; the switch reads the configuration in real time. */
     const hapticsRef = useRef<Haptics | null>(null);
     hapticsRef.current ??= createHaptics({ enabled: () => cfgRef.current.physics?.hapticEnabled !== false });
     const haptics = hapticsRef.current;
@@ -169,14 +170,14 @@ export function createCardMotion(rt: CardMotionRuntime) {
       },
       commitFinal: setCustomPos,
       onLanding: (impactVy) => {
-        // 落地 Q 弹压的是新首帧：等前台视频就位后再压。
+        // After landing Q, the new first frame is pressed: wait for the foreground video to be in place before pressing.
         const frontEl = live.current.ownAnim.frontVideo();
         if (frontEl) live.current.squash.start(frontEl, landingSquash(impactVy));
       },
       onImpact: (impact) => {
         haptics.hit(impact.kind, impact.speed);
       },
-      // 只在常驻（倾斜）模式被读：倾斜没开或还没有采样时退回竖直重力，行为与关掉体感一致。
+      // Only read in resident (tilt) mode: Return to vertical gravity when tilt is not turned on or sampling has not been done, and the behavior is consistent with turning off somatosensory.
       gravity: () => {
         const physics = cfgRef.current.physics;
         const gravity = physics?.gravity ?? 0;
@@ -189,11 +190,11 @@ export function createCardMotion(rt: CardMotionRuntime) {
     });
     const flight = flightRef.current;
 
-    /** 体感：采样与中性姿态；关掉倾斜时两个都清空，下次再开重新标定。 */
+    /** Somatosensory: sampling and neutral posture; both are clear when tilt is turned off. Turn it on again next time and recalibrate. */
     const tiltSampleRef = useRef<{ beta: number; gamma: number } | null>(null);
     const tiltBaselineRef = useRef<{ beta: number; gamma: number } | null>(null);
 
-    /** 从给定左上角与初速起飞；先停弹簧跟随与走位，免得两套运动同时改位置。 */
+    /** Take off from the given upper left corner and initial speed; stop the spring following and moving first to avoid the two sets of movements changing positions at the same time. */
     const startThrow = (px: number, py: number, vx: number, vy: number): void => {
       live.current.drag.stopFollow();
       stopMove();
@@ -201,14 +202,16 @@ export function createCardMotion(rt: CardMotionRuntime) {
     };
 
     /**
-     * 把速度落到这只宠物身上：在跑就按给定口径处理，没跑就从落点起飞。
+     * Put the speed on this pet: when running, it will be processed according to the given conventions, and when not
+     * running, it will take off from the landing point.
      *
-     * 没跑时一律起抛掷而不是起常驻——常驻只在倾斜开关开着时由姿态采样拉起，
-     * 否则重力非零时会留下一个永远停不下来的常驻循环。
+     * When not running, always start throwing instead of holding - holding is only pulled up by attitude sampling when
+     * the tilt switch is on, otherwise when the gravity is non-zero, a permanent cycle will be left that can never
+     * stop.
      *
-     * @param vx - 水平速度或冲量（px/s）。
-     * @param vy - 竖直速度或冲量（px/s）。
-     * @param mode - `set` = 结算后的绝对速度（碰撞）；`add` = 叠加冲量（摇一摇）。
+     * @param vx - Horizontal velocity or impulse (px/s).
+     * @param vy - Vertical velocity or impulse (px/s).
+     * @param mode - `set` = absolute speed after settlement (collision); `add` = superimposed impulse (shake).
      */
     const applyVelocity = (vx: number, vy: number, mode: 'set' | 'add'): void => {
       if (flight.isFlying()) {
@@ -220,30 +223,31 @@ export function createCardMotion(rt: CardMotionRuntime) {
       if (at === null) return;
       startThrow(at.x, at.y, vx, vy);
     };
-    /** 最新的 applyVelocity 引用，供碰撞槽与传感器回调转发，避免陈旧闭包。 */
+    /** The latest applyVelocity reference is used for collision slot and sensor callback forwarding to avoid stale closures. */
     const applyVelocityRef = useRef<(vx: number, vy: number, mode: 'set' | 'add') => void>(() => {});
     applyVelocityRef.current = applyVelocity;
 
-    // 传感器订阅只建一次：两个开关与物理参数每次回调现读，避免重订阅。
+    // Sensor subscribe is only created once: the two switches and physical parameters are read in each callback to avoid repeating the subscribe.
     useEffect(() => {
       if (!canReadMotionSensors()) return;
       const offTilt = subscribeTilt((sample) => {
         if (cfgRef.current.physics?.tiltGravity !== true) {
           tiltSampleRef.current = null;
           tiltBaselineRef.current = null;
-          // 关掉开关时立刻收手：常驻模式若还在跑，会继续按朝下的重力往下掉。
-          // 只停常驻——无条件 stop 会把正在飞的抛掷一起按掉，而传感器采样是持续不断的。
+          // Stop immediately when turning off the switch: If you are still running in the permanent mode, you will
+          // continue to press the downward gravity to fall down. Only stop permanent - unconditional stop will press
+          // down the flying throw together, and the sensor sampling is continuous.
           if (flight.isHeld()) flight.stop();
           return;
         }
         if (tiltBaselineRef.current === null) tiltBaselineRef.current = sample;
         tiltSampleRef.current = sample;
         if (live.current.drag.isActive() || flight.isFlying()) return;
-        // 只有真的倾斜了才起步：平放时每帧都起/停会长跑一个停不下来的空循环。
+        // Start only when it is really tilted: starting/stopping every frame when lying flat will cause an endless empty loop that cannot be stopped.
         const gravity = cfgRef.current.physics?.gravity ?? 0;
         const vector = tiltGravity(sample, tiltBaselineRef.current, gravity);
         if (vector.gx === 0 && vector.gy === 0) return;
-        // 起步前先让走位与跟随松手：两套驱动同时写 left/top 会抖，互撞读的盒子也会被写乱。
+        // Let go and follow before starting: two sets of drivers will shake when writing left/top at the same time, and the boxes that collide with each other will also be written garbled.
         stopMove();
         flight.startHeld();
       });
@@ -259,7 +263,7 @@ export function createCardMotion(rt: CardMotionRuntime) {
         offShake();
         flight.stop();
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- 订阅只建一次；开关、物理参数与驱动实例都经 ref 现读
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Subscribe once; read toggles, physics and the driver through refs.
     }, []);
 
     const posFollowRef = useRef<PositionFollow | null>(null);
@@ -282,12 +286,14 @@ export function createCardMotion(rt: CardMotionRuntime) {
     });
     const posFollow = posFollowRef.current;
 
-    // 位置与抛掷指令：seq 变化即执行，复用既有运动路径，不新写运动学。
-    /** 执行抛掷指令：角度（度，0 为正右，逆时针为正）与力度倍率换算成初速度，交给 startThrow。
-     *  下游物理全部复用，不设死区。
+    // Position and throwing instructions: seq is executed as soon as it changes, reuses the existing motion path, and does not write new kinematics.
+    /**
+     * Execute the throwing command: convert the angle (degree, 0 is positive right, counterclockwise is positive) and
+     * force magnification into initial velocity and give it to startThrow. All downstream physics are reuse and there
+     * is no dead zone.
      */
     const applyThrow = (angleDeg: number, power: number): void => {
-      if (live.current.drag.isActive()) return; // 用户交互优先。
+      if (live.current.drag.isActive()) return; // User interaction takes priority.
       const { vx, vy } = throwVelocity(angleDeg, power);
       const box = boxRef.current ?? {
         x: currentCenterX() - motionRef.current.halfW,
@@ -296,7 +302,7 @@ export function createCardMotion(rt: CardMotionRuntime) {
       startThrow(box.x, box.y, vx, vy);
     };
 
-    // 碰撞站场注册：getVel 取最新速度，applyVelocity 经 ref 转发，避免陈旧闭包。
+    // Collision station register: getVel takes the latest speed, applyVelocity is forwarded by ref to avoid stale closure.
     const { size, bottomPad } = metrics;
     useEffect(() => {
       const arenaSlots = arena.current.slots;
@@ -314,7 +320,7 @@ export function createCardMotion(rt: CardMotionRuntime) {
       return () => {
         delete arenaSlots[petId];
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- 依赖由碰撞注册身份 petId/size/bottomPad/arena 决定：applyVelocity 只经 applyVelocityRef 转发、不捕获渲染期状态；补上它会让碰撞槽每渲染注销重注册
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Collision registration depends on petId/size/bottomPad/arena. applyVelocity forwards through applyVelocityRef without captured render state; depending on it would reregister every render.
     }, [petId, size, bottomPad, arena]);
 
     const center = (): { x: number; y: number } => ({ x: currentCenterX(), y: currentCenterY() });

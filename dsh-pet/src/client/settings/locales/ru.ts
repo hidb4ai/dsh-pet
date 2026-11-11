@@ -1,5 +1,5 @@
 /**
- * 设置页俄语文案；键集与 zh 完全一致。
+ * Russian text on the settings page; the key set is exactly the same as zh.
  */
 import type { Key } from './zh.ts';
 
@@ -27,7 +27,7 @@ export const ru: Record<Key, string> = {
 
   nav: 'Настройки питомца',
   intro: 'Управляйте несколькими питомцами: у каждого свои размер и позиция (применяются сразу после сохранения).',
-  // 卡片标题与卡片级说明；说明统一进问号气泡。
+  // Card title and card-level description; descriptions are unified into question mark bubble.
   petCardTitle: 'Питомец',
   avatarLabel: 'Аватар',
   avatarHint:
@@ -45,7 +45,7 @@ export const ru: Record<Key, string> = {
     'К какому углу экрана прикреплён питомец (в настольном режиме — рабочая область соответствующего монитора).',
   marginXHint: 'Горизонтальное расстояние от выбранного угла (px); любое число.',
   marginYHint: 'Вертикальное расстояние от выбранного угла (px); любое число.',
-  // 「/」命令菜单的行标题（图标由 app.ts 经 command-faces.ts 补上）。
+  // The row title of the "/" command menu (the icon is added by app.ts via command-faces.ts).
   'cmd.chat': 'Чат',
   'cmd.pet': 'Питомец',
   'cmd.balance': 'Баланс',

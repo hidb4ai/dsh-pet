@@ -1,9 +1,11 @@
 /**
- * 路由分发器：按固定顺序串行尝试各领域处理器，第一个给出应答的生效。
+ * route distributor: serially tries each field processor in a fixed order, and the first one that gives a response
+ * takes effect.
  *
- * 顺序即语义——素材路由是末端兜底（任何未知路径都会落到它并回 400），必须排在最后；
- * 其余领域按 `rest` 精确匹配，彼此不重叠，顺序只影响可读性。
- * 不解析 URL、不判断业务：`rest` 由调用方切好，处理器各自定义匹配条件。
+ * Order is semantics - asset route is the end fallback (any unknown path will fall to it and return 400), and must be
+ * last; the remaining fields match `rest` exactly and do not overlap each other, and the order only affects
+ * readability. URL is not parsed and the business is not judged: `rest` is cut by the caller, and the processors
+ * define matching conditions respectively.
  * @module dsh-pet/src/host/routes/index
  */
 import type { RouteResult } from '../http.ts';
@@ -28,7 +30,7 @@ import { handleTodoRoutes } from './todos.ts';
 import { handleVoiceRoutes } from './voice.ts';
 import type { PetRouteDeps, RouteHandler } from './types.ts';
 
-/** 处理器顺序：越靠前越先匹配；素材兜底必须在末尾。 */
+/** Processor order: the earlier, the first to match; asset fallback must be at the end. */
 const HANDLERS: readonly RouteHandler[] = [
   handleConfigRoutes,
   handleDesktopRoutes,
@@ -52,11 +54,12 @@ const HANDLERS: readonly RouteHandler[] = [
 ];
 
 /**
- * 睡觉期间要拒绝的端点：只列「打扰类」。
+ * Endpoints to be rejected during sleep: only "disturbance type" is listed.
  *
- * 刻意用白名单而不是黑名单——新增端点默认放行，不会因为忘了排除而把维护动作（改显示位置、
- * 重载配置）或拖拽链路（/position、/throw）一起锁死；反过来，漏列一个打扰端点只是它还能用，
- * 不会造成「宠物叫不醒」。
+ * Deliberately use a whitelist instead of a blacklist - newly added endpoints are allowed by default, and maintenance
+ * actions (changing display positions, reloading configurations) or drag links (/position, /throw) will not be locked
+ * because of forgetting to exclude them; conversely, missing an interfering endpoint will only allow it to be used,
+ * and will not cause "pets that won't wake up".
  */
 function sleepGated(rest: string, method: string): boolean {
   if (rest === 'chat') return method === 'POST';
@@ -73,16 +76,17 @@ function sleepGated(rest: string, method: string): boolean {
 }
 
 /**
- * 由依赖表构造路由分发器（`apply` 只调一次）。
- * @param deps - 路由层依赖（store、路径、动作函数）。
- * @returns 接收 URL/rest/方法/请求体/断开信号并给出应答的函数。
+ * The route distributor is constructed from the dependency table (`apply` is only called once).
+ * @param deps - route layer dependency (store, path, action function).
+ * @returns is a function that receives URL/rest/method/request body/disconnect signal and gives a response.
  */
 export function createPetRouter(
   deps: PetRouteDeps,
 ): (url: URL, rest: string, method: string, body?: string, signal?: AbortSignal) => Promise<RouteResult> {
   return async (url, rest, method, body, signal) => {
-    // 睡觉闸门放在分发之前：各领域处理器完全不用知道「睡觉」这回事，也不会漏掉某一处。
-    // 只挡带 ?pet= 的请求（/todos 的清单是全局的，没有归属宠物就不拦）。
+    // The sleep gate is placed before distribution: processors in various fields do not need to know about "sleeping"
+    // at all, and they will not miss any place. Only requests with ? pet = are blocked (the list of / todos is global
+    // and will not be blocked if there is no belonging pet).
     if (sleepGated(rest, method)) {
       const petId = String(url.searchParams.get('pet') ?? '').trim();
       if (petId) {
@@ -94,7 +98,7 @@ export function createPetRouter(
       const result = await handle(deps, { url, rest, method, body, signal });
       if (result !== undefined) return result;
     }
-    // 素材处理器总会给出应答，这条只在新增领域处理器漏掉兜底时才会走到。
+    // The asset processor will always give a response. This will only be reached when the new domain processor misses the fallback.
     return { kind: 'text', status: 404, body: 'dsh-pet: not found' };
   };
 }

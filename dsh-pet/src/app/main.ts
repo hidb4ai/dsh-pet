@@ -1,8 +1,10 @@
 /**
- * dsh-pet 独立应用主进程：同一个 Electron 进程里装本机 HTTP 服务、插件宿主半侧与桌面 Helper。
- * 只做启动装配与日志落盘：不实现路由（见 router.ts），不实现窗口/托盘/物理（复用桌面 Helper）。
- * 依赖宿主半侧的 apply()、standalone 的配置与安全模块，以及 runtime/electron-helper/main.js。
- * 始终成立：端口先于 Helper 就位（它在 ready 前就要用配置地址），令牌只经请求头与环境变量传递。
+ * dsh-pet independent application main process: The local HTTP service, plugin host side and desktop Helper are
+ * installed in the same Electron process. Only startup assembly and log persist to disk: route (see router.ts) is not
+ * implemented, window/system tray/physical (reuse desktop Helper) is not implemented. Depends on the host side of
+ * apply(), the configuration and security module of standalone, and runtime/electron-helper/main.js. Always true: the
+ * port is in place before Helper (it needs the configuration address before ready), and the token is only passed
+ * through the request header and environment variables.
  * @module dsh-pet/src/app/main
  */
 
@@ -27,8 +29,9 @@ import { createSetup, setupMemoryBinding } from '../standalone/setup.ts';
 import { openSetup } from '../standalone/open-setup.ts';
 
 /**
- * `electron` 由 Electron 运行时提供，不是本包依赖；只声明实际用到的成员。
- * 静态 `import 'electron'` 会让 `tsc --noEmit` 找不到类型而整仓变红。
+ * `electron` is provided by the Electron runtime and is not a dependency of this package; only the actually used
+ * members are declared. Static `import 'electron'` will cause `tsc --noEmit` to fail to find the type and the entire
+ * position will turn red.
  */
 interface WebContentsLike {
   on(
@@ -49,14 +52,14 @@ const { app, session } = createRequire(import.meta.url)('electron') as {
   session: { defaultSession: DesktopSession };
 };
 
-/** 包根目录：与 helper-process.ts 的 packageRoot 同一口径（模块所在目录的上一级） */
+/** Package root directory: the same conventions as packageRoot of helper-process.ts (the upper level of the directory where the module is located) */
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, '..');
 const helperMain = join(packageRoot, 'runtime', 'electron-helper', 'main.js');
 
 const log = (message: string): void => console.log(`[dsh-pet-app] ${message}`);
 
-/** 单实例：第二次双击直接退出（共用 userData 的 Chromium profile 会互踢） */
+/** Single instance: double-click to exit directly for the second time (Chromium profile that share userData will kick each other) */
 const locked = app.requestSingleInstanceLock();
 if (!locked) {
   app.exit(0);
@@ -65,15 +68,17 @@ if (!locked) {
 }
 
 /**
- * 启动应用。
+ * Start the application.
  *
- * 外层必须 `await`：端口要在 `require(helperMain)` 之前确定（Helper 在 ready 回调里就要用配置地址），
- * 而 Helper 又必须在 ready 之前被 require（内部有 `app.commandLine.appendSwitch`，ready 后再加不生效）。
+ * The outer layer must be `await` : the port must be determined before `require(helperMain)` (Helper must use the
+ * configuration address in the ready callback), and Helper must be require before ready (there is
+ * `app.commandLine.appendSwitch` internally, and adding it after ready will not take effect).
  */
 async function boot(): Promise<void> {
-  // 独立应用没有控制台：插件日志、standalone 日志与同进程 Helper/渲染端的 console 全部落盘。
-  // 原始 console 方法要先快照——包装后的 console 会转给文件 logger，logger 的 base 必须指向原始方法，
-  // 否则 logger → console → logger 无限递归。
+  // There is no console for independent applications: plugin logs, standalone logs and console of the same process
+  // Helper / renderer all persist to disk. The original console method needs to take a snapshot first - the packaged
+  // console will be transferred to the file logger, and the base of logger must point to the original method,
+  // otherwise logger → console → logger will recur infinitely.
   const logFile = join(dshHomeDir(), 'dsh-pet', 'logs.txt');
   const rawConsole = {
     log: console.log.bind(console),
@@ -98,13 +103,13 @@ async function boot(): Promise<void> {
     rawConsole.log(...args);
     logger.info(toLine(args));
   };
-  // 纯模块（config/chat/whisper）没有 ctx.logger，靠默认出口落盘
+  // Pure module (config/chat/whisper) does not have ctx.logger, rely on the default export persist to disk
   setDefaultLogger(logger);
 
   const routes: RegisteredRoute[] = [];
   let port = 0;
 
-  // 与 CLI 同一套安全模型：令牌只经「配置页地址的 #token=」递给浏览器，不进日志
+  // The same security model as CLI: the token is only passed to the browser via "# token = of the configuration page address" and is not entered in the log.
   const security = createRequestSecurity();
   const ai = createStandaloneAi(dshHomeDir(), logger);
   const setup = createSetup(
@@ -123,36 +128,37 @@ async function boot(): Promise<void> {
   const server = await startRouter(routes, { security, ai, setup, log, status, landingPage });
   port = server.port;
   const origin = `http://127.0.0.1:${port}`;
-  log(`本机服务 ${origin}`);
+  log(`Local server ${origin}`);
 
-  // 先把「我自己就是应用」告诉插件，再 apply：apply 内部据此短路 spawn 与下载
+  // First tell the plugin "I am the application", and then apply: apply internally short-circuit spawn and download accordingly
   process.env.DSH_PET_IN_PROCESS = '1';
   process.env.DSH_PET_APP_MODE = '1';
-  // 独立模式点首项打开的是本机 AI 设置页，不是 DSH 站点：形态必须显式标成 standalone。
+  // The first item opened by the standalone mode click is the local AI settings page, not the DSH site: the form must be explicitly marked as standalone.
   process.env.DSH_PET_OPEN_TARGET = 'standalone';
-  // 不注入宿主 PID：helper 的「宿主没了就退出」只对双进程有意义，同进程里设了会自己杀自己
+  // Do not inject host PID: helper’s “exit when host is gone” is only meaningful for dual processes. Setting it in the same process will kill itself.
   delete process.env.DSH_PET_HOST_PID;
   process.env.DSH_PET_CONFIG_URL = `${origin}${ROUTE_SEGMENT}/config`;
-  // 右键「打开 AI 设置」用它：带令牌的配置页（与 CLI 行为一致）。裸 origin 在应用里没有页面可看。
+  // Right-click "Open AI Settings" and use this: Configuration page with token (consistent with CLI behavior). Naked origin has no page to view in the application.
   process.env.DSH_PET_SITE_URL = security.authenticatedUrl(origin);
   if (!process.env.DSH_PET_SCALE) process.env.DSH_PET_SCALE = '1';
 
   apply(context.ctx);
   setup.resume();
   if (!ai.isReady()) void app.whenReady().then(() => openSetup(security.authenticatedUrl(origin)));
-  log(`apply() 完成：routes=${routes.length} 失败=${context.failures.length}`);
+  log(`apply() complete: routes=${routes.length} failures=${context.failures.length}`);
 
-  // helper 读它决定建几个窗口；读不到时它会回落到单个默认窗口，首帧再由渲染端自校正
+  // helper reads it and determines how many windows to create; when it cannot be read, it will fallback to a single default window, and the first frame will be self-corrected by the renderer.
   process.env.DSH_PET_PETS = JSON.stringify(desktopPets());
 
-  // 同进程跑 Helper：建窗、托盘、IPC、碰撞都在它内部完成（CJS，需要 require）。
-  // 渲染端日志必须转出来——打包后的应用没有控制台，渲染端报错只会表现成「窗口透明」。
+  // Running Helper in the same process: window creation, system tray, IPC, and collision are all completed inside it
+  // (CJS, require is required). The renderer log must be transferred out - the packaged application does not have a
+  // console, and renderer errors will only appear as "window transparency".
   app.on('web-contents-created', (_event, contents) => {
     contents.on('console-message', (_e, level, message, line, source) => {
-      log(`渲染端[${level}] ${message} (${source}:${line})`);
+      log(`renderer [${level}] ${message} (${source}:${line})`);
     });
   });
-  // 必须早于 Helper 的 whenReady 回调建出 file 渲染页。
+  // The file rendering page must be created earlier than the whenReady callback of Helper.
   void app.whenReady().then(() => {
     installDesktopAuth(
       session.defaultSession,
@@ -168,9 +174,9 @@ async function boot(): Promise<void> {
     delete process.env.DSH_PET_APP_TOKEN;
   }
 
-  app.on('second-instance', () => log('已有一个实例在运行，忽略本次启动'));
+  app.on('second-instance', () => log('Another instance is already running; ignoring this launch'));
   app.on('will-quit', () => {
-    // 退出前把最后一批日志刷出去（定时器最多 1s，这里显式补一次）
+    // Flush out the last batch of logs before exiting (the timer can be up to 1 s, and it is explicitly replenished here)
     void logger.flush();
     logger.dispose();
     void ai.dispose();
@@ -181,8 +187,8 @@ async function boot(): Promise<void> {
 }
 
 /**
- * 桌面可见宠物清单（[{id,size}]）。
- * 与 `src/host/index.ts` 的 isDesktopVisible 同口径：display 含 desktop/both 才建窗。
+ * List of pets visible on the desktop ([{ id , size }]). The same conventions as isDesktopVisible of
+ * `src/host/index.ts` : display only has a window containing desktop/both.
  */
 function desktopPets(): Array<{ id: string; size: number }> {
   try {
@@ -190,22 +196,24 @@ function desktopPets(): Array<{ id: string; size: number }> {
     const desktop = pets
       .filter((pet) => pet.display === 'desktop' || pet.display === 'both')
       .map((pet) => ({ id: String(pet.id), size: Number(pet.size) }));
-    log(`桌面宠物 ${JSON.stringify(desktop)}`);
+    log(`Desktop pets ${JSON.stringify(desktop)}`);
     return desktop;
   } catch (error) {
-    log(`读配置失败（回落单窗）：${error instanceof Error ? error.message : String(error)}`);
+    log(
+      `Configuration read failed; using one fallback window: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return [];
   }
 }
 
-/** 状态接口与落地页共用的数据源；配置读不出来时如实显示 0 只，不让页面 500。 */
+/** The data source shared by the status interface and the landing page; when the configuration cannot be read, 0 will be displayed and the page will not be 500. */
 function status(port: number): Record<string, unknown> {
   const paths = configPathsFor(packageRoot, dshHomeDir());
   let pets: Array<Record<string, unknown>> = [];
   try {
     pets = flattenPetList(readAllConfig(paths));
   } catch {
-    /* 落地页/状态接口不该因配置坏掉而 500：下面如实显示 0 只 */
+    /* The landing page/status interface should not cause 500 due to broken configuration: 0 is displayed as shown below. */
   }
   return {
     name: 'dsh-pet-app',
@@ -218,7 +226,7 @@ function status(port: number): Record<string, unknown> {
   };
 }
 
-/** 落地页：配置项只能改文件，可视化配置在 /standalone-ai/（需令牌）。 */
+/** Landing page: Configuration items can only be changed to files, and the visual configuration is at /standalone-ai/ (token required). */
 function landingPage(port: number): string {
   const info = status(port);
   const pets = (info.pets as Array<Record<string, unknown>>) ?? [];
@@ -250,7 +258,7 @@ function landingPage(port: number): string {
 </main></body></html>`;
 }
 
-/** HTML 转义：落地页拼字符串用。 */
+/** HTML escape: landing page spells character string. */
 function escapeHtml(value: string): string {
   return value.replace(
     /[&<>"']/g,

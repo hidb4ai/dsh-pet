@@ -1,26 +1,26 @@
 /**
- * 对话面板的样式表与一次性注入。
+ * Style sheets and one-time injection for dialog panels.
  *
- * 只放样式与注入入口：颜色、字号、圆角全部取 `--dsw-*` token，不写字面色值——
- * 浅色/深色主题由 DSH 的变量切换，这里不做第二套配色。
- * 内联样式写不出 `:hover` / `:focus`，所以面板统一走这份 CSS。
+ * Only put the style and inject entry point: color, font size, rounded corners are all set to `--dsw-*` token, no
+ * literal value is written - the light/dark theme is switched by the variable of DSH, there is no second set of color
+ * matching here. The inline style cannot write `:hover` / `:focus` , so the panel uniformly uses this CSS.
  * @module dsh-pet/src/client/chat/styles
  */
 import { PANEL_CSS } from './panel-css.ts';
 
-/** 样式标签的归属标记；同一 key 只注入一次。 */
+/** Attribution tag of style tag; the same key is only injected once. */
 const STYLE_KEY = 'dsh-pet-chat-panel';
 
-/** 当前挂载数：多个 pane 可能同时挂载面板，靠引用计数决定何时移除样式标签。 */
+/** Current number of mounts: Multiple pane may mount panels at the same time, relying on reference counting to determine when to remove style tags. */
 let mountedCount = 0;
 
-/** 已注入的 style 元素（第一个挂载时创建）。 */
+/** Injected style element (created on first mount). */
 let styleTag: HTMLStyleElement | undefined;
 
 /**
- * 注入面板样式（幂等，按引用计数释放）。
+ * Inject panel styles (idempotent, release by reference count).
  *
- * @returns 释放函数：最后一次释放时才移除 style 标签；重复调用安全。
+ * @returns release function: The style label is removed only after the last release; it is safe to call repeatedly.
  */
 export function injectPanelCss(): () => void {
   if (typeof document === 'undefined') return () => {};

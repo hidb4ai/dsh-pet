@@ -1,17 +1,20 @@
 /**
- * 设置页 HTML 外壳：左侧固定分区导航 + 右侧内容区，配置页把桌宠与 AI 两块合并在一处。
+ * Setting page HTML shell: fixed partition navigation on the left + content area on the right, the configuration page
+ * merges the desktop pet and AI into one.
  *
- * 页面只在本机回环上由 ./server 提供；CSP 是 `style-src 'self'`，所以这里不许出现内联样式，
- * 也不许内联脚本。桌宠配置面板的内容依赖 GET /config，初始只有一句占位文案。
- * 图标走设置页自己的公开资源路径（/standalone-ai/icon.png），内容读自包内 assets/logo.png，
- * 不复制第二份图；不能用插件路由 /logo——浏览器取 favicon 不带 Origin 也不带令牌，会被判成文件来源而 403。
- * 导航项以 `data-tab` 声明，脚本按约定找 `panel-<tab>`，新增分区只需照此加一对按钮与面板。
+ * The page is only served by ./server on the local loopback; CSP is `style-src 'self'` , so no inline styles are
+ * allowed here, and no inline scripts are allowed. The content of the desktop pet configuration panel depends on GET /
+ * config, and initially there is only one placeholder copy. The icon takes the own public resource path (/
+ * standalone-ai/icon.png) on the settings page, and the content is read from assets/logo.png in the package, without
+ * copying the second image; the plugin route / logo cannot be used - the browser takes favicon without Origin or
+ * token, and it will be judged as a file source and 403. The navigation item is declared with `data-tab` , and the
+ * script finds `panel-<tab>` as agreed. To add a new partition, you only need to add a pair of buttons and panels.
  * @module dsh-pet/src/standalone/settings-page/chrome
  */
 
 import { setupPanel } from './setup-panel.ts';
 
-/** 设置页 HTML。 */
+/** Setting page HTML. */
 export const settingsPage = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><base href="/"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>桌宠设置</title><link rel="icon" type="image/png" href="/standalone-ai/icon.png"><link rel="stylesheet" href="/standalone-ai/settings.css">

@@ -1,20 +1,22 @@
 /**
- * 桌面 Helper 的「宿主没了就自己退」纯判定。
+ * Desktop Helper's "If the host is no longer available, it will be returned by itself" is a pure judgment.
  *
- * Helper 的 stdout/stderr 是宿主给的管道，宿主一退出读端就消失，下一次写拿到 EPIPE；
- * 未挂监听的流错误会成为未捕获异常，而 Electron 的默认处理器只弹模态框、不退出。
- * 这里只放判定（不 require electron），主进程侧负责挂监听、起轮询与退出。
+ * The stdout/stderr of Helper is the pipe given by the host. It disappears as soon as the host exits the reading end,
+ * and the next write will get EPIPE; stream errors that are not monitored will become uncaught exceptions, and the
+ * default processor of Electron only pops up the modal box and does not exit. Only judgments are placed here (not
+ * require electron). The main process side is responsible for monitoring, polling and exiting.
  * @module dsh-pet/runtime/electron-helper/host-liveness
  */
 
 'use strict';
 
-/** 宿主存活探测间隔（ms）：宿主没了最多 2s 收敛，代价只是每 2s 一次 kill(pid, 0) */
+/** Host survival detection interval (ms): The host is gone and converges at most 2 s, the cost is only one kill (pid, 0) every 2 s */
 const HOST_POLL_MS = 2000;
 
 /**
- * 解析宿主 PID（DSH_PET_HOST_PID，宿主 spawn 时注入）。
- * 非法或未设返回 0，调用方据此不做探测——宁可留着一个桌宠等人来关，也不误退。
+ * Inject when parsing host PID (DSH_PET_HOST_PID, host spawn). If it is invalid or not set, it returns 0, and the
+ * caller does not perform detection accordingly - it would rather leave a desktop pet waiting for someone to close it
+ * than retreat by mistake.
  */
 function parseHostPid(raw) {
   const pid = Number.parseInt(String(raw ?? ''), 10);
@@ -22,13 +24,13 @@ function parseHostPid(raw) {
 }
 
 /**
- * 宿主进程是否确定已经不在了。
+ * Are you sure the host main process is gone?
  *
- * `kill(pid, 0)` 只做存在性检查；只有 ESRCH 判「没了」，EPERM 等一律当存活，
- * pid 非法同样返回 false：这条判定必须宁可不退。
+ * `kill(pid, 0)` only performs existence check; only ESRCH is judged as "dead", EPERM and so on are all considered
+ * alive, pid is invalid and false is also returned: this judgment must be preferred not to retreat.
  *
- * @param hostPid - 宿主 PID（parseHostPid 的产物）。
- * @param kill - 可注入，便于单测。
+ * @param hostPid - host PID (a product of parseHostPid).
+ * @param kill - Injectable for single testing.
  */
 function hostIsGone(hostPid, kill = (pid, signal) => process.kill(pid, signal)) {
   if (!(hostPid > 0)) return false;
@@ -40,7 +42,7 @@ function hostIsGone(hostPid, kill = (pid, signal) => process.kill(pid, signal)) 
   }
 }
 
-/** 这次流错误是不是「管道对端没了」：EPIPE 与 ERR_STREAM_DESTROYED 都等于宿主已死。 */
+/** Is this flow error "the pipe peer is gone": EPIPE and ERR_STREAM_DESTROYED both mean that the host is dead. */
 function isBrokenPipeError(error) {
   const code = error && error.code;
   return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED';

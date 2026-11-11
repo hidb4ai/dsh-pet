@@ -1,12 +1,15 @@
 /**
- * 设置页共用小件（src/client/settings/ui.ts）的契约测试。
+ * Contract test of settings page shared widget (src/client/settings/ui.ts).
  *
- * 三条契约：
- *   1. 说明一律走 `data-tip` 气泡属性，且带说明的字段必须同时有可读的 `aria-label`；
- *   2. 开关格的勾选态与禁用态透传给原生 checkbox，切换只回传布尔值；
- *   3. 没有说明时不留空的问号，也不给无说明的元素加 `data-tip`。
+ * Three contracts:
+ * 1. The description must use the `data-tip` bubble attribute, and the field with the description must also have
+ * readable `aria-label` ;
+ * 2. The checked state and disabled state of the switch grid are transparently transmitted to the native checkbox, and
+ * the switch only returns a Boolean value;
+ * 3. Do not leave a blank question mark when there is no description, and do not add `data-tip` to unexplained
+ * elements.
  *
- * 用假的 `h` 记录节点树（不引 jsdom）。
+ * Record the node tree with fake `h` (without citing jsdom).
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,7 +26,7 @@ const h = ((tag: string, props: Record<string, unknown>) => ({ tag, props })) as
 
 const ui = makeUiKit({ h, t: (key) => key });
 
-/** 摊平整棵树，便于按标签找节点。 */
+/** Flatten the entire tree to facilitate finding nodes by label. */
 function flatten(node: unknown): Node[] {
   if (node === null || node === undefined || typeof node === 'string') return [];
   if (Array.isArray(node)) return node.flatMap(flatten);
@@ -34,37 +37,37 @@ function flatten(node: unknown): Node[] {
 const byClass = (node: unknown, className: string): Node[] =>
   flatten(node).filter((child) => String(child.props.className ?? '').includes(className));
 
-describe('field —— 字段', () => {
-  test('带说明：标签后面跟一个问号，说明同时写进 data-tip 与 aria-label', () => {
+describe('field —— Field', () => {
+  test('With description: The label is followed by a question mark, indicating that data-tip and aria-label are written simultaneously.', () => {
     const field = ui.field('大小', h('input', {}), '高度自动 = 宽度 × 9/16');
     const [label] = byClass(field, 'dsh-pet-cfg__flabel');
     const question = byClass(label, 'dsh-pet-cfg__q')[0];
-    assert.equal(question.props['aria-label'], '高度自动 = 宽度 × 9/16', '问号必须有无障碍名');
+    assert.equal(question.props['aria-label'], '高度自动 = 宽度 × 9/16', 'Question marks must have an accessible name');
     assert.equal(question.props['data-tip'], '高度自动 = 宽度 × 9/16');
     assert.equal(question.props.role, 'img');
     assert.equal(
       flatten(label).some((node) => node.tag === 'input'),
       false,
-      '输入框在字段容器里，不在标签里',
+      'The input box is in the field container, not in the label',
     );
   });
 
-  test('不带说明：标签就是纯文本，不凭空长出一个问号', () => {
+  test('Without explanation: the label is just plain text and does not grow a question mark out of thin air.', () => {
     const field = ui.field('大小', h('input', {}));
     assert.deepEqual(byClass(field, 'dsh-pet-cfg__q'), []);
     const [label] = byClass(field, 'dsh-pet-cfg__flabel');
     assert.equal(label.props.children, '大小');
   });
 
-  test('问号不挂 data-tip-end：气泡靠 tip-layer 自动翻边，不再分左右', () => {
+  test('The question mark is not attached to data-tip-end: the bubble is automatically flanged by tip-layer, and is no longer divided into left and right.', () => {
     const field = ui.field('大小', h('input', {}), '说明');
     const [question] = byClass(field, 'dsh-pet-cfg__q');
     assert.equal(question.props['data-tip-end'], undefined);
   });
 });
 
-describe('toggleCell —— 开关格', () => {
-  test('勾选态与禁用态透传给 checkbox，标题走翻译', () => {
+describe('toggleCell —— switch grid', () => {
+  test('The checked and disabled states are transparently transmitted to checkbox, and the title is translated', () => {
     const cell = ui.toggleCell('notifyToggle', true, true, () => {});
     const input = flatten(cell).find((node) => node.tag === 'input');
     assert.equal(input?.props.type, 'checkbox');
@@ -73,7 +76,7 @@ describe('toggleCell —— 开关格', () => {
     assert.ok(flatten(cell).some((node) => node.props.children === 'notifyToggle'));
   });
 
-  test('切换只回传布尔值，不把事件对象抛给调用方', () => {
+  test('Switch only returns a Boolean value and does not throw the event object to the caller', () => {
     const seen: boolean[] = [];
     const cell = ui.toggleCell('x', false, false, (value) => seen.push(value));
     const input = flatten(cell).find((node) => node.tag === 'input');
@@ -82,7 +85,7 @@ describe('toggleCell —— 开关格', () => {
     assert.deepEqual(seen, [true]);
   });
 
-  test('说明固定在 `<label + Hint>` 上', () => {
+  test('Description fixed on `<label + Hint>`', () => {
     const cell = ui.toggleCell('notifyToggle', false, false, () => {});
     const [question] = byClass(cell, 'dsh-pet-cfg__q');
     assert.equal(question.props['aria-label'], 'notifyToggleHint');
@@ -90,8 +93,8 @@ describe('toggleCell —— 开关格', () => {
   });
 });
 
-describe('cardHead —— 卡片头', () => {
-  test('标题 + 问号；没有说明时只有标题', () => {
+describe('cardHead——Card head', () => {
+  test('title + question mark; only title when there is no description', () => {
     const withHint = ui.cardHead('宠物配置', '每只宠物独立配置');
     const [question] = byClass(withHint, 'dsh-pet-cfg__q');
     assert.equal(question.props['aria-label'], '每只宠物独立配置');

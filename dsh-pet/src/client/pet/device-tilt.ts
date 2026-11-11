@@ -1,60 +1,64 @@
 /**
- * 手机体感输入：陀螺仪倾斜与摇一摇，换算成物理世界里的重力向量与初速度。
+ * Mobile phone somatosensory input: gyroscope tilt and shake, converted into gravity vector and initial velocity in
+ * the physical world.
  *
- * 换算与订阅分开：换算纯函数可单测，订阅只碰浏览器 API。
- * 传感器只在安全上下文（HTTPS / localhost）可用——HTTP 下两个事件类型根本不存在，订阅直接空转。
+ * The conversion is separated from the subscribe: the conversion pure function can be tested individually, and
+ * subscribe only touches the browser API. The sensor is only available in the security context (HTTPS / localhost) -
+ * the two event types under HTTP do not exist at all, and subscribe is directly idle.
  * @module dsh-pet/src/client/pet/device-tilt
  */
 import type { GravityVector } from '../../shared/physics.ts';
 
-/** 倾斜死区（度）：小于它视为没倾斜，免得手机本来就歪着时宠物一直滑。 */
+/** Tilt dead zone (degree): If it is less than it, it is considered as not tilting, so as to prevent the pet from sliding when the phone is originally tilted. */
 export const TILT_DEAD_ZONE_DEG = 2;
 
-/** 摇一摇触发阈值（m/s²，不含重力）：低于它不算摇。 */
+/** Shake trigger threshold (m/s², excluding gravity): below it, it does not count as a shake. */
 export const SHAKE_THRESHOLD = 18;
 
-/** 摇一摇去重窗口（ms）：一次甩动只给一个冲量。 */
+/** Shake the deduplicate window (ms): one shake only gives one impulse. */
 export const SHAKE_COOLDOWN_MS = 300;
 
-/** 摇一摇基准：3600 px/s 起，随加速度线性加码，封顶 4800。 */
+/** Shake benchmark: starting from 3600 px/s, increasing linearly with acceleration, capping at 4800. */
 const SHAKE_BASE_SPEED = 3600;
 const SHAKE_GAIN = 160;
 const SHAKE_MAX_BONUS = 4800;
 
-/** 一次姿态采样的平面分量（度）。 */
+/** The plane component of an attitude sample (degrees). */
 export interface TiltSample {
-  /** 前后倾：平放为 0，向自己倾斜为正。 */
+  /** Fore and aft tilt: 0 when lying flat, positive when tilting toward yourself. */
   readonly beta: number;
-  /** 左右倾：平放为 0，向右倾为正。 */
+  /** Left and right tilt: 0 when lying flat, positive when tilting to the right. */
   readonly gamma: number;
 }
 
-/** 摇一摇冲量（px/s）。 */
+/** Shake impulse (px/s). */
 export interface ShakeVector {
   readonly vx: number;
   readonly vy: number;
 }
 
-/** 屏幕方向角（0/90/180/270）：横屏时倾斜轴要换过来。 */
+/** Screen orientation angle (0/90/180/270): The tilt axis needs to be changed when the screen is horizontal. */
 const screenAngleDeg = (): number => {
   if (typeof screen === 'undefined' || !screen.orientation) return 0;
   return screen.orientation.angle || 0;
 };
 
-/** 把角度差折到最近的等价角，避免从 179° 跳到 -179° 时方向反转。 */
+/** Fold the angle difference to the nearest equivalent angle to avoid direction reversal when jumping from 179° to -179°. */
 const nearestDelta = (delta: number, period: number): number => {
   const half = period / 2;
   return ((((delta + half) % period) + period) % period) - half;
 };
 
 /**
- * 倾斜 → 重力向量：按三角函数投影，倾角 θ 的分量是 `gravity × sin(θ)`。
+ * Tilt → Gravity vector: According to the trigonometric function projection, the component of the tilt angle θ is
+ * `gravity × sin(θ)` .
  *
- * @param sample - 当前姿态。
- * @param baseline - 开启体感时记下的中性姿态。
- * @param gravity - 配置里的重力，作为倾斜到竖直时的满值（px/s²）。
- * @param screenAngle - 屏幕方向角（度）；横屏时把设备轴旋到屏幕轴。
- * @returns 屏幕坐标系里的重力分量；处于死区内时为 0。
+ * @param sample - Current attitude.
+ * @param baseline - Neutral posture recorded when somatosensory is turned on.
+ * @param gravity - The gravity in the configuration, as the full value when tilted to vertical (px/s²).
+ * @param screenAngle - Screen orientation angle (degrees); rotate the device axis to the screen axis in landscape
+ * orientation.
+ * @returns The gravity component in the screen coordinate system; it is 0 when in the dead zone.
  */
 export function tiltGravity(
   sample: TiltSample,
@@ -82,13 +86,17 @@ export function tiltGravity(
 }
 
 /**
- * 摇一摇 → 初速度：方向取甩动方向（屏幕坐标的横向/纵向加速度），力度按基准 × `throwPower`。
+ * Shake → Initial velocity: The direction is the shaking direction (horizontal/vertical acceleration of screen
+ * coordinates), and the strength is based on the base × `throwPower` .
  *
- * @param ax - 横向加速度（m/s²）；可能含重力，那正是 {@link SHAKE_THRESHOLD} 的判定口径。
- * @param ay - 纵向加速度（m/s²）。
- * @param az - 垂直加速度（m/s²）：参与阈值判定——只有它能让"纯前后抖"也够得上一次甩动。
- * @param throwPower - 配置里的总力度倍率；`1` 即基准力度。
- * @returns 初速度；加速度不足阈值或横向/纵向都为 0（方向不可用）时返回 `null`。
+ * @param ax - lateral acceleration (m/s²); may include gravity, which is what conventions for {@link SHAKE_THRESHOLD}
+ * are.
+ * @param ay - Longitudinal acceleration (m/s²).
+ * @param az - Vertical acceleration (m/s ²): Participates in threshold determination - only it can make "pure front
+ * and back shaking" enough to shake once.
+ * @param throwPower - the total velocity multiplier in the configuration; `1` is the base velocity.
+ * @returns initial velocity; `null` is returned when the acceleration is insufficient than the threshold or both
+ * horizontal and vertical directions are 0 (direction is unavailable).
  */
 export function shakeImpulse(ax: number, ay: number, az: number, throwPower: number): ShakeVector | null {
   const mag = Math.hypot(ax, ay, az);
@@ -99,31 +107,33 @@ export function shakeImpulse(ax: number, ay: number, az: number, throwPower: num
   return { vx: (ax / lateral) * speed, vy: (ay / lateral) * speed };
 }
 
-/** 环境是否具备传感器 API：HTTP 下这两个全局类型不存在，不能靠事件是否到达来判断。 */
+/** Whether the environment has sensor API: These two global types do not exist under HTTP, and cannot be judged by whether the event arrives. */
 export function canReadMotionSensors(): boolean {
   return typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceMotionEvent !== 'undefined';
 }
 
-/** 本次要申请授权的传感器种类：只问真正要用的那一个事件。 */
+/** The type of sensor to be applied for authorization this time: only ask about the event that is actually used. */
 export interface MotionSensorKinds {
-  /** 倾斜（deviceorientation）。 */
+  /** Tilt (deviceorientation). */
   readonly tilt: boolean;
-  /** 摇一摇（devicemotion）。 */
+  /** Shake it (devicemotion). */
   readonly shake: boolean;
 }
 
 /**
- * 请求传感器权限（iOS 13+ 必需，且必须在用户手势里调用）；只申请本次要用的种类。
+ * Request sensor permission (required for iOS 13+ and must be called in user gesture); only apply for the type to be
+ * used this time.
  *
- * @param kinds - 需要授权的种类；两个都关时什么都不问，直接 resolve `true`。
- * @returns 全部申请成功（或环境本来就不需要授权）时为 `true`；任一种被拒、或该事件类型在此上下文里不存在
- *  （非安全上下文，HTTP 下两个全局类型都没有）时为 `false`。
+ * @param kinds - Type that requires authorization; when both are turned off, no questions asked, just resolve `true` .
+ * @returns When all applications are successful (or the environment does not require authorization in the first
+ * place), it is `true` ; any one is rejected, or the event type does not exist in this context.
+ * (Non-security context, neither global type under HTTP) is `false` .
  */
 export async function requestMotionPermission(kinds: MotionSensorKinds): Promise<boolean> {
   const ask = async (ctor: unknown): Promise<boolean> => {
     if (ctor === undefined) return false;
     const fn = (ctor as { requestPermission?: () => Promise<string> }).requestPermission;
-    if (typeof fn !== 'function') return true; // 安卓 / 桌面没有这个 API，视为已授权
+    if (typeof fn !== 'function') return true; // Android/Desktop does not have this API, it is regarded as authorized
     try {
       return (await fn.call(ctor)) === 'granted';
     } catch {
@@ -137,10 +147,10 @@ export async function requestMotionPermission(kinds: MotionSensorKinds): Promise
 }
 
 /**
- * 订阅姿态采样。
+ * subscribe gesture sampling.
  *
- * @param onSample - 每帧回调；事件里缺 beta/gamma（部分设备）时跳过。
- * @returns 取消订阅。
+ * @param onSample - callback for each frame; skipped when beta/gamma (some devices) is missing in the event.
+ * @returns unsubscribe.
  */
 export function subscribeTilt(onSample: (sample: TiltSample) => void): () => void {
   if (typeof window === 'undefined' || typeof DeviceOrientationEvent === 'undefined') return () => {};
@@ -153,14 +163,16 @@ export function subscribeTilt(onSample: (sample: TiltSample) => void): () => voi
 }
 
 /**
- * 订阅摇一摇：只在这个模块做阈值与去重，调用方拿到的是"真正算一次甩动"的加速度。
+ * subscribe shake: only do threshold and deduplicate in this module, what the caller gets is the acceleration that is
+ * "really counted as a shake".
  *
- * 部分机型不给 `acceleration`（只有含重力的那份），所以按 `accelerationIncludingGravity` 兜底；
- * 两种来源共用同一个阈值，含重力时静止约 9.8 m/s²，仍低于阈值。
+ * Some models do not give `acceleration` (only the one with gravity), so press `accelerationIncludingGravity`
+ * fallback; the two sources share the same threshold, and it is still about 9.8 m/s² with gravity, which is still
+ * lower than the threshold.
  *
- * @param onShake - 触发时回调三轴加速度（m/s²）。
- * @param now - 时钟；测试注入。
- * @returns 取消订阅。
+ * @param onShake - Callback three-axis acceleration (m/s²) when triggered.
+ * @param now - clock; test injection.
+ * @returns unsubscribe.
  */
 export function subscribeShake(
   onShake: (ax: number, ay: number, az: number) => void,

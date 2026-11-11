@@ -1,5 +1,5 @@
 /**
- * 设置页中文文案；键集是全集的真源。
+ * Chinese text on the settings page; the key set is the true source of the complete collection.
  */
 
 import { memorySetupZh } from './memory-setup.ts';
@@ -26,7 +26,7 @@ export const zh = {
 
   nav: '桌宠配置',
   intro: '管理多个桌宠：每个宠物可独立设置大小与位置（保存后即时生效）。',
-  // 卡片标题与卡片级说明；说明统一进问号气泡。
+  // Card title and card-level description; descriptions are unified into question mark bubble.
   petCardTitle: '宠物配置',
   avatarLabel: '头像',
   avatarHint:
@@ -43,11 +43,11 @@ export const zh = {
   cornerHint: '宠物贴着屏幕的哪个角（桌面端按各自显示器的工作区算）。',
   marginXHint: '距所选角落的水平距离（px），可为任意数字。',
   marginYHint: '距所选角落的垂直距离（px），可为任意数字。',
-  // 「/」命令菜单的行标题（图标由 app.ts 经 command-faces.ts 补上）。
+  // The row title of the "/" command menu (the icon is added by app.ts via command-faces.ts).
   'cmd.chat': '对话',
   'cmd.pet': '桌宠',
   'cmd.balance': '余额',
-  // 设置 → 通用 → 快捷键里的命令标题。
+  // Command title in Settings → General → Shortcut keys.
   'shortcut.open': '打开桌宠对话',
   'shortcut.chat': '打开对话弹窗',
   'shortcut.hear': '语音输入',
@@ -284,5 +284,5 @@ export const zh = {
   uninstallCmd: 'dsh plugin --profile {profile} remove dsh-pet-powercontext',
 };
 
-/** 文案键；zh 的键集即全集。 */
+/** Text key; the key set of zh is the complete set. */
 export type Key = keyof typeof zh;

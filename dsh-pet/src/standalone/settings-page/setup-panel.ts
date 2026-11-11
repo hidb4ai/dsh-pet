@@ -1,4 +1,4 @@
-/** 快速开始分别呈现聊天、记忆整理和向量连接，服务预设来自共享注册表。 */
+/** Quick start presents chat, memory organization and vector connection separately, with service defaults from the shared register table. */
 import { MODEL_PRESETS } from '../../shared/memory-presets.ts';
 
 const labels: Record<string, string> = {

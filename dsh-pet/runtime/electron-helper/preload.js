@@ -1,19 +1,23 @@
 /**
- * preload 桥：向渲染端暴露窗口控制与跨窗碰撞的原语。
+ * preload Bridge: Exposes primitives for window control and cross-window collision to the renderer.
  *
- * 只做 IPC 转发，不持有状态、不做判定；翻转与判定都在主进程。依赖 Electron 的
- * contextBridge/ipcRenderer，频道名必须与主进程逐字一致。
+ * Only forwarding IPC, no status is held, no judgment is made; flipping and judgment are all in the main process. For
+ * contextBridge/ipcRenderer that depends on Electron, the channel name must be word-for-word consistent with the main
+ * process.
  *
  * @module dsh-pet/runtime/electron-helper/preload
  */
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('petBridge', {
-  // 宠物窗口逐帧跟随：x/y/width/height 是窗口内容区坐标（用于移动窗口），
-  // boxX/boxY 是宠物包围盒左上角的工作区坐标——碰撞站场必须用包围盒，窗口坐标差半只宠物宽。
-  // size/bottomPad 让静止宠物也登记进碰撞站场，vx/vy 是当前速度（静止/拖拽为 0）。
-  // marginL/marginT 是窗口原点到本体原点的距离：上边距按气泡最大高度加高后四边不相等，
-  // 窗口被系统钳回工作区后还会变大，主进程不能按「窗口宽/4」反推命中区，所以必须上报。
+  // The pet window follows frame by frame: x/y/width/height is the coordinates of the window content area (used for
+  // moving the window), boxX/boxY is the coordinates of the workspace in the upper left corner of the pet bounding box
+  // - the collision site must use a bounding box, and the window coordinates differ by half the width of the pet.
+  // size/bottomPad allows stationary pets to also register into the collision site, vx/vy is the current speed
+  // (stationary/drag is 0). marginL/marginT is the distance from the origin of the window to the origin of the body:
+  // the four sides are not equal after the top margin is increased according to the maximum height of the bubble. The
+  // window will become larger after it is clamped back to the workspace by the system. The main process cannot press
+  // "window width/4" to invert the hit area, so it must be reported.
   setBounds(x, y, width, height, boxX, boxY, size, bottomPad, vx, vy, marginL, marginT) {
     ipcRenderer.send('pet:set-bounds', {
       x,
@@ -30,40 +34,44 @@ contextBridge.exposeInMainWorld('petBridge', {
       marginT,
     });
   },
-  // 点击穿透翻转：窗口默认整窗穿透，渲染端在光标进出身体命中区时上报。
+  // Click-through flip: The window defaults to click-through for the entire window, and the renderer reports when the cursor enters and exits the body hit area.
   setInteractive(interactive) {
     ipcRenderer.send('pet:set-interactive', !!interactive);
   },
-  // 我正在用这个窗口的鼠标输入（拖拽中/菜单开/弹窗开）。主进程光看光标与窗口位移分不清
-  // 拖拽跟手与漫游/抛掷，而渲染端知道；busy 期间兜底通道绝不翻回穿透，否则输入链会断。
-  // 只在状态翻转时发一次，不逐帧。
+  // I am using the mouse input in this window (drag/menu opening/pop-up window opening). The main process cannot tell
+  // the difference between the cursor and the window displacement, drag and drop and roaming/throwing, but the
+  // renderer knows; during busy, the fallback channel will never turn back to click-through, otherwise the input chain
+  // will be broken. Only sent once when the state flips, not frame by frame.
   setInputBusy(busy) {
     ipcRenderer.send('pet:input-busy', !!busy);
   },
-  // 控件矩形：菜单/聊天框只让自己那块接收点击，其余透明区域继续穿透。
+  // Control rectangle: The menu/chat box only allows its own area to receive clicks, and the remaining transparent areas continue to click-through.
   setInputRegions(input) {
     ipcRenderer.send('pet:input-regions', input);
   },
-  // 文本输入拿到 DOM 焦点时向主进程要一次系统键盘焦点：X11 上 DOM 焦点不等于 X 键盘焦点，
-  // 窗口又是 showInactive 显示的，不要就一直打不了字（处理在 main/ipc.js）。
+  // When the text input gets the DOM focus, it asks the main process for the system keyboard focus: the DOM focus on
+  // X11 is not equal to the X keyboard focus, and the window is displayed by showInactive. Otherwise, you will be
+  // unable to type (processed in main/ipc.js).
   requestKeyboardFocus() {
     ipcRenderer.send('pet:request-keyboard-focus');
   },
-  // 右键菜单「打开网站」：去向由主进程按宿主形态决定——桌面应用宿主唤起主窗口，否则用系统浏览器打开站点。
+  // Right-click menu "Open website": the destination is determined by the main process according to the host form - the desktop application host calls up the main window, otherwise the system browser is used to open the site.
   openDshSite(url) {
     ipcRenderer.send('pet:open-site', { url });
   },
-  // 只把 DSH 主窗口提到前台：走应用自注册的 dsh:// 协议（单实例锁会让它聚焦），被别的窗口挡住也有效。
-  // 主进程按宿主形态门控：只有桌面应用宿主才真发，web 形态下发它会把桌面版拉起来。
+  // Only bring the DSH main window to the foreground: use the dsh :// protocol that applies the self-register (single
+  // instance lock will make it focus), and it is also effective if it is blocked by other windows. The main process is
+  // gating according to the host mode: only the desktop application host is actually issued. If it is issued in the
+  // web mode, it will pull up the desktop version.
   focusDshHost() {
     ipcRenderer.send('pet:focus-host');
   },
-  // 截一帧桌面（宠物所在那块屏）：一次性读取，不建流、不留存。
-  // 返回 { mediaType, data, width, height, bytes } 或 null（取不到画面）。
+  // Capture a frame of the desktop (the screen where the pet is): read it once, no stream is created, and no saving is
+  // done. Return { mediaType , data , width , height , bytes } or null (cannot get the picture).
   captureScreen() {
     return ipcRenderer.invoke('pet:capture-screen');
   },
-  // 宠物间碰撞（跨窗 broker）：位置与速度随 setBounds 捎带，主进程汇聚后广播；被撞方收 pet:hit 后按新初速抛出。
+  // Collision between pets (cross-window broker): The position and speed are carried along with setBounds, and the main process gathers and broadcasts; the hit party receives pet:hit and throws it out at the new initial velocity.
   onFlightStates(cb) {
     ipcRenderer.on('pet:flight-states', (e, states) => cb(states));
   },
@@ -73,8 +81,9 @@ contextBridge.exposeInMainWorld('petBridge', {
   onPetHit(cb) {
     ipcRenderer.on('pet:hit', (e, payload) => cb(payload));
   },
-  // 显示器热更新：分辨率/缩放变化、插拔屏、旋转后主进程重算并推来桌面几何（屏幕坐标），
-  // 渲染端就地重挂视口与边界。
+  // Monitor hot update: after resolution/scaling changes, screen insertion and removal, and rotation, the main process
+  // recalculates and pushes the desktop geometry (screen coordinates), and the renderer rehangs the viewport and
+  // boundaries in place.
   onDisplays(cb) {
     ipcRenderer.on('pet:displays', (e, geo) => cb(geo));
   },

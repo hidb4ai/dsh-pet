@@ -1,10 +1,12 @@
 /**
- * 配置读取与元信息：GET /config 的合并成品、GET /config/meta 的路径清单，以及四个写端点的分发。
+ * Configuration reading and meta-information: merged artifacts for GET/config, path list for GET/config/meta, and
+ * distribution of four write endpoints.
  *
- * 写入分居 ./save（用户层 PUT / 同步 POST）、./display（单宠显示位置）与
- * ./entry（整条目实例）：读路径零副作用，写路径要重建白名单、落盘并重启 Helper，
- * 三者的失败模式与改动原因都不同。
- * 不校验配置形状（归 ../../config）；依赖由 PetRouteDeps 显式传入，模块内不读全局、不建状态。
+ * Write separation ./save (user layer PUT /synchronization POST), ./display (single pet display position) and ./entry
+ * (whole entry instance): the read path has zero side effect, and the write path needs to rebuild the whitelist,
+ * persist to disk and restart Helper. The failure modes and change reasons of the three are different. The
+ * configuration shape is not verified (returned to ../../config); the dependency is explicitly passed in by
+ * PetRouteDeps, and the global status is not read and the status is not built in the module.
  * @module dsh-pet/src/host/routes/config/index
  */
 import { readAllConfig } from '../../config.ts';
@@ -21,33 +23,34 @@ import { saveConfigRoute } from './save.ts';
 import { setPetDisplay } from './display.ts';
 import { savePetLayer } from './entry.ts';
 
-/** 内容配置领域：未命中返回 undefined，命中返回应答。 */
+/** Content configuration field: undefined is returned for misses and response is returned for hits. */
 export async function handleConfigRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
-  // 成品配置：GET 读合并成品，其余方法交给写入路径（PUT 保存 / POST 同步默认 / 其它 405）
+  // Finished product configuration: GET reads and merges resolved values, and the remaining methods are given to the write path (PUT save/POST sync default/other 405)
   if (input.rest === 'config') {
     return input.method === 'GET' ? getConfig(deps) : saveConfigRoute(deps, input);
   }
-  // 单只宠物的显示位置（桌面端右键「关闭桌面显示」→ POST /pet-display）
+  // The display position of a single pet (right-click on the desktop and "Turn off desktop display" → POST /pet-display)
   if (input.rest === 'pet-display') return setPetDisplay(deps, input);
-  // 整个种类层的实例写回（设置页改文件宠物的配置 → POST /pet-config）
+  // Instance writeback of the entire category layer (setting the configuration of the page change file pet → POST /pet-config)
   if (input.rest === 'pet-config') return savePetLayer(deps, input);
-  // 配置文件路径 + 存储位置清单（设置页「高级配置」与「卸载与存储」展示用）
+  // Configuration file path + storage location list (for display in the "Advanced Configuration" and "Unmount and Storage" settings pages)
   if (input.rest === 'config/meta') return getMeta(deps);
   return undefined;
 }
 
-/** 合并成品：唯一配置入口，浏览器 / 桌面 / 设置页直接消费，无需任何校验或兜底。 */
+/** Merged resolved value: unique configuration entry point, browser/desktop/settings page direct consumption without any verification or fallback. */
 function getConfig(deps: PetRouteDeps): RouteResult {
   try {
-    // 动态配置必须杀缓存（与 /state 同口径）：消费端会「发现配置版本变化 → 重拉 /config」，
-    // 这一次 GET 若命中缓存就会拿回旧配置，那套机制直接失效。
+    // Dynamic configuration must kill the cache (same conventions as / state): The consumer will "find the
+    // configuration version change → re-pull / config". This time GET will get back the old configuration if it hits
+    // the cache, and that mechanism will directly fail.
     return okResult(readAllConfig(deps.configPaths), { 'cache-control': 'no-cache, no-store' });
   } catch (e) {
     return failResult('generate-error', e instanceof Error ? e.message : String(e));
   }
 }
 
-/** 路径与存储清单：只读环境与路径，不做业务判断，因此没有失败实体。 */
+/** Path and storage list: read-only environment and path, no business judgment is made, so there is no failure entity. */
 function getMeta(deps: PetRouteDeps): RouteResult {
   const { log, memesUserRoot, thumbUserRoot, userConfigPath, userRoot } = deps;
   return okResult({
@@ -55,20 +58,21 @@ function getMeta(deps: PetRouteDeps): RouteResult {
     default: join(PACKAGE_ROOT, 'assets', 'config.jsonc'),
     animations: thumbUserRoot,
     memes: memesUserRoot,
-    // 待办数据文件：一份用户级数据（不分宠物），路径与宿主建库时用的是同一个文件名常量。
+    // To-do data file: a piece of user-level data (regardless of pets), the path is the same file name constant as the host used when building the database.
     todos: join(userRoot, TODO_FILE_NAME),
-    // 统一日志出口（就是上面那个 logger 的 file：三种模式都落在 $DSH_HOME/dsh-pet/logs.txt）：
-    // 桌面版没有控制台，用户反馈「宠物不出现 / 闪退」时只能靠这个文件。
+    // Unified log export (the file of logger above: all three modes fall into $DSH_HOME/dsh-pet/logs.txt): The desktop
+    // version does not have a console, and users can only rely on this file when they report "pets do not
+    // appear/crash".
     logs: log.file,
-    // 全部落盘位置（本包用户数据 / Electron 运行时 / 桌面端缓存 / 下载缓存 / 插件本体）：
-    // 前两条直接传真实写入方的路径，不在这里重拼目录名
+    // All persist to disk locations (user data of this package/Electron runtime/desktop cache/download cache/plugin
+    // body): The first two paths directly transmit the real writer's path, do not re-spell the directory name here.
     storage: storageEntries({
       userDataRoot: userRoot,
       electronDir: electronLandingDir(),
       home: homedir(),
       packageRoot: PACKAGE_ROOT,
     }),
-    // profile 名（拼卸载命令 dsh plugin --profile <名> remove dsh-pet-powercontext；反推不出时为空串）
+    // profile name (spelled by unmount command dsh plugin --profile <name> remove dsh-pet-powercontext; it is an empty string if it cannot be deduced)
     profile: profileNameFrom(PACKAGE_ROOT) ?? '',
   });
 }

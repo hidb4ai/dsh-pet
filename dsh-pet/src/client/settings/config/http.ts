@@ -1,7 +1,10 @@
 /**
- * 设置页与宿主的 HTTP 契约：读配置、读元信息、读候选模型、写用户层（PUT）、同步（POST）与写种类层。
- * 每个函数都是「总函数」——失败不抛给调用方，而是返回约定好的空值或判别联合，调用方只管分支与文案。
- * 写配置强制显式 `force` 布尔：严格 `=== true` 才拼 `?force=1`，绝不能让事件对象冒充真值绕过损坏预检。
+ * The HTTP contract between the settings page and the host: read configuration, read metainformation, read candidate
+ * model, write user layer (PUT), synchronization (POST) and write type layer. Each function is a "total function" -
+ * failure is not thrown to the caller, but returns the agreed null value or discriminative union, and the caller only
+ * takes care of branches and text. Write configuration to force explicit `force` boolean: Strictly spell
+ * `=== true` before spelling `?force=1` , never let event objects pretend to be true values to bypass corruption
+ * preflight.
  * @module dsh-pet/src/client/settings/config/http
  */
 import { ROUTE_PATH } from '../../../shared/constants.ts';
@@ -10,45 +13,45 @@ import type { ModelCatalogGroup } from '../picker/index.ts';
 import type { MergedConfig } from './read.ts';
 import type { ChatMemoryConfig } from '../../../shared/chat-memory-config.ts';
 
-/** 配置文件路径与存储位置清单；宿主按平台推导，反推不出 `profile` 时为空串。 */
+/** Configuration file path and storage location list; host is deduced according to the platform. If `profile` cannot be deduced, it will be an empty string. */
 export interface ConfigMeta {
   user: string;
   default: string;
   animations: string;
-  /** 用户表情包目录（加图不必改包）。 */
+  /** User meme directory (no need to change the package when adding pictures). */
   memes?: string;
-  /** 待办数据文件（一份用户级数据，不分宠物）。 */
+  /** To-do data file (a user-level data, regardless of pets). */
   todos?: string;
-  /** 统一日志文件；桌面版没控制台，排障只看它。 */
+  /** Unified log files; the desktop version does not have a console, so you can only look at it when troubleshooting. */
   logs?: string;
-  /** 插件落盘的全部位置（路径与是否已存在）。 */
+  /** All locations of the plugin persist to disk (path and whether it already exists). */
   storage?: Array<{ key: string; path: string; exists?: boolean }>;
-  /** 当前 profile 名（拼卸载命令用）。 */
+  /** The current profile name (used in the unmount command). */
   profile?: string;
 }
 
-/** 保存要提交的全部字段；键名即宿主 `PUT /config` 的字段名。 */
+/** Save all fields to be submitted; the key name is the field name of host `PUT /config`. */
 export interface SaveFields {
   pets: readonly Pet[];
   notificationsEnabled: boolean;
   clickSoundEnabled: boolean;
   whisperImageEnabled: boolean;
   chatImageEnabled: boolean;
-  /** 对话动作联动开关。 */
+  /** Dialogue action linkage switch. */
   chatAnimationEnabled: boolean;
   confineToScreen: boolean;
   trayEnabled: boolean;
-  /** 手动播报开关：手动触发的碎碎念与对话回复。 */
+  /** Manual broadcast switch: manually triggered whisper and conversation reply. */
   voiceEnabled: boolean;
-  /** 语音音色 id（白名单内的四个之一）。 */
+  /** Voice tone id (one of the four in the white list). */
   voiceName: string;
-  /** 播放音量系数：0–1 的小数，1 = 最大音量，0 = 静音。 */
+  /** Playback volume coefficient: 0–1 decimal, 1 = maximum volume, 0 = mute. */
   voiceVolume: number;
-  /** 周期碎碎念要不要念出来。 */
+  /** Do you want to read the cycle whisper? */
   voiceWhisperEnabled: boolean;
-  /** 待办提醒要不要念出来。 */
+  /** Do you want to read out the to-do reminder? */
   voiceTodoEnabled: boolean;
-  /** 工作状态播报要不要念出来（任务完成 / 出错 / 等确认时念一句配置台词）。 */
+  /** Do you need to read out the work status report (read a configuration line when the task is completed/error/waiting for confirmation). */
   voiceNotifyEnabled: boolean;
   physics: PhysicsParams;
   whisperModel: ModelSelection;
@@ -57,11 +60,11 @@ export interface SaveFields {
   chatMemory?: ChatMemoryConfig;
   chatImageLimit: number;
   font: FontConfig;
-  /** 动作频率权重（main 条目）：三项合计 ≤ 100，随机动作是余量。 */
+  /** Action frequency weight (main entry): The total of the three items is ≤ 100, and random actions are the margin. */
   animationWeights: Weights;
 }
 
-/** 保存结果：调用方按 `kind` 分支，不再猜 HTTP 细节。 */
+/** Save the result: The caller branches according to `kind` and no longer guesses the HTTP details. */
 export type SaveOutcome =
   | { kind: 'ok'; merged: MergedConfig }
   | { kind: 'corrupt'; userFile: string | null }
@@ -69,10 +72,11 @@ export type SaveOutcome =
   | { kind: 'error' };
 
 /**
- * 把表单状态压成请求体。
+ * Compress form status into request body.
  *
- * @param fields - 表单当前值。
- * @returns 直接可 `JSON.stringify` 的对象；字段名必须与宿主校验的键一一对应。
+ * @param fields - The current value of the form.
+ * @returns is directly an object of `JSON.stringify` ; the field name must correspond one-to-one with the host
+ * verification key.
  */
 export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
   return {
@@ -102,17 +106,17 @@ export function buildSaveBody(fields: SaveFields): Record<string, unknown> {
 }
 
 /**
- * 读成品配置。
+ * Read resolved configuration.
  *
- * @param signal - 卸载或重试时中断请求。
- * @returns 成品聚合；非 2xx、网络错误或被中断时返回 `null`。
+ * @param signal - Interrupt request on unmount or retry.
+ * @returns finished aggregate; returns `null` if not 2 xx, network error, or interrupted.
  */
 export async function loadConfig(signal?: AbortSignal): Promise<MergedConfig | null> {
   try {
     const response = await fetch(ROUTE_PATH + '/config', signal === undefined ? {} : { signal });
     if (!response.ok) return null;
     const body = (await response.json()) as MergedConfig & { ok?: unknown };
-    // 业务失败也是 200：ok:false 不是成品配置，按读不到处理（否则会拿失败体去拍平）
+    // Business failure is also 200: ok:false is not a resolved configuration and cannot be processed by reading (otherwise the failure body will be flattened)
     if (body.ok === false) return null;
     return body;
   } catch {
@@ -121,9 +125,10 @@ export async function loadConfig(signal?: AbortSignal): Promise<MergedConfig | n
 }
 
 /**
- * 读配置文件的路径与存储清单。
+ * Read the path and storage list of the configuration file.
  *
- * @returns 元信息；读不到时返回 `null`，调用方据此隐藏「高级配置」与「卸载与存储」两张卡。
+ * @returns meta information; if it cannot be read, it returns `null` , and the caller hides the "Advanced
+ * Configuration" and "Unmount and Storage" cards accordingly.
  */
 export async function loadMeta(): Promise<ConfigMeta | null> {
   try {
@@ -136,9 +141,10 @@ export async function loadMeta(): Promise<ConfigMeta | null> {
 }
 
 /**
- * 读候选模型清单。
+ * Read the list of candidate models.
  *
- * @returns 服务商分组；响应缺 `providers` 或请求失败时返回 `null`（选择器显示「拉取失败」）。
+ * @returns service provider group; `null` is returned when the response is missing `providers` or the request fails
+ * (the selector displays "Pull failed").
  */
 export async function loadModelCatalog(): Promise<ModelCatalogGroup[] | null> {
   try {
@@ -153,11 +159,12 @@ export async function loadModelCatalog(): Promise<ModelCatalogGroup[] | null> {
 }
 
 /**
- * 全量写用户层配置。
+ * Full write of user level configuration.
  *
- * @param body - {@link buildSaveBody} 的输出。
- * @param force - 严格 `true` 才允许按白名单重建损坏文件（用户在损坏弹窗里确认过）。
- * @returns 保存结果；409 带出宿主给出的真实写入路径，供弹窗显示。
+ * @param body - Output of {@link buildSaveBody} .
+ * @param force - Strictly `true` is allowed to rebuild damaged files according to the whitelist (the user has
+ * confirmed in the damage pop-up window).
+ * @returns saves the result; 409 brings out the real writing path given by the host for pop-up window display.
  */
 export async function saveConfig(body: Record<string, unknown>, force: boolean): Promise<SaveOutcome> {
   try {
@@ -166,14 +173,14 @@ export async function saveConfig(body: Record<string, unknown>, force: boolean):
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
-    // 接口统一 200 + 实体：失败看体里的 ok/reason，状态码只兜传输层故障。
+    // Interface Unification 200 + Entity: Failure. See ok/reason in the entity. The status code only indicates a transport layer failure.
     const payload = (await response.json().catch(() => null)) as {
       ok?: unknown;
       reason?: unknown;
       userFile?: unknown;
     } | null;
     if (payload && payload.ok === false) {
-      // 损坏预检拦下：白名单重建会把文件里剩下的内容整份丢掉，必须让用户决定。
+      // Damage pre-check blocked: whitelist reconstruction will discard the remaining content in the file, and the user must decide.
       if (payload.reason === 'user-config-unparsable') {
         return { kind: 'corrupt', userFile: typeof payload.userFile === 'string' ? payload.userFile : null };
       }
@@ -188,9 +195,9 @@ export async function saveConfig(body: Record<string, unknown>, force: boolean):
 }
 
 /**
- * 把内置默认配置整份写入用户层（设置页的「同步」）。
+ * Write the entire built-in default configuration to the user layer ("Synchronization" on the settings page).
  *
- * @returns 写入后的成品聚合；失败返回 `null`。
+ * @returns is the resolved configuration after writing; failure returns `null` .
  */
 export async function syncConfig(): Promise<MergedConfig | null> {
   try {
@@ -202,18 +209,19 @@ export async function syncConfig(): Promise<MergedConfig | null> {
   }
 }
 
-/** 写单个种类层的结果；没有「损坏需确认」分支——那条只属于用户主配置。 */
+/** The result of writing a single category layer; there is no "damage requires confirmation" branch - that one only belongs to the user's main configuration. */
 export type PetLayerOutcome =
   | { readonly kind: 'ok'; readonly merged: MergedConfig }
   | { readonly kind: 'invalid'; readonly message: string }
   | { readonly kind: 'error' };
 
 /**
- * 把某个种类的全部实例写回它自己的配置文件。
+ * Write all instances of a category back to its own configuration file.
  *
- * @param entry - 条目名（= 素材根）。
- * @param pets - 该条目的全部实例；漏传一只等于删除它。
- * @returns 写后的成品聚合，或失败分类；`invalid` 带出宿主给的就地文案（如 id 冲突）。
+ * @param entry - entry name (= asset root).
+ * @param pets - all instances of this entry; missing one deletes it.
+ * @returns is the resolved configuration after writing, or failure classification; `invalid` brings out the
+ * in-place copy given by the host (such as id conflict).
  */
 export async function savePetLayer(entry: string, pets: readonly Pet[]): Promise<PetLayerOutcome> {
   try {
@@ -228,7 +236,7 @@ export async function savePetLayer(entry: string, pets: readonly Pet[]): Promise
       message?: unknown;
     } | null;
     if (payload && payload.ok === false) {
-      // 参数类失败就地显示宿主文案（例如 id 与其它种类冲突），其余归为传输或写盘故障。
+      // The parameter type fails to display the host copy in place (for example, id conflicts with other types), and the rest are classified as transmission or disk writing failures.
       if (payload.reason === 'bad-request' || payload.reason === 'unknown-entry') {
         return { kind: 'invalid', message: typeof payload.message === 'string' ? payload.message : '' };
       }

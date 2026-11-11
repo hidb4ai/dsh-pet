@@ -1,30 +1,32 @@
 /**
- * 动画素材的地址拼装：点播给了完整 url 就用它，否则按「素材根 + 动画名 + 扩展名」拼宿主路由。
- * 两段都过 `encodeURIComponent`——动画名与素材根都允许中文与空格，不编码会让路由匹配不上。
- * 扩展名由调用方探测后传入（`thumbExt()` 读 UA），本模块不碰浏览器环境。
+ * The address of the animation asset assemble: if the playback request gives the complete url, use it, otherwise press
+ * "asset root + animation name + extension" to spell host route. Both paragraphs pass `encodeURIComponent` - Chinese
+ * characters and spaces are allowed in the animation name and asset root. Without encoding, the route will not match.
+ * The extension is passed in after detection by caller (`thumbExt()` reads UA). This module does not touch the browser
+ * environment.
  * @module dsh-pet/src/client/pet/animation/assets
  */
 import { ROUTE_PATH } from '../../../shared/constants.ts';
 
-/** 素材地址的输入。 */
+/** Input of asset address. */
 export interface AssetSource {
-  /** 第三方点播给的完整地址（已由宿主限 http/https）；给了就优先用它。 */
+  /** The complete address given by the third-party playback request (has been restricted by host http/https); if given, it will be used first. */
   cueUrl?: string | null;
-  /** 素材根（= 配置文件前缀）；多实例共享同一素材目录。 */
+  /** asset root (= configuration file prefix); multiple instances share the same asset directory. */
   assetRoot: string;
-  /** 宠物 id，素材根缺失时的兜底。 */
+  /** Pet id, fallback when asset root is missing. */
   id: string;
-  /** 动画名。 */
+  /** Animation name. */
   anim: string;
-  /** 扩展名（含点，如 `.webm`）。 */
+  /** Extension (including dots, such as `.webm`). */
   ext: string;
 }
 
 /**
- * 拼一次动画的素材地址。
+ * The asset address of the animation.
  *
- * @param source - 地址来源与标识。
- * @returns 可直接 fetch 的地址；`cueUrl` 优先。
+ * @param source - address source and identification.
+ * @returns can directly address fetch; `cueUrl` takes precedence.
  */
 export function animationAssetUrl(source: AssetSource): string {
   if (source.cueUrl) return source.cueUrl;

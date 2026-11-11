@@ -1,10 +1,11 @@
 /**
- * 伪 ctx 的语义契约测试。
+ * Semantic contract testing of pseudo ctx.
  *
- * 为什么值得单独测：独立模式把插件的宿主半边（`apply`）跑在这个 ctx 上，
- * 而 `apply` 里有 9 个 effect、两条自我续期的轮询定时器，以及"最后一行才拉起桌面 Helper"
- * 的顺序依赖。这里逐条钉住 ctx 必须满足的语义（与 Cordis 对齐）与服务替身的降级口径 ——
- * 任何一条不成立，独立模式要么起不来，要么悄悄变成"能跑但没宠物"。
+ * Why it is worth testing separately: The standalone mode runs the host half of the plugin (`apply`) on this ctx,
+ * and `apply` has 9 effect, two self-renewing polling timers, and the sequence dependency of "the last line only pulls
+ * up the desktop Helper". Here are the semantics that verify ctx must satisfy (aligned with Cordis) and the downgrade
+ * conventions of service doubles - if any of them are not established, the standalone mode will either fail to start,
+ * or quietly become "can run but has no pets".
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ import { generateWhisper } from '../host/whisper.ts';
 import { STANDALONE_PROVIDER, createStandaloneContext } from './context.ts';
 import type { RegisteredRoute, StandaloneLogger } from './context.ts';
 
-/** 静默日志器：测试只断言行为，不刷控制台 */
+/** Silent logger: test only assertion behavior, without refreshing the console */
 function silentLogger(): StandaloneLogger & { errors: string[] } {
   const errors: string[] = [];
   return {
@@ -28,8 +29,9 @@ function silentLogger(): StandaloneLogger & { errors: string[] } {
 
 type Standalone = ReturnType<typeof createStandaloneContext>;
 
-// 伪 ctx 的成员形状各不相同（`effect`/`on` 本身是函数，其余是对象），逐个取，
-// 不写笼统的索引访问 —— 形状错了希望在这里就报出来，而不是在插件里。
+// The members of pseudo ctx have different shapes (`effect` / `on` themselves are functions, and the rest are
+// objects). Take them one by one and do not write general index access - if the shape is wrong, I hope it will be
+// reported here, not in the plugin.
 const effectOf = (context: Standalone): ((fn: () => unknown, label?: string) => unknown) =>
   context.ctx.effect as (fn: () => unknown, label?: string) => unknown;
 const onOf = (context: Standalone): (() => unknown) => context.ctx.on as () => unknown;
@@ -45,8 +47,9 @@ const llmOf = (
 ): {
   listProviders(): unknown[];
   listModels(provider: string): Promise<unknown[]>;
-  // 形状必须是 AsyncIterable（DSH 的 llm.stream 签名）。这里若写成 Promise，
-  // 就与替身实现犯了同一个错 —— 也正是这个断言让 0.3.4 的类型检查与真实契约脱节。
+  // Shape must be AsyncIterable (llm.stream signature of DSH). If it is written as Promise here, it will make the same
+  // mistake as the substitute implementation - it is this assertion that makes the type checking of 0.3.4 out of touch
+  // with the real contract.
   stream(options: unknown): AsyncIterable<unknown>;
 } =>
   context.ctx.llm as {
@@ -55,12 +58,12 @@ const llmOf = (
     stream(options: unknown): AsyncIterable<unknown>;
   };
 
-describe('createStandaloneContext —— 与 Cordis 对齐的语义', () => {
-  test('effect 同步执行、收集释放函数；dispose 逆序释放且等待异步释放', async () => {
+describe('createStandaloneContext - semantics aligned with Cordis', () => {
+  test('effect executes synchronously, collects and releases functions; dispose releases in reverse order and waits for asynchronous release', async () => {
     const context = createStandaloneContext({ port: 1, logger: silentLogger() });
     const order: string[] = [];
     const effect = effectOf(context);
-    // 同步执行：apply() 返回后路由必须已经在册（仓库自己的 routes.test.ts 也依赖这一点）
+    // Synchronous execution: After apply() returns, the route must be already registered (the warehouse's own routes.test.ts also relies on this)
     effect(() => {
       order.push('first');
       return () => {
@@ -74,12 +77,16 @@ describe('createStandaloneContext —— 与 Cordis 对齐的语义', () => {
         order.push('dispose-second');
       };
     });
-    assert.deepEqual(order, ['first', 'second'], 'effect 必须在调用时就跑');
+    assert.deepEqual(order, ['first', 'second'], 'effect must be run when called');
     await context.dispose();
-    assert.deepEqual(order, ['first', 'second', 'dispose-second', 'dispose-first'], '释放顺序：后注册先释放');
+    assert.deepEqual(
+      order,
+      ['first', 'second', 'dispose-second', 'dispose-first'],
+      'Release order: register later, release first',
+    );
   });
 
-  test('effect 内抛错只记录不中断（源码形态读不到包内 assets 时正是这里抛）', () => {
+  test('effect internal error is only recorded without interruption (this is where the error occurs when the source code form cannot read assets in the package)', () => {
     const logger = silentLogger();
     const context = createStandaloneContext({ port: 1, logger });
     const effect = effectOf(context);
@@ -89,10 +96,14 @@ describe('createStandaloneContext —— 与 Cordis 对齐的语义', () => {
     effect(() => 'not-a-disposer');
     assert.equal(context.failures.length, 1);
     assert.match(context.failures[0] ?? '', /内置默认配置缺失/);
-    assert.match(logger.errors.join('\n'), /内置默认配置缺失/, '失败必须留日志，不能吞掉');
+    assert.match(
+      logger.errors.join('\n'),
+      /内置默认配置缺失/,
+      'A log must be left in case of failure and cannot be swallowed.',
+    );
   });
 
-  test('webServer.register 收下路由并返回可调用对象（插件把它当 effect 释放函数）', () => {
+  test('webServer.register accepts the route and returns the callable object (the plugin treats it as the effect release function)', () => {
     const context = createStandaloneContext({ port: 1, logger: silentLogger() });
     const webServer = webServerOf(context);
     const handler = (): void => {};
@@ -102,56 +113,61 @@ describe('createStandaloneContext —— 与 Cordis 对齐的语义', () => {
     assert.equal(context.routes[0]?.path, '/dsh-pet-7340');
     assert.equal(context.routes[0]?.handler, handler);
     (dispose as () => void)();
-    assert.equal(context.routes.length, 0, '释放后路由应移除');
+    assert.equal(context.routes.length, 0, 'route should be removed after release');
   });
 
-  test('webServer.port 惰性读取：先起服务、后 apply 时插件读到的是真端口', () => {
+  test('webServer.port lazy reading: the service is started first, and then apply is read. When the plugin reads the real port', () => {
     const portRef = { value: 0 };
     const context = createStandaloneContext({ port: () => portRef.value, logger: silentLogger() });
     const webServer = webServerOf(context);
-    assert.equal(webServer.port, 0, '未监听时端口就是 0（插件据此延迟重试，不会误拉窗口）');
+    assert.equal(
+      webServer.port,
+      0,
+      'The port is 0 when not listening (the plug-in delays retry accordingly and will not accidentally open the window)',
+    );
     portRef.value = 31234;
-    assert.equal(webServer.port, 31234, '监听完成后插件必须读到真实端口');
+    assert.equal(webServer.port, 31234, 'After the monitoring is completed, the plug-in must read the real port');
   });
 
-  test('on() / commands.register() 必须返回可调用对象（插件把它们当释放函数用）', () => {
+  test('on() / commands.register() must return callable objects (plugins use them as release functions)', () => {
     const context = createStandaloneContext({ port: 1, logger: silentLogger() });
     assert.equal(typeof onOf(context)(), 'function');
     assert.equal(typeof commandsOf(context).register(), 'function');
   });
 });
 
-describe('服务替身的降级口径 —— 显式失败，不假装成功', () => {
-  test('currentSelection 的 model 为空 → 模型候选链为空（生成停在候选阶段）', () => {
+describe("Downgrade conventions for service doubles - fail explicitly, don't pretend to succeed", () => {
+  test('model of currentSelection is empty → the model candidate chain is empty (generation stops at the candidate stage)', () => {
     const context = createStandaloneContext({ port: 1, logger: silentLogger() });
     const selection = agentOf(context).currentSelection();
     assert.equal(selection.provider, STANDALONE_PROVIDER);
-    // model 必须为空：model-selection.currentModel() 以「provider 与 model 都非空」为有效条件，
-    // 空 model 于是让候选链为空 —— 这是"独立模式不产生任何模型调用"的结构性保证，
-    // 而不是靠某个端点上的 if。
+    // model must be empty: model-selection.currentModel() takes "Both provider and model are not empty" as the valid
+    // condition, empty model makes the candidate chain empty - this is the structural guarantee of "standalone mode
+    // does not generate any model calls", rather than relying on if on an endpoint.
     assert.equal(selection.model, '');
     assert.deepEqual(modelCandidates(context.ctx as never, undefined), []);
   });
 
-  test('碎碎念用这份 ctx 得到结构化失败 provider-missing（不联网、不编文案）', async () => {
+  test('whisper uses this ctx to get structured failure provider-missing (not connected to the Internet, not writing copy)', async () => {
     const context = createStandaloneContext({ port: 1, logger: silentLogger() });
     const result = await generateWhisper(context.ctx as never, { system: '你是一只桌宠' });
     assert.deepEqual(result, { ok: false, reason: 'provider-missing', message: '当前对话未配置模型' });
   });
 
-  test('凭证恒不可得；llm 清单为空、生成入口是"迭代即失败"的 async iterable', async () => {
+  test('The voucher is never available; the list of llm is empty and the generated entry point is async iterable which "fails the iteration"', async () => {
     const context = createStandaloneContext({ port: 1, logger: silentLogger() });
     assert.equal(await credentialsOf(context).resolve('DEEPSEEK_API_KEY'), undefined);
     const llm = llmOf(context);
     assert.deepEqual(llm.listProviders(), []);
     assert.deepEqual(await llm.listModels('deepseek'), []);
-    // 契约：stream() 返回的是 AsyncIterable（DSH 的 llm.stream 签名），不是 Promise。
-    // 旧断言写成 "stream() 自己 reject"，把错误的契约固化了下来：它从未走 for await，
-    // 所以全绿；而真实集成一跑就崩（TypeError + 无人接管的 rejected promise）。
+    // Contract: stream() returns AsyncIterable (llm.stream signature of DSH), not Promise. The old assertion was
+    // written as "stream() itself reject", solidifying the wrong contract: it never went to for await, so it was
+    // completely green; while the real integration collapsed as soon as it ran away (TypeError + rejected promise that
+    // no one took over).
     const streamed = llm.stream({});
     assert.equal(typeof streamed[Symbol.asyncIterator], 'function');
     await assert.rejects(async () => {
       for await (const chunk of streamed) void chunk;
-    }, /独立模式未接入模型/);
+    }, /no model configured/);
   });
 });

@@ -1,7 +1,8 @@
 /**
- * 占用锁冻结驱动的纯函数契约（src/client/pet/card/lock-freeze.ts）：lock 叶子 → 冻结截止时刻。
+ * Pure function contract (src/client/pet/card/lock-freeze.ts) that occupies lock freeze driver: lock leaf → freeze
+ * deadline time.
  *
- * 定时器的挂载与清理需要真实渲染，由手动验收覆盖。
+ * The mounting and cleaning of timers requires real rendering and is covered by manual acceptance.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,24 +11,24 @@ import { freezeDeadline } from './lock-freeze.ts';
 
 const NOW_MS = 1_700_000_000_000;
 
-describe('freezeDeadline —— 叶子换算出冻结截止时刻', () => {
-  test('没有叶子：不冻结', () => {
+describe('freezeDeadline ——The leaf converts the freezing deadline time', () => {
+  test('No leaves: no freezing', () => {
     assert.equal(freezeDeadline(undefined, NOW_MS), 0);
   });
 
-  test('叶子标记未占用：即使带旧的 expiresAt 也不冻结', () => {
+  test('Leaf mark is not occupied: not frozen even with old expiresAt', () => {
     assert.equal(freezeDeadline({ locked: false }, NOW_MS), 0);
   });
 
-  test('占用且未到期：返回到期时刻', () => {
+  test('Occupied and not expired: return expiration time', () => {
     assert.equal(freezeDeadline({ locked: true, expiresAt: NOW_MS + 5_000 }, NOW_MS), NOW_MS + 5_000);
   });
 
-  test('占用但已过期：当作没有锁（刷新后拿到陈旧叶子）', () => {
+  test('Occupied but expired: treated as no lock (obtained stale leaves after refresh)', () => {
     assert.equal(freezeDeadline({ locked: true, expiresAt: NOW_MS - 1 }, NOW_MS), 0);
   });
 
-  test('恰好到期这一刻：不冻结，不留零时长定时器', () => {
+  test('Exactly at the moment of expiration: no freezing, no zero timer left', () => {
     assert.equal(freezeDeadline({ locked: true, expiresAt: NOW_MS }, NOW_MS), 0);
   });
 });

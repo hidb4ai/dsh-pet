@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * 发布前微调：跑完整构建（tsdown → lib、共享层 → shared-core.js、tsc → 类型声明），
- * 再把 package.json 的 files 收敛成发布清单。幂等：跑一次即定格，再跑结果不变，无需备份或恢复。
+ * Fine-tuning before release: run the complete build (tsdown → lib, shared layer → shared-core.js, tsc → type
+ * declaration), and then converge package.json and files into a release list. Idempotent: Run it once and it will
+ * freeze, and the results will remain unchanged if you run it again, no need to back up or restore.
  *
- * 只发布单一 webm 格式（VP9-alpha），浏览器与桌面 Helper 共用，源码写死 .webm、发布期不做注入；
- * Safari/HEVC 兼容由仓库保留的流水线支持、需 fork 后自行启用，不参与本插件发布链。
- * 依赖 package.json 里的 bundle / build:desktop-core / types 三个脚本与本地 node_modules。
+ * Only a single webm format (VP9-alpha) is released. The browser and desktop Helper are shared. The source code is
+ * hard-coded. webm will not be injected during the release period; Safari/HEVC is compatible with the pipeline support
+ * retained by the warehouse and needs to be enabled after fork. It does not participate in this plugin release chain.
+ * Depends on the three scripts bundle / build:desktop-core / types in package.json and the local node_modules.
  * @module dsh-pet/scripts/prepare
  */
 import { spawnSync } from 'node:child_process';
@@ -16,35 +18,35 @@ import { fileURLToPath } from 'node:url';
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PKG = join(ROOT, 'package.json');
 
-// 用 cmd /c 跑整条 npm 命令：Windows 下 npm 是 npm.cmd，spawnSync 无法直接执行 .cmd
-// （命令行固定、无用户输入，没有注入风险）。
+// Use cmd / c to run the entire npm command: npm under Windows is npm.cmd, spawnSync cannot be executed directly. cmd
+// (the command line is fixed, no user input, no injection risk).
 console.log('[prepare] building (tsdown)...');
 const npmRun = process.platform === 'win32' ? 'cmd /c npm run bundle' : 'npm run bundle';
 const build = spawnSync(npmRun, { cwd: ROOT, stdio: 'inherit', shell: true });
 if (build.status !== 0) {
-  console.error(`[prepare] 构建失败 (exit ${build.status})`);
+  console.error(`[prepare] Build failed (exit ${build.status})`);
   process.exit(1);
 }
 
-// 桌面共享核心与浏览器 bundle 取自同一份 src/shared，产出 window.PetShared（详见 build-desktop-core.mjs）。
+// Desktop shared core and browser bundle are taken from the same src/shared and produce window.PetShared (see build-desktop-core.mjs for details).
 console.log('[prepare] building desktop shared-core...');
 const coreRun = process.platform === 'win32' ? 'cmd /c npm run build:desktop-core' : 'npm run build:desktop-core';
 const buildCore = spawnSync(coreRun, { cwd: ROOT, stdio: 'inherit', shell: true });
 if (buildCore.status !== 0) {
-  console.error(`[prepare] 桌面 shared-core 构建失败 (exit ${buildCore.status})`);
+  console.error(`[prepare] Desktop shared-core build failed (exit ${buildCore.status})`);
   process.exit(1);
 }
 
-// 类型声明是构建产物、不入 git，克隆后靠这一步补齐；漏跑则 exports 声明的 types 路径全空。
+// The type declaration is build output and does not include git. This step is required to complete it after cloning; if it is missing, the types path declared by exports is completely empty.
 console.log('[prepare] generating types (npm run types)...');
 const typesRun = process.platform === 'win32' ? 'cmd /c npm run types' : 'npm run types';
 const buildTypes = spawnSync(typesRun, { cwd: ROOT, stdio: 'inherit', shell: true });
 if (buildTypes.status !== 0) {
-  console.error(`[prepare] 类型声明生成失败 (exit ${buildTypes.status})`);
+  console.error(`[prepare] Declaration generation failed (exit ${buildTypes.status})`);
   process.exit(1);
 }
 
-// files 收敛为发布清单：这是本脚本唯一的写操作，幂等，不备份旧值。
+// files converges to release list: This is the only write operation of this script, idempotent, and does not back up old values.
 const pkg = JSON.parse(readFileSync(PKG, 'utf8'));
 const keep = [
   'lib',
@@ -53,16 +55,18 @@ const keep = [
   'runtime/electron-helper',
   'assets/fonts',
   'assets/pic',
-  // 表情包：宿主半侧只从包内 assets/memes 读图，并与配置的 memes 键配对，漏掉即配图功能整体失效。
-  // 本数组每次发布都覆盖 package.json 的 files，所以必须加在这里，只在 package.json 里加一行无效。
+  // Meme: The host side only reads the picture from assets/memes in the package and pairs it with the
+  // configured memes key. If it is omitted, the picture matching function will be invalid. This array covers files of
+  // package.json every time it is released, so it must be added here. Adding only one row to package.json is invalid.
   'assets/memes',
-  // 点击音效：宿主半侧的 /sound 路由只读包内这一份，漏掉则点击静音；同 memes，必须加在本数组。
+  // Click sound effect: Host side's / sound route read-only package, if missing, click to mute; same as memes, must be added to this array.
   'assets/sound',
   'assets/config.jsonc',
-  // 插件图标：package.json 顶层 icon 指向这张图；缺图时读取方 dsh-app-boot 的 iconOf 会抛错、退回默认插画。
+  // Plugin icon: package.json The top level icon points to this picture; when the picture is missing, the iconOf of the reader dsh-app-boot will throw an error and return to the default illustration.
   'assets/logo.png',
-  // 角色参考图：/character 的包内兜底只读 `<素材根>-character.<ext>`，漏发则第三方拿不到官方参考图。
-  // 新增内置角色时在这里补一行（文件名里的素材根跟着角色走）。
+  // Character reference picture: / character in the package fallback read-only `<asset-root>-character.<ext>` . If it is
+  // missing, the third party will not be able to get the official reference picture. When adding a built-in character,
+  // add a line here (the asset root in the file name follows the character).
   'assets/main-character.png',
   'scripts/ensure-electron.mjs',
   'cordis.patch.yml',

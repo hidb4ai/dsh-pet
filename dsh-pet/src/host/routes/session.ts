@@ -1,30 +1,33 @@
 /**
- * 会话跳转：把「切到某条会话」的意图写进 `sections.focusSession`，由页面自己消费。
+ * Session jump: Write the intention of "cutting to a certain session" into `sections.focusSession` and consume it by
+ * the page itself.
  *
- * 桌面宠物跑在独立渲染进程里，拿不到页面中的会话服务，只能由宿主中转这一次；
- * 写入带 `ts`，消费端据此判断信号是否已处理——页面晚于写入加载时仍能重放一次。
- * 只校验输入并写状态，不判断会话是否存在（那是页面的事），也不碰任何既有叶子。
+ * The desktop pet runs in an independent rendering process and cannot get the session service in the page. It can only
+ * be relayed by the host this time; the write band `ts` is used, and the consumer determines whether the signal has
+ * been processed based on this - the page can still be replayed once when it is loaded later than the write. It only
+ * verifies input and writes state. It doesn't check whether the session exists (that's a matter of the page), and it
+ * doesn't touch any existing leaves.
  * @module dsh-pet/src/host/routes/session
  */
 import type { RouteResult } from '../http.ts';
 import { failResult, invalidJson, methodNotAllowed, okResult } from './result.ts';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 
-/** 会话 id 上限：DSH 的 id 形如 `session-<uuid>`（44 字符），128 已足够，更长的视为伪造输入。 */
+/** Upper limit of session id: DSH's id is in the form of `session-<uuid>` (44 characters), 128 is enough, and longer ones are considered forged inputs. */
 const MAX_SESSION_ID_CHARS = 128;
 
-/** 宿主在「还没有会话」时写进快照的哨兵值，不能当作跳转目标。 */
+/** The sentinel value written into the snapshot when the host has "no session yet" cannot be used as a jump target. */
 const UNKNOWN_SESSION_ID = 'unknown';
 
 /**
- * 会话领域：未命中返回 undefined，命中返回应答。
+ * Session field: undefined is returned on a miss, and a response is returned on a hit.
  *
- * @param deps - 路由依赖；本领域只读 `state`。
- * @param input - 本次请求。
- * @returns 命中则应答，否则 undefined 交给下一个处理器。
+ * @param deps - route dependency; this field read-only `state` .
+ * @param input - this request.
+ * Respond if @returns hits, otherwise undefined will be handed over to the next processor.
  */
 export async function handleSessionRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
-  // 必须写成正向比较：check:openapi 只扫描正向分支，反向守卫它看不见（注释里也不要写那种形式的字面量）。
+  // It must be written as a forward comparison: check:openapi only scans the forward branch, and the reverse branch is invisible (do not write that form of literal in the comment).
   const isFocusSession = input.rest === 'focus-session';
   if (!isFocusSession) return undefined;
   if (input.method !== 'POST') return methodNotAllowed();

@@ -1,14 +1,15 @@
 /**
- * 探测当前模型是否支持 reasoning effort（含 "off"），宿主半侧共用。
+ * Detect whether the current model supports reasoning effort (including " off "), shared by host side.
  *
- * 不负责缓存与重试：每次调用都向 dsh-llm 问一次，拿不到能力就保守当作不支持。
- * 必须始终成立：只有模型确实声明支持时才传 reasoningEffort: 'off'——dsh-llm 对
- * 「无 reasoning 元数据 + 显式传 effort」直接判 UNSUPPORTED_REASONING_EFFORT，请求发不出去，
- * 只会被适配器折叠成空流，表现为「模型未返回文本」。
+ * Not responsible for caching and retrying: Ask dsh-llm once every time you call it. If you cannot get the capability,
+ * just treat it as not supported. It must always be true: reasoningEffort is only passed when the model actually
+ * declares support: ' off ' - dsh-llm directly determines UNSUPPORTED_REASONING_EFFORT for "no reasoning metadata +
+ * explicit effort". The request cannot be sent out and will only be folded into an empty stream by the adapter, which
+ * is expressed as "the model does not return text".
  * @module dsh-pet/src/host/llm-reasoning
  */
 
-/** 可调用的 dsh-llm resolveModelInfo 能力的最小形状（防御式：不依赖完整类型） */
+/** Minimum shape of callable dsh-llm resolveModelInfo capability (defensive: does not rely on complete types) */
 interface ResolveModelInfoCapable {
   resolveModelInfo?(
     provider: string,
@@ -18,8 +19,9 @@ interface ResolveModelInfoCapable {
 }
 
 /**
- * 当前 provider/model 是否声明支持 reasoning effort（含 "off"）。
- * 能力缺失或查询失败一律保守返回 false（= 不传，等价于模型默认行为，避免请求失败）。
+ * Whether the current provider/model declares support for reasoning effort (including " off "). If the capability is
+ * missing or the query fails, false will be returned conservatively (= not passed, which is equivalent to the default
+ * behavior of the model to avoid request failure).
  */
 export async function supportsReasoningOff(ctx: { llm?: unknown }, provider: string, model: string): Promise<boolean> {
   const llm = ctx.llm as ResolveModelInfoCapable | undefined;
@@ -28,6 +30,6 @@ export async function supportsReasoningOff(ctx: { llm?: unknown }, provider: str
     const info = await llm.resolveModelInfo(provider, model);
     return info?.reasoning?.efforts?.some((e) => e.id === 'off') ?? false;
   } catch {
-    return false; // 查询失败保守不传（等价于模型默认行为，不至于让请求失败）
+    return false; // Query failure will be conservatively not transmitted (equivalent to the default behavior of the model, which will not cause the request to fail)
   }
 }

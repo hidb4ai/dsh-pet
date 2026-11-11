@@ -1,46 +1,52 @@
 /**
- * 第三方语音实现的注册表：单槽，后注册的覆盖先注册的。
+ * The register table of third-party voice implementation: single slot, the one registered later overwrites the one
+ * registered first.
  *
- * 与余额注册表不同，语音没有「按服务商名匹配」的键——一句话念出来就完事，
- * 不存在多实现并存的语义，所以这里是一个槽而不是 Map。
- * 模块单例：注册返回 disposer；测试用 {@link resetVoiceProviders} 复位。
- * 只登记与查找，不合成、不缓存、不读配置。
+ * Different from the balance register table, voice does not have a "match by service provider name" key - just say one
+ * sentence and it is done. There is no semantics for multiple implementations to coexist, so here is a slot instead of
+ * Map. Module singleton: register returns disposer; test with {@link resetVoiceProviders} to reset. Only registration
+ * and search, no synthesis, no caching, no configuration reading.
  * @module dsh-pet/src/host/voice/registry
  */
 
-/** 内置实现的名字；缓存键与排障都用它，第三方不能占用。 */
+/** The name of the built-in implementation; it is used for caching keys and troubleshooting, and cannot be used by third parties. */
 export const BUILTIN_VOICE_ID = 'edge';
 
-/** 第三方语音实现：给一段文本，返回 mp3 字节。 */
+/** Third-party voice implementation: given a text, mp3 bytes are returned. */
 export interface VoiceProvider {
-  /** 唯一标识；参与缓存键，换实现不会命中旧音频。 */
+  /** Unique identifier; participates in the cache key, and the implementation will not hit the old audio. */
   readonly id: string;
-  /** 展示名，只用于排障。 */
+  /** Display name, only used for troubleshooting. */
   readonly name: string;
   /**
-   * 把一段文本合成为 mp3。
+   * Synthesize a piece of text into mp3.
    *
-   * 失败必须抛错——宿主会归一成 `generate-error` 并记日志；自己吞掉会让上层以为成功。
-   * 不接收音色：`voiceName` 是内置实现的白名单，第三方的嗓子由它自己决定。
+   * Failure must throw an error - the host will be normalized to `generate-error` and recorded in the log; swallowing
+   * it yourself will make the upper layer think it is successful. Do not accept voices: `voiceName` is a whitelist
+   * implemented by the built-in, and third-party voices are determined by itself.
    */
   synthesize(input: { readonly text: string; readonly rate: string }): Promise<Uint8Array>;
 }
 
-/** 当前生效的第三方实现；`null` = 没注册，合成走内置实现。 */
+/** Currently effective third-party implementation; `null` = no register, synthesis uses built-in implementation. */
 let current: VoiceProvider | null = null;
 
 /**
- * 注册一个第三方语音实现，覆盖当前生效的那个。
+ * Register a third-party speech implementation, overriding the one currently in effect.
  *
- * @param def - 实现定义；`id` 不能与内置实现同名（那会让缓存键撞在一起）。
- * @returns 注销函数；只在「当前仍是这一份」时才清空，迟到的注销不会顶掉后来者。
- * @throws {TypeError} 定义非法、`synthesize` 不是函数或 id 与内置同名时。
+ * @param def - implementation defined; `id` cannot have the same name as a built-in implementation (that would bump
+ * cache keys together).
+ * @returns logout function; it is only cleared when "this is still the current share". Late logout will not overthrow
+ * latecomers.
+ * When @throws { TypeError } is invalidly defined, `synthesize` is not a function or id has the same name as a
+ * built-in.
  */
 export function registerVoiceProvider(def: VoiceProvider): () => void {
-  if (!def || typeof def !== 'object') throw new TypeError('voice provider 定义必须是对象');
-  if (typeof def.id !== 'string' || def.id.length === 0) throw new TypeError('id 必须是非空字符串');
-  if (def.id === BUILTIN_VOICE_ID) throw new TypeError('不能与内置实现同名: ' + BUILTIN_VOICE_ID);
-  if (typeof def.synthesize !== 'function') throw new TypeError('synthesize 必须是函数');
+  if (!def || typeof def !== 'object') throw new TypeError('Voice provider definition must be an object');
+  if (typeof def.id !== 'string' || def.id.length === 0) throw new TypeError('id must be a nonempty string');
+  if (def.id === BUILTIN_VOICE_ID)
+    throw new TypeError('Cannot reuse a built-in implementation name: ' + BUILTIN_VOICE_ID);
+  if (typeof def.synthesize !== 'function') throw new TypeError('synthesize must be a function');
 
   current = def;
   return () => {
@@ -49,23 +55,25 @@ export function registerVoiceProvider(def: VoiceProvider): () => void {
 }
 
 /**
- * 当前该用哪个第三方实现。
- * @returns 已注册的实现；没注册时返回 `null`，调用方据此回落到内置实现。
+ * Which third-party implementation should be used currently.
+ * The implementation of @returns has been registered; when it is not registered, it returns `null` , and the caller
+ * falls back to the built-in implementation accordingly.
  */
 export function activeVoiceProvider(): VoiceProvider | null {
   return current;
 }
 
 /**
- * 列出可用实现，用于排障「为什么没走我注册的那个」。
- * @returns `builtin` 恒为内置实现；`external` 是当前生效的第三方 id（没有则为空数组）。
+ * List the available implementations for troubleshooting "Why didn't I register the one?"
+ * @returns `builtin` is always a built-in implementation; `external` is the currently effective third-party id (if
+ * not, it is an empty array).
  */
 export function listVoiceProviders(): { builtin: string[]; external: string[] } {
   return { builtin: [BUILTIN_VOICE_ID], external: current ? [current.id] : [] };
 }
 
 /**
- * 清空注册，供测试隔离用例。
+ * clear register for testing isolation cases.
  * @internal
  */
 export function resetVoiceProviders(): void {

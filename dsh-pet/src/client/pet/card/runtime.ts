@@ -1,8 +1,10 @@
 /**
- * 一张宠物卡的装配根：按固定顺序创建驱动与 hook，再把当帧能力拼成视图输入。
- * 只做接线：不判定（判定在 shared 与各驱动）、不渲染（DOM 在 card-view）、不持有跨卡状态。
- * 装配顺序不能改：动画链早于运动（回调要读走位）、运动早于拖拽（拖拽读飞行）、浮层最后。
- * 必须在渲染期填池：迟绑槽里的驱动实例只在本次渲染内赋值，别处不得写入。
+ * The assembly root of a pet card: Create the driver and hook in a fixed order, and then combine the current frame
+ * capabilities into view input. Only wiring: no determination (determination between shared and each driver), no
+ * rendering (DOM on card-view), no cross-card status. The assembly order cannot be changed: the animation chain is
+ * earlier than the movement (the callback needs to read the movement), the movement is earlier than the drag (the drag
+ * needs to read the flight), and the floating layer is last. The pool must be filled during the rendering period: the
+ * driver instance in the late binding slot is only assigned within this rendering and cannot be written elsewhere.
  * @module dsh-pet/src/client/pet/card/runtime
  */
 import { pick } from '../../../shared/pickers.ts';
@@ -33,20 +35,21 @@ import type { PetCardProps } from './props.ts';
 import type { PetRuntime } from '../types.ts';
 
 /**
- * 造卡片装配根的工厂：组件级单例（气泡、状态、指令、动画流）都在这里建一次。
+ * The factory that creates the card assembly root: component-level singletons (bubble, status, instructions, animation
+ * flow) are all built here.
  *
- * @param rt - 注入的 react 能力。
- * @returns 接收容器 props 的 hook，返回交给 card-view 的渲染输入。
+ * @param rt - Injected react capability.
+ * @returns receives hook in container props and returns the rendering input given to card-view.
  */
 export function createCardRuntime(rt: PetRuntime) {
   const { h, useEffect, useRef, useState } = rt;
-  /** 余额气泡：数据与显隐由装配根传入。 */
+  /** Balance bubble: Data and display are passed in from the assembly root. */
   const BalanceBubble = makeBalanceBubble({ h, useState, useEffect });
-  /** 碎碎念气泡：文本与显隐由装配根传入。 */
+  /** whisper bubble: Text and visibility are passed in from the assembly root. */
   const WhisperBubble = makeWhisperBubble({ h });
-  /** 待办气泡：面板本体挂在自己身上，关闭按钮回调装配根。 */
+  /** To-do bubble: The panel body hangs on itself, and the close button callback assembly root. */
   const TodoBubble = makeTodoBubble({ h, useEffect, useRef });
-  /** 四种气泡的单槽：显隐、停留计时与优先级都在这里。 */
+  /** The single slots for the four bubbles: visibility, dwell time and priority are all here. */
   const useBubbleSlots = createBubbleSlots(
     { h, useState, useEffect, useRef },
     { balanceBubble: BalanceBubble, todoBubble: TodoBubble, whisperBubble: WhisperBubble },
@@ -64,11 +67,12 @@ export function createCardRuntime(rt: PetRuntime) {
     const { arena, balance, balanceManual, cfg, lock, lockTick, menuItemsRef, sleep, sleepTick, workStatus } = props;
     const { onFocusSession } = props;
 
-    // 实际渲染宽度：百分比只在挂载与配置变更时按当次视口宽解析一次，拖窗口不跟随。
-    // 物理、字号与 CSS 变量都吃这一个值——两处各算一次会让命中框与视觉错位。
+    // The actual rendering width: the percentage is only parsed once according to the current viewport width when
+    // mounting and configuration changes, and does not follow when dragging the window. The physics, font size, and
+    // CSS variables all share this value - counting them both once will cause the hitbox and visual misalignment.
     const effectiveSizePx = resolvePetSizePx(cfg.size, cfg.sizePercent, window.innerWidth);
 
-    // 卡片状态容器：动画、朝向、拖拽态、提示与自定义位置；写入口在 card-state。
+    // Card status container: animation, orientation, drag state, prompts and custom position; write entry point at card-state.
     const card = useCardState({
       anim: cfg.animations.idle[0] ?? '',
       corner: cfg.position.corner,
@@ -78,50 +82,51 @@ export function createCardRuntime(rt: PetRuntime) {
     const { actions, state } = card;
     const { corner, customPos, facing, margin, size, tipOn } = state;
 
-    // 驱动实例与跨关注点入口：创建顺序见模块头，填充只在本函数内。
+    // Driver instance and cross-concern entry point: See the module header for the creation order, and filling is only within this function.
     const liveRef = useRef<CardLive>({} as CardLive);
     const menuActionsRef = useRef<MenuActions | null>(null);
     const entryRef = useRef<CardEntry | null>(null);
     const pendingSquashRef = useRef(false);
 
-    // 成品配置与工作状态的最新值：回调晚于状态更新，只能读 ref。
+    // The latest value of resolved configuration and working status: callback is later than status update and can only read ref.
     const cfgRef = useRef(cfg);
     cfgRef.current = cfg;
     const workStatusRef = useRef(workStatus);
     workStatusRef.current = workStatus;
 
-    // DOM 节点：视图挂载后才有值，驱动全部经取值函数读。
+    // DOM node: The value is available only after the view is mounted, and the driver reads all values through the value function.
     const rootRef = useRef<HTMLDivElement | null>(null);
     const stageRef = useRef<HTMLDivElement | null>(null);
     const videoARef = useRef<HTMLVideoElement | null>(null);
     const videoBRef = useRef<HTMLVideoElement | null>(null);
     const tipRef = useRef<HTMLDivElement | null>(null);
 
-    // 回执在 playback-report.ts：地址、请求体与失败日志都在那里，这里只要一个函数。
+    // The receipt is in playback-report.ts: the address, request body and failure log are all there, and there is only one function here.
     const reportPlayback = makePlaybackReporter({ petId: cfg.id });
 
-    // 尺寸与派生几何；度量系数在 motion/geometry.ts，这里只解构使用。
+    // Dimensions and derived geometry; metric coefficients are in motion/geometry.ts, used here only for destructuring.
     const { halfW, halfH, bottomPad, sideAllow } = derivePetMetrics(size);
-    // 字号按本宠物尺寸算好注入 root，气泡与悬浮提示读它。
+    // The font size is calculated according to the size of this pet and is injected into root. The bubble and floating prompts read it.
     const fontPx = resolveFontPx(cfg.font, size);
     const petAnims = cfg.animations;
 
-    // 配置变化即时跟随，容器重新合并或设置页保存后触发。
+    // Configuration changes are immediately followed and triggered after the container is re-merged or the settings page is saved.
     useEffect(() => {
       actions.setSize(resolvePetSizePx(cfg.size, cfg.sizePercent, window.innerWidth));
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- setter 稳定，变化原因只有配置的两个尺寸字段
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Setters are stable; only the two configured dimensions trigger updates.
     }, [cfg.size, cfg.sizePercent]);
 
     useEffect(() => {
       actions.setCorner(cfg.position.corner);
       actions.setMargin({ x: cfg.position.marginX, y: cfg.position.marginY });
-      // 改位置是明确的「放这里」：清掉会话内的拖拽位置，让配置重新生效——
-      // 这也是设置页把跑出视口的宠物叫回来的通道。只调大小不在此列，不该丢位置。
+      // Changing the position is a clear "put here": clear the drag position in the session and let the configuration
+      // take effect again - this is also the channel for the settings page to call back the pet that ran out of the
+      // viewport. Only resizing is not included in this list and should not lose its place.
       actions.setCustomPos(null);
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- setter 稳定，变化原因只有这三个位置字段
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Setters are stable; only these three position fields trigger updates.
     }, [cfg.position.corner, cfg.position.marginX, cfg.position.marginY]);
 
-    // 四种气泡的单槽：显隐、停留计时与优先级都在 bubble-slots，这里只喂视图输入。
+    // The single slots of the four bubbles: visibility, dwell timing and priority are all in bubble-slots. Only view input is fed here.
     const bubbles = useBubbleSlots({
       assetRoot: cfg.assetRoot,
       balance,
@@ -175,7 +180,7 @@ export function createCardRuntime(rt: PetRuntime) {
       setTipOn: actions.setTipOn,
     });
 
-    // 右键菜单、对话与悬浮提示：动作派发经 ref 转发，避免与 menu-actions 构造期成环。
+    // Right-click menu, dialogue and floating prompts: Action dispatch is forwarded through ref to avoid looping with the menu-actions construction period.
     const entry = useCardEntry({
       card,
       cfgRef,
@@ -191,7 +196,7 @@ export function createCardRuntime(rt: PetRuntime) {
     });
     entryRef.current = entry;
 
-    // 菜单动作派发：依赖运动、拖拽、提示与对话四处入口，所以放在它们之后。
+    // Menu action dispatch: relies on movement, dragging, prompts and dialogue around entry points, so place them after them.
     menuActionsRef.current ??= createMenuActions({
       animations: () => cfgRef.current.animations,
       applyMerged: (merged) => petBridge.reload(merged),
@@ -207,7 +212,7 @@ export function createCardRuntime(rt: PetRuntime) {
       },
       report: reportPlayback,
       resetPosition: () => actions.setCustomPos(null),
-      // 睡觉：菜单在点击那一刻就要能拒绝（对话弹窗、待办面板、动作点播都是纯前端行为，宿主拦不到）
+      // Sleep: The menu must be rejected the moment it is clicked (dialog pop-ups, to-do panels, and action playback requests are all pure front-end behaviors and cannot be blocked by the host)
       say: (text) => liveRef.current.flow?.speak(text, undefined, undefined, undefined, false),
       locked: () => ownAnim.isFrozen(),
       sleepRefuseTexts: () => cfgRef.current.sleepRefuseTexts ?? [],
@@ -219,19 +224,20 @@ export function createCardRuntime(rt: PetRuntime) {
     });
     const menuActions = menuActionsRef.current;
 
-    // 占用锁：宿主靠内存持有，渲染端靠 /state 的 pets.<id>.lock 叶子感知。
-    // 冻结只挡自播行为；显式指令（say / anim / position / throw）一概不挡，那正是持锁者要保护的内容。
+    // Occupied lock: host is held by memory, renderer is aware of pets .< id >. lock / state leaf. Freezing only
+    // blocks self-broadcasting; explicit instructions (say / anim / position / throw) are not blocked at all. That is
+    // what the lock holder wants to protect.
     const lockFreeze = useLockFreeze({
       lock,
       lockTick,
       onFrozen: () => {
-        // 光堵随机链不够：它只在动画播完时调用，不暂停会把当前这段播完才停。
+        // Simply blocking the random chain is not enough: it is only called when the animation is finished playing, and will not stop until the current segment is played without pausing.
         motion.stopMove();
-        // 任务状态气泡：锁一生效就收掉，解冻不补亮。
+        // Task status bubble: It will be closed as soon as the lock takes effect, and it will not be filled up when it is unfrozen.
         bubbles.hideWork();
       },
       onResumed: () => {
-        // 解冻：非终态工作状态回档位循环，否则回 idle 一次，播完由动画链接回随机链。
+        // Unfreezing: The non-final working state will return to the state position loop, otherwise it will return to idle once, and the animation will be linked back to the random chain after playing.
         if (liveRef.current.flow?.resumeWorkStatusAnim() ?? false) return;
         if (petAnims.idle.length) {
           actions.setAnim(pick(petAnims.idle, card.animRef.current));
@@ -246,7 +252,7 @@ export function createCardRuntime(rt: PetRuntime) {
       void postAction(ROUTE_PATH + '/lock/release?pet=' + encodeURIComponent(cfg.id), { force: true });
     };
 
-    // 共享运行时：状态容器、驱动与跨关注点动作拼成一份，指令处理按需取值。
+    // Shared runtime: state containers, drivers and cross-concern actions are combined into one, and instruction processing takes values on demand.
     const hub: CardHub = {
       anims: () => cfgRef.current.animations,
       applyThrow: motion.applyThrow,
@@ -255,28 +261,28 @@ export function createCardRuntime(rt: PetRuntime) {
       cfg: () => cfgRef.current,
       isDragging: () => drag.isActive(),
       ownAnim,
-      // 第四个参数 = 宿主指令：来自 pets.<id>.anim 的点播，不按「用户点击」判睡觉
+      // The fourth parameter = host command: playback request from pets .< id >. anim, if you do not press "User Click", you will be judged to be asleep.
       playByName: (anim, playbackId, keepFacing) =>
         menuActions.run({ anim, label: anim }, playbackId, keepFacing, true),
       posFollow: motion.posFollow,
       speak: (text, image, url, duration, anim) => liveRef.current.flow?.speak(text, image, url, duration, anim),
-      // 睡觉是状态不是指令：自动来源（工作状态/余额/碎碎念）读它决定要不要闭嘴
+      // Sleeping is a status, not a command: the automatic source (working status/balance/whisper) reads it to decide whether to shut up or not.
       sleeping: () => liveRef.current.flow?.sleeping() ?? false,
-      // 占用锁：锁的语义是把控制权交给第三方，睡觉的菜单闸门与自动化闸门都对持锁者让路
+      // Occupy lock: The semantics of the lock is to hand over control to a third party. Both the sleeping menu gate and the automation gate give way to the lock holder.
       locked: () => ownAnim.isFrozen(),
       stopMotion: motion.stopMove,
       tryWalk: motion.walk.tryMove,
     };
-    // 七条指令的分派在 cue-effects：这里只把当拍 props 交过去。
+    // The allocation of seven instructions is at cue-effects: here only the current shot props is handed over.
     useCueEffects(hub, props);
-    // 动画流比指令处理晚一步创建：它要读工作状态，也要经 hub 说话与恢复档位。
+    // The animation stream is created one step later than the command processing: it needs to read the working status, and also needs to go through the hub conversation and recovery state.
     const flow = useAnimationFlow(hub, workStatus);
     liveRef.current.flow = flow;
 
-    // 睡觉：宿主写叶子、渲染端执行；只在叶子变化时推一次（未变化的重渲染不重播动画）。
+    // Sleeping: The host writes the leaf and the renderer executes it; it is only pushed once when the leaf changes (re-rendering without change does not replay the animation).
     useEffect(() => {
       if (sleep) flow.applySleep(sleep);
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- 只按叶子变化次数触发，sleep 是当拍快照
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Trigger only on leaf revision changes; sleep is the current snapshot.
     }, [sleepTick]);
 
     const stageStyle = petStageStyle(bottomPad);
@@ -287,7 +293,7 @@ export function createCardRuntime(rt: PetRuntime) {
     );
 
     return {
-      // 气泡单槽：四种气泡共用同一套定位，按优先级只挂一个。
+      // bubble single slot: four bubbles share the same set of positioning, and only one is hung according to priority.
       bubble: bubbles.node(),
       corner,
       facing,
@@ -297,12 +303,13 @@ export function createCardRuntime(rt: PetRuntime) {
       marginY: margin.y,
       name: cfg.name,
       onClick: () => {
-        // 拖拽守卫必须在睡觉分支之前：指针捕获后浏览器一定会在松手时补发一次 click，
-        // 它不是点击（拖了多久都一样）。醒着时这条由 drag.onClick 内部判，睡觉分支绕过了那里。
+        // The drag guard must be before the sleeping branch: after the pointer is captured, the browser will reissue
+        // click when it is released. It is not a click (it does not matter how long it is dragged). When awake, this
+        // branch is judged within drag.onClick, and the sleeping branch bypasses there.
         if (drag.justDragged() || drag.isActive()) return;
         const phase = liveRef.current.flow?.sleepPhase() ?? null;
-        // 真睡着（循环中或醒来过渡）：点一下 = 叫醒。挤压与音效照常，
-        // 但不播点击回应动画——这一下的产物是「起来」。
+        // Really asleep (in loop or wake-up transition): click = wake up. The squeeze and sound effects are as usual,
+        // but the click response animation is not played - the product this time is "get up".
         if (phase !== null && phase !== 'start') {
           const front = ownAnim.frontVideo();
           if (front) liveRef.current.squash.start(front);
@@ -310,7 +317,7 @@ export function createCardRuntime(rt: PetRuntime) {
           void postAction(ROUTE_PATH + '/wake?pet=' + encodeURIComponent(cfg.id));
           return;
         }
-        // 入睡过渡里被点：这次入睡作废，按普通点击处理（挤压 + 音效 + 点击回应），不再播「起来」
+        // Being clicked during the transition to falling asleep: This time falling asleep will be invalidated and processed as a normal click (squeeze + sound effect + click response), and "Get Up" will no longer be played.
         if (phase === 'start') void postAction(ROUTE_PATH + '/wake?pet=' + encodeURIComponent(cfg.id));
         drag.onClick();
       },

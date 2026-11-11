@@ -1,8 +1,8 @@
 /**
- * 运动驱动：拖拽跟随、抛掷、位置指令与 Q 弹挤压的帧循环。
+ * Motion driver: frame loop of drag following, throwing, position command and Q bullet extrusion.
  *
- * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
- * 每条驱动只管自己的帧句柄与世代号；停止由调用方决定，互不 import。
+ * PetSprite is defined by sprite.js. This file only adds methods to the prototype and must be loaded afterwards. Each
+ * driver only has its own frame handle and generation number; the stop is determined by the caller, not import.
  * @module dsh-pet/runtime/electron-helper/sprite-motion
  */
 'use strict';
@@ -24,10 +24,11 @@ Object.assign(PetSprite.prototype, {
       let ratioX;
       if (t <= leadSec) ratioX = startRatio;
       else if (t >= duration - tailSec) ratioX = targetRatio;
-      // 按规划落点插值而不是 dir × 距离：minDist/maxDist 为负时符号必须保留，
-      // 否则规划往左、驱动往右，走完再跳回原本的方向。
+      // Interpolate according to the planned landing point instead of dir × distance: When minDist/maxDist is
+      // negative, the sign must be retained, otherwise the plan will go to the left, the drive will go to the right,
+      // and then jump back to the original direction after walking.
       else ratioX = startRatio + (targetRatio - startRatio) * ((t - leadSec) / travelWindow);
-      // 移动的是窗口（宠物包围盒跟随）；本体在窗口内的偏移由 sendBounds 按钳制情况算
+      // What is moved is the window (the pet bounding box follows); the offset of the body within the window is calculated by sendBounds according to the clamping situation.
       this.sendBounds(ratioX * W - this.halfW, startYRatio * H - this.halfH);
       if (t < duration - tailSec) {
         this.moveRef = requestAnimationFrame(step);
@@ -46,11 +47,11 @@ Object.assign(PetSprite.prototype, {
       cancelAnimationFrame(this.moveRef);
       this.moveRef = null;
     }
-    // 位置指令的弹簧也是自主移动：停走路时一并停掉，否则两套运动系统会同时改窗口位置。
+    // The position command spring also moves autonomously: it stops when you stop and walk, otherwise the two motion systems will change the window position at the same time.
     this.stopPosFollow();
   },
 
-  // 拖拽抛掷物理（弹簧跟手 + 甩抛 + 重力反弹）
+  // Drag and throw physics (spring hand + throw + gravity rebound)
   stopDragFollow() {
     this.dragFollowToken++;
     if (this.dragFollow !== null) {
@@ -61,7 +62,7 @@ Object.assign(PetSprite.prototype, {
     this.dragVel = { vx: 0, vy: 0 };
   },
 
-  /** rAF 弹簧跟随：窗口朝拖拽目标过阻尼追赶（不再硬贴指针），抹平高频抖动 */
+  /** rAF spring following: the window is over-damped and chases towards the drag target (no longer hard-pasting the pointer), smoothing out high-frequency jitter */
   startDragFollow() {
     if (this.dragFollow !== null) return;
     const token = ++this.dragFollowToken;
@@ -83,14 +84,17 @@ Object.assign(PetSprite.prototype, {
       vel.vy = S.springStep(vel.vy, y, target.y, dt, this.physics.throwPower);
       x += vel.vx * dt;
       y += vel.vy * dt;
-      this.sendBounds(x, y); // 移动的是窗口（this.pos 实时更新）；本体偏移由 sendBounds 统一算
+      this.sendBounds(x, y); // What is moved is the window (this.pos real-time update); the body offset is calculated uniformly by sendBounds
       this.dragFollow = requestAnimationFrame(step);
     };
     this.dragFollow = requestAnimationFrame(step);
   },
 
-  /** 停止抛掷（空中被抓/点菜单/回家时定格在当前落点）。必须同时清 throwState——否则「抓住后温柔放下」
-   *  会残留最后一次飞行速度，静止的宠物点一下就被误判成飞行中。 */
+  /**
+   * Stop throwing (caught in the air/click menu/freeze at the current landing point when returning home). throwState
+   * must be cleared at the same time - otherwise "grab and then gently put it down" will retain the last flight speed,
+   * and a stationary pet will be mistakenly judged as flying if clicked.
+   */
   stopThrow() {
     this.throwToken++;
     if (this.throwRef !== null) {
@@ -100,27 +104,32 @@ Object.assign(PetSprite.prototype, {
     this.throwState = null;
   },
 
-  /** 抛掷驱动：重力 + 边缘反弹 + 落地摩擦，落定后写入 customPos */
+  /** Throwing drive: gravity + edge rebound + landing friction, write customPos after settling */
   startThrow(px, py, vx, vy) {
     this.stopDragFollow();
     this.stopMove();
-    // 边界 = 工作区并集：空洞是墙，屏缝不是墙（跨屏弹跳照旧）。confineToScreen 开启时改为锁定
-    // 松手这一刻所在的那块屏，飞行途中不重取；relayout 改了屏数时由 throwStepRegion 退回不锁定。
+    // Boundary = union of workspaces: the hole is a wall, the screen gap is not a wall (bounce across screens remains
+    // the same). When confineToScreen is turned on, it is changed to locked. The screen where it is at the moment when
+    // you let go will not be retrieved during the flight; when relayout changes the number of screens, it is changed
+    // to throwStepRegion and returned to not locked.
     const lockScreen = this.confineToScreen ? S.screenOfBox(this.throwSpaceOf(), px, py) : -1;
     const token = ++this.throwToken;
     let state = { x: px, y: py, vx, vy };
     let last = performance.now();
-    let prevGrounded = false; // 落地 Q 弹：只在空中→地面转换帧触发一次
+    let prevGrounded = false; // Landed Q bomb: only triggered once in the air → ground transition frame
     const step = () => {
       if (this.throwToken !== token) return;
       const now = performance.now();
       const dt = (now - last) / 1000;
       last = now;
-      const fallingVy = state.vy; // 本帧积分前的竖直速度（正=下落）：即落地冲击速度
-      // 每帧重取：显示器变化时 relayout() 会让缓存失效，res.screen 必须与这一份对应
+      const fallingVy = state.vy; // The vertical speed before integration in this frame (positive = falling): that is, the landing impact speed.
+      // Retrieve each frame: when the display changes, relayout() will invalidate the cache. res.screen must correspond to
+      // this one.
       const sp = this.throwSpaceOf();
-      // 细分积分：弹弓没有速度上限，一帧可能跨过上百 px；不拆会跳过落地/反弹那几帧，
-      // Q 弹、地面摩擦与 atRest 判定都会漏。普通甩抛算出 1 步，与单步积分逐位相同。
+      // Subdivision points: The slingshot has no speed limit, and one frame may span hundreds of px; if not
+      // disassembled, the landing/rebound frames will be skipped, and Q bullets, ground friction, and atRest judgments
+      // will all be missed. Ordinary throwing calculations calculate 1 step, which is the same as single-step
+      // integration bit by bit.
       const substeps = S.throwSubsteps(state.vx, state.vy, dt);
       let res = S.throwStepRegion(state, dt / substeps, sp, this.physics, lockScreen);
       for (let i = 1; i < substeps && !res.atRest; i++) {
@@ -128,7 +137,7 @@ Object.assign(PetSprite.prototype, {
       }
       state = { x: res.x, y: res.y, vx: res.vx, vy: res.vy };
       this.throwState = state;
-      // 宠物间碰撞（仅 petCollision 开启）：飞行中的自己撞到其它宠物 → 动量弹开
+      // Collision between pets (only enabled for petCollision): When flying, you hit other pets → the momentum bounces away
       if (this.physics && this.physics.petCollision) {
         const myBody = S.bodyPixelBox({ x: state.x, y: state.y, size: this.size, bottomPad: this.bottomPad });
         for (const pid of Object.keys(this.others)) {
@@ -141,20 +150,20 @@ Object.assign(PetSprite.prototype, {
             { x: o.x, y: o.y, vx: o.vx, vy: o.vy, size: o.size },
           );
           if (hit) {
-            // 飞行方：按动量结果继续弹开；被撞方：主进程转发给目标窗口 → 目标窗 startThrow
+            // Flying side: continue to bounce according to the momentum result; hit side: main process forwarded to the target window → target window startThrow
             state.vx = hit.fvx;
             state.vy = hit.fvy;
             this.throwState = state;
             if (window.petBridge && window.petBridge.reportCollide) {
-              // 被撞方初速同为 broker 物理像素协议：×scale
+              // The initial velocity of the hit party is broker. Physical pixel protocol: × scale
               window.petBridge.reportCollide(pid, toScreen(hit.hvx), toScreen(hit.hvy));
             }
-            break; // 一帧只处理一次碰撞（避免连锁触发抖动）
+            break; // Only handle one collision per frame (to avoid chain trigger jitter)
           }
         }
       }
       this.sendBounds(res.x, res.y);
-      // 落地 Q 弹：只在空中→地面转换帧触发一次，力度随冲击速度；「地面」是当前所在屏的底边。
+      // Landed Q bomb: It is only triggered once in the air → ground transition frame, and the strength depends on the impact speed; "ground" is the bottom edge of the current screen.
       const curBounds = sp.bounds[res.screen] || sp.bounds[0];
       const grounded = curBounds ? res.y >= curBounds.maxY - 1 : false;
       if (res.bounced && grounded && !prevGrounded) {
@@ -174,7 +183,7 @@ Object.assign(PetSprite.prototype, {
     this.throwRef = requestAnimationFrame(step);
   },
 
-  // 位置 / 抛掷指令（POST /position、POST /throw）
+  // Position/throw command (POST/position, POST/throw)
   stopPosFollow() {
     this.posFollowToken++;
     if (this.posFollow !== null) {
@@ -184,20 +193,24 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 位置指令：把宠物中心挪到归一化坐标 (rx, ry)，与 customPos 同一套语义。
-   * mode 三选一：instant 一帧到位；spring 走过阻尼弹簧；line 在 duration 毫秒里直线走完
-   * （duration <= 0 等同 instant）。用户正按着宠物时整拍静默丢弃——手指底下的东西不该跑。
-   * 归一化空间是工作区并集的外接矩形，落点会被夹到 AREAS 并集（空洞不可达）。
+   * Position command: Move the pet center to the normalized coordinates (rx, ry), which has the same semantics as
+   * customPos. mode Choose one of three: instant reaches one frame; spring walks through the damping spring; line
+   * completes the straight line in duration milliseconds (duration <= 0 is equivalent to instant). Silently discard
+   * for the entire duration while the user is holding down the pet - things under their fingers should not escape. The
+   * normalized space is the bounding rectangle of the union of workspaces, and the drop point will be clamped to the
+   * AREAS union (the hole is unreachable).
    */
   moveToCenter(rx, ry, mode, duration) {
-    if (this.dragState.active) return; // 用户交互优先
-    this.stopThrow(); // 先显式接管：停掉飞行与走路（stopMove 顺带停掉上一次的位置跟随）
+    if (this.dragState.active) return; // User interaction priority
+    this.stopThrow(); // Explicit takeover first: stop flying and walking (stopMove stops the last position following by the way)
     this.stopMove();
-    // 归一化空间是外接矩形，不规则布局里含大片空洞；position() 的 customPos 分支零夹取，
-    // 不夹的话落进空洞的坐标会把宠物放进看不见的地方。鼠标拖拽到不了那里不是因为代码在拦，
-    // 而是光标物理上出不去屏幕——位置接口必须自己补这道守卫：把身体中心夹到 AREAS 并集。
+    // The normalized space is an enclosing rectangle, and the irregular layout contains large holes; the customPos
+    // branch of position() has zero clamping. If not clamped, the coordinates falling into the hole will put the pet
+    // into an invisible place. The reason why the mouse cannot be dragged there is not because the code is blocking
+    // it, but because the cursor cannot physically leave the screen - the position interface must make up for this
+    // guard by itself: clamp the center of the body to the union of AREAS.
     const c = S.clampPointToRegion(AREAS, rx * VIEW.w, ry * VIEW.h);
-    // 夹取后的比例才是要写进 customPos 的值：position() 会按它重算窗口位置。
+    // The clipped ratio is the value to be written into customPos: position() will recalculate the window position according to it.
     const fx = c.x / VIEW.w;
     const fy = c.y / VIEW.h;
     const px = c.x - this.halfW;
@@ -209,7 +222,7 @@ Object.assign(PetSprite.prototype, {
     }
     const token = ++this.posFollowToken;
     if (mode === 'line') {
-      // 直线补间：在像素空间插值——按归一化比例插值会把斜线走歪（外接矩形不是正方形）
+      // Line tweening: interpolation in pixel space - interpolation according to the normalized ratio will distort the diagonal line (the enclosing rectangle is not a square)
       const fromX = this.pos.x;
       const fromY = this.pos.y;
       const t0 = performance.now();
@@ -217,7 +230,7 @@ Object.assign(PetSprite.prototype, {
         if (this.posFollowToken !== token) return;
         const p = Math.min((performance.now() - t0) / duration, 1);
         if (p >= 1) {
-          // 精确落位：终点不留残余偏差（弹簧那条靠收敛阈值收尾，这条靠 p 到 1）
+          // Accurate positioning: no residual deviation is left at the end point (the spring one depends on the convergence threshold cleanup, this one depends on p to 1)
           this.posFollow = null;
           this.sendBounds(px, py);
           this.customPos = { rx: fx, ry: fy };
@@ -229,7 +242,7 @@ Object.assign(PetSprite.prototype, {
       this.posFollow = requestAnimationFrame(step);
       return;
     }
-    // spring：过阻尼弹簧跟随——没有行程时间，靠收敛判定自己收尾
+    // spring: Over-damped spring following - no travel time, rely on convergence to determine its own cleanup
     let last = performance.now();
     const vel = { vx: 0, vy: 0 };
     const step = () => {
@@ -244,7 +257,7 @@ Object.assign(PetSprite.prototype, {
       x += vel.vx * dt;
       y += vel.vy * dt;
       this.sendBounds(x, y);
-      // 收敛判定：足够近且足够慢 → 精确落位并提交。拖拽跟手靠指针松手结束，这条得自己判。
+      // Convergence judgment: close enough and slow enough → accurately position and submit. The dragging is ended by letting go of the pointer. You have to judge this by yourself.
       if (Math.abs(px - x) < 0.5 && Math.abs(py - y) < 0.5 && Math.abs(vel.vx) < 1 && Math.abs(vel.vy) < 1) {
         this.posFollow = null;
         this.sendBounds(px, py);
@@ -257,16 +270,17 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 抛掷指令：角度（度，0 = 正右，逆时针为正）+ 力度倍率 → 初速度，交给 startThrow；
-   * 下游的重力/反弹/摩擦/落地 Q 弹/跨窗碰撞全是既有行为。
+   * Throwing command: Angle (degree, 0 = positive right, counterclockwise is positive) + force multiplier → initial
+   * velocity, handed to startThrow; downstream gravity/rebound/friction/landing Q bomb/cross-window collision are all
+   * existing behaviors.
    */
   throwWith(angleDeg, power) {
-    if (this.dragState.active) return; // 用户交互优先
+    if (this.dragState.active) return; // User interaction priority
     const v = S.throwVelocity(angleDeg, power);
     this.startThrow(this.pos.x, this.pos.y, v.vx, v.vy);
   },
 
-  /** 被撞回调（跨窗碰撞 broker 转发）：停当前动作，从落点以新初速抛出去（全复用现有物理） */
+  /** Being hit callback (cross-window collision broker forward): Stop the current action and throw it from the landing point with a new initial velocity (all reuse existing physics) */
   onDeskHit(vx, vy) {
     this.stopMove();
     this.stopDragFollow();
@@ -274,8 +288,11 @@ Object.assign(PetSprite.prototype, {
     this.startThrow(this.pos.x, this.pos.y, vx, vy);
   },
 
-  /** Q 弹挤压：前台视频垂直压扁（贴地锚定再回弹），曲线在 shared。depth = 下压幅度
-   *  （点击固定 0.55，落地按冲击速度动态取）；reduce-motion 时跳过。 */
+  /**
+   * Q spring extrusion: the front video is vertically flattened (anchored to the ground and then rebounded), and the
+   * curve is at shared. depth = Pressure amplitude (fixed at 0.55 when clicked, dynamically determined according to
+   * the impact speed when landing); skipped when reduce-motion.
+   */
   startSquash(el, depth = S.SQ_SQUASH) {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const token = ++this.squashToken;
@@ -293,7 +310,7 @@ Object.assign(PetSprite.prototype, {
       } else {
         this.squashRef = null;
         el.style.transformOrigin = origin;
-        // 恢复纯镜像（若期间 switchTo 重置过 transform，也以镜像为准）
+        // Restore pure mirroring (if switchTo has reset transform during the period, the mirroring shall prevail)
         el.style.transform = this.facing === 'right' ? 'scaleX(-1)' : '';
       }
     };
@@ -308,5 +325,5 @@ Object.assign(PetSprite.prototype, {
     }
   },
 
-  // 点击 vs 拖拽（阈值/抓取偏移/释放回循环待机；移动的是窗口）
+  // Click vs and drag (threshold/grab offset/release back to loop standby; the window is moved)
 });

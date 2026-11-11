@@ -1,9 +1,11 @@
 'use strict';
 /**
- * DPI 与指针：主屏缩放的探测与缓存、强制缩放开关、渲染端 scale 换算、光标位置。
+ * DPI and pointer: detection and caching of main screen zoom, forced zoom switch, renderer scale conversion, cursor
+ * position.
  *
- * 线性化必须赶在 ready 之前 appendSwitch，所以工厂在 main.js 顶层调用；探测子进程复用同一个
- * main.js（mainPath 传入），只打一行 scaleFactor 就退出。
+ * Linearization must precede ready with appendSwitch, so the factory is called at the top level of main.js; the
+ * detection subprocess reuses the same main.js (mainPath is passed in), and only types one line of scaleFactor to
+ * exit.
  * @module dsh-pet/runtime/electron-helper/main-dpi
  */
 
@@ -13,20 +15,20 @@ const { readFileSync, writeFileSync } = require('node:fs');
 const { shouldLinearize, resolveForcedScale, resolvePetScale } = require('../dpi-linearization.js');
 
 /**
- * 造 DPI/指针能力。
+ * Create DPI/pointer ability.
  *
- * @param deps.app - Electron app（userData 路径与命令行开关）。
- * @param deps.screen - Electron screen（主屏缩放与光标兜底）。
- * @param deps.mainPath - main.js 的绝对路径：探测子进程要重新拉起同一份脚本。
- * @param deps.linuxPointer - Linux 的 X11 指针提供者；其它平台传 null。
- * @param deps.dpiProbe - 本次是否是「只打印缩放」的探测子进程。
- * @param deps.dpiMark - 探测输出里的标记前缀。
- * @param deps.forceDsf - DSH_PET_FORCE_DSF 原始值（未设置即 undefined）。
+ * @param deps.app - Electron app (userData path and command line switches).
+ * @param deps.screen - Electron screen (main screen zoom and cursor fallback).
+ * The absolute path of @param deps.mainPath - main.js: detect that the child process needs to restart the same script.
+ * @param deps.linuxPointer - X11 pointer provider for Linux; other platforms pass null.
+ * @param deps.dpiProbe - Whether this is the detection sub-process of "Print Zoom Only".
+ * @param deps.dpiMark - Marker prefix in probe output.
+ * @param deps.forceDsf - DSH_PET_FORCE_DSF Original value (unset i.e. undefined).
  */
 function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, forceDsf }) {
   /**
-   * 当前光标位置（DIP）。
-   * Linux：X11 QueryPointer 的实时值（物理像素 ÷ 缩放）；其余平台或查询尚未就绪：Electron 原生 API。
+   * Current cursor position (DIP). Linux : X11 Live value (physical pixels ÷ scale) of QueryPointer; not yet ready for
+   * other platforms or queries: Electron native API .
    */
   function currentPointer() {
     const raw = linuxPointer && linuxPointer.get();
@@ -35,7 +37,7 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
     return scale === 1 ? raw : { x: Math.round(raw.x / scale), y: Math.round(raw.y / scale) };
   }
 
-  /** 主屏缩放缓存文件（userData 在 ready 前即可用） */
+  /** Home screen zoom cache file (userData is available before ready) */
   function dpiCacheFile() {
     return path.join(app.getPath('userData'), 'primary-scale.json');
   }
@@ -45,7 +47,7 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
       const v = Number(JSON.parse(readFileSync(dpiCacheFile(), 'utf8')).scaleFactor);
       return Number.isFinite(v) && v > 0 ? v : 0;
     } catch {
-      return 0; // 首次启动/文件损坏：当作无缓存，重新探测
+      return 0; // First startup/file corruption: Treat as no cache, re-detect
     }
   }
 
@@ -57,14 +59,14 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
     }
   }
 
-  /** 从探测子进程的输出里抓 scaleFactor（0 = 没抓到） */
+  /** Catch scaleFactor from the output of the probing child process (0 = not caught) */
   function parseProbeOutput(text) {
     const m = new RegExp(dpiMark + '([0-9.]+)').exec(String(text || ''));
     const v = m ? Number(m[1]) : 0;
     return Number.isFinite(v) && v > 0 ? v : 0;
   }
 
-  /** 拉起探测子进程读主屏 scaleFactor（同一个 electron + 同一个 main.js，走 dpiProbe 分支） */
+  /** Start the detection sub-process to read the main screen scaleFactor (the same electron + the same main.js, take the dpiProbe branch) */
   function probePrimaryScale() {
     const opts = {
       env: { ...process.env, DSH_PET_DPI_PROBE: '1', DSH_PET_BRIDGE: '0', DSH_PET_SMOKE: '0' },
@@ -75,13 +77,16 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
     };
     let out = '';
     try {
-      // 探测子进程必须和主进程用同一套开关：沙箱起不来的机器上宿主的自动回退会改用 --no-sandbox，
-      // 不带上的话探测子进程一启动就 0x80000003，主进程活着、缓存却永远写不出来，每次开机都要白探一次。
+      // The detection sub-process must use the same set of switches as the main process: the automatic fallback of the
+      // host on a machine that cannot be started from the sandbox will use --no-sandbox instead. Without it, the
+      // detection sub-process will be 0x80000003 as soon as it is started. The main process is alive and cached but
+      // can never be written out. It will be detected in vain every time it is turned on.
       const sandboxArgs = app.commandLine.hasSwitch('no-sandbox') ? ['--no-sandbox'] : [];
       out = execFileSync(process.execPath, [...sandboxArgs, mainPath, '--dsh-pet-dpi-probe'], opts);
     } catch (e) {
-      // 只认 stdout，不认退出码：不开窗口的 Electron 进程调 app.exit() 在 Windows 上偶发
-      // 0xC0000005（退出期访问违例），但那时值早就写出来了，丢掉它纯属浪费一次冷启动。
+      // Only stdout is recognized, but the exit code is not recognized: The Electron process call app.exit() without
+      // opening a window occasionally produces 0xC0000005 (exit period access violation) on Windows, but the value
+      // has already been written out at that time, and throwing it away is a waste of a cold start.
       out = e && e.stdout ? String(e.stdout) : '';
       if (!parseProbeOutput(out)) {
         const detail = [
@@ -95,7 +100,7 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
           String(e && e.message ? e.message : e).split('\n')[0],
           detail,
         );
-        return 0; // 探测失败：不加 switch，退回逐屏 DIP 行为
+        return 0; // Detection failed: switch is not added and returns to screen-by-screen DIP behavior
       }
     }
     const v = parseProbeOutput(out);
@@ -103,13 +108,15 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
     return v;
   }
 
-  /** 真实主屏 scaleFactor（探测所得；0 = 未知）。开启线性化后 screen API 只会报 1，只能靠它。 */
+  /** Real home screen scaleFactor (detected; 0 = unknown). After linearization is turned on, screen API will only report 1, so you can only rely on it. */
   let PRIMARY_SCALE = 0;
-  /** 实际生效的强制缩放（0 = 未启用，坐标系维持修复前的逐屏 DIP） */
+  /** Actual forced scaling (0 = not enabled, the coordinate system maintains the screen-by-screen DIP before repair) */
   let FORCED_SCALE = 0;
   if (shouldLinearize({ platform: process.platform, dpiProbe, forceDsf })) {
-    // 探测失败只能退化为"不补偿"，不能把整个 helper 带走：受限令牌下
-    // getPath('userData') 与探测子进程都可能失败，进程会在 ready 之前直接结束且无日志。
+    // Detection failure can only be degraded to "no compensation", and the entire helper cannot be taken away: under
+    // restricted token
+    // Both getPath (' userData ') and the detection subprocess may fail, and the process will end directly before
+    // ready without logs.
     try {
       PRIMARY_SCALE = readCachedPrimaryScale() || probePrimaryScale();
       const forced = resolveForcedScale({ forceDsf, primaryScale: PRIMARY_SCALE });
@@ -119,7 +126,7 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
       }
     } catch (error) {
       console.error(
-        '[dsh-pet-desktop-helper] dpi 探测失败，按不补偿继续:',
+        '[dsh-pet-desktop-helper] DPI detection failed; continuing without compensation:',
         String(error && error.message ? error.message : error),
       );
       PRIMARY_SCALE = 0;
@@ -128,8 +135,9 @@ function createDpi({ app, screen, mainPath, linuxPointer, dpiProbe, dpiMark, for
   }
 
   /**
-   * 渲染端的 CONFIG.scale：宿主给的基准 × 物理像素补偿。
-   * 线性化开启后 1 逻辑像素 = 1 物理像素，宠物按主屏缩放放大回原来的观感。
+   * CONFIG.scale of renderer: Baseline × physical pixel compensation given by host. After linearization is turned on,
+   * 1 logical pixel = 1 physical pixel, and the pet zooms back to the original look and feel according to the home
+   * screen.
    */
   function petScale() {
     return resolvePetScale({

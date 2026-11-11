@@ -1,24 +1,22 @@
 /**
- * edge 在线语音的封装：按需加载 @andresaya/edge-tts 拿 mp3，把任何失败收敛成一个错误类型。
+ * Wrap Edge online speech: lazily load @andresaya/edge-tts, produce MP3 and normalize failures to one error type.
  *
- * 依赖在真正合成时才 import：语音是可选能力，包缺失只能让这一次合成失败，不能把整个插件
- * 卡在启动阶段（插件加载期缺一个可选依赖 → 宿主判定必需插件未激活 → 整个 DSH 启动失败）。
- * 用动态 import 而不是 createRequire：应用产物把依赖内联进单文件（tsdown 的 noExternal），
- * 打包器只跟踪静态可见的 import；放在 try 里，缺包时照样只失败这一次。
- * SSML 拼装、XML 转义、WebSocket 与 DRM 令牌都由依赖负责——它**已经做了转义**，本模块传
- * 原文即可，再转一次会把 `&` 念成「amp」。协议变动时只需升级依赖，这里不改代码。
- * 不负责缓存与队列：本模块只保证「给定文本 → 一个 mp3 文件」这一件事。
+ * Load the optional dependency only during synthesis so a missing package fails that request rather than DSH startup.
+ * Use dynamic import inside try, not createRequire: tsdown noExternal must see the import to bundle it into the app.
+ * The dependency handles SSML, XML escaping, WebSocket and DRM tokens. Pass raw text; escaping twice would read `&` as
+ * "amp".
+ * Protocol changes are handled by upgrading the dependency. Caching and queuing belong to the service layer.
  * @module dsh-pet/src/host/voice/edge
  */
 import { rename, rm, writeFile } from 'node:fs/promises';
 
-/** 依赖的模块形状：运行时代码只出现在按需 import 处。 */
+/** Dependent module shape: Runtime code only appears at import on demand. */
 type EdgeTtsModule = typeof import('@andresaya/edge-tts');
 
-/** 单次合成超时（ms）：上游长时间无响应就判失败，不拖住串行队列。 */
+/** Single synthesis timeout (ms): If the upstream does not respond for a long time, it will be deemed a failure and the serial queue will not be held up. */
 const SYNTHESIS_TIMEOUT_MS = 15_000;
 
-/** 合成失败：上层据此回 `generate-error`，不区分上游细节。 */
+/** Synthesis failed: The upper layer returns `generate-error` accordingly, without distinguishing the upstream details. */
 export class VoiceSynthError extends Error {
   constructor(message: string) {
     super(message);
@@ -26,37 +24,37 @@ export class VoiceSynthError extends Error {
   }
 }
 
-/** 合成一次需要的参数。 */
+/** Parameters required for synthesis once. */
 export interface SynthInput {
-  /** 已通过长度与空白校验的文本，原样交给依赖（转义由它负责）。 */
+  /** Text that has passed length and whitespace verification is handed over to the dependency as is (it is responsible for escaping). */
   readonly text: string;
-  /** 白名单内的音色 id。 */
+  /** The tone id in the whitelist. */
   readonly voice: string;
-  /** prosody rate 表达式，如 `+0%`。 */
+  /** prosody rate expression, such as `+0%`. */
   readonly rate: string;
-  /** 目标 mp3 的最终路径；父目录必须已存在。 */
+  /** Final path to destination mp3; parent directory must already exist. */
   readonly target: string;
-  /** 总时限：依赖自带的 timeout 只是「静默」超时（每帧重置），真正的总上限要靠这个信号。 */
+  /** Total time limit: Relying on the built-in timeout is just a "silent" timeout (reset every frame). The real total upper limit depends on this signal. */
   readonly signal?: AbortSignal;
 }
 
 /**
- * 把一段文本合成到目标 mp3。
+ * Synthesize a piece of text to the target mp3.
  *
- * 先写 `<target>.part` 再改名：`target` 一旦出现就是完整文件，中途失败不会留下半截 mp3
- * 被缓存命中逻辑当成有效音频。
+ * First write `<target>.part` and then change the name: Once `target` appears, it is a complete file. Failure in the
+ * middle will not leave half mp3 as valid audio by cache hit logic.
  *
- * @param input - 文本、音色、语速与目标路径。
- * @throws {VoiceSynthError} 上游失败、超时或写盘失败时。
+ * @param input - text, voice, speech rate and target path.
+ * @throws { VoiceSynthError } When the upstream fails, times out, or fails to write to disk.
  */
 export async function synthesize({ signal, text, voice, rate, target }: SynthInput): Promise<void> {
   const staging = `${target}.part`;
   try {
-    // 按需加载：包缺失时这里抛 MODULE_NOT_FOUND，由下面统一归成 VoiceSynthError。
-    // CJS 包经 dynamic import 后可能只露 default，两种形状都认。
+    // Loading on demand: MODULE_NOT_FOUND is thrown here when the package is missing, and is unified into
+    // VoiceSynthError from below. CJS may only reveal default after dynamic import. Both shapes are recognized.
     const mod = (await import('@andresaya/edge-tts')) as EdgeTtsModule & { default?: EdgeTtsModule };
     const EdgeTTS = mod.EdgeTTS ?? mod.default?.EdgeTTS;
-    if (!EdgeTTS) throw new VoiceSynthError('依赖未导出 EdgeTTS');
+    if (!EdgeTTS) throw new VoiceSynthError('The dependency does not export EdgeTTS');
     const tts = new EdgeTTS();
     const result = await tts.generate(text, voice, { rate, signal, timeout: SYNTHESIS_TIMEOUT_MS });
     await writeFile(staging, result.audio);

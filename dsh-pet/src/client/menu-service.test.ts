@@ -1,22 +1,24 @@
 /**
- * 菜单镜像的行为契约：与 /menu/events 同形、读取即消费、按 owner 隔离、闩锁跟随项存活。
+ * Menu mirroring behavior contract: same shape as / menu/events, read and consume, isolate by owner, latch follow item
+ * survival.
  *
- * 这里不测渲染与上报——上报点在 pet/menu-actions，快照同步点在 pet/multi。
+ * Unexpected rendering and reporting here - the reporting point is at pet/menu-actions and the snapshot
+ * synchronization point is at pet/multi.
  */
 import { beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resetMenuEvents, setMenuClick, setMenuItems, takeMenuEvents } from './menu-service.ts';
 
-describe('menu-service —— 页面内的菜单镜像', () => {
+describe('menu-service ——Menu mirroring within the page', () => {
   beforeEach(() => {
     resetMenuEvents();
   });
 
-  test('还没同步到快照：任何 owner 都是未知', () => {
+  test('Not synchronized to snapshot yet: any owner is unknown', () => {
     assert.deepEqual(takeMenuEvents('baifan'), { ok: false, reason: 'unknown-owner' });
   });
 
-  test('刚注册还没人点：全量映射里每项都是 null', () => {
+  test('I just registered and no one clicked: Every item in the full mapping is null', () => {
     setMenuItems([
       { label: '喂鱼', owner: 'baifan' },
       { label: '摸头', owner: 'baifan' },
@@ -24,14 +26,14 @@ describe('menu-service —— 页面内的菜单镜像', () => {
     assert.deepEqual(takeMenuEvents('baifan'), { events: { 喂鱼: null, 摸头: null }, ok: true });
   });
 
-  test('读取即消费：读完清回 null，再读一次不会重复拿到', () => {
+  test('Read and consume: Clear null after reading, and you will not get it again after reading it again.', () => {
     setMenuItems([{ label: '喂鱼', owner: 'baifan' }]);
     setMenuClick('baifan', '喂鱼', 'main');
     assert.deepEqual(takeMenuEvents('baifan'), { events: { 喂鱼: 'main' }, ok: true });
     assert.deepEqual(takeMenuEvents('baifan'), { events: { 喂鱼: null }, ok: true });
   });
 
-  test('按 owner 隔离：一个 owner 的点击不会被另一个 owner 读走', () => {
+  test('Isolation by owner: Clicks from one owner will not be read by another owner', () => {
     setMenuItems([
       { label: 'x', owner: 'a' },
       { label: 'y', owner: 'b' },
@@ -41,13 +43,13 @@ describe('menu-service —— 页面内的菜单镜像', () => {
     assert.deepEqual(takeMenuEvents('a'), { events: { x: 'main' }, ok: true });
   });
 
-  test('先点击后同步快照：这一下不会丢', () => {
+  test('Click first and then synchronize the snapshot: this time it will not be lost', () => {
     setMenuClick('baifan', '喂鱼', 'main');
     setMenuItems([{ label: '喂鱼', owner: 'baifan' }]);
     assert.deepEqual(takeMenuEvents('baifan'), { events: { 喂鱼: 'main' }, ok: true });
   });
 
-  test('项下线后不再可读：owner 重注册也不会读到上一次的残留', () => {
+  test('The item is no longer readable after it is offline: owner will not read the last remnant even if it is re-registered.', () => {
     setMenuItems([{ label: '喂鱼', owner: 'baifan' }]);
     setMenuClick('baifan', '喂鱼', 'main');
     setMenuItems([{ label: '摸头', owner: 'baifan' }]);

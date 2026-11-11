@@ -1,14 +1,15 @@
 /**
- * 日历格（src/shared/todo/calendar.ts）：周一为首列、补满整周、前后月标 out。
+ * Calendar grid (src/shared/todo/calendar.ts): Monday is the first column, filling the whole week, and the month marks
+ * before and after are out.
  *
- * 只覆盖纯计算；选择器的交互与渲染由手动验收。
+ * Only pure calculations are covered; interaction and rendering of selectors are subject to manual acceptance.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { monthCells } from './calendar.ts';
 
-/** 把格子写成 `YYYY-MM-DD`，断言里比日期比拼 Date 好读。 */
+/** Write the grid as `YYYY-MM-DD`, and the assertion is easier to read than the date competition Date. */
 function days(year: number, month: number): string[] {
   return monthCells(year, month).map((cell) => {
     const d = cell.date;
@@ -18,41 +19,45 @@ function days(year: number, month: number): string[] {
   });
 }
 
-describe('monthCells —— 一个月排成几行', () => {
-  test('2026 年 10 月：1 号是周四，补 3 格上月，共 5 行', () => {
+describe('monthCells ——How many rows are there in a month?', () => {
+  test('October 2026: The 1st is Thursday, fill in 3 spaces for the previous month, a total of 5 lines', () => {
     const list = days(2026, 9);
-    assert.equal(list.length, 35, '应为 5 行 × 7 列');
-    assert.equal(list[0], '2026-09-28', '首格应是上月最后一个周一');
-    assert.equal(list[34], '2026-11-01', '末格应是下月第一个周日');
+    assert.equal(list.length, 35, 'Should be 5 rows × 7 columns');
+    assert.equal(list[0], '2026-09-28', 'The first digit should be the last Monday of the previous month');
+    assert.equal(list[34], '2026-11-01', 'The last square should be the first Sunday of the next month');
   });
 
-  test('2026 年 8 月：跨 6 周，补满 42 格', () => {
+  test('August 2026: 6 weeks, 42 spaces filled', () => {
     const list = days(2026, 7);
-    assert.equal(list.length, 42, '应为 6 行 × 7 列');
+    assert.equal(list.length, 42, 'Should be 6 rows × 7 columns');
     assert.equal(list[0], '2026-07-27');
     assert.equal(list[41], '2026-09-06');
   });
 
-  test('2026 年 2 月：1 号是周日，整行补在前面', () => {
+  test('February 2026: The 1st is Sunday, the whole line is added in front', () => {
     const list = days(2026, 1);
     assert.equal(list.length, 35);
-    assert.equal(list[0], '2026-01-26', '周日落在最后一列，前面补满 6 格');
+    assert.equal(list[0], '2026-01-26', 'Sunday falls in the last column, fill up 6 spaces in front');
   });
 
-  test('out 只标前后月的格子', () => {
+  test('out only marks the grid before and after the month', () => {
     const cells = monthCells(2026, 9);
-    assert.equal(cells.filter((cell) => cell.out).length, 3 + 1, '3 格上月 + 1 格下月');
+    assert.equal(
+      cells.filter((cell) => cell.out).length,
+      3 + 1,
+      '3 squares for the previous month + 1 square for the next month',
+    );
     assert.ok(
       cells.slice(3, 34).every((cell) => !cell.out),
-      '本月 31 天都不该标 out',
+      'out should not be marked on 31 days of this month',
     );
   });
 
-  test('每一行都是整周：列数恒为 7，且首格是周一', () => {
+  test('Each row is a whole week: the number of columns is always 7, and the first column is Monday', () => {
     for (let month = 0; month < 12; month++) {
       const cells = monthCells(2026, month);
-      assert.equal(cells.length % 7, 0, `${month + 1} 月不是整周`);
-      assert.equal(cells[0]?.date.getDay(), 1, `${month + 1} 月首格不是周一`);
+      assert.equal(cells.length % 7, 0, `The calendar for month ${month + 1} must contain complete weeks`);
+      assert.equal(cells[0]?.date.getDay(), 1, `The first calendar cell for month ${month + 1} must be Monday`);
     }
   });
 });

@@ -1,9 +1,10 @@
 /**
- * 工作状态播报：档位进入「会弹系统通知」的那几档时，把桌宠的台词念出来。
+ * Work status broadcast: When the state enters the "system notification popup" state, read out the desktop pet's lines.
  *
- * 只随 DSH 网页端走，桌面透明窗不参与——与 client/notify.ts 同一条边界：系统通知只弹在
- * 网页端，工作状态播报同理。不写 `say` 叶子、不碰 `voiceTo`：这是工作状态的事，不是气泡的事。
- * 台词只取该档位的 `workStatusTexts`，不念 `task`（任务详情，常是对话片段或路径）。
+ * Only follows the DSH web page, and the desktop transparent window does not participate - the same boundary as
+ * client/notify.ts: system notifications only pop up on the web page, and the working status is broadcast in the same
+ * way. Do not write `say` leaves, do not touch `voiceTo` : This is a matter of working status, not bubble. The lines
+ * only take the `workStatusTexts` of that state, not the `task` (task details, often dialogue fragments or paths).
  * @module dsh-pet/src/client/voice-notify
  */
 import { petBridge } from './settings/bridge.ts';
@@ -12,22 +13,24 @@ import { isVoiceNotifyEnabled, speakNotice } from '../shared/voice.ts';
 import { WORK_STATUS_INDEX, type WorkStatusSnapshot, type WorkStatusState } from '../shared/work-status.ts';
 import type { Pet } from '../shared/types.ts';
 
-/** 会弹系统通知的档位：等你确认 / 完成 / 出错。其余档位只播动画，不出声。 */
+/** The system notification will pop up: waiting for your confirmation / completion / error. The remaining states only play animations and make no sound. */
 const SPOKEN_STATES: readonly WorkStatusState[] = ['waiting', 'success', 'error'];
 
-/** 上次念过的档位；同一档位重复写入不重念，回空闲后置 null，下次进入还能再念。 */
+/** The state that was recited last time; the same state will not be recited if it is written repeatedly. It will be reset to null when it is idle. It can be recited again next time. */
 let lastSpoken: WorkStatusState | null = null;
 
 /**
- * 判定这一拍要不要念、念什么。
+ * Determine whether and what to recite for this beat.
  *
- * 只取配置里的台词，不念 `task`：`task` 是任务详情（常是对话片段或文件路径），读出来像在
- * 念日志；这里要的是宠物自己说的一句话。
+ * Only take the lines in the configuration, do not read `task` : `task` is the task details (often a dialogue fragment
+ * or file path), and it sounds like reading a log; what is needed here is a sentence spoken by the pet itself.
  *
- * @param snap - 工作状态快照；只用到 `state`。
- * @param pets - 当前拍平的宠物列表；取首只的台词组，多宠物只念一次。
- * @param prev - 上次念过的档位。
- * @returns 要念的台词；档位没变、档位不出声或该档位没配台词时返回 undefined。
+ * @param snap - Working status snapshot; only `state` is used.
+ * @param pets - List of currently flat pets; take the line group of the first pet, and only read it once for multiple
+ * pets.
+ * @param prev - the state read last time.
+ * @returns The lines to be read; when the state does not change, the state does not make a sound, or the state has no
+ * lines, it returns to undefined.
  */
 export function decideWorkStatusLine(
   snap: WorkStatusSnapshot,
@@ -44,21 +47,22 @@ export function decideWorkStatusLine(
 }
 
 /**
- * 消费一拍工作状态：档位变了、且新档位会弹系统通知时才念。
+ * The working status of consumption one-shot: read only when the state is changed and the system notification will pop
+ * up for the new state.
  *
- * @param snap - 刚读到的工作状态快照。
+ * @param snap - The working status snapshot just read.
  */
 export function speakWorkStatus(snap: WorkStatusSnapshot): void {
   const line = decideWorkStatusLine(snap, petBridge.current, lastSpoken);
-  // 开关关着时 lastSpoken 照常推进：重新打开后不会补念一个已经过去的档位。
+  // lastSpoken advances as usual when the switch is turned off: a past state will not be recited after it is turned back on.
   lastSpoken = snap.state;
   if (line === undefined || !isVoiceNotifyEnabled()) return;
-  // 与系统通知同一取向：用户正看着本页时不念——动画和头顶气泡已经把信息给了。
+  // The same orientation as the system notification: the user does not read when looking at this page - the animation and overhead bubble have already given the information.
   if (isPageActive()) return;
   speakNotice(line);
 }
 
-/** 清掉去重状态，让下一次进入同一档位还能念。 @internal */
+/** Clear the deduplicate status so that you can still read the next time you enter the same state.  @internal */
 export function resetSpokenState(): void {
   lastSpoken = null;
 }

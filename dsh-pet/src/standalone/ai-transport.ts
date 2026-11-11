@@ -1,40 +1,41 @@
 /**
- * 独立模式的模型传输层：封装 OpenAI 兼容与 Anthropic 两种协议的流式调用。
+ * Standalone mode model transport layer: encapsulates streaming calls of OpenAI compatible and Anthropic protocols.
  *
- * 不负责设置校验与限流（见 ai-provider），也不负责选择模型。
- * 必须始终成立：请求只能发往配置推导出的那个端点；鉴权头由本层重建，
- * 绝不沿用 SDK 从环境或配置目录推断出的凭据。
+ * It is not responsible for setting validation and rate limiting (see ai-provider), nor is it responsible for
+ * selecting models. Must always be true: requests can only be sent to the endpoint inferred from the configuration;
+ * the authentication header is reconstructed by this layer and never relies on credentials inferred by SDK from the
+ * environment or configuration directory.
  * @module dsh-pet/src/standalone/ai-transport
  */
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import type { StandaloneAiSettings } from './ai-config.ts';
 
-/** fetch 的形状，便于测试替换。 */
+/** The shape of fetch is convenient for testing and replacement. */
 export type AiFetch = typeof globalThis.fetch;
-/** 一条纯文本消息。 */
+/** A plain text message. */
 export interface AiTextMessage {
   role: 'user' | 'assistant';
   content: string;
 }
-/** 一次请求的系统提示与消息序列。 */
+/** System prompts and message sequence for a request. */
 export interface AiRequest {
   system: string;
   messages: AiTextMessage[];
 }
-/** 传输事件：只有文本增量与拒绝标记。 */
+/** Transfer event: only text increment and reject flag. */
 export type AiTransportEvent = { text?: string; refusal?: boolean };
-/** SDK 的静默 logger，避免把请求细节写进日志。 */
+/** Silence logger for SDK to avoid writing request details to the log. */
 const quiet = { debug() {}, info() {}, warn() {}, error() {} };
 
 /**
- * 重建请求目标与鉴权头的 fetch 包装。
- * @param settings - 成品配置。
- * @param fetcher - 底层 fetch。
- * @returns 只允许配置端点通过的 fetch。
+ * Reconstruct fetch wrapper of request target and authentication header.
+ * @param settings - off-the-shelf configuration.
+ * @param fetcher - underlying fetch.
+ * @returns is only allowed to configure the endpoint through fetch .
  */
 export function isolatedFetch(settings: Readonly<StandaloneAiSettings>, fetcher: AiFetch): AiFetch {
-  // 端点由配置推导，SDK 拼出的地址必须逐一命中，否则拒绝发出。
+  // The endpoint is deduced from the configuration. The address spelled out by SDK must be hit one by one, otherwise it will be rejected.
   const base = settings.baseUrl.replace(/\/+$/, '');
   const expected = base + (settings.protocol === 'anthropic' ? '/v1/messages' : '/chat/completions');
   return async (url, init) => {
@@ -52,13 +53,13 @@ export function isolatedFetch(settings: Readonly<StandaloneAiSettings>, fetcher:
         urlStr === base + '/messages' ||
         urlStr === base + '/v1/messages' + (beta ? '?beta=true' : ''));
     if (!validOpenAi && !validAnthropic) throw new Error('Unexpected standalone AI endpoint.');
-    // 所有头都由本层重建：SDK 可能从环境继承自定义鉴权头，即使已经给出显式密钥。
+    // All headers are reconstructed by this layer: SDK may inherit custom authentication headers from the environment even if an explicit key has been given.
     const headers = new Headers({ 'content-type': 'application/json', accept: 'application/json' });
     if (settings.protocol === 'anthropic') {
       headers.set('x-api-key', settings.apiKey);
       headers.set('anthropic-version', '2023-06-01');
       if (new URL(base).origin === 'https://api.anthropic.com' && settings.model === 'claude-opus-5-5') {
-        // 只有第一方 Opus 才启用服务端回退 beta，第三方端点不应收到这个头。
+        // Server-side fallback beta is enabled only for first-party Opus, third-party endpoints should not receive this header.
         headers.set('anthropic-beta', 'server-side-fallback-2026-07-01');
       }
     } else headers.set('authorization', `Bearer ${settings.apiKey}`);
@@ -67,13 +68,13 @@ export function isolatedFetch(settings: Readonly<StandaloneAiSettings>, fetcher:
 }
 
 /**
- * 按协议调用官方 SDK，产出文本增量与拒绝事件。
- * @param settings - 成品配置。
- * @param request - 规范化后的请求。
- * @param signal - 取消信号。
- * @param fetcher - 底层 fetch。
- * @returns 文本增量的异步序列。
- * @throws 端点不符或 SDK 调用失败时抛出。
+ * Call the official SDK according to the protocol, and output text increment and rejection events.
+ * @param settings - off-the-shelf configuration.
+ * @param request - Normalized request.
+ * @param signal - Cancel signal.
+ * @param fetcher - underlying fetch.
+ * @returns Asynchronous sequence of text increments.
+ * Thrown when the @throws endpoint does not match or the SDK call fails.
  */
 export async function* sdkTextStream(
   settings: Readonly<StandaloneAiSettings>,
@@ -81,7 +82,7 @@ export async function* sdkTextStream(
   signal: AbortSignal,
   fetcher: AiFetch,
 ): AsyncIterable<AiTransportEvent> {
-  // SDK 自带的重试与日志会绕过本层的边界控制，全部关掉。
+  // SDK’s built-in retries and logs will bypass the boundary control of this layer and be turned off.
   const shared = {
     apiKey: settings.apiKey,
     baseURL: settings.baseUrl.replace(/\/+$/, ''),
@@ -108,7 +109,7 @@ export async function* sdkTextStream(
     }
     return;
   }
-  // 显式置空 authToken，阻断 SDK 从环境、OAuth 或配置目录解析凭据。
+  // Explicitly blanking authToken blocks SDK from resolving credentials from the environment, OAuth, or configuration directories.
   const client = new Anthropic({ ...shared, authToken: null, webhookKey: null });
   const opus = settings.model === 'claude-opus-5-5';
   const firstParty = new URL(settings.baseUrl).origin === 'https://api.anthropic.com';
@@ -129,12 +130,12 @@ export async function* sdkTextStream(
       : await client.messages.create(parameters, { signal });
   for await (const event of stream) {
     if (event.type === 'message_delta' && event.delta.stop_reason === 'refusal') yield { refusal: true };
-    // 只转发增量文本：累计内容与思考块重复转发会让调用方拿到重复文本。
+    // Only forward incremental text: Repeated forwarding of accumulated content and thinking blocks will cause the caller to get duplicate text.
     if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') yield { text: event.delta.text };
   }
 }
 
-/** 判断是否为鉴权失败。 */
+/** Determine whether authentication failed. */
 export function isAuthenticationFailure(error: unknown): boolean {
   return (
     error instanceof OpenAI.AuthenticationError ||
@@ -143,7 +144,7 @@ export function isAuthenticationFailure(error: unknown): boolean {
     error instanceof Anthropic.PermissionDeniedError
   );
 }
-/** 判断是否为限流失败。 */
+/** Determining whether rate limiting failed. */
 export function isRateLimitFailure(error: unknown): boolean {
   return error instanceof OpenAI.RateLimitError || error instanceof Anthropic.RateLimitError;
 }

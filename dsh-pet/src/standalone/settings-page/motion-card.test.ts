@@ -1,10 +1,12 @@
 /**
- * 独立模式设置页「动作频率」卡的契约测试。
+ * Contract test of the "Action Frequency" card in the standalone mode setting page.
  *
- * 三条契约：
- *   1. 成品配置里的 animationWeights 被读进草稿，缺项回落内置默认；
- *   2. 改一项时另两项不动、超上限被夹住，只读的随机动作同步更新；
- *   3. 保存体带上 animationWeights。
+ * Three contracts:
+ * 1. animationWeights in the resolved configuration is read into the draft, and the default fallback is
+ * built-in for missing items;
+ * 2. When one item is changed, the other two items do not move and are clamped when the upper limit is exceeded.
+ * Read-only random actions are updated simultaneously;
+ * 3. Put animationWeights on the save body.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +38,7 @@ interface Probe {
   petsBody(): { animationWeights: { idle: number; turn: number; move: number } };
 }
 
-/** 最小假 DOM：只够脚本渲染卡片并触发一次 input。 */
+/** Minimum false DOM: Only enough for the script to render the card and trigger input once. */
 function probe(): Probe {
   const byId = new Map<string, FakeNode>();
   const node = (): FakeNode => {
@@ -91,7 +93,7 @@ function probe(): Probe {
   return context.__probe as Probe;
 }
 
-/** 深度遍历渲染树里的输入框；文本节点没有 attrs，直接跳过。 */
+/** Depth traverse the input box in the rendering tree; the text node does not have attrs and is skipped directly. */
 function inputs(node: FakeNode, out: FakeNode[] = []): FakeNode[] {
   if (!node || !node.attrs) return out;
   if (node.attrs.id) out.push(node);
@@ -101,8 +103,8 @@ function inputs(node: FakeNode, out: FakeNode[] = []): FakeNode[] {
 
 const weightsOf = (node: FakeNode) => node.attrs.id;
 
-describe('独立模式 动作频率卡', () => {
-  test('读取：三项原样带出，缺项回落内置默认', () => {
+describe('Standalone mode action frequency card', () => {
+  test('Read: The three items are brought out as they are, and the missing item fallback is built-in default', () => {
     const api = probe();
     assert.deepEqual(
       { ...api.pickGlobals({ animationWeights: { idle: 30, turn: 5, move: 5 } }).animationWeights },
@@ -111,7 +113,7 @@ describe('独立模式 动作频率卡', () => {
     assert.deepEqual({ ...api.pickGlobals({}).animationWeights }, { idle: 10, turn: 5, move: 5 });
   });
 
-  test('四个框顺序固定；改待机时夹取并同步只读的随机动作', () => {
+  test('The order of the four frames is fixed; change the random action of clamping and synchronizing read-only during standby', () => {
     const api = probe();
     api.state.globals = api.pickGlobals({ animationWeights: { idle: 10, turn: 5, move: 5 } });
     const fields = inputs(api.motionCard()).filter((node) => weightsOf(node).startsWith('g-motion-'));
@@ -123,10 +125,10 @@ describe('独立模式 动作频率卡', () => {
     fields[0].value = '95';
     fields[0].listeners.input();
     assert.deepEqual({ ...api.state.globals.animationWeights }, { idle: 90, turn: 5, move: 5 });
-    assert.equal(fields[3].value, '0', '随机动作应随三项重算');
+    assert.equal(fields[3].value, '0', 'Random actions should be recalculated with three items');
   });
 
-  test('保存体带上 animationWeights', () => {
+  test('Save the body with animationWeights', () => {
     const api = probe();
     api.state.globals = api.pickGlobals({});
     api.state.pets = { main: [] };

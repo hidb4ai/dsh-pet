@@ -1,17 +1,17 @@
-/** 独立模式「拉取模型」：按协议向配置的端点要一份模型清单，只读一次响应，不缓存也不落盘。 */
+/** Standalone mode "pull model": request a model list from the configured endpoint according to the protocol, read-only respond once, do not cache or persist to disk. */
 import type { StandaloneAiSettings } from '../ai-config.ts';
 import type { AiFetch } from '../ai-transport.ts';
 import type { DiscoveredModel, ModelDiscoveryInput, ModelDiscoveryResult } from './types.ts';
 import { localModelKey, sameModelEndpoint } from '../../shared/memory-presets.ts';
 
-/** 发现请求的封顶时长：比正式通道短，用户在设置页等着看结果。 */
+/** It is found that the capped time of the request is shorter than the official channel. The user waits on the settings page to see the result. */
 const DISCOVERY_TIMEOUT_MS = 10_000;
-/** 响应体上限：OpenRouter 的全量清单约 300KB，留出余量又不至于被超大响应拖住。 */
+/** The upper limit of the response body: the full list of OpenRouter is about 300 KB, leaving a margin without being hindered by an oversized response. */
 const MAX_DISCOVERY_BYTES = 1_000_000;
-/** 单页条数上限；Anthropic 的 limit 参数上限就是 1000。 */
+/** The upper limit of the number of entries in a single page; the upper limit of the limit parameter of Anthropic is 1000. */
 const PAGE_LIMIT = 1000;
 
-/** 失败分类对应的可操作说明；响应正文与密钥一律不进文案。 */
+/** Operational instructions corresponding to the failure classification; the response body and key will not be included in the copy. */
 const FAILURE_TEXT: Record<string, string | undefined> = {
   input: '请先填写接口地址与 API 密钥',
   auth: '身份验证失败 (HTTP 401/403)：请检查 API 密钥是否正确',
@@ -23,17 +23,17 @@ const FAILURE_TEXT: Record<string, string | undefined> = {
   http: '接口返回了错误状态：请检查地址与凭据',
 };
 
-/** 判定一个值是不是普通对象。 */
+/** Determine whether a value is an ordinary object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** 组一份失败结果；文案只来自分类表或调用方给出的固定说明。 */
+/** Assembling a failed result; the copy only comes from the classification table or the fixed instructions given by the caller. */
 function failure(code: string, message?: string): ModelDiscoveryResult {
   return { ok: false, code, message: message ?? FAILURE_TEXT[code] ?? FAILURE_TEXT.http ?? '' };
 }
 
-/** 解析并校验端点：只接受不带账号、查询与片段的 HTTP(S) 地址，返回去掉结尾斜杠的前缀。 */
+/** Parse and verify the endpoint: only accept the HTTP ( S ) address without account, query and fragment, and return the prefix with the trailing slash removed. */
 function parseEndpoint(value: string): string | undefined {
   if (/[\s\\]/.test(value)) return undefined;
   try {
@@ -47,10 +47,11 @@ function parseEndpoint(value: string): string | undefined {
 }
 
 /**
- * 候选清单地址：先按协议惯例，再按「地址里有没有带版本号」容错一次。
- * @param protocol - 已归一的协议。
- * @param base - 已校验的端点前缀，不含结尾斜杠。
- * @returns 按尝试顺序排列的地址。
+ * Candidate list address: First follow the protocol convention, and then click "Does the address contain a version
+ * number?" for error tolerance.
+ * @param protocol - Normalized protocol.
+ * @param base - The verified endpoint prefix without the trailing slash.
+ * @returns Addresses in order of attempts.
  */
 function candidateUrls(protocol: string, base: string): string[] {
   const versioned = /\/v\d+$/.test(base);
@@ -58,7 +59,7 @@ function candidateUrls(protocol: string, base: string): string[] {
   return versioned ? [`${base}/models`] : [`${base}/models`, `${base}/v1/models`];
 }
 
-/** 两个协议各自的鉴权头；明文密钥只在这一层出现，错误文案不会带它。 */
+/** The respective authentication headers of the two protocols; the plaintext key only appears at this layer, and the error copy will not carry it. */
 function authHeaders(protocol: string, apiKey: string): Record<string, string> {
   if (protocol === 'anthropic') {
     return { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', accept: 'application/json' };
@@ -66,7 +67,7 @@ function authHeaders(protocol: string, apiKey: string): Record<string, string> {
   return { authorization: `Bearer ${apiKey}`, accept: 'application/json' };
 }
 
-/** 把数组或「键 → 条目」映射统一成数组，两者都是兼容网关的常见写法。 */
+/** Unify the array or "key → entry" mapping into an array. Both are common ways of writing compatible gateways. */
 function asList(value: unknown): unknown[] | undefined {
   if (Array.isArray(value)) return value;
   if (isRecord(value)) {
@@ -76,7 +77,7 @@ function asList(value: unknown): unknown[] | undefined {
   return undefined;
 }
 
-/** 从一页响应里找出条目数组，认 `data`、`data.models` 与 `models` 三种位置。 */
+/** Find the entry array from the one-page response, identifying three locations: `data`, `data.models` and `models`. */
 function findListing(payload: unknown): unknown[] | undefined {
   if (!isRecord(payload)) return undefined;
   const direct = asList(payload.data);
@@ -88,7 +89,7 @@ function findListing(payload: unknown): unknown[] | undefined {
   return asList(payload.models);
 }
 
-/** 归一成「id + 展示名」，丢掉没有 id 的条目并按 id 去重，保持端点给出的顺序。 */
+/** Normalize to "id + display name", discard entries without id and press id deduplicate, keeping the order given by the endpoints. */
 function normalize(entries: readonly unknown[]): DiscoveredModel[] {
   const seen = new Set<string>();
   const models: DiscoveredModel[] = [];
@@ -109,7 +110,7 @@ function normalize(entries: readonly unknown[]): DiscoveredModel[] {
   return models;
 }
 
-/** 问一个地址要清单；非 404 的失败直接定型，404 交给调用方换下一个候选。 */
+/** Ask an address for a list; non-404 failures are directly finalized, and 404 is handed over to the caller for the next candidate. */
 async function requestList(
   fetcher: AiFetch,
   url: string,
@@ -160,11 +161,12 @@ async function requestList(
 }
 
 /**
- * 用表单里的草稿（或已保存值）拉取端点声明可用的模型。
- * @param fetcher - 传输实现，测试可替换以隔离网络。
- * @param current - 已保存的设置：输入里缺省的字段从这里取。
- * @param input - 用户在表单里填的值；空字符串视为未填。
- * @returns 成功时按端点顺序给出模型；失败时 code 稳定、message 可直接展示。
+ * Use drafts (or saved values) in the form to pull endpoints to declare available models.
+ * @param fetcher - Transport implementation, test replaceable to isolate network.
+ * @param current - Saved settings: The default fields in the input are taken from here.
+ * @param input - The value filled in by the user in the form; an empty character string is considered unfilled.
+ * When @returns succeeds, the model is given in order of endpoints; when it fails, code is stable and message can be
+ * displayed directly.
  */
 export async function discoverModels(
   fetcher: AiFetch,
@@ -188,7 +190,7 @@ export async function discoverModels(
   const timer = setTimeout(() => controller.abort(), DISCOVERY_TIMEOUT_MS);
   try {
     let last = failure('http');
-    // 只在 404 时换下一个候选：其余失败说明地址对、但凭据或服务有问题，重试别的拼法没有意义。
+    // Only change to the next candidate when 404: Other failures indicate that the address is correct, but there is a problem with the credentials or service, and there is no point in trying another spelling.
     for (const url of candidateUrls(protocol, base)) {
       const attempt = await requestList(fetcher, url, authHeaders(protocol, apiKey), controller);
       if (attempt.ok || attempt.code !== 'not-found') return attempt;

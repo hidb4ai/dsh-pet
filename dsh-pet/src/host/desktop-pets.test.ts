@@ -1,9 +1,10 @@
 /**
- * 桌面宠物判定（src/host/plugin/desktop/pets.ts）的契约测试。
+ * Contract test for desktop pet determination (src/host/plugin/desktop/pets.ts).
  *
- * 三条契约：三个取值函数每次现读配置（改完文件下一次调用就生效，没有缓存与刷新）；
- * 读不出来按「没有桌面宠物、仍要托盘」降级且不抛；判定日志含宠物数与结论。
- * 用真实临时配置文件驱动 readAllConfig，不 mock 配置层。
+ * Three contracts: The three value functions read the configuration each time (the modified file will take effect the
+ * next time it is called, without caching and refreshing); if it cannot be read, press "No desktop pets, still need
+ * system tray" to downgrade without throwing away; determine whether the log contains the number of pets and the
+ * conclusion. Use real temporary configuration files to drive readAllConfig, not the mock configuration layer.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ import { join } from 'node:path';
 import { createDesktopPets } from './plugin/desktop/pets.ts';
 import type { ConfigPaths } from './config.ts';
 
-/** 最小可用配置：整段 animations 必须合法（合并是整段替换/整段回退）。 */
+/** Minimum available configuration: The entire section animations must be valid (the merge is the entire section replacement/entire section rollback). */
 const baseConfig = (display: string, trayEnabled = true) => ({
   animations: {
     idle: ['idle1'],
@@ -29,7 +30,7 @@ const baseConfig = (display: string, trayEnabled = true) => ({
   trayEnabled,
 });
 
-/** 建一套临时配置目录；返回路径、写用户层的入口与清理函数。 */
+/** Create a temporary configuration directory; return the path, write the entry point and cleanup function of the user layer. */
 function fixture(initial: { display: string; trayEnabled?: boolean }): {
   paths: ConfigPaths;
   write: (next: { display: string; trayEnabled?: boolean }) => void;
@@ -51,11 +52,11 @@ function fixture(initial: { display: string; trayEnabled?: boolean }): {
   };
 }
 
-/** 静默 logger（被测模块只用到 info/warn，其余成员在用例里无意义）。 */
+/** Silence logger (the module under test only uses info/warn, and the other members are meaningless in the use case). */
 const quietLog = { info: () => {}, warn: () => {} } as unknown as Parameters<typeof createDesktopPets>[0]['log'];
 
-describe('createDesktopPets —— 判定必须现读配置', () => {
-  test('display=web：判定为无桌面宠物', () => {
+describe('createDesktopPets - It is determined that the configuration must be read now', () => {
+  test('display = web: It is determined that there is no desktop pet', () => {
     const f = fixture({ display: 'web' });
     try {
       const pets = createDesktopPets({ configPaths: f.paths, effectivePetList: () => [], log: quietLog });
@@ -65,20 +66,24 @@ describe('createDesktopPets —— 判定必须现读配置', () => {
     }
   });
 
-  test('createDesktopPets 之后改配置：下一次调用立刻读到新值（不需要任何刷新）', () => {
+  test('Change the configuration after createDesktopPets: read the new value immediately on the next call (no refresh required)', () => {
     const f = fixture({ display: 'web' });
     try {
       const pets = createDesktopPets({ configPaths: f.paths, effectivePetList: () => [], log: quietLog });
-      assert.equal(pets.getHasDesktopPet(), false, '前提：创建时没有桌面宠物');
+      assert.equal(pets.getHasDesktopPet(), false, 'Prerequisite: There is no desktop pet when creating');
 
       f.write({ display: 'desktop' });
-      assert.equal(pets.getHasDesktopPet(), true, '没有缓存：改完配置下一次调用就该是 true');
+      assert.equal(
+        pets.getHasDesktopPet(),
+        true,
+        'No cache: after changing the configuration, the next call should be true',
+      );
     } finally {
       f.cleanup();
     }
   });
 
-  test('改回 web 同样立刻生效', () => {
+  test('Changing back to web will also take effect immediately.', () => {
     const f = fixture({ display: 'both' });
     try {
       const pets = createDesktopPets({ configPaths: f.paths, effectivePetList: () => [], log: quietLog });
@@ -90,7 +95,7 @@ describe('createDesktopPets —— 判定必须现读配置', () => {
     }
   });
 
-  test('托盘开关同样读当前值', () => {
+  test('The system tray switch also reads the current value.', () => {
     const f = fixture({ display: 'web', trayEnabled: true });
     try {
       const pets = createDesktopPets({ configPaths: f.paths, effectivePetList: () => [], log: quietLog });
@@ -102,20 +107,20 @@ describe('createDesktopPets —— 判定必须现读配置', () => {
     }
   });
 
-  test('配置读不出来：按「没有桌面宠物、仍要托盘」降级，不抛', () => {
+  test('The configuration cannot be read: press "No desktop pet, still need system tray" to downgrade without discarding', () => {
     const f = fixture({ display: 'desktop' });
     try {
       const pets = createDesktopPets({ configPaths: f.paths, effectivePetList: () => [], log: quietLog });
       f.writeRaw('{ 这不是 JSON');
-      assert.equal(pets.getHasDesktopPet(), false, '读不出来宁可不 spawn');
-      assert.equal(pets.getTrayOn(), true, '保守保留托盘');
+      assert.equal(pets.getHasDesktopPet(), false, 'I would rather not read out spawn');
+      assert.equal(pets.getTrayOn(), true, 'Keep system tray conservatively');
       assert.deepEqual(pets.desktopPetList(), []);
     } finally {
       f.cleanup();
     }
   });
 
-  test('logDesktopDecision 打一行判定日志，含宠物数与结论', () => {
+  test('logDesktopDecision Enter a line of judgment log, including the number of pets and the conclusion', () => {
     const f = fixture({ display: 'desktop', trayEnabled: false });
     try {
       const lines: string[] = [];
@@ -123,11 +128,11 @@ describe('createDesktopPets —— 判定必须现读配置', () => {
         typeof createDesktopPets
       >[0]['log'];
       const pets = createDesktopPets({ configPaths: f.paths, effectivePetList: () => [], log });
-      assert.equal(lines.length, 1, '装配时先打一行');
+      assert.equal(lines.length, 1, 'Type a line first when assembling');
       pets.logDesktopDecision();
       assert.equal(lines.length, 2);
       const line = lines[1];
-      assert.ok(line.includes('桌面可见=1（main）'), line);
+      assert.ok(line.includes('visible=1(main)'), line);
       assert.ok(line.includes('hasDesktopPet=true'), line);
       assert.ok(line.includes('tray=false'), line);
     } finally {

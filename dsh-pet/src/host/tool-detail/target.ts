@@ -1,21 +1,23 @@
 /**
- * 目标提取：从工具参数或命令行里取出「在操作什么」，并做长度收口。
+ * Target extraction: Extract "what is being operated on" from the tool parameters or command line, and centralize the
+ * length.
  *
- * 只解析、不渲染；解析不出就返回 undefined，由上层回落到氛围短句。
- * 必须始终成立：命令只看命令名与参数形状，参数值一律不进气泡。
+ * It only parses, not renders; if it cannot be parsed, it returns undefined, falling back from the upper layer to the
+ * atmospheric sentence. This must always be true: the command only looks at the command name and parameter shape, and
+ * parameter values are not included in the bubble.
  * @module dsh-pet/src/host/tool-detail/target
  */
 import { TASK_TEXT_MAX } from '../work-status.ts';
 import type { CopyLine } from './copy.ts';
 
-/** 非空字符串（去首尾空白），否则 null——所有取参都先过它。 */
+/** Non-empty character string (remove leading and trailing blanks), otherwise null - all parameters are passed through it first. */
 export function str(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
 }
 
-/** 按候选顺序取第一个非空字符串：同名工具在不同版本里字段叫法可能不同（file_path / filePath / path）。 */
+/** Take the first non-empty character string in candidate order: the field names of tools with the same name may be different in different versions (file_path / filePath / path). */
 export function firstStr(args: Record<string, unknown>, keys: readonly string[]): string | null {
   for (const key of keys) {
     const value = str(args[key]);
@@ -24,12 +26,12 @@ export function firstStr(args: Record<string, unknown>, keys: readonly string[])
   return null;
 }
 
-/** 文件类工具：`file_path` 是主流，`path` 是部分工具的写法。 */
+/** File tools: `file_path` is the mainstream, and `path` is the writing method of some tools. */
 export function fileTarget(args: Record<string, unknown>): string | null {
   return firstStr(args, ['file_path', 'filePath', 'path']);
 }
 
-/** 网页：给主机名就够（完整 URL 又长又带查询串，气泡放不下也没必要）。 */
+/** Web page: It is enough to give the host name (the complete URL is long and contains a query string, and it is not necessary if the bubble cannot fit). */
 export function urlHost(args: Record<string, unknown>): string | null {
   const raw = str(args.url);
   if (raw === null) return null;
@@ -37,14 +39,14 @@ export function urlHost(args: Record<string, unknown>): string | null {
     const host = new URL(raw).host;
     return host === '' ? null : host;
   } catch {
-    // 不是合法 URL（缺协议等）：退化成「去掉协议后取第一段」，绝不抛
+    // Not valid URL (lack of agreement, etc.): degenerates into "remove the agreement and take the first paragraph", never throw it away
     const rest = raw.replace(/^[a-zA-Z][a-zA-Z\d+.-]*:\/\//, '');
     const head = rest.split(/[/?#]/)[0] ?? '';
     return head === '' ? null : head;
   }
 }
 
-/** 网络搜索：`queries` 可能是数组（主流）或单数字符串，两种都认。 */
+/** Internet search: `queries` may be an array (mainstream) or a singular character string, both are recognized. */
 export function queryTarget(args: Record<string, unknown>): string | null {
   const queries = args.queries;
   if (Array.isArray(queries)) {
@@ -57,7 +59,7 @@ export function queryTarget(args: Record<string, unknown>): string | null {
   return firstStr(args, ['queries', 'query']);
 }
 
-/** 展示文件：`files` 是 `[{ path, description }]`，取第一个的 path（没有就取 description）。 */
+/** Display file: `files` is `[{ path, description }]`, take the first path (if not, take description). */
 export function filesTarget(args: Record<string, unknown>): string | null {
   const files = args.files;
   if (!Array.isArray(files)) return null;
@@ -70,25 +72,27 @@ export function filesTarget(args: Record<string, unknown>): string | null {
 }
 
 /**
- * 命令名长什么样：ASCII 字母开头、至少两个字符、只含字母数字与 `_ . -`。
- * 纯数字（`18016`）、中文串（`监听`）、符号（`==`）、开关（`-v`）、单字母变量（`x`）全部落选——
- * 它们几乎只会是字符串字面量或参数，而不是命令本身。
+ * What does the command name look like: starting with ASCII, at least two characters, containing only alphanumeric
+ * characters and `_ . -` . Pure numbers (`18016`), Chinese strings (`监听`), symbols (`==`), switches (`-v`), and
+ * single-letter variables (`x`) are all rejected - they will almost always be character string literals or parameters,
+ * not the command itself.
  */
 export const COMMAND_LIKE = /^[A-Za-z][A-Za-z\d_.-]+$/;
 
-/** 子命令长什么样：单词形态（`status` / `log` / `push`），不接受开关与路径。 */
+/** What does the subcommand look like: word form (`status` / `log` / `push`), switches and paths are not accepted. */
 export const SUBCOMMAND_LIKE = /^[A-Za-z][A-Za-z\d-]*$/;
 
-/** 复合命令：`;` `|` `&&` `||` 换行一律不猜（引号内的竖线也会被判成复合，宁保守）。 */
+/** Compound commands: `;` `|` `&&` `||` Do not guess line breaks (vertical bars within quotation marks will also be judged as compound, err on the conservative side). */
 export const COMPOUND_COMMAND = /[;|]|&&|\|\||\r?\n/;
 
 /**
- * 取命令名时要剥掉的边角字符（运算符、括号、重定向、引号、变量前缀…）。
- * 例：`(Get-NetTCPConnection` → `Get-NetTCPConnection`；`$env:FOO` → `env:FOO`（随后判定落选）。
+ * Characters (operators, brackets, redirections, quotes, variable prefixes...) that need to be stripped off when
+ * taking command names. Example: `(Get-NetTCPConnection` → `Get-NetTCPConnection` ; `$env:FOO` → `env:FOO`
+ * (subsequently determined to be unsuccessful).
  */
 const EDGE_CHARS = new Set('&.([{!@$^+:=,;|"\'`)]}>#');
 
-/** 剥掉词首词尾的边角字符。 */
+/** Peel off the corners of characters at the beginning and end of words. */
 function trimEdges(token: string): string {
   let start = 0;
   let end = token.length;
@@ -98,10 +102,12 @@ function trimEdges(token: string): string {
 }
 
 /**
- * 把命令行切成「词」：引号内的整体算一个词（`"C:\Program Files\node.exe"` 不会被空格劈开），
- * 引号本身丢弃，`;` / `|` 当分隔符。
+ * Cut the command line into "words": the whole word within the quotation marks is counted as one word (`"C:\Program
+ * Files\node.exe"` will not be split by spaces), the quotation marks themselves are discarded, and `;` / `|` are used
+ * as delimiters.
  *
- * 这不是通用 shell 解析器，只为「找命令名」服务，所以只处理引号与分隔符，不解释变量、转义与管道。
+ * This is not a general-purpose shell parser, it only serves "finding command names", so it only processes quotes and
+ * delimiters, and does not interpret variables, escapes and pipes.
  */
 export function tokenizeCommand(command: string): string[] {
   const tokens: string[] = [];
@@ -128,20 +134,21 @@ export function tokenizeCommand(command: string): string[] {
   return tokens.map(trimEdges).filter((token) => token !== '');
 }
 
-/** arguments 的解析上限（UTF-16 码元数）：超过就不解析（write / edit 会带上整个文件内容）。 */
+/** The upper limit of arguments parsing (number of UTF-16 code elements): it will not be parsed if it exceeds it (write / edit will bring the entire file content). */
 const MAX_ARGS_CHARS = 64 * 1024;
 
-/** 气泡里目标的展示上限（码点）：超过就只留文件名。 */
+/** The display limit (code points) of the target in the bubble: if it exceeds it, only the file name will be left. */
 const TARGET_MAX = 22;
 
 /**
- * 目标上屏的长度上限（码点）：超过就整句换成该工具的氛围兜底。
- * 比 TARGET_MAX 小是有意的——路径压缩后仍超过这个数的（长文件名、长 grep 正则、长 query）
- * 硬塞进句子会撑破气泡（真实案例：`grep` 的 pattern 是 `WORK_STATE_GAP_MS|busyFlip|…`）。
+ * The upper limit of the length of the target screen (code points): if it exceeds the limit, the entire sentence will
+ * be replaced by the atmosphere of the tool fallback. Being smaller than TARGET_MAX is intentional - if the path still
+ * exceeds this number after compression (long file name, long grep regular, long query), forcing the sentence into it
+ * will burst the bubble (real case: `grep` 's pattern is `WORK_STATE_GAP_MS|busyFlip|…` ).
  */
 export const TARGET_DISPLAY_MAX = 20;
 
-/** 解析 tool/call 的 arguments（JSON 字符串；个别版本可能直接给对象）→ 参数对象；失败或超大 → null。 */
+/** Parse arguments (JSON character string; individual versions may directly give the object) of tool/call → parameter object; failed or oversized → null. */
 export function parseArgs(raw: unknown): Record<string, unknown> | null {
   if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
   if (typeof raw !== 'string' || raw === '' || raw.length > MAX_ARGS_CHARS) return null;
@@ -154,18 +161,18 @@ export function parseArgs(raw: unknown): Record<string, unknown> | null {
   }
 }
 
-/** 按码点截断（与 ./work-status 的 currentTaskFromTodo 同口径：超长留 TASK_TEXT_MAX 个 + 省略号）。 */
+/** Truncated by code points (same conventions as currentTaskFromTodo of ./work-status: TASK_TEXT_MAX + ellipsis left for extra long). */
 export function clip(text: string): string {
   const points = Array.from(text);
   return points.length > TASK_TEXT_MAX ? `${points.slice(0, TASK_TEXT_MAX).join('')}…` : text;
 }
 
-/** 随机取一句（同一句连着出现很假，这里按调用随机）。 */
+/** Randomly select a sentence (the same sentence appearing consecutively is very false, here press randomization). */
 export function pickLine(lines: readonly CopyLine[]): CopyLine {
   return lines[Math.floor(Math.random() * lines.length)] ?? lines[0] ?? '';
 }
 
-/** 填占位符（`{target}` / `{cmd}` / `{tool}`）；未知占位符原样保留。 */
+/** Fill in the placeholder (`{target}` / `{cmd}` / `{tool}`); the unknown placeholder is left as is. */
 export function fill(line: CopyLine, vars: Readonly<Record<string, string>>): string {
   let out = line;
   for (const [key, value] of Object.entries(vars)) out = out.split(`{${key}}`).join(value);
@@ -173,8 +180,9 @@ export function fill(line: CopyLine, vars: Readonly<Record<string, string>>): st
 }
 
 /**
- * 目标压短：短路径原样，长路径只留文件名。
- * 统一成 `/` 是为了跨平台文案一致（Windows 的 `\` 在气泡里更占宽度也更难读）。
+ * Target compression: keep the short-circuit path as it is, and leave only the file name in the long path. The reason
+ * for unifying them into `/` is to make the text consistent across platforms (Windows and `\` take up more
+ * width in the bubble and are more difficult to read).
  */
 export function compactTarget(raw: string, pathLike: boolean): string {
   if (!pathLike) return raw;

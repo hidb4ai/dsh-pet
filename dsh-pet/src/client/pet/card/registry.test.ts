@@ -1,10 +1,12 @@
 /**
- * 全局快捷键「对哪只宠物动手」的契约：优先主条目、主条目缺席时退化、注销只摘自己那一次。
+ * The contract of the global shortcut key "Which pet to attack": Prioritize the main item, degrade when the main item
+ * is absent, log out and only pick yourself once.
  *
- * 为什么值得钉：这里选错不会报错，只会让快捷键作用在另一只宠物身上——用户看到的现象是
- * 「弹窗开在了奇怪的位置」，很难联想到是目标选择的问题。
+ * Why it’s worth pinning: There will be no error if you make a wrong selection here, it will only cause the shortcut
+ * keys to act on another pet - the phenomenon that users see is that “the pop-up window opens in a strange position”,
+ * and it is difficult to think that it is a problem with target selection.
  *
- * 跑法：node --experimental-strip-types --test src/client/pet/card/registry.test.ts
+ * Running method: node --experimental-strip-types --test src/client/pet/card/registry.test.ts
  */
 import { afterEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +20,7 @@ import {
   type PetChatHandle,
 } from './registry.ts';
 
-/** 造一个只记调用顺序的句柄；`hearing` / `opened` 可中途改，模拟录音中与弹窗开着。 */
+/** Create a handle that only remembers the calling sequence; `hearing` / `opened` can be changed midway, simulating recording with the pop-up window open. */
 function makeHandle(calls: string[]): PetChatHandle & { hearing: boolean; opened: boolean } {
   const handle = {
     hearing: false,
@@ -40,13 +42,13 @@ function makeHandle(calls: string[]): PetChatHandle & { hearing: boolean; opened
   return handle;
 }
 
-/** 主配置第一只宠物的形状；测试只关心 id。 */
+/** The main configuration is the shape of the first pet; the test only cares about id. */
 const asPet = (id: string): NonNullable<typeof petBridge.template> =>
   ({ id }) as unknown as NonNullable<typeof petBridge.template>;
 
 const disposers: Array<() => void> = [];
 
-/** 登记并在每个用例后自动摘掉，避免模块级 Map 串用例。 */
+/** Register and automatically remove after each use case to avoid module-level Map string use cases. */
 function register(id: string, handle: PetChatHandle): void {
   disposers.push(registerPetChatHandle(id, handle));
 }
@@ -56,8 +58,8 @@ afterEach(() => {
   petBridge.template = undefined;
 });
 
-describe('pickPetChatHandle —— 快捷键作用于哪只宠物', () => {
-  test('主条目在场 → 取主条目，与登记顺序无关', () => {
+describe('pickPetChatHandle——Which pet does the shortcut key work on?', () => {
+  test('The main entry is present → take the main entry, regardless of the registration order', () => {
     const calls: string[] = [];
     const main = makeHandle(calls);
     register('other', makeHandle(calls));
@@ -66,7 +68,7 @@ describe('pickPetChatHandle —— 快捷键作用于哪只宠物', () => {
     assert.equal(pickPetChatHandle(), main);
   });
 
-  test('主条目不在网页端（只在桌面显示）→ 退到第一个登记过的', () => {
+  test('The main item is not on the web page (only displayed on the desktop) → Return to the first registered one', () => {
     const calls: string[] = [];
     const first = makeHandle(calls);
     register('first', first);
@@ -75,12 +77,12 @@ describe('pickPetChatHandle —— 快捷键作用于哪只宠物', () => {
     assert.equal(pickPetChatHandle(), first);
   });
 
-  test('一只都没登记 → undefined', () => {
+  test('None registered → undefined', () => {
     petBridge.template = asPet('main');
     assert.equal(pickPetChatHandle(), undefined);
   });
 
-  test('注销后不再取到；只摘自己那一次', () => {
+  test('You will no longer get it after logging out; you will only get it once.', () => {
     const calls: string[] = [];
     const first = makeHandle(calls);
     const second = makeHandle(calls);
@@ -88,14 +90,18 @@ describe('pickPetChatHandle —— 快捷键作用于哪只宠物', () => {
     register('second', second);
     offFirst();
     petBridge.template = asPet('first');
-    assert.equal(pickPetChatHandle(), second, '主条目已注销，应退到还在的那只');
-    offFirst(); // 幂等：重复注销不该把后来的登记一起摘掉
+    assert.equal(
+      pickPetChatHandle(),
+      second,
+      'The main entry has been canceled and should be returned to the one that is still there.',
+    );
+    offFirst(); // Idempotent: Repeated logout should not remove subsequent registrations together.
     assert.equal(pickPetChatHandle(), second);
   });
 });
 
-describe('togglePetChatHear —— 开关录音', () => {
-  test('没在录 → 开始', () => {
+describe('togglePetChatHear——Switch recording', () => {
+  test('Not recording → Start', () => {
     const calls: string[] = [];
     const handle = makeHandle(calls);
     handle.hearing = false;
@@ -103,7 +109,7 @@ describe('togglePetChatHear —— 开关录音', () => {
     assert.deepEqual(calls, ['start']);
   });
 
-  test('正在录 → 收尾', () => {
+  test('Recording → cleanup', () => {
     const calls: string[] = [];
     const handle = makeHandle(calls);
     handle.hearing = true;
@@ -111,20 +117,20 @@ describe('togglePetChatHear —— 开关录音', () => {
     assert.deepEqual(calls, ['stop']);
   });
 
-  test('没有目标宠物 → 什么都不做，也不抛', () => {
+  test('No target pet → do nothing and don’t throw it', () => {
     assert.doesNotThrow(() => togglePetChatHear(undefined));
   });
 });
 
-describe('togglePetChat —— 开关浮动对话', () => {
-  test('没开 → 打开', () => {
+describe('togglePetChat - Switch floating dialogue', () => {
+  test('Not open → Open', () => {
     const calls: string[] = [];
     const handle = makeHandle(calls);
     togglePetChat(handle);
     assert.deepEqual(calls, ['open']);
   });
 
-  test('已经开着 → 关掉（同一个键第二次按必须是关）', () => {
+  test('Already on → off (the second press of the same key must be off)', () => {
     const calls: string[] = [];
     const handle = makeHandle(calls);
     handle.opened = true;
@@ -132,7 +138,7 @@ describe('togglePetChat —— 开关浮动对话', () => {
     assert.deepEqual(calls, ['close']);
   });
 
-  test('开一次再按一次 → 回到关闭状态', () => {
+  test('Turn on once and press again → return to off state', () => {
     const calls: string[] = [];
     const handle = makeHandle(calls);
     togglePetChat(handle);
@@ -141,7 +147,7 @@ describe('togglePetChat —— 开关浮动对话', () => {
     assert.equal(handle.isOpen(), false);
   });
 
-  test('没有目标宠物 → 什么都不做，也不抛', () => {
+  test('No target pet → do nothing and don’t throw it', () => {
     assert.doesNotThrow(() => togglePetChat(undefined));
   });
 });

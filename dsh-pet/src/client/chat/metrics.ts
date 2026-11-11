@@ -1,12 +1,13 @@
 /**
- * 面板的尺寸常量：CSS 与 JS 共用的唯一来源。
+ * Dimension constants for panels: The only source shared by CSS and JS.
  *
- * 尺寸不写字面量（规范要求走共享常量）；输入框的最大高度还要被自动长高的脚本读到，
- * 所以放在这里而不是 CSS 字符串里各写一份。
+ * The size does not write literals (the specification requires shared constants); the maximum height of the input box
+ * has to be read by the automatic height-growing script, so it is placed here instead of writing one copy in the CSS
+ * character string.
  * @module dsh-pet/src/client/chat/metrics
  */
 
-/** 面板尺寸与间距（px）。 */
+/** Panel size and spacing (px). */
 export const SIZE = {
   pad: 12,
   padBottom: 10,
@@ -19,7 +20,7 @@ export const SIZE = {
   imgMaxH: 180,
   preview: 48,
   hairline: 2,
-  /** 播报按钮生成中的转圈直径；与 11px 的时间文字同高，不压过文字。 */
+  /** The diameter of the circle in the generation of the broadcast button; it is the same height as the time text of 11 px, and does not overwhelm the text. */
   spinner: 12,
   tabPadY: 3,
   tabPadX: 12,
@@ -34,17 +35,17 @@ export const SIZE = {
   send: 34,
   pillPadY: 4,
   pill: 999,
-  /** 悬浮提示气泡的内边距（纵、横）；与设置页的 data-tip 气泡一致。 */
+  /** The padding (vertical and horizontal) of the floating prompt bubble; consistent with the data-tip bubble on the settings page. */
   tipPadY: 6,
   tipPadX: 10,
-  /** 悬浮提示气泡的最大宽度：一行放不下就省略，不做换行（换行会让宽度随位置跳变）。 */
+  /** The maximum width of the floating prompt bubble: omit it if it cannot fit in one line, and do not perform line breaks (line breaks will cause the width to jump with the position). */
   tipMaxW: 260,
-  /** 人设卷帘里正文的最大高度：人设没有长度上限，超过就在这块内部滚动。 */
+  /** The maximum height of the text in the persona roller blind: There is no upper limit for the length of persona. If it exceeds the length, it will scroll inside this area. */
   personaMaxH: 200,
 } as const;
 
-/** 输入框自动长高的上限（px）；超过就内部滚动。 */
+/** The upper limit of the input box’s automatic height (px); if it exceeds, it will scroll internally. */
 export const INPUT_MAX_HEIGHT = SIZE.inputMaxH;
 
-/** 数值 → px 字符串。 */
+/** numerical value → px character string. */
 export const px = (value: number): string => value + 'px';

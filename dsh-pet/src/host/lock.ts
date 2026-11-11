@@ -1,32 +1,38 @@
 /**
- * 宠物占用锁（host 半侧的内存独占锁）：第三方演联动时把这只宠物独占给自己。
+ * Pet occupation lock (memory exclusive lock of host side): The third party will exclusively occupy this pet to itself
+ * during linkage.
  *
- * 负责建锁 / 续期 / 释放、懒判过期、墓碑与叶子同步；全有全无，一把锁对应一只宠物。
- * 不负责渲染端冻结：叶子里的 expiresAt 是唯一真相，前端据此自己解除静止。
- * 判定必须能脱离 HTTP 单测，所以判定全在这里，路由只做解析与应答。
- * 依赖注入的时钟与叶子写入回调（不传回调则纯逻辑，不碰 S）。
- * 始终成立：不传 lock = 现状零变化；传了编号却查不到锁必须回 lock-lost；只有用户能抢占。
- * 契约见 API.md 与 openapi.yaml。
+ * Responsible for lock creation/renewal/release, lazy expiration, tombstone and leaf synchronization; all in one, one
+ * lock corresponds to one pet. Not responsible for renderer freezing: expiresAt in the leaves is the only truth, and
+ * the front end will unfreeze it accordingly. The judgment must be able to be separated from the HTTP single test, so
+ * the judgment is all here, and the route only does analysis and response. The clock and leaves of dependency
+ * injection are written into callback (if callback is not passed, it is pure logic and S is not touched). Always true:
+ * lock is not passed = zero change in the status quo; the number is passed but the lock cannot be found and must be
+ * returned to lock-lost; only the user can preempt it. See contracts API.md and openapi.yaml.
  *
  * @module dsh-pet/src/host/lock
  */
 
 /**
- * 占用时长与上下限（毫秒）。
+ * Occupation duration and upper and lower limits (milliseconds).
  *
- * 缺省 2min：一次联动演出通常几十秒到一两分钟，调用方就算没实现续期、或者漏了一拍，也不会中途
- * 丢锁——丢了会当场解冻，是很难查的现象。上限 30min：够「一连串动作 + 中间等用户点侧栏」，
- * 更长的演出该走续期，而不是靠一个巨大的 TTL 把宠物占着。
+ * Default 2 min: A linked performance usually lasts from tens of seconds to one or two minutes. Even if the caller is
+ * not renewed or misses a beat, the lock will not be lost midway - if it is lost, it will be unfrozen on the spot,
+ * which is difficult to check. The upper limit is 30 min: enough for "a series of actions + the user clicks on the
+ * sidebar in the middle". Longer performances should be extended, rather than relying on a huge TTL to occupy the pet.
  */
 export const LOCK_DEFAULT_TTL_MS = 2 * 60 * 1000;
 export const LOCK_MIN_TTL_MS = 1 * 1000;
 export const LOCK_MAX_TTL_MS = 30 * 60 * 1000;
 
-/** 锁是怎么没的：持锁者据此决定重拿还是收尾（取值语义见 openapi.yaml 的 lock-lost `cause`）。
- *  `preempted` 表示被用户抢走（拖拽 / 点击 / 隐藏 / 关闭），联动必须立刻收尾，别跟用户抢。 */
+/**
+ * Why is the lock lost? The lock holder decides to reacquire or cleanup based on this (for value semantics, see
+ * lock-lost `cause` of openapi.yaml). `preempted` means it has been snatched away by the user (drag/click/hide/close).
+ * The linkage must be cleanup immediately. Do not snatch it from the user.
+ */
 export type LockCause = 'expired' | 'released' | 'preempted' | 'unknown';
 
-/** cause → 给人看的一句话（回执里的 message；reason 才是机器读的那个）。 */
+/** cause → A sentence read by others (message in the receipt; reason is the one read by the machine). */
 const CAUSE_TEXT: Record<LockCause, string> = {
   expired: '占用已过期（没有及时续期）',
   released: '占用已被释放',
@@ -34,52 +40,53 @@ const CAUSE_TEXT: Record<LockCause, string> = {
   unknown: 'lock 不是当前生效的占用编号',
 };
 
-/** 写进 `pets.<id>.lock` 的载荷（渲染端据此冻结 / 解冻）。 */
+/** Payload written to `pets.<id>.lock` (renderer freezes/thaws accordingly). */
 export type LockLeafData = { locked: true; expiresAt: number } | { locked: false };
 
-/** 一条占用记录（内存态）。 */
+/** An occupation record (memory state). */
 interface LockRecord {
-  /** 不透明编号（`lk-<时间36>-<自增36>`），持锁者后续所有操作都要带。 */
+  /** Opaque number (`lk-<time36>-<sequence36>`), the lock holder must bring it in all subsequent operations. */
   lockId: string;
-  /** 这一轮的时长：续期不带 ttl 时沿用它。 */
+  /** The duration of this round: it will be used when renewing without ttl. */
   ttl: number;
-  /** 到点即视为没有（懒判，没有定时器）。 */
+  /** When the point is reached, it will be deemed as none (lazy judgment, no timer). */
   expiresAt: number;
 }
 
-/** 墓碑：这把锁是怎么没的（保留到该宠物建立新锁为止，否则 cause 只能永远回 unknown）。 */
+/** Tombstone: Why is this lock missing (keep it until the pet creates a new lock, otherwise cause can only return to unknown forever). */
 interface Tombstone {
   lockId: string;
   cause: LockCause;
 }
 
-/** 动作端点的门禁结论（5 个接口共用）。 */
+/** Validation check conclusion of action endpoint (shared by 5 interfaces). */
 export type LockGate =
   | { ok: true }
   | { ok: false; reason: 'lock-required'; message: string }
   | { ok: false; reason: 'lock-lost'; cause: LockCause; message: string };
 
-/** 取锁 / 续期的结论。 */
+/** Conclusion of lock acquisition/renewal. */
 export type LockAcquireDecision =
   | { ok: true; petId: string; lockId: string; expiresAt: number; renewed: boolean }
   | { ok: false; reason: 'bad-request'; message: string }
   | { ok: false; reason: 'locked'; expiresAt: number; message: string }
   | { ok: false; reason: 'lock-lost'; cause: LockCause; message: string };
 
-/** 释放的结论（released 只表示这一次真的撤掉了一把锁，幂等空操作时为 false）。 */
+/** Release conclusion (released only means that a lock is really removed this time, false for idempotent no operation). */
 export type LockReleaseDecision =
   | { ok: true; petId: string; released: boolean }
   | { ok: false; reason: 'bad-request'; message: string }
   | { ok: false; reason: 'lock-lost'; cause: LockCause; message: string };
 
-/** ttl 合法性说明（路由与决策层共用同一条规则，免得两处走样）。 */
+/** ttl validity description (route and decision-making layer share the same rule to avoid distortion in two places). */
 const TTL_TEXT = `ttl 必须是 ${LOCK_MIN_TTL_MS}~${LOCK_MAX_TTL_MS} 之间的有限数字（毫秒）`;
 
 /**
- * ttl 规范化：缺省 / null → `fallback`；合法则原样；非法返回 null。
+ * ttl normalization: default / null → `fallback` ; if valid, return as is; if invalid, return null.
  *
- * 非数字 / 非有限 / 越界一律非法，不给「越界就夹取」的宽松口径：调用方写错时长应当立刻知道，
- * 而不是拿到一把比自己以为的更长或更短的锁。
+ * Non-numeric / non-limited / out-of-bounds are all invalid, and there is no loose convention of "clamping when
+ * out-of-bounds": if the caller writes the wrong duration, you should know it immediately, instead of getting a longer
+ * or shorter lock than you thought.
  */
 export function normalizeLockTtl(ttl: unknown, fallback: number): number | null {
   if (ttl === undefined || ttl === null) return fallback;
@@ -88,27 +95,31 @@ export function normalizeLockTtl(ttl: unknown, fallback: number): number | null 
   return ttl;
 }
 
-/** lockId 规范化：缺省 / null → 空串（= 没给，走新建那条路）；非字符串 → null（非法）。
- *  空串按「没给」处理是有意的（与 image / url 的宽松口径一致）。 */
+/**
+ * lockId normalization: default / null → empty string (= not given, take the new path); non-character string → null
+ * (invalid). Empty strings are treated as "not given" on purpose (consistent with the relaxed conventions of image /
+ * url).
+ */
 function normalizeLockId(v: unknown): string | null {
   if (v === undefined || v === null) return '';
   if (typeof v !== 'string') return null;
   return v.trim();
 }
 
-/** 占用锁表（一个插件实例一个；进程内内存态，重启即空）。 */
+/** Occupied lock table (one for each plugin instance; in-process memory state, empty after restart). */
 export class LockStore {
-  // 用 declare + 构造器赋值：类字段初始化器会降级出 @oxc-project/runtime 外部 helper，
-  // 而它是未声明的依赖，会被 prepack 门禁拦下（同 ./state 的 PollStateStore 约定）。
-  /** petId → 当前占用。 */
+  // Using declare + constructor assignment: the class field initializer will downgrade @oxc - project/runtime external
+  // helper, and it is an undeclared dependency and will be blocked by the prepack validation check (same as the
+  // PollStateStore convention of ./state).
+  /** petId → Currently occupied. */
   declare private readonly locks: Map<string, LockRecord>;
-  /** petId → 上一把锁是怎么没的（新锁建立时作废）。 */
+  /** petId → Why did the previous lock disappear (it will be invalidated when the new lock is created). */
   declare private readonly tombstones: Map<string, Tombstone>;
-  /** 编号自增段（与时间戳一起构成运行内唯一编号，与 ./playback 同一套）。 */
+  /** The number is automatically incremented (together with the timestamp, it forms a unique number within the run, the same set as ./playback). */
   declare private seq: number;
-  /** 取当前时刻（可注入：过期语义的单测不用真的等 30 秒）。 */
+  /** Get the current time (can be injected: the single test of expiration semantics does not really need to wait for 30 seconds). */
   declare private readonly now: () => number;
-  /** 锁状态变化时同步叶子（建锁 / 续期 / 释放 / 过期都走它；不传则纯逻辑、不碰 S）。 */
+  /** Synchronize leaves when the lock status changes (it will be used for lock creation/renewal/release/expiration; if it is not passed, it will be purely logical and S will not be touched). */
   declare private readonly onChange: (petId: string, data: LockLeafData) => void;
 
   constructor(opts?: { now?: () => number; onChange?: (petId: string, data: LockLeafData) => void }) {
@@ -120,11 +131,13 @@ export class LockStore {
   }
 
   /**
-   * 当前占用（懒判过期）。到点即视为没有：清记录、记墓碑、同步一次叶子。
+   * Currently occupied (lazy judgment expired). Once reached, it will be considered as nothing: clearing records,
+   * recording tombstones, and synchronizing leaves once.
    *
-   * 读方法带一次副作用是有意的：叶子是渲染端唯一能看到的信号，而宿主这一侧没有任何定时器——
-   * 任一动作端点或内部来源调一次本方法，过期的锁就会被清掉并如实写进 S；即便一次都没人调，
-   * 渲染端也会按叶子里的 expiresAt 自己解除静止。
+   * It is intentional to bring a side effect to the read method: the leaf is the only signal that the renderer can
+   * see, and there is no timer on the host side - if any action endpoint or internal source calls this method once,
+   * the expired lock will be cleared and written to S faithfully; even if no one calls it once, the renderer will
+   * release itself according to expiresAt in the leaf.
    */
   current(petId: string): LockRecord | null {
     const rec = this.locks.get(petId);
@@ -134,16 +147,17 @@ export class LockStore {
     return null;
   }
 
-  /** 这只宠物此刻是否被占用（宿主内部自动来源用它决定跳过；同样懒判过期）。 */
+  /** Whether this pet is occupied at the moment (the host internal automatic source uses it to decide to skip; it also lazily determines expiration). */
   locked(petId: string): boolean {
     return this.current(petId) !== null;
   }
 
   /**
-   * 当前是否有任意宠物被占用（测试 / 观测用，同 ./state 的 waiterCount）。
+   * Whether any pet is currently occupied (for testing/observation, the same as waiterCount of ./state).
    *
-   * 生产路径上没有人调它：占用期间要挡的两个全局段（sections.balance / sections.workStatus）是
-   * 所有宠物共用一份，宿主跳过写入会连带静音别的宠物，所以那两处改由渲染端按宠物自己忽略。
+   * No one adjusts it on the production path: the two global segments (sections.balance / sections.workStatus) that
+   * need to be blocked during the occupation period are shared by all pets. Skipping writing by the host will also
+   * mute other pets, so those two places are ignored by the renderer itself.
    */
   anyLocked(): boolean {
     for (const petId of [...this.locks.keys()]) {
@@ -153,11 +167,13 @@ export class LockStore {
   }
 
   /**
-   * 动作端点的门禁（/anim、/broadcast、/position、/throw、/bubble/clear 共用）。
+   * Validation check of action endpoint (shared by / anim, / broadcast, / position, / throw, / bubble/clear).
    *
-   * 无锁时按有没有带编号分两条：没带 → 放行（没有占用的常态下，既有调用方一个字都不用改）；
-   * 带了编号却查不到锁 → lock-lost。带了编号就说明调用方以为自己还持有，这时放行等于把「你把锁
-   * 丢了」悄悄抹掉，它会以为演出还在继续。cause 从墓碑里取，从没建过锁就是 unknown。
+   * When there is no lock, it is divided into two categories according to whether it has a number: no → release (under
+   * normal conditions without occupation, the existing caller does not need to change a word); with a number but the
+   * lock cannot be found → lock-lost. Bringing the number means that the caller thinks it still holds it. Release at
+   * this time is equivalent to quietly erasing "You lost the lock", and it will think that the show is still going on.
+   * cause is taken from the tombstone, and the lock has never been built, which is unknown.
    */
   gate(petId: string, provided: string): LockGate {
     const rec = this.current(petId);
@@ -168,17 +184,20 @@ export class LockStore {
       }
       return { ok: false, reason: 'lock-lost', cause: 'unknown', message: CAUSE_TEXT.unknown };
     }
-    // 无锁：没带编号照旧放行；带了编号 → 明确告诉他锁已经不在了
+    // No lock: Release without number; with number → clearly tell him that the lock is no longer there
     if (!provided) return { ok: true };
     const cause = this.causeOf(petId, provided);
     return { ok: false, reason: 'lock-lost', cause, message: CAUSE_TEXT[cause] };
   }
 
   /**
-   * 取锁 / 续期（二合一：`lockId` 给了就是续期，没给就是新建；真值表见 openapi.yaml）。
+   * Lock acquisition/renewal (two-in-one: if `lockId` is given, it is renewed, if not given, it is new; see
+   * openapi.yaml for the true value table).
    *
-   * 「有 id + 当前无锁」一律报错，不复活：过期 / 被释放 / 被抢占之后拿旧编号来续期，不能借这条路
-   * 把锁重新建起来——否则「我丢了锁」这件事会被悄悄抹掉，持锁者会以为演出还在继续。
+   * "There is id + currently no lock" will always report an error and will not be resurrected: after
+   * expiration/release/preemption, use the old number to renew. You cannot use this method to re-establish the lock -
+   * otherwise the "I lost the lock" will be quietly erased, and the lock holder will think that the show is still
+   * going on.
    */
   acquire(args: { petId: string; lockId?: unknown; ttl?: unknown }): LockAcquireDecision {
     const { petId } = args;
@@ -188,7 +207,7 @@ export class LockStore {
 
     if (renewId) {
       if (rec === null || rec.lockId !== renewId) {
-        // 没有锁 → 去墓碑里问「它当初是怎么没的」；有锁但不是它 → 就是认不出这个编号
+        // There is no lock → Go to the tombstone and ask "How did it disappear in the first place"; there is a lock but it is not it → I just can't recognize the number.
         const cause: LockCause = rec === null ? this.causeOf(petId, renewId) : 'unknown';
         return { ok: false, reason: 'lock-lost', cause, message: CAUSE_TEXT[cause] };
       }
@@ -207,18 +226,20 @@ export class LockStore {
     if (ttl === null) return { ok: false, reason: 'bad-request', message: TTL_TEXT };
     const record: LockRecord = { lockId: this.newId(), ttl, expiresAt: this.now() + ttl };
     this.locks.set(petId, record);
-    this.tombstones.delete(petId); // 新锁建立 → 旧墓碑作废（旧编号此后一律 unknown）
+    this.tombstones.delete(petId); // New lock is established → old tombstone is invalidated (the old number will be unknown from now on)
     this.onChange(petId, { locked: true, expiresAt: record.expiresAt });
     return { ok: true, petId, lockId: record.lockId, expiresAt: record.expiresAt, renewed: false };
   }
 
   /**
-   * 释放。两种形态二选一：`lockId` = 持锁者收工（cause: released），
-   * `force: true` = 渲染端在用户拖拽 / 点击 / 隐藏 / 关闭时调（cause: preempted）。
+   * Release. Choose one of two forms: `lockId` = lock holder finishes work (cause: released), `force: true` = renderer
+   * is called when user drags/clicks/hides/closes (cause: preempted).
    *
-   * 幂等：当前没有锁时回 ok（released: false）——「让锁消失」这个意图在空状态下已经成立；
-   * 但有锁而 lockId 不匹配时必须报错（不许误放别人的锁），那是唯一一条释放也会失败的路。
-   * force 只认严格 true：宽松口径会把误传当真，代价是撤掉别人的锁。
+   * Idempotent: Return to ok (released: false) when there is currently no lock - the intention of "let the lock
+   * disappear" has been established in the empty state; but when there is a lock and lockId does not match, an error
+   * must be reported (other people's locks are not allowed to be misplaced). That is the only way to release and fail.
+   * force only believes in strict true: Loose conventions will take misinformation seriously at the cost of removing
+   * other people's locks.
    */
   release(args: { petId: string; lockId?: unknown; force?: unknown }): LockReleaseDecision {
     const { petId } = args;
@@ -232,7 +253,7 @@ export class LockStore {
       return { ok: false, reason: 'bad-request', message: 'lockId 或 force 必须给一个' };
     }
     const rec = this.current(petId);
-    if (rec === null) return { ok: true, petId, released: false }; // 幂等：没有锁可撤
+    if (rec === null) return { ok: true, petId, released: false }; // Idempotent: no lock can be released
     if (!force && rec.lockId !== releaseId) {
       return { ok: false, reason: 'lock-lost', cause: 'unknown', message: CAUSE_TEXT.unknown };
     }
@@ -240,7 +261,7 @@ export class LockStore {
     return { ok: true, petId, released: true };
   }
 
-  /** 撤掉全部占用（插件卸载路径）：不这样做的话，渲染端要等 TTL 到点才解除静止。 */
+  /** Remove all occupations (plugin unmount path): If you don't do this, the renderer will wait until TTL reaches the point before unblocking it. */
   releaseAll(): void {
     for (const petId of [...this.locks.keys()]) {
       const rec = this.locks.get(petId);
@@ -248,20 +269,20 @@ export class LockStore {
     }
   }
 
-  /** 撤锁并记墓碑（唯一改状态的出口：释放 / 抢占 / 过期都走它，保证叶子与墓碑不漏写）。 */
+  /** Release the lock and record the tombstone (the only exit to change the status: release / preemption / expiration, to ensure that leaves and tombstones are not missed). */
   private drop(petId: string, rec: LockRecord, cause: LockCause): void {
     this.locks.delete(petId);
     this.tombstones.set(petId, { lockId: rec.lockId, cause });
     this.onChange(petId, { locked: false });
   }
 
-  /** 墓碑查询：编号对得上就回它当初的 cause，否则 unknown（拿错编号 / 从来没有过）。 */
+  /** Tombstone query: If the number is correct, it will be returned to its original cause, otherwise it will be unknown (wrong number/never). */
   private causeOf(petId: string, lockId: string): LockCause {
     const stone = this.tombstones.get(petId);
     return stone !== undefined && stone.lockId === lockId ? stone.cause : 'unknown';
   }
 
-  /** 新编号：`lk-<时间36>-<自增36>`（与 ./playback 的 playbackId 同一套，只保证一次运行内唯一）。 */
+  /** New number: `lk-<time36>-<sequence36>` (the same set as playbackId of ./playback, only guaranteed to be unique within one run). */
   private newId(): string {
     return 'lk-' + this.now().toString(36) + '-' + (++this.seq).toString(36);
   }

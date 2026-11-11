@@ -1,12 +1,13 @@
 /**
- * 自绘的弹窗与下拉选择器：替代 window.confirm 与原生 select。
+ * Self-drawn pop-up windows and drop-down selectors: replace window.confirm and native select.
  *
- * 两者都挂在 body 上并用 fixed 定位，避免被面板的滚动容器裁掉；关闭路径统一走 capture 监听，
- * 打开新菜单前一定先关掉旧的。选择器不持有业务状态，值由调用方的 onChange 收走。
+ * Both are hung on body and positioned with fixed to avoid being clipped by the scrolling container of the panel;
+ * close the path and use capture for monitoring. Be sure to turn off the old one before opening the new menu. The
+ * selector does not hold business status, and the value is collected by the caller's onChange.
  * @module dsh-pet/src/standalone/settings-page/script/overlay
  */
 
-/** 生成覆盖层片段。 */
+/** Generate overlay fragments. */
 export function overlayScript(): string {
   return `
 let openMenu = null;
@@ -47,12 +48,13 @@ function placeMenu(menu, trigger, widthOf) {
 }
 
 /**
- * 打开一个下拉菜单。
- * @param trigger - 触发按钮，用来定位、判断「点外面」与标记展开状态。
- * @param options - 候选项，每项 { value, label }。
- * @param current - 当前值。
- * @param onPick - 选中回调。
- * @param widthOf - 菜单对齐宽度的参照元素；缺省与 trigger 同宽，用于触发按钮比菜单窄的组合框。
+ * Open a drop-down menu.
+ *  @param trigger - Trigger button, used to locate and determine "outside point" and mark expansion status.
+ *  @param options - Candidates, each item { value , label }.
+ *  @param current - Current value.
+ *  @param onPick - Check callback.
+ *  @param widthOf - Reference element for menu alignment width; defaults to the same width as trigger, used
+ * to trigger a combo box whose button is narrower than the menu.
  */
 function openSelectMenu(trigger, options, current, onPick, widthOf) {
   closeMenu();
@@ -133,11 +135,11 @@ function openSelectMenu(trigger, options, current, onPick, widthOf) {
 }
 
 /**
- * 造一个下拉选择器。
- * @param options - 候选项，每项 { value, label }。
- * @param value - 初始值。
- * @param onChange - 用户选择后回调。
- * @returns 根节点与读写当前值的方法。
+ * Create a drop-down selector.
+ *  @param options - Candidates, each item { value , label }.
+ *  @param value - Initial value.
+ *  @param onChange - callback after user selection.
+ *  @returns root node and methods for reading and writing the current value.
  */
 function createSelect(options, value, onChange) {
   const root = make('div', { class: 'select' });
@@ -180,9 +182,9 @@ function createSelect(options, value, onChange) {
 }
 
 /**
- * 弹出确认框。
- * @param options - 标题、正文、按钮文案与是否危险操作。
- * @returns 用户确认时为 true。
+ * A confirmation box pops up.
+ *  @param options - Title, text, button copy and whether it is a dangerous operation.
+ *  @returns is true when confirmed by the user.
  */
 function confirmDialog(options) {
   const config = options || {};
@@ -193,7 +195,8 @@ function confirmDialog(options) {
     panel.setAttribute('aria-modal', 'true');
     panel.setAttribute('aria-label', config.title || '确认');
     const text = make('p', { class: 'dialogText', text: config.text || '' });
-    // cancelLabel 传 null 表示只提示、不给取消：用于「不能删除最后一只」这类纯说明。
+    // cancelLabel passes to null, which means only prompting and no cancellation: used for pure explanations
+    // such as "the last one cannot be deleted".
     const cancel =
       config.cancelLabel === null
         ? null

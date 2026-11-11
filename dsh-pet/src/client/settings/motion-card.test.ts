@@ -1,10 +1,12 @@
 /**
- * 动作频率卡（src/client/settings/motion-card.ts）的契约测试。
+ * Contract test of action frequency card (src/client/settings/motion-card.ts).
  *
- * 三条契约：
- *   1. 四个输入框顺序固定为 待机 / 转向 / 移动 / 随机动作，前三个可编辑、第四个只读；
- *   2. 改一项时另两项不动，超上限的值在提交前被夹住；
- *   3. 忙时前三个输入全部禁用。
+ * Three contracts:
+ * 1. The order of the four input boxes is fixed as standby/turn/move/random action, the first three are editable and
+ * the fourth is read-only;
+ * 2. When one item is changed, the other two items do not move, and the value exceeding the upper limit is clamped
+ * before submission;
+ * 3. When busy, the first three inputs are all disabled.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,14 +31,14 @@ function flatten(node: unknown): Node[] {
 
 const inputs = (tree: unknown): Node[] => flatten(tree).filter((node) => node.tag === 'input');
 
-/** 触发 numberInputProps 的失焦提交。 */
+/** Triggering out-of-focus commit of numberInputProps. */
 function commit(input: Node, text: string): void {
   const target = { value: text };
   (input.props.onBlur as (event: { target: { value: string } }) => void)({ target });
 }
 
-describe('MotionCard —— 动作频率卡', () => {
-  test('四个框顺序固定，随机动作只读且等于余量', () => {
+describe('MotionCard——Action frequency card', () => {
+  test('The order of the four boxes is fixed, the random action is read-only and equal to the margin', () => {
     const tree = MotionCard({
       busy: false,
       weights: { idle: 10, turn: 5, move: 5 },
@@ -49,10 +51,10 @@ describe('MotionCard —— 动作频率卡', () => {
       ['10', '5', '5'],
     );
     assert.equal(found[3].props.value, 80);
-    assert.equal(found[3].props.readOnly, true, '随机动作不该给输入入口');
+    assert.equal(found[3].props.readOnly, true, 'Random actions should not be given entry points.');
   });
 
-  test('改待机：另两项不动，超过上限被夹到 90', () => {
+  test('Change to standby: the other two items will not move, and will be clamped to 90 if the upper limit is exceeded.', () => {
     const seen: unknown[] = [];
     const tree = MotionCard({
       busy: false,
@@ -63,7 +65,7 @@ describe('MotionCard —— 动作频率卡', () => {
     assert.deepEqual(seen, [{ idle: 90, turn: 5, move: 5 }]);
   });
 
-  test('值没变不回调', () => {
+  test('No callback if the value has not changed', () => {
     const seen: unknown[] = [];
     const tree = MotionCard({
       busy: false,
@@ -74,7 +76,7 @@ describe('MotionCard —— 动作频率卡', () => {
     assert.deepEqual(seen, []);
   });
 
-  test('忙时前三个输入禁用', () => {
+  test('The first three inputs are disabled when busy', () => {
     const tree = MotionCard({
       busy: true,
       weights: { idle: 10, turn: 5, move: 5 },

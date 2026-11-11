@@ -1,60 +1,60 @@
 /**
- * 气泡文案表：工具名 → 一句话，命令名 → 一句话。
+ * bubble text table: tool name → one sentence, command name → one sentence.
  *
- * 纯数据，不含判定；加工具或改语气只改这里。
- * 必须始终成立：每句都带具体对象，不说空话；不出现参数值（可能含 token 或内网地址）。
+ * Pure data, no judgment; add tools or change the tone only here. It must always be true: each sentence contains a
+ * specific object, no empty words; no parameter values appear (may include token or intranet address).
  * @module dsh-pet/src/host/tool-detail/copy
  */
 import { fileTarget, filesTarget, firstStr, queryTarget, urlHost } from './target.ts';
 
-/** 句子里可用的占位符：{target} 目标名、{cmd} 命令名。 */
+/** Available placeholders in sentences: { target } target name, { cmd } command name. */
 export type CopyLine = string;
 
-/** 从解析后的参数里取「目标」（文件名 / 搜索词 / 域名…）；取不到 → null。 */
+/** Get the "target" (file name/search term/domain name...) from the parsed parameters; cannot get → null. */
 type TargetPicker = (args: Record<string, unknown>) => string | null;
 
-/** 只描述「怎么取目标」，不含任何文案（文案全部在下面的表里）。 */
+/** It only describes "how to get the target" and does not include any copy (all copy is in the table below). */
 export interface ToolRule {
   pick: TargetPicker;
   /**
-   * 目标是不是路径：只有路径才做「太长只留文件名」的压缩。
-   * 描述、搜索词、域名这类文本不该被 `/` 切开。
+   * Is the target a path? Only the path will be compressed if it is too long and only the file name is left. Text such
+   * as descriptions, search terms, and domain names should not be cut by `/` .
    */
   path?: boolean;
 }
 
-/** 文件名/图片类：每句都带 {target}。 */
+/** File name/picture type: { target } in each sentence. */
 const FILE_COPY: readonly CopyLine[] = ['翻翻 {target} 看看嘛', '{target} 里面写了啥呢', '我先瞅瞅 {target} 哈'];
 
-/** 写文件。 */
+/** Write file. */
 const WRITE_COPY: readonly CopyLine[] = ['写点东西到 {target}', '{target} 马上写出来', '给 {target} 添点料'];
 
-/** 改文件。 */
+/** Change the file. */
 const EDIT_COPY: readonly CopyLine[] = ['{target} 得改改啦', '我来动动 {target} 哦', '{target} 这里要修一下'];
 
-/** 找文件。 */
+/** Looking for files. */
 const GLOB_COPY: readonly CopyLine[] = ['{target} 都躲哪儿了呢', '找找 {target} 在不在', '{target} 藏在哪个角落呀'];
 
-/** 搜内容。 */
+/** Search content. */
 const GREP_COPY: readonly CopyLine[] = ['{target} 藏哪儿了呢', '搜搜 {target} 在哪', '哪儿有 {target} 呀'];
 
-/** 给人看文件。 */
+/** Show files to people. */
 const PRESENT_COPY: readonly CopyLine[] = ['给你看 {target} 哦', '{target} 拿来给你瞧瞧', '喏，{target} 在这儿'];
 
-/** 学技能。 */
+/** Learn skills. */
 const SKILL_COPY: readonly CopyLine[] = ['学个新本事 {target}', '{target} 这招得记住', '把 {target} 学起来'];
 
-/** 委派子任务。 */
+/** Delegate subtasks. */
 const SUBAGENT_COPY: readonly CopyLine[] = ['叫人搭把手：{target}', '让帮手去看看 {target}', '{target} 交给帮手了'];
 
-/** 一个工具的文案：3 句带 {target} 的说法 + 目标太长时的一句纯氛围兜底。 */
+/** Text for a tool: 3 sentences with { target } + a pure atmosphere fallback when the target is too long. */
 export interface ToolCopy {
   readonly lines: readonly CopyLine[];
-  /** 目标超过 TARGET_DISPLAY_MAX 时用：不出现文件名与工具名（气泡是氛围，不是信息面板） */
+  /** Use when the target exceeds TARGET_DISPLAY_MAX: the file name and tool name do not appear (bubble is the atmosphere, not the information panel) */
   readonly short: CopyLine;
 }
 
-/** 工具 → 文案。没列在这里的工具走 UNKNOWN_TOOL_LINE。 */
+/** Tools → Text. Tools not listed here go to UNKNOWN_TOOL_LINE. */
 export const TOOL_COPY: Readonly<Record<string, ToolCopy>> = {
   read: { lines: FILE_COPY, short: '翻翻代码看看' },
   read_image: {
@@ -84,13 +84,13 @@ export const TOOL_COPY: Readonly<Record<string, ToolCopy>> = {
   },
 };
 
-/** 未知工具：只说一句氛围话，不报工具名（`str_replace_editor` 这种名字上屏很怪）。 */
+/** Unknown object: Just say a word of atmosphere and do not report the object name (`str_replace_editor` is a very strange name on the screen). */
 export const UNKNOWN_TOOL_LINE: CopyLine = '这工具是干嘛的';
 
-/** 兜底：没进表的命令（npm / python / node / tsc / eslint / docker…），短命令名会上屏。 */
+/** fallback: For commands that are not in the table (npm / python / node / tsc / eslint / docker…), the short command names will appear on the screen. */
 export const COMMAND_FALLBACK: readonly CopyLine[] = ['跑一下 {cmd} 咯', '{cmd} 跑起来了', '让 {cmd} 干点活'];
 
-/** 兜底：命令名本身太长（如 Get-NetTCPConnection）时用，不带名字。 */
+/** fallback: Used when the command name itself is too long (such as Get-NetTCPConnection) without a name. */
 export const COMMAND_NAME_TOO_LONG: CopyLine = '跑一个命令咯';
 
 const CD_COPY: readonly CopyLine[] = ['先把位置挪一挪', '切到那个目录去', '挪个地方继续干活'];
@@ -111,7 +111,7 @@ const CURL_COPY: readonly CopyLine[] = ['去问问接口有没有人', '敲敲�
 
 const CHECKOUT_COPY: readonly CopyLine[] = ['换到那个分支瞧瞧', '切个分支看看', '换条路继续走'];
 
-/** 命令 / 「命令 子命令」→ 3 句候选（键一律小写，别名共用同一组）。 */
+/** Command / "Command Subcommand" → 3 sentence candidates (keys must be lowercase, and aliases share the same group). */
 export const COMMAND_COPY: Readonly<Record<string, readonly CopyLine[]>> = {
   cd: CD_COPY,
   'set-location': CD_COPY,
@@ -132,7 +132,7 @@ export const COMMAND_COPY: Readonly<Record<string, readonly CopyLine[]>> = {
   curl: CURL_COPY,
   'invoke-webrequest': CURL_COPY,
 
-  // git：没命中子命令时用这一组
+  // git: Use this group when the subcommand is missed.
   git: ['折腾折腾 git 仓库', '跟 git 打个交道', 'git 这边动一动'],
   'git status': ['看看现在改了些什么', '查查工作区干不干净', '目前是啥状况呢'],
   'git diff': ['瞅瞅这次到底改哪了', '到底动了哪些地方呀', '对比看看都改了啥'],
@@ -154,10 +154,10 @@ export const COMMAND_COPY: Readonly<Record<string, readonly CopyLine[]>> = {
 };
 
 /**
- * 语义已由别处表达、不该进气泡的工具：
- * `todo_write` 的文案本身就是气泡正文（写它等于自己盖自己）；`ask_user_question` 与 goal 系已有
- * 专门档位（waiting / success / error）；`exit_plan_mode` 是纯内部调度。
- * 这些报出来不是重复就是噪音。
+ * Tools whose semantics have been expressed elsewhere and should not be included in the bubble: The text of
+ * `todo_write` itself is the bubble text (writing it is equivalent to covering yourself); `ask_user_question` and goal
+ * already have special stalls (waiting / success / error); `exit_plan_mode` is purely internal scheduling. These
+ * reports are either repetitive or noise.
  */
 export const SILENT_TOOLS: ReadonlySet<string> = new Set([
   'todo_write',
@@ -168,7 +168,7 @@ export const SILENT_TOOLS: ReadonlySet<string> = new Set([
   'exit_plan_mode',
 ]);
 
-/** 取目标的方式（与文案表按工具名关联；pwsh 不在这里，它走命令表）。 */
+/** How to get the target (associated with the copy table by tool name; pwsh is not here, it goes to the command table). */
 export const TOOL_RULES: Readonly<Record<string, ToolRule>> = {
   read: { pick: fileTarget, path: true },
   read_image: { pick: fileTarget, path: true },

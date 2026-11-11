@@ -1,9 +1,11 @@
 /**
- * 桌面端切屏回归：复现远程连接时「双屏 → 临时 3840 宽主屏 → 收窄为 1920」的事件序列。
+ * Desktop screen switching returns: The event sequence of "dual screen → temporary 3840 wide main screen → narrowed to
+ * 1920" during remote connection is reproduced.
  *
- * 为什么加载真脚本而不是抽纯函数：问题出在 `relayout` 与 `position()`、`anchorPixel` 的联动上——
- * 夹取结果被写成自定义位置，纯函数测不出这层接线。这里用 node:vm 起一份干净全局，驱动真实的
- * `sprite.js`，断言的是行为（位置与 customPos），不是源码文本。
+ * Why load the real script instead of extracting the pure function: The problem lies in the linkage between `relayout`
+ * and `position()` and `anchorPixel` - the clamping result is written as a custom position, and the pure function
+ * cannot detect this layer of wiring. Here node:vm is used to create a clean global picture and drive the real
+ * `sprite.js` . The assertion is the behavior (position and customPos), not the source code text.
  */
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -13,14 +15,14 @@ import { runInNewContext } from 'node:vm';
 import { rebaseCenter } from '../shared/displays.ts';
 import { anchorPixel } from '../shared/motion.ts';
 
-/** 工作区高度：1080 减 48px 任务栏。 */
+/** Workspace height: 1080 minus 48 px taskbar. */
 const AREA_HEIGHT = 1032;
-/** 宠物宽度（与本 issue 的配置同量级）。 */
+/** Pet width (same order as the configuration of this issue). */
 const PET_SIZE = 320;
-/** 本体高度按 16:9 算，与 {@link anchorPixel} 的口径一致。 */
+/** The body height is calculated as 16:9, which is consistent with the conventions of {@link anchorPixel}. */
 const PET_HEIGHT = (PET_SIZE * 9) / 16;
 
-/** 视口：经典脚本里 VIEW 的形状。 */
+/** Viewport: Shape of VIEW in classic script. */
 interface ViewRect {
   x: number;
   y: number;
@@ -28,7 +30,7 @@ interface ViewRect {
   h: number;
 }
 
-/** 工作区：经典脚本里 AREAS / PRIMARY_AREA 元素的形状。 */
+/** Workspace: Shape of AREAS / PRIMARY_AREA elements in classic script. */
 interface Area {
   x: number;
   y: number;
@@ -36,7 +38,7 @@ interface Area {
   height: number;
 }
 
-/** 被测脚本会用到的那部分实例状态。 */
+/** The part of the instance state that will be used by the script under test. */
 interface Sprite {
   pos: { x: number; y: number };
   customPos: { rx: number; ry: number } | null;
@@ -47,10 +49,10 @@ interface Sprite {
 const script = readFileSync(new URL('../../runtime/electron-helper/sprite.js', import.meta.url), 'utf8');
 
 /**
- * 造一只装在 vm 里的宠物，并用变宽的主屏模拟远程桌面接入/断开。
+ * Create a pet installed in vm and use the widened home screen to simulate remote desktop access/disconnection.
  *
- * @param manual - 是否已有自定义位置（用户拖过或抛过）。
- * @returns 宠物实例、当前视口，以及把主屏换成单块 `width` 宽工作区的动作。
+ * @param manual - Whether there is already a custom position (the user dragged or dropped it).
+ * @returns pet instance, current viewport, and action to change the home screen to a single `width` wide workspace.
  */
 function loadSprite(manual: boolean): {
   sprite: Sprite;
@@ -69,7 +71,7 @@ function loadSprite(manual: boolean): {
   };
   const proto = runInNewContext(script + '\nPetSprite.prototype', context) as object;
   const sprite = Object.create(proto) as Sprite;
-  // 只补 position()/relayout() 真正读到的状态：vm 里的方法按属性随时现取，补齐即可跑。
+  // Only complement position()/ relayout() The actual read status: The method in vm can be accessed at any time according to the attributes, and it can be run after completing it.
   Object.assign(sprite as unknown as Record<string, unknown>, {
     size: PET_SIZE,
     halfW: PET_SIZE / 2,
@@ -94,42 +96,58 @@ function loadSprite(manual: boolean): {
   return { sprite, view, setPrimary };
 }
 
-test('切屏：角落模式按新主屏的角落与边距重算，不写自定义位置', () => {
+test('Screen switching: Corner mode is recalculated according to the corners and margins of the new home screen, and no custom position is written.', () => {
   const { sprite, view, setPrimary } = loadSprite(false);
   assert.deepEqual(
     sprite.pos,
     { x: 1920 - PET_SIZE, y: AREA_HEIGHT - PET_HEIGHT - 60 },
-    '起点：双屏时落在主屏右下角，边距 0/60',
+    'Starting point: in the lower right corner of the main screen when dual-screen is used, margin 0/60',
   );
 
   const before = { ...view };
-  setPrimary(3840); // 远程接入：两块屏被合成一块 3840 宽的临时主屏
+  setPrimary(3840); // Remote access: Two screens are synthesized into a 3840 wide temporary main screen
   sprite.relayout(before);
-  assert.deepEqual(sprite.pos, { x: 3840 - PET_SIZE, y: AREA_HEIGHT - PET_HEIGHT - 60 }, '临时主屏：跟随到它的右下角');
+  assert.deepEqual(
+    sprite.pos,
+    { x: 3840 - PET_SIZE, y: AREA_HEIGHT - PET_HEIGHT - 60 },
+    'Temporary home screen: follow to its lower right corner',
+  );
 
   const wide = { ...view };
-  setPrimary(1920); // 约 4 秒后收窄回单屏
+  setPrimary(1920); // Narrow back to single screen after about 4 seconds
   sprite.relayout(wide);
   assert.deepEqual(
     sprite.pos,
     { x: 1920 - PET_SIZE, y: AREA_HEIGHT - PET_HEIGHT - 60 },
-    '收窄后必须回到配置的角落与边距，而不是停在右边缘',
+    'After narrowing, it must return to the configured corners and margins instead of stopping at the right edge.',
   );
-  assert.equal(sprite.customPos, null, '夹取结果不能被记成自定义位置');
+  assert.equal(sprite.customPos, null, 'Clamping results cannot be recorded as custom positions');
 });
 
-test('切屏：自定义位置保留桌面坐标，越界才夹回可见区', () => {
+test('Cut the screen: The customized position retains the desktop coordinates, and is only clipped back to the visible area when it crosses the boundary.', () => {
   const { sprite, view, setPrimary } = loadSprite(true);
-  assert.deepEqual(sprite.pos, { x: 3000 - PET_SIZE / 2, y: 600 - PET_HEIGHT / 2 }, '起点：中心在 (3000, 600)');
+  assert.deepEqual(
+    sprite.pos,
+    { x: 3000 - PET_SIZE / 2, y: 600 - PET_HEIGHT / 2 },
+    'Starting point: center at (3000, 600)',
+  );
 
   const before = { ...view };
   setPrimary(3840);
   sprite.relayout(before);
-  assert.deepEqual(sprite.pos, { x: 3000 - PET_SIZE / 2, y: 600 - PET_HEIGHT / 2 }, '临时主屏：世界坐标不变');
+  assert.deepEqual(
+    sprite.pos,
+    { x: 3000 - PET_SIZE / 2, y: 600 - PET_HEIGHT / 2 },
+    'Temporary home screen: world coordinates remain unchanged',
+  );
 
   const wide = { ...view };
   setPrimary(1920);
   sprite.relayout(wide);
-  assert.deepEqual(sprite.pos, { x: 1919 - PET_SIZE / 2, y: 600 - PET_HEIGHT / 2 }, '超出新主屏后夹回右边缘');
-  assert.notEqual(sprite.customPos, null, '自定义位置在会话内继续有效');
+  assert.deepEqual(
+    sprite.pos,
+    { x: 1919 - PET_SIZE / 2, y: 600 - PET_HEIGHT / 2 },
+    'Clip back to the right edge after exceeding the new home screen',
+  );
+  assert.notEqual(sprite.customPos, null, 'Custom location continues to be valid within the session');
 });

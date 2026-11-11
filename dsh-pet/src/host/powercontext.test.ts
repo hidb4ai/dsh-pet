@@ -139,7 +139,7 @@ async function fixture(backend: 'native' | 'powercontext' = 'powercontext') {
   };
 }
 
-test('明确选择 PowerContext 时不调用已注册的第三方记忆后端', async () => {
+test('The registered third-party memory backend is not called when PowerContext is explicitly selected.', async () => {
   const f = await fixture();
   let recalls = 0;
   let captures = 0;
@@ -162,7 +162,7 @@ test('明确选择 PowerContext 时不调用已注册的第三方记忆后端', 
     assert.equal(f.sources.size, 1);
     assert.match(JSON.stringify(f.requests), /历史证据：喜欢无糖咖啡/);
     assert.doesNotMatch(JSON.stringify(f.requests), /第三方覆盖/);
-    // 切回原生配置后，上游的第三方扩展点恢复接管。
+    // After switching back to the native configuration, the upstream third-party extension point resumes takeover.
     await writeFile(
       f.configPaths.userFile,
       JSON.stringify({

@@ -1,13 +1,13 @@
 /**
- * 聊天面板中的记忆列表与编辑状态；只在用户展开后读取远端。
- * 依赖注入的 React 能力与翻译，不接触模型凭据或 scope。
- * 切换宠物时取消旧请求；服务确认成功前不得显示写入成功。
+ * Memory list and editing status in chat panel; only reads remote after user expands. Dependency injection of React
+ * capabilities with translations, without touching model credentials or scope . Cancel the old request when switching
+ * pets; write success must not be displayed until the service confirms success.
  */
 import { ROUTE_PATH } from '../../shared/constants.ts';
 import type { MemoryChange, MemoryEvidence, MemoryPage, RememberedFact } from '../../shared/memory-library.ts';
 import type { ChatPanelRuntime } from './runtime.ts';
 
-/** 自己采集的对话显示为人能读的问答；其他来源保留服务端摘录。 */
+/** Conversations collected by yourself are displayed as human-readable questions and answers; other sources retain server-side excerpts. */
 function evidenceText(excerpt: string | undefined, rt: ChatPanelRuntime): string {
   if (!excerpt) return rt.t('factsNoExcerpt');
   try {
@@ -45,7 +45,7 @@ async function request(
   return data;
 }
 
-/** 一条记忆的编辑与来源状态独立保存；列表重新加载时按版本重新挂载。 */
+/** The editing and source status of a memory are saved independently; when the list is reloaded, it is remounted according to the version. */
 function makeFactCard(rt: ChatPanelRuntime) {
   const { h, t, useState, useEffect } = rt;
   return function FactCard({
@@ -174,7 +174,7 @@ function makeFactCard(rt: ChatPanelRuntime) {
   };
 }
 
-/** 展开后才读取远端记忆，每页十条；该组件应以 petId 为 key 挂载。 */
+/** The remote memory is read after expansion, with ten entries per page; the component should be mounted as petId as key. */
 export function makeMemoryLibrary(rt: ChatPanelRuntime): (props: { petId: string }) => unknown {
   const { h, t, useState, useEffect } = rt;
   const FactCard = makeFactCard(rt);

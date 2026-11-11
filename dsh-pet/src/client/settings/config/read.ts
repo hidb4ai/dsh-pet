@@ -1,7 +1,9 @@
 /**
- * 成品配置的读取：把宿主 `GET /config` 的聚合响应解析成「表单补丁」与「条目实例列表」。
- * 只认成品里合法性说得清的字段：缺字段或类型不对就跳过，让表单保留自己手里的值，不拿坏数据覆盖。
- * 与写方向（`http.ts`）分开：这里纯解析，不发请求、不碰状态。
+ * Read the finished configuration: parse the aggregate response of host `GET /config` into "form patch" and "entry
+ * instance list". Only recognize fields whose validity is clear in the resolved value: skip fields if they are
+ * missing or of the wrong type, so that the form retains the value you have and does not overwrite it with bad data.
+ * Separate from the write direction (`http.ts`): here is pure analysis, no requests are sent, and no status is
+ * touched.
  * @module dsh-pet/src/client/settings/config/read
  */
 import { DEFAULT_FONT } from '../../../shared/fonts.ts';
@@ -10,40 +12,40 @@ import type { FontConfig, ModelSelection, Pet, PhysicsParams, Weights } from '..
 import { parseWeights } from '../../../shared/weights.ts';
 import { chatMemoryConfigValid, type ChatMemoryConfig } from '../../../shared/chat-memory-config.ts';
 
-/** 宿主返回的成品聚合：`main` 是大配置条目，其余键是文件定义的其他宠物条目。 */
+/** The finished aggregate returned by host: `main` are the large configuration entries, and the remaining keys are other pet entries defined by the file. */
 export type MergedConfig = Record<string, Record<string, unknown>>;
 
-/** 表单要吃的补丁；字段缺省表示「这次响应里没有可信值」。 */
+/** The form needs to be patched; the field default means "there is no trusted value in this response". */
 export interface MainConfigPatch {
-  /** main 条目的宠物列表（已深拷贝位置，可直接进编辑列表）。 */
+  /** Pet list of main entry (the location has been deeply copied and can be directly entered into the edit list). */
   pets?: Pet[];
-  /** 条目级人设正文，作为实例人设「留空时跟随什么」的预览。 */
+  /** Entry-level persona text, as a preview of instance persona "what to follow when left blank". */
   entryPrompt?: string;
   notificationsEnabled?: boolean;
   clickSoundEnabled?: boolean;
   whisperImageEnabled?: boolean;
   chatImageEnabled?: boolean;
-  /** 对话动作联动开关；缺省表示这次响应里没有可信值。 */
+  /** Dialogue action linkage switch; the default means there is no trusted value in this response. */
   chatAnimationEnabled?: boolean;
   confineToScreen?: boolean;
   trayEnabled?: boolean;
-  /** 手动播报开关：手动触发的碎碎念与对话回复；缺省表示这次响应里没有可信值。 */
+  /** Manual broadcast switch: manually triggered whisper and conversation reply; the default means there is no trusted value in this response. */
   voiceEnabled?: boolean;
-  /** 语音音色 id（宿主已按白名单校验，客户端原样展示）。 */
+  /** Voice voice id (the host has been verified according to the whitelist, and the client displays it as it is). */
   voiceName?: string;
-  /** 播放音量系数（0–1）；缺省表示这次响应里没有可信值。 */
+  /** Playback volume coefficient (0–1); the default means there is no credible value in this response. */
   voiceVolume?: number;
-  /** 周期碎碎念的语音开关；缺省表示这次响应里没有可信值。 */
+  /** Periodic whisper voice switch; the default means there is no trusted value in this response. */
   voiceWhisperEnabled?: boolean;
-  /** 待办提醒的语音开关；缺省表示这次响应里没有可信值。 */
+  /** Voice switch for to-do reminder; the default means there is no trusted value in this response. */
   voiceTodoEnabled?: boolean;
-  /** 工作状态播报开关；缺省表示这次响应里没有可信值。 */
+  /** Working status broadcast switch; the default indicates that there is no trusted value in this response. */
   voiceNotifyEnabled?: boolean;
-  /** 物理参数：成品已按「内置默认 ← 用户层」填满，缺子键再用内置默认兜底一次。 */
+  /** Physical parameters: The resolved value has been filled in according to "Built-in Default ← User Layer". If there are missing sub-keys, use the built-in default fallback again. */
   physics?: PhysicsParams;
-  /** 字体：同物理参数。 */
+  /** Font: Same as physical parameters. */
   font?: FontConfig;
-  /** 动作频率权重（main 条目）：缺省表示这次响应里没有可信值。 */
+  /** Action frequency weight (main entry): The default indicates that there is no credible value in this response. */
   animationWeights?: Weights;
   whisperModel?: ModelSelection;
   chatModel?: ModelSelection;
@@ -52,13 +54,13 @@ export interface MainConfigPatch {
   chatImageLimit?: number;
 }
 
-/** 非负有限数才算合法；其余（`NaN`、负数、字符串）一律当作没写。 */
+/** Only non-negative finite numbers are valid; the rest (`NaN`, negative numbers, character strings) are treated as not written. */
 const nonNegative = (value: unknown): number | undefined => {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 };
 
-/** 一对模型选择：两项都是字符串才算写全，只写一半视为没写（宿主会按非法拒绝）。 */
+/** A pair of model selections: only if both items are character strings, they will be considered fully written, and if half of the items are write-only, they will be considered not written (the host will reject it as invalid). */
 const readModel = (value: unknown): ModelSelection | undefined => {
   const model = value as Partial<ModelSelection> | undefined;
   if (!model || typeof model.provider !== 'string' || typeof model.model !== 'string') return undefined;
@@ -66,17 +68,18 @@ const readModel = (value: unknown): ModelSelection | undefined => {
 };
 
 /**
- * 从成品聚合里读出 main 条目的表单补丁。
+ * Form patch to read main entries from the finished aggregate.
  *
- * @param merged - `GET /config` 的响应体。
- * @returns 表单补丁；`main.pets` 缺失或不是数组时返回 `null`（响应本身坏了，调用方应报错）。
+ * @param merged - Response body of `GET /config` .
+ * @returns form patch; `null` is returned when `main.pets` is missing or not an array (the response itself is broken,
+ * the caller should report an error).
  */
 export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   const main = merged.main;
   if (!main || !Array.isArray(main.pets)) return null;
   const pets = main.pets as Pet[];
   const patch: MainConfigPatch = {
-    // 位置深拷贝：编辑列表与容器手里的成品列表必须是两份数据。
+    // Position deep copy: The edit list and the resolved value list in the container must be two copies of data.
     pets: pets.map((pet) => ({ ...pet, position: { ...pet.position } })),
   };
   if (typeof main.whisperPrompt === 'string') patch.entryPrompt = main.whisperPrompt;
@@ -109,32 +112,34 @@ export function readMainConfig(merged: MergedConfig): MainConfigPatch | null {
   if (chatMemoryConfigValid(main.chatMemory)) patch.chatMemory = { ...main.chatMemory };
   const limit = nonNegative(main.chatImageLimit);
   if (limit !== undefined) patch.chatImageLimit = limit;
-  // 上界在宿主侧已经把关，这里补一次跨进程读回的判定：脏值只影响显示，不让它流到播放端
+  // The upper bound has been checked on the host side. Here is a judgment on cross-process readback: the dirty value only affects the display and does not let it flow to the playback end.
   const volume = nonNegative(main.voiceVolume);
   if (volume !== undefined && volume <= 1) patch.voiceVolume = volume;
   return patch;
 }
 
-/** 一个条目（种类）与它的全部实例；`key` 即素材根。 */
+/** An item (kind) and all its instances; `key` is the asset root. */
 export interface ConfigEntry {
-  /** 条目名：`main`，或 `pet/<前缀>-config.json(c)` 的前缀。 */
+  /** Entry name: `main`, or the prefix of `pet/<prefix>-config.json(c)`. */
   readonly key: string;
-  /** `main` 由设置页连同全局字段整包写；`pack` 单独写回自己的配置文件。 */
+  /** `main` is written from the settings page together with the global fields; `pack` is written back to its own configuration file alone. */
   readonly kind: 'main' | 'pack';
-  /** 条目级人设正文：实例人设留空时跟随的就是它（pack 各自一份，不共用 main 的）。 */
+  /** Entry-level persona text: When the instance persona is left blank, it will be followed (pack each has one copy, main is not shared). */
   readonly entryPrompt?: string;
-  /** 该条目的实例；位置已深拷贝，`assetRoot` 即条目名。 */
+  /** Instance of this entry; the location has been deep copied, `assetRoot` is the entry name. */
   readonly pets: Pet[];
 }
 
 /**
- * 从成品聚合里读出全部条目及其实例（`main` 在前，其余按文件名顺序）。
+ * Read all entries and their instances from the finished aggregate (`main` first, the rest in file name order).
  *
- * 只带实例字段：条目级的动画池、人设等大对象不挂到每只宠物上——设置页的提交体会被整包
- * 序列化，挂上去等于把动画池复制 N 份。
+ * With only instance fields: entry-level animation pools, personas and other large objects are not attached to each
+ * pet - the submission of the settings page will be serialized in its entirety, and attaching it is equivalent to
+ * copying the animation pool N copies.
  *
- * @param merged - `GET /config` 的响应体。
- * @returns 条目列表；`main.pets` 缺失或不是数组时返回 `null`（响应本身坏了，调用方应报错）。
+ * @param merged - Response body of `GET /config` .
+ * @returns entry list; `null` is returned when `main.pets` is missing or not an array (the response itself is broken,
+ * the caller should report an error).
  */
 export function readConfigEntries(merged: MergedConfig): ConfigEntry[] | null {
   const main = merged.main;

@@ -1,10 +1,12 @@
 /**
- * 「按住说话」状态机的单测：按下只开录一次、按住期间的自动重复必须被吃掉、松开才收尾。
+ * Single test of the "press and hold" state machine: recording is only started once when pressed, and the automatic
+ * repeat during the press and hold must be eaten and released before cleanup.
  *
- * 为什么值得钉：这几条错了都不是抛错，而是静默走偏——重复事件漏拦会往输入框里灌一串 v，
- * 松开漏判会让录音一直开到 24 秒上限。两种都只能在真机上「感觉不对」，测试才看得见。
+ * Why it’s worth nailing: These mistakes are not errors, but silent deviations - repeated event omissions will fill a
+ * string of v into the input box, and loosening omissions will cause the recording to continue to the 24-second limit.
+ * Both of them can only be seen through testing if they "feel wrong" on a real machine.
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +14,7 @@ import assert from 'node:assert/strict';
 import { createHearHold, isHearHotkey } from './hear-hold.ts';
 import type { HotkeyEvent } from '../hotkey.ts';
 
-/** 只造判据用到的字段，不需要真的 KeyboardEvent。 */
+/** Only create the fields used in the criterion, no real KeyboardEvent is required. */
 const ev = (over: Partial<HotkeyEvent & { repeat: boolean }> = {}): HotkeyEvent & { repeat?: boolean } => ({
   key: 'm',
   ctrlKey: false,
@@ -23,11 +25,11 @@ const ev = (over: Partial<HotkeyEvent & { repeat: boolean }> = {}): HotkeyEvent 
   ...over,
 });
 
-/** 造一个带 tagName 的假元素。 */
+/** Create a fake element with tagName. */
 const tag = (tagName: string, editable = false): EventTarget =>
   ({ tagName, isContentEditable: editable }) as unknown as EventTarget;
 
-/** 一个记了次数的状态机；armed 可以中途改，模拟光标离开宠物。 */
+/** A state machine that records the number of times; armed can be changed midway to simulate the cursor leaving the pet. */
 function harness(): {
   hold: ReturnType<typeof createHearHold>;
   counts: { press: number; release: number };
@@ -48,24 +50,24 @@ function harness(): {
 }
 
 describe('isHearHotkey', () => {
-  test('小写与大写 M 都算', () => {
+  test('Both lowercase and uppercase M count', () => {
     assert.equal(isHearHotkey(ev({ key: 'm' })), true);
     assert.equal(isHearHotkey(ev({ key: 'M' })), true);
   });
 
-  test('其它键不算（原来的 V 已经让位）', () => {
+  test('Other keys are not counted (the original V has given way)', () => {
     for (const key of ['v', 't', 'd', 's', 'a', 'Enter', ' ', 'Escape']) {
       assert.equal(isHearHotkey(ev({ key })), false, key);
     }
   });
 
-  test('带修饰键不算（Ctrl+M 等留给浏览器）', () => {
+  test('Modifier keys are not counted (Ctrl + M, etc. are left to the browser)', () => {
     assert.equal(isHearHotkey(ev({ ctrlKey: true })), false);
     assert.equal(isHearHotkey(ev({ metaKey: true })), false);
     assert.equal(isHearHotkey(ev({ altKey: true })), false);
   });
 
-  test('焦点在可编辑元素上：不算，把 m 留给输入框', () => {
+  test('The focus is on the editable element: not counted, leave m to the input box', () => {
     for (const target of [tag('INPUT'), tag('TEXTAREA'), tag('SELECT'), tag('DIV', true)]) {
       assert.equal(isHearHotkey(ev({ target })), false);
     }
@@ -73,85 +75,85 @@ describe('isHearHotkey', () => {
 });
 
 describe('createHearHold', () => {
-  test('悬停时按下：吃掉事件并开录一次', () => {
+  test('Press while hovering: eat the event and start recording once', () => {
     const { hold, counts } = harness();
-    assert.equal(hold.onKeyDown(ev()), true, '按下的 V 必须被吃掉，否则会打出一个 v');
+    assert.equal(hold.onKeyDown(ev()), true, 'The pressed V must be eaten, otherwise a v will be played');
     assert.equal(counts.press, 1);
   });
 
-  test('光标不在宠物上：不触发，也不吃事件', () => {
+  test('The cursor is not on the pet: the event is not triggered and the event is not eaten.', () => {
     const { hold, counts, arm } = harness();
     arm(false);
     assert.equal(hold.onKeyDown(ev()), false);
     assert.equal(counts.press, 0);
   });
 
-  test('别的键与带修饰键都不吃', () => {
+  test('Other keys and modified keys are not affected.', () => {
     const { hold, counts } = harness();
     assert.equal(hold.onKeyDown(ev({ key: 'a' })), false);
     assert.equal(hold.onKeyDown(ev({ ctrlKey: true })), false);
     assert.equal(counts.press, 0);
   });
 
-  test('光标在输入框里按下：不开录，也不吃事件', () => {
+  test('When the cursor is pressed in the input box: recording will not start and events will not be received.', () => {
     const { hold, counts } = harness();
-    assert.equal(hold.onKeyDown(ev({ target: tag('TEXTAREA') })), false, 'm 要能打进输入框');
+    assert.equal(hold.onKeyDown(ev({ target: tag('TEXTAREA') })), false, 'm needs to be entered into the input box');
     assert.equal(counts.press, 0);
   });
 
-  test('按住期间的自动重复全部吃掉，但不重复开录', () => {
+  test('All the automatic repeats during the press and hold period will be eaten, but the recording will not be repeated.', () => {
     const { hold, counts } = harness();
     hold.onKeyDown(ev());
-    for (let i = 0; i < 5; i++) assert.equal(hold.onKeyDown(ev({ repeat: true })), true, `第 ${i} 次重复`);
+    for (let i = 0; i < 5; i++) assert.equal(hold.onKeyDown(ev({ repeat: true })), true, `${i} repeat`);
     assert.equal(counts.press, 1);
   });
 
-  test('按住期间焦点已进输入框：重复事件照样吃掉（否则会往框里灌 v）', () => {
+  test('The focus has entered the input box while pressing: repeated events will still be eaten (otherwise v will be poured into the box)', () => {
     const { hold } = harness();
     hold.onKeyDown(ev());
     assert.equal(hold.onKeyDown(ev({ repeat: true, target: tag('TEXTAREA') })), true);
     assert.equal(hold.onKeyDown(ev({ target: tag('TEXTAREA') })), true);
   });
 
-  test('按住期间按到别的键：不管它', () => {
+  test('Press another key while holding down: ignore it', () => {
     const { hold, counts } = harness();
     hold.onKeyDown(ev());
     assert.equal(hold.onKeyDown(ev({ key: 'a', repeat: true })), false);
     assert.equal(counts.release, 0);
   });
 
-  test('松开同一个键才收尾，且只收一次', () => {
+  test('Release the same key to cleanup, and only collect it once', () => {
     const { hold, counts } = harness();
     hold.onKeyDown(ev());
     hold.onKeyUp(ev({ key: 'M' }));
     assert.equal(counts.release, 1);
     hold.onKeyUp(ev({ key: 'm' }));
-    assert.equal(counts.release, 1, '多出来的 keyup 不该再收一次尾');
+    assert.equal(counts.release, 1, 'The extra keyup should not be finished again');
   });
 
-  test('松开别的键不收尾', () => {
+  test('Cleanup does not work when releasing other keys', () => {
     const { hold, counts } = harness();
     hold.onKeyDown(ev());
     hold.onKeyUp(ev({ key: 'a' }));
     assert.equal(counts.release, 0);
   });
 
-  test('没按住时松开：什么都不做', () => {
+  test('Release when not holding: Do nothing', () => {
     const { hold, counts } = harness();
     hold.onKeyUp(ev());
     assert.equal(counts.release, 0);
   });
 
-  test('release() 强制收尾（窗口失焦收不到 keyup 时走这条）', () => {
+  test('release() forced cleanup (take this step when the window is out of focus and cannot receive keyup)', () => {
     const { hold, counts } = harness();
     hold.onKeyDown(ev());
     hold.release();
     assert.equal(counts.release, 1);
     hold.release();
-    assert.equal(counts.release, 1, 'release 必须幂等');
+    assert.equal(counts.release, 1, 'release must be idempotent');
   });
 
-  test('松开之后还能再按住一次', () => {
+  test('You can press and hold it again after releasing it.', () => {
     const { hold, counts } = harness();
     hold.onKeyDown(ev());
     hold.onKeyUp(ev());
@@ -160,7 +162,7 @@ describe('createHearHold', () => {
     assert.equal(counts.release, 1);
   });
 
-  test('第一次就是自动重复（没有真正的按下）：不启动', () => {
+  test('The first time it is repeated automatically (no real press): does not start', () => {
     const { hold, counts } = harness();
     assert.equal(hold.onKeyDown(ev({ repeat: true })), false);
     assert.equal(counts.press, 0);

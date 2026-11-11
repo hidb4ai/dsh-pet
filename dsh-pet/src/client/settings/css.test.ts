@@ -1,18 +1,21 @@
 /**
- * 设置页样式注入（src/client/settings/css.ts）的契约测试。
+ * Set contract test for page style injection (src/client/settings/css.ts).
  *
- * 两条契约：
- *   1. 幂等：同一页面反复渲染设置页只留一个 `<style>`，去重标记打在 `data-plugin-css` 上；
- *   2. 无 DOM 安全：没有 document（SSR 或纯单测环境）时静默返回，不让设置页整页崩掉。
+ * Two contracts:
+ * 1. Idempotent: The same page is repeatedly rendered on the settings page, leaving only one `<style>` , and the
+ * deduplicate mark is marked on `data-plugin-css` ;
+ * 2. No DOM security: Return silently when there is no document (SSR or pure single test environment) to prevent the
+ * entire setting page from crashing.
  *
- * 假 DOM 只实现本模块用到的成员（不引 jsdom）：选择器只支持 `tag` / `[attr]` / `[attr="v"]` 三种形态。
+ * False DOM only implements the members used by this module (does not reference jsdom): the selector only supports
+ * three forms: `tag` / `[attr]` / `[attr="v"]` .
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { injectSettingsCss } from './css.ts';
 
-/** 极简元素替身：`dataset` 写回 `data-*` 属性，与真实 DOM 一致。 */
+/** Minimalist element stand-in: `dataset` writes back the `data-*` attribute, which is consistent with the real DOM. */
 class El {
   readonly tag: string;
   readonly attrs = new Map<string, string>();
@@ -23,7 +26,7 @@ class El {
   constructor(tag: string) {
     this.tag = tag;
     const name = (key: string): string => 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
-    // 读写都走属性表：真实 DOM 里 dataset 就是 data-* 的视图，模块写完标记后查重读的是同一份。
+    // Both reading and writing go through the attribute table: dataset in the real DOM is the view of data -*. After the module writes the mark, the same copy is checked and re-read.
     this.dataset = new Proxy({} as Record<string, string>, {
       set: (_target, key, value: string) => {
         this.attrs.set(name(String(key)), value);
@@ -50,7 +53,7 @@ class El {
   }
 }
 
-/** 支持 `tag` / `[attr]` / `[attr="v"]` 三种形态。 */
+/** Supports three forms: `tag` / `[attr]` / `[attr="v"]`. */
 function matches(el: El, selector: string): boolean {
   const parsed = /^([a-z]*)(?:\[([a-zA-Z-]+)(?:="([^"]*)")?\])?$/.exec(selector);
   if (parsed === null) throw new Error('假 DOM 不支持的 selector：' + selector);
@@ -62,7 +65,7 @@ function matches(el: El, selector: string): boolean {
   return value === undefined ? true : actual === value;
 }
 
-/** 极简 document 替身：只提供 head、createElement 与顶层 querySelector。 */
+/** Minimalist document stand-in: only head, createElement and top-level querySelector are provided. */
 class FakeDocument {
   readonly head = new El('head');
 
@@ -75,7 +78,7 @@ class FakeDocument {
   }
 }
 
-/** 装一套假 DOM，返回 document 与还原函数。 */
+/** Install a set of fake DOM and return document with the reduction function. */
 function withFakeDom(): { doc: FakeDocument; restore: () => void } {
   const doc = new FakeDocument();
   const previous = globalThis.document;
@@ -88,36 +91,40 @@ function withFakeDom(): { doc: FakeDocument; restore: () => void } {
   };
 }
 
-describe('injectSettingsCss —— 设置页样式注入', () => {
-  test('首次注入：head 里出现一个带 dsh-pet 标记的 style，且两族类名都在', () => {
+describe('injectSettingsCss - Setting page style injection', () => {
+  test('First injection: style with dsh-pet mark appears in head, and the class names of both families are in', () => {
     const { doc, restore } = withFakeDom();
     try {
       injectSettingsCss();
-      assert.equal(doc.head.children.length, 1, '应只注入一个 style');
+      assert.equal(doc.head.children.length, 1, 'Only one style should be injected');
       const [tag] = doc.head.children;
       assert.equal(tag.tag, 'style');
       assert.equal(tag.dataset.plugin, 'dsh-pet');
       assert.equal(tag.dataset.pluginCss, 'dsh-pet/settings.css');
-      assert.ok(tag.textContent.includes('.dsh-pet-mp__trigger'), '模型选择器的样式必须在');
-      assert.ok(tag.textContent.includes('.dsh-pet-cfg__inp'), '配置卡片表单的样式必须在');
+      assert.ok(tag.textContent.includes('.dsh-pet-mp__trigger'), 'The style of the model selector must be in');
+      assert.ok(tag.textContent.includes('.dsh-pet-cfg__inp'), 'The style of configuring the card form must be in');
     } finally {
       restore();
     }
   });
 
-  test('重复注入：第二、三次调用都不再插入 style', () => {
+  test('Repeated injection: style will no longer be inserted in the second and third calls.', () => {
     const { doc, restore } = withFakeDom();
     try {
       injectSettingsCss();
       injectSettingsCss();
       injectSettingsCss();
-      assert.equal(doc.head.children.length, 1, '去重标记失效会重复插入，样式规则成倍堆积');
+      assert.equal(
+        doc.head.children.length,
+        1,
+        'If the deduplicate tag fails, it will be inserted repeatedly and the style rules will be doubled.',
+      );
     } finally {
       restore();
     }
   });
 
-  test('没有 document：静默返回，不抛', () => {
+  test('No document: Return silently without throwing', () => {
     assert.doesNotThrow(() => injectSettingsCss(), '无 DOM 环境下注入必须是空操作');
   });
 });

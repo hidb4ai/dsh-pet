@@ -1,34 +1,36 @@
 /**
- * 本机 HTTP 的访问边界：回环 Host 校验、CSRF 校验与进程能力令牌。
+ * Access boundary of local HTTP: loopback Host verification, CSRF verification and process capability token.
  *
- * 负责判定请求能否进入路由，并清掉上游写出的宽 CORS 头；不处理业务语义。
- * 必须始终成立：只接受当前回环地址；令牌只出现在启动清单、请求头与 HttpOnly cookie，
- * 绝不进日志或响应体。设置页首次带令牌访问后换一枚会话 cookie，刷新时地址栏里已没有令牌。
+ * Responsible for determining whether the request can enter the route and clearing the wide CORS header written by the
+ * upstream; it does not handle business semantics. Must always be true: only the current loopback address is accepted;
+ * the token only appears in the startup list, request headers and HttpOnly cookie, and never enters the log or
+ * response body. After the settings page is accessed with a token for the first time, change the session to cookie.
+ * When refreshing, there is no token in the address bar.
  * @module dsh-pet/src/standalone/request-security
  */
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-/** 请求安全门面。 */
+/** Requesting a secure facade. */
 export interface RequestSecurity {
-  /** 进程能力令牌，只写入本机启动清单，绝不进 HTTP 响应或日志。 */
+  /** Process capability token, write-only enters the local startup list, never enters HTTP response or log. */
   readonly token: string;
-  /** 生成带令牌的设置页地址。 */
+  /** Generate settings page address with token. */
   authenticatedUrl(baseUrl: string): string;
-  /** 判定请求是否放行；拒绝时已经写好响应。 */
+  /** Determine whether the request is allowed; when rejected, the response has been written. */
   authorize(req: IncomingMessage, res: ServerResponse, allowFileOrigin?: boolean): boolean;
 }
 
-/** 回一个结构化错误并返回 false，便于调用方直接 return。 */
+/** Return a structured error and return false, so that the caller can directly call return. */
 export function rejectRequest(res: ServerResponse, status: number, error: string): false {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify({ error }));
   return false;
 }
 
-/** 无需令牌的只读路径；写操作与敏感路径必须带令牌。 */
+/** Read-only paths without tokens; write operations and sensitive paths must have tokens. */
 function publicRead(req: IncomingMessage): boolean {
-  // 插件在分发前会解码路径，鉴权必须用同一种拼写判断。
+  // The plugin will decode the path before distribution, and authentication must use the same spelling judgment.
   const path = decodeURIComponent(new URL(req.url ?? '/', 'http://127.0.0.1').pathname);
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   if (['/standalone-ai/settings', '/shutdown'].includes(path)) return false;
@@ -46,13 +48,13 @@ function publicRead(req: IncomingMessage): boolean {
   );
 }
 
-/** 设置页凭据 cookie：首次带令牌访问后下发，刷新时替代已从地址栏清掉的令牌。 */
+/** Setting page credentials cookie: issued after the first access with token, and replace the token cleared from the address bar when refreshing. */
 const TOKEN_COOKIE = 'dsh_pet_token';
 
-/** 令牌的固定形状：32 字节 base64url。形状校验先跑，定时安全比较才有等长前提。 */
+/** Fixed shape of token: 32 bytes base64url. Shape verification is run first, so that regular safety comparisons can have equal lengths. */
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 
-/** 从 Cookie 头里取出本服务的凭据；没有则返回空串。 */
+/** Get the credentials of this service from the Cookie header; if not, return an empty string. */
 function readTokenCookie(req: IncomingMessage): string {
   const raw = req.headers.cookie;
   if (typeof raw !== 'string') return '';
@@ -65,7 +67,7 @@ function readTokenCookie(req: IncomingMessage): string {
   return '';
 }
 
-/** 创建请求安全门面。 */
+/** Create a request security facade. */
 export function createRequestSecurity(): RequestSecurity {
   const token = randomBytes(32).toString('base64url');
   return {
@@ -78,7 +80,7 @@ export function createRequestSecurity(): RequestSecurity {
         base.username ||
         base.password
       ) {
-        throw new Error('设置地址必须是本机 HTTP 地址');
+        throw new Error('The settings URL must be a loopback HTTP address');
       }
       return `${base.origin}/standalone-ai/#token=${token}`;
     },
@@ -86,12 +88,12 @@ export function createRequestSecurity(): RequestSecurity {
       const host = req.headers.host;
       const port = req.socket.localPort;
       if (!port || (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`)) {
-        return rejectRequest(res, 403, '仅允许当前本机地址');
+        return rejectRequest(res, 403, 'Only the current loopback address is allowed');
       }
-      // 文件页渲染器也要带令牌：沙箱网页同样会发来 null 来源。
-      // 同一渲染器加载媒体时可能完全不带 Origin，只有这种情况才放行。
-      // 字体这类强制 CORS 的子资源，Chromium 从 file:// 页面发出的是 `file://` 本身——
-      // 既不是 null 也不是省略，漏掉它会让打包应用的字体一律 403。
+      // The file page renderer also needs a token: the sandbox web page will also send the null source. The same
+      // renderer may load media without Origin at all, and only in this case is it allowed. For sub-resources such as
+      // fonts that force CORS, Chromium is sent from the file:// page to `file://` itself - neither null nor omitted.
+      // Omitting it will make the fonts of the packaged application all 403.
       const fileOrigin =
         allowFileOrigin &&
         (req.headers.origin === 'null' || req.headers.origin === undefined || req.headers.origin === 'file://');
@@ -100,24 +102,26 @@ export function createRequestSecurity(): RequestSecurity {
         ((req.headers.origin !== undefined && req.headers.origin !== `http://${host}`) ||
           req.headers['sec-fetch-site'] === 'cross-site')
       ) {
-        return rejectRequest(res, 403, '不允许跨站请求');
+        return rejectRequest(res, 403, 'Cross-site requests are not allowed');
       }
       try {
         if (publicRead(req) && !fileOrigin) return true;
       } catch {
-        return rejectRequest(res, 400, '请求地址无效');
+        return rejectRequest(res, 400, 'Invalid request URL');
       }
-      // 页内请求走请求头；刷新后地址栏令牌已被清掉，改用首次访问换来的 HttpOnly cookie。
+      // In-page requests use request headers; after refreshing, the address bar token has been cleared, and HttpOnly cookie obtained from the first visit will be used instead.
       const header = req.headers['x-dsh-pet-token'];
       const fromHeader = typeof header === 'string' && TOKEN_SHAPE.test(header);
       const supplied = fromHeader ? header : readTokenCookie(req);
-      // 先按固定形状校验，再走定时安全比较，避免长度与内容泄漏。
+      // First verify according to the fixed shape, and then perform regular safety comparison to avoid leakage of length and content.
       if (!TOKEN_SHAPE.test(supplied) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))) {
-        return rejectRequest(res, 403, '请从桌宠菜单重新打开设置');
+        return rejectRequest(res, 403, 'Reopen settings from the pet menu');
       }
       if (fromHeader && readTokenCookie(req) !== token) {
-        // 会话级 cookie：不设 Max-Age，关掉浏览器即失效，同一进程内刷新继续可用。
-        // Path 取根：对话面板要调 /dsh-pet-<n>/chat 这类插件路由，限定在 /standalone-ai/ 会让它拿不到凭据。
+        // Session level cookie: If Max-Age is not set, it will become invalid when the browser is closed. Refreshing
+        // within the same process will continue to be available. Path root: The dialog panel needs to adjust the /
+        // dsh-pet -< n >/ chat plugin route. If it is limited to / standalone-ai /, it will not be able to get the
+        // credentials.
         res.setHeader('set-cookie', `${TOKEN_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`);
       }
       return true;
@@ -125,7 +129,7 @@ export function createRequestSecurity(): RequestSecurity {
   };
 }
 
-/** 清掉上游写出的宽 CORS 头，并补上安全响应头。 */
+/** Clear the wide CORS header written by the upstream and add the security response header. */
 export function secureResponse(res: ServerResponse, pathname?: string): void {
   const writeHead = res.writeHead.bind(res);
   const isPublicOp = pathname === '/' || pathname === '/health';

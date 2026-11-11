@@ -1,17 +1,20 @@
 /**
- * 独立模式的余额查询：把设置页填的密钥注入 host 半侧的服务商定义。
+ * Balance query in standalone mode: Inject the key filled in the settings page into the service provider definition
+ * of host side.
  *
- * 独立模式没有 DSH 账号服务，也没有 credential store，密钥只有设置页保存的那一把；
- * 因此这里只做一件事——把 key 包成 queryBalance 需要的解析回调，取数与解析全走 host 半侧。
+ * There is no DSH account service in standalone mode, nor is there credential store. The key is only the one saved on
+ * the settings page; therefore, there is only one thing to do here - wrap key into the parsing callback required by
+ * queryBalance, and use the host side for fetching and parsing.
  * @module dsh-pet/src/standalone/ai-provider/balance
  */
 import { queryBalance as queryProviderBalance, type BalanceResult } from '../../host/balance/index.ts';
 
 /**
- * 按设置里选中的服务商查询余额。
- * @param provider - 设置中的 balanceProvider；空串表示未选择，直接返回 unsupported。
- * @param apiKey - 设置页保存的密钥；为空时由 host 半侧落成 credential-missing。
- * @returns host 半侧的归一化结果；失败绝不带伪造数字。
+ * Check the balance according to the service provider selected in the settings.
+ * @param provider - balanceProvider in settings; an empty string means it is not selected and unsupported is returned
+ * directly.
+ * @param apiKey - the key saved in the settings page; when empty, it is completed by host side to credential-missing.
+ * The normalized result of @returns host side; failure will never bring false numbers.
  */
 export async function queryStandaloneBalance(provider: string, apiKey: string): Promise<BalanceResult> {
   if (!provider) return { ok: false, provider: '', reason: 'unsupported' };

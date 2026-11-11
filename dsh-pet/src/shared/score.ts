@@ -1,19 +1,22 @@
 /**
- * 点击积分：飞行中的宠物被点击时按速度与体型算分，速度越快、宠物越小分越高。
- * 不负责达标判定与展示——阈值由调用方判，弹窗与粒子在 score-popup。
- * 依赖 constants 的基准宠物宽度换算体型加成。
+ * Click points: When a flying pet is clicked, points are calculated based on speed and size. The faster the speed and
+ * the smaller the pet, the higher the points. We are not responsible for the judgment and display of compliance - the
+ * threshold is judged by the caller, and the pop-up window and particles are at score-popup. Relies on constants's
+ * base pet width converted size bonus.
  * @module dsh-pet/src/shared/score
  */
 import { PET_REF_WIDTH } from './constants.ts';
 
-/** 达标速度阈值（px/s）：飞行中被点击时低于它不给分（低速点击维持普通点击动画）。 */
+/** Standard speed threshold (px/s): No points will be awarded if it is lower than it when clicked during flight (low-speed clicks maintain normal click animation). */
 export const SCORE_MIN_SPEED = 400;
 
-/** 每 100 px/s 记 1 分（基准尺寸 462px 下）。 */
+/** 1 point for every 100 px/s (under base size 462 px). */
 const SCORE_SPEED_PER_POINT = 100;
 
-/** 点击积分：score = round(speed/100 × 462/size)，至少 1 分。
- *  小宠物目标小、飞行中更难命中，反而分高；speed ≤ 0 或 size ≤ 0 返回 0。 */
+/**
+ * Click points: score = round ( speed/100 × 462/ size ), at least 1 point. Small pets have small targets and are more
+ * difficult to hit while flying, but have higher scores; speed ≤ 0 or size ≤ 0 returns 0.
+ */
 export const clickScore = (speed: number, size: number): number => {
   if (speed <= 0 || size <= 0) return 0;
   return Math.max(1, Math.round((speed / SCORE_SPEED_PER_POINT) * (PET_REF_WIDTH / size)));

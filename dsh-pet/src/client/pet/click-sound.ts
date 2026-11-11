@@ -1,35 +1,37 @@
 /**
- * 点击音效：单例 audio，按键连点节流，播放失败一律静默（没有声音也不该有报错）。
- * 开关由成品配置驱动：配置没加载前保守静音，避免用户在设置页关掉后还响一声。
- * 模块级单例（不是每个宠物一份），多开时同时点也只响一次。
+ * Click sound effect: single instance audio, press the key and click throttling, if the playback fails, it will be
+ * silent (there should be no error if there is no sound). The switch is driven by the finished configuration: it is
+ * kept silent until the configuration is loaded to prevent the user from making a sound after closing the settings
+ * page. It is a module-level singleton (not one for each pet), and it will only ring once if it is opened multiple
+ * times at the same time.
  * @module dsh-pet/src/client/pet/click-sound
  */
 import { ROUTE_PATH } from '../../shared/constants.ts';
 
-/** 音效文件地址。 */
+/** Sound effect file address. */
 const CLICK_SOUND_URL = ROUTE_PATH + '/sound/click-duck.wav';
-/** 音量：与其余提示音同一档，不抢对话内容。 */
+/** Volume: The same level as other prompt tones, so as not to steal the conversation content. */
 const CLICK_SOUND_VOLUME = 0.5;
-/** 连点节流：100ms 内只响一次，避免连点变成噪音。 */
+/** Connected dots throttling: only rings once within 100 ms to prevent connected dots from turning into noise. */
 const CLICK_SOUND_THROTTLE_MS = 100;
 
-/** 复用的 audio 实例，首次播放时创建。 */
+/** audio instance of reuse, created when playing for the first time. */
 let clickAudio: HTMLAudioElement | null = null;
-/** 上一次真正播放的时间戳（ms）。 */
+/** The timestamp of the last real playback (ms). */
 let lastClickSoundAt = 0;
-/** 点击音效开关；配置未加载前保守静音。 */
+/** Click the sound effect switch; keep the sound muted until the configuration is loaded. */
 let clickSoundEnabled = false;
 
 /**
- * 打开或关闭点击音效。
+ * Turn on or off click sound effects.
  *
- * @param enabled - 成品配置里的 `clickSoundEnabled`。
+ * @param enabled - `clickSoundEnabled` in finished configuration.
  */
 export function setClickSoundEnabled(enabled: boolean): void {
   clickSoundEnabled = enabled;
 }
 
-/** 播放点击音效；开关关闭、节流中或音频不可用时静默返回。 */
+/** Play click sound; returns silently when switch is off, throttling, or audio is unavailable. */
 export function playClickSound(): void {
   if (!clickSoundEnabled) return;
   const now = Date.now();
@@ -41,6 +43,6 @@ export function playClickSound(): void {
     clickAudio.currentTime = 0;
     void clickAudio.play().catch(() => {});
   } catch {
-    /* 音频不可用，静默忽略。 */
+    /* Audio not available, silently ignored. */
   }
 }

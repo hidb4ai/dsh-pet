@@ -1,9 +1,10 @@
 /**
- * 宿主环境装配：日志出口、用户目录、配置路径与进程内 store。
+ * Host environment assembly: log exit, user directory, configuration path and in-process store.
  *
- * 只创建对象、算路径、注册可选服务，不启动任何循环，也不碰网络；
- * 需要 ctx 的两处（日志收尾 effect、petApi7340 服务）一并在这里注册。
- * 必须始终成立：日志只创建一次——复用到 standalone 挂上的 logger 时不得再建第二个。
+ * Only create objects, calculate paths, and register optional services, without starting any loops or touching the
+ * network; the two places that require ctx (log cleanup effect, petApi7340 services) are registered here together. It
+ * must always be true: the log is only created once - when reusing logger attached to standalone, a second one must
+ * not be created.
  * @module dsh-pet/src/host/plugin/setup
  */
 import { existsSync } from 'node:fs';
@@ -23,77 +24,77 @@ import { PollStateStore } from '../state.ts';
 import { WorkStatusStore } from '../work-status.ts';
 import type { StandaloneWhisperPolicy } from '../whisper-policy.ts';
 
-/** 装配期需要的宿主上下文：只有 logger / effect / provide 三处能力。 */
+/** Host context required during assembly: only three capabilities: logger / effect / provide. */
 export interface HostSetupContext {
-  /** 宿主日志（可能已被 standalone 换成文件 logger）。 */
+  /** host log (may have been replaced by standalone into file logger). */
   readonly logger?: LoggerLike;
-  /** 注册随插件卸载自动清理的副作用。 */
+  /** Register the side effect that is automatically cleaned up with the plugin unmount. */
   effect(setup: () => (() => void) | void, label: string): void;
-  /** 对外提供 Cordis 服务。 */
+  /** Provide Cordis service to external parties. */
   provide(name: string, value: unknown): void;
 }
 
-/** 独立模式余额查询要用的服务商与密钥（由 standalone 的 standaloneAi 服务提供）。 */
+/** The service provider and key used for standalone mode balance inquiry (provided by standaloneAi service of standalone). */
 export interface StandaloneBalanceAuth {
-  /** 设置页选中的余额服务商 id；空串表示未选择。 */
+  /** The balance service provider id selected on the settings page; an empty string means it is not selected. */
   provider: string;
-  /** 设置页保存的密钥；空串表示未保存。 */
+  /** The key saved in the settings page; an empty string means it is not saved. */
   apiKey: string;
 }
 
-/** 装配产物：apply 后续逻辑与路由层共用的对象。 */
+/** Assembly product: apply Object shared by subsequent logic and route layer. */
 export interface HostSetup {
-  /** 本插件的数据根（配置与用户素材都收敛于此） */
+  /** The data root of this plugin (configuration and user assets converge here) */
   readonly userRoot: string;
-  /** 插件日志出口（文件 + 终端） */
+  /** Plugin log export (file + terminal) */
   readonly log: FileLogger;
-  /** 配置路径集 */
+  /** Configure path set */
   readonly configPaths: ConfigPaths;
-  /** 用户主配置路径 */
+  /** User main configuration path */
   readonly userConfigPath: string;
-  /** 文件宠物目录 */
+  /** File pet directory */
   readonly petConfigDir: string;
-  /** 用户动画目录 */
+  /** User animation directory */
   readonly thumbUserRoot: string;
-  /** 用户表情包目录 */
+  /** User meme directory */
   readonly memesUserRoot: string;
-  /** 表情包目录链 */
+  /** Meme directory chain */
   readonly memeDirsFor: (assetRoot: string) => string[];
-  /** 软取宿主可选服务 */
+  /** Soft host optional service */
   readonly optionalService: (name: string) => unknown;
-  /** 独立模式的碎碎念授权策略 */
+  /** Whisper authorization strategy in standalone mode */
   readonly standaloneAiPolicy: () => StandaloneWhisperPolicy | undefined;
-  /** 独立模式的余额凭证；DSH 宿主里是 undefined → 余额走 currentSelection 与 credential store。 */
+  /** Balance voucher in standalone mode; DSH host is undefined → the balance is currentSelection and credential store. */
   readonly standaloneAiBalance: () => StandaloneBalanceAuth | undefined;
-  /** 轮询快照 */
+  /** polling snapshot */
   readonly state: PollStateStore;
-  /** 第三方菜单注册表 */
+  /** Third-party menu register table */
   readonly menuRegistry: MenuRegistry;
-  /** 播放记录表 */
+  /** Play record table */
   readonly playback: PlaybackStore;
-  /** 工作状态快照 */
+  /** Working status snapshot */
   readonly workStatus: WorkStatusStore;
-  /** 外部写入的固定会话 id */
+  /** Pinned session for external writing id */
   readonly EXTERNAL_WORK_SESSION: string;
-  /** 推进外部写入序号 */
+  /** Advance external write sequence number */
   readonly nextExternalWorkSeq: () => number;
 }
 
 /**
- * 创建宿主运行期对象。
- * @param ctx - 宿主上下文（apply 收到的那一个）。
- * @returns 日志、路径、store 与两个工具函数。
+ * Create host runtime object.
+ * @param ctx - host context (the one apply received).
+ * @returns log, path, store and two utility functions.
  */
 export function createHostSetup(ctx: HostSetupContext): HostSetup {
-  // 用户数据根：配置与用户素材统一收敛于此（扩展包按 <插件id> 各自建目录）
+  // User data root: Configuration and user assets are unified here (the expansion package creates its own directory according to <plugin id>)
   const dshHome = resolveDshHome();
 
   const userRoot = join(dshHome, 'dsh-pet');
 
-  // 统一日志出口（单文件、按大小截断，见 ./log-file）：桌面版 DSH 没有控制台，ctx.logger 只写
-  // stdout 等于把排障信息丢掉；base 保留终端输出。
-  // standalone 已把自己的文件 logger 挂在 ctx.logger 上时必须复用，否则两个 logger 各自的缓冲
-  // 与截断会写同一个文件、互相踩。
+  // Unified log export (single file, truncated by size, see ./log-file): Desktop version DSH has no console,
+  // ctx.logger write-only stdout is equivalent to discarding troubleshooting information; base retains terminal
+  // output. standalone must reuse when its own file logger is mounted on ctx.logger, otherwise the buffering and
+  // truncation of the two loggers will write the same file and step on each other.
   const reusedLog = isFileLogger(ctx.logger) ? ctx.logger : undefined;
 
   const log =
@@ -104,10 +105,10 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
       debugEnabled: process.env.DSH_PET_LOG_DEBUG === '1',
     });
 
-  // 纯模块（./config、./chat、./whisper）拿不到 ctx.logger，用这个默认出口落盘
+  // Pure modules (./config, ./chat, ./whisper) cannot get ctx.logger, use this default export persist to disk
   setDefaultLogger(log);
 
-  // 只在自己创建时负责收尾：复用的 logger 归 standalone/app 生命周期管，插件卸载不该把它关掉。
+  // It is only responsible for cleanup when it is created by itself: logger of reuse is managed by standalone/app lifecycle, and the plugin unmount should not turn it off.
   if (!reusedLog) {
     ctx.effect(
       () => () => {
@@ -119,11 +120,13 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
   }
 
   /**
-   * 软取宿主提供的可选服务（DSH 的 `ctx.get(name, required)` 语义：缺失返回 undefined，不抛）。
+   * Softly retrieve the optional service provided by the host (`ctx.get(name, required)` semantics of DSH: undefined
+   * is returned if missing, not thrown).
    *
-   * 不能直接读 `ctx.xxx`：DSH 的 ctx 是严格 getter，读未写进 inject 的服务会抛异常而非返回 undefined
-   * ——独立模式独有的 standaloneAi / shutdownApp 都没进 inject，裸读会让碎碎念 tick 每拍抛错、
-   * /quit 回 500 而不是 {canQuit:false}。测试里的 fake ctx 没有 get，回落成属性读取即可。
+   * `ctx.xxx` cannot be read directly: ctx of DSH is strictly getter. Services that have not been written into inject
+   * will throw an exception instead of returning undefined - standaloneAi / shutdownApp unique to standalone mode are
+   * not entered into inject, and naked reading will whisper tick each tick. On error, /quit returns 500 instead of
+   * {canQuit:false}. fake ctx in the test does not have get, just set fallback as an attribute to read.
    */
   const optionalService = (name: string): unknown => {
     const get = (ctx as { get?: (n: string, required?: boolean) => unknown }).get;
@@ -131,26 +134,27 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
     return (ctx as unknown as Record<string, unknown>)[name];
   };
 
-  /** 独立模式的碎碎念授权策略（可选能力）：DSH 宿主里是 undefined → 回落到只看 pet.whisperEnabled。 */
+  /** Whisper authorization policy in standalone mode (optional capability): DSH host is undefined → fallback to only see pet.whisperEnabled. */
   const standaloneAiPolicy = (): StandaloneWhisperPolicy | undefined =>
     optionalService('standaloneAi') as StandaloneWhisperPolicy | undefined;
 
-  /** 独立模式的余额凭证（可选能力）：DSH 宿主里是 undefined → 回落到模型服务商与 credential store。 */
+  /** Balance voucher in standalone mode (optional capability): DSH in the host is undefined → fallback to the model service provider with credential store. */
   const standaloneAiBalance = (): StandaloneBalanceAuth | undefined => {
     const service = optionalService('standaloneAi') as { balanceAuth?: () => StandaloneBalanceAuth } | undefined;
     return service?.balanceAuth?.();
   };
 
-  // 用户主配置（可编辑层）与文件宠物目录；配置读取/合并统一走 readAllConfig（./config）。
-  // 主配置是 JSONC（main-config.jsonc）——与包内默认 config.jsonc 同名同格式：
-  // 「同步」写进去的就是带注释的原文，扩展名如实反映内容（main-config.json 只读回落 + 启动迁移）
+  // User main configuration (editable layer) and file pet directory; configuration reading/merging goes to
+  // readAllConfig (./config). The main configuration is JSONC (main-config.jsonc) - the same name and format as the
+  // default config.jsonc in the package: "Synchronization" writes the original text with annotations, and the
+  // extension truthfully reflects the content (main-config.json read-only fallback + start migration)
   const userConfigPath = join(userRoot, 'main-config.jsonc');
 
   const legacyUserConfigPath = join(userRoot, 'main-config.json');
 
   const petConfigDir = join(userRoot, 'pet');
 
-  // 配置路径集（readAllConfig 的唯一输入：内置默认 + 用户主配置 + 文件宠物目录）
+  // Configuration path set (only input for readAllConfig: built-in default + user main configuration + file pet directory)
   const configPaths: ConfigPaths = {
     defaultFile: join(PACKAGE_ROOT, 'assets', 'config.jsonc'),
     userFile: userConfigPath,
@@ -158,21 +162,24 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
     petDir: petConfigDir,
   };
 
-  // 老用户一次性迁移：main-config.json → main-config.jsonc（重命名，内容一字不动；
-  // 新文件已存在则不动旧文件）。失败不影响运行——读取侧对旧路径有回落。
+  // One-time migration for old users: main-config.json → main-config.jsonc (rename, the content will be unchanged; if
+  // the new file already exists, the old file will not be moved). The failure does not affect the operation - the read
+  // side has a fallback for the old path.
   migrateUserConfig(configPaths, (msg) => log.info('[dsh-pet] ' + msg));
 
-  // 用户动画目录（thumb 播放时优先于包内素材；webm 放 main-animation/webm/，mov（macOS 定制）放 main-animation/mov/）
+  // User animation directory (thumb takes priority over the asset in the package when playing; webm puts main-animation/webm/, mov (macOS customized) puts main-animation/mov/)
   const thumbUserRoot = join(userRoot, 'main-animation');
 
-  // 用户表情包目录（碎碎念/对话配图的图片：优先于包内 assets/memes，加图不必改包）
+  // User meme directory (whisper/pictures accompanying conversations: take priority over assets/memes in the package, no need to change the package when adding pictures)
   const memesUserRoot = join(userRoot, 'memes');
 
   /**
-   * 表情包目录链，与动画素材（/thumb）同一套归属语义：`pet/<素材根>-memes/` 存在则只查它；
-   * 否则用户目录优先、包内兜底。池（readMemePool）与路由（/pic/memes）必须走同一个函数，
-   * 否则池里能选的名字路由取不到，气泡配图会图裂。
-   * 素材根来自 URL 段，必须先过 resolveAsset，避免 Windows 上 %5C 解出的反斜杠逃出用户根。
+   * The meme directory chain has the same ownership semantics as the animation asset (/ thumb): if
+   * `pet/<asset-root>-memes/` exists, only check it; otherwise, the user directory takes precedence and the fallback in the
+   * package is given. The pool (readMemePool) and route (/pic/memes) must use the same function, otherwise the name
+   * route that can be selected in the pool cannot be obtained, and the bubble map will be broken. The asset root comes
+   * from the URL segment and must pass through resolveAsset first to avoid the backslash decoded by %5 C on Windows
+   * from escaping the user root.
    */
   const memeDirsFor = (assetRoot: string): string[] => {
     const own = resolveAsset(petConfigDir, assetRoot + '-memes');
@@ -180,57 +187,62 @@ export function createHostSetup(ctx: HostSetupContext): HostSetup {
     return [memesUserRoot, PACKAGE_MEMES_DIR];
   };
 
-  // 轮询状态（/state）：前端 1s 轮询的唯一数据源（余额 / 工作状态 / 通知 / 宠物说话）。
-  // 所有写入走 state.writeSection / writePet（统一更新 counter）。
+  // Polling status (/state): The only data source for frontend 1 s polling (balance/work status/notifications/pet
+  // talk). All writes go to state.writeSection / writePet (unified updates to counter).
   const state = new PollStateStore();
 
-  // 第三方右键菜单注册表：进程内存态，不落盘，重启即空。
-  // 注册表写进 S 的 sections.menu；点击事件不进 S——它是触发不是状态，走 /menu/events 读取即消费。
+  // The third-party right-click menu register table: process memory state, does not persist to disk, and will be empty
+  // after restart. The register table writes sections.menu of S; the click event does not enter S - it is a trigger,
+  // not a state, and it is consumed when reading / menu/events.
   const menuRegistry = new MenuRegistry();
 
-  // 对外 Cordis 服务（宿主半侧）：与页面侧的 petApi7340 同名，但分属两个容器，互不可见也互不覆盖。
-  // 只暴露 register（返回注销函数，配合 ctx.effect 在卸载时自动清理）与 list（排障用）；
-  // 不暴露 unregister：注销走返回值，避免任何插件都能注销别人的 provider。
+  // External Cordis service (host side): It has the same name as petApi7340 on the page side, but it belongs to two
+  // containers and is neither visible nor overwritten by each other. Only expose register (return the logout function,
+  // cooperate with ctx.effect to automatically clean up when unmounting) and list (for troubleshooting); do not expose
+  // unregister: logout returns the value to prevent any plugin from being able to log out other people's provider.
   ctx.provide('petApi7340', {
     balance: {
       register: registerBalanceProvider,
       list: listBalanceProviders,
     },
-    // 语音：第三方注册自己的合成实现，非空时合成走它、空则走内置 edge。
-    // 同样只给 register（返回 disposer）与 list，不给 unregister。
+    // Voice: The third party registers its own synthesis implementation. If it is not empty, synthesis will use it,
+    // and if it is empty, it will use the built-in edge. Similarly, only register (return disposer) and list are
+    // given, but unregister is not given.
     voice: {
       register: registerVoiceProvider,
       list: listVoiceProviders,
     },
-    // 识别：与合成对称的一槽；注册后 /voice/hear 只走它，不再看宿主自带的 speechToText。
+    // Identification: A slot that is symmetrical to synthesis; after registering / voice/hear, just use it and no longer look at the speechToText that comes with the host.
     speech: {
       register: registerSpeechProvider,
       list: listSpeechProviders,
     },
-    // 记忆：第三方注册自己的长期记忆后端（单槽）；只给 register 与 list，注销走返回值。
+    // Memory: The third party registers its own long-term memory backend (single slot); only gives register and list, logs out and returns the value.
     memory: {
       register: registerChatMemoryProvider,
       list: listChatMemoryProviders,
     },
   });
 
-  // 播放记录表（issue #122 第 3 项）：由渲染端上报驱动的状态机 + 等待者。
-  // 与 S 无关：播放记录是 per-caller 资源（只有发起那次点播的调用方关心、有生命周期），
-  // 塞进 1s 全局广播会让每个窗口为每个功能付流量。
+  // Playback record table (issue #122 item 3): state machine driven by renderer report + waiter. It has nothing to do
+  // with S: the playback record is a per-caller resource (only the caller that initiated the playback request cares
+  // and has a lifecycle). Inserting 1 s global broadcast will make each window pay traffic for each function.
   const playback = new PlaybackStore();
 
-  // 工作状态联动快照（/work-status 端点响应，浏览器 1s 轮询）：state = 当前活动状态（null = 空闲），
-  // task = 当前任务详情。state 与 task 都按会话存——全局单值会让一次任务详情跟着此后所有会话活动
-  // 一直显示（issue #59）。气泡文案不在此：浏览器读配置 events.workStatusTexts。
-  // 进程内内存态：重启回空闲；每次会话事件有实际状态变化才更新。
+  // Working status linkage snapshot (/work-status endpoint response, browser 1 s polling): state = current active
+  // status (null = idle),
+  // task = Current task details. Both state and task are stored by session - the global single value will cause the
+  // details of a task to be displayed along with all subsequent session activities (issue #59). The bubble text
+  // is not here: the browser reads the configuration events.workStatusTexts. In-process memory state: Restart and
+  // return to idle; updated every time there is an actual state change in session events.
   const workStatus = new WorkStatusStore();
 
-  /** 外部写入槽：固定会话 id，最后写入者生效；不做多写者仲裁/租约/会话管理 */
+  /** External write slot: fixed session id, the last writer takes effect; no multi-writer arbitration/lease/session management is performed */
   const EXTERNAL_WORK_SESSION = 'api';
 
   let externalWorkSeq = 0;
 
-  /** 推进外部写入序号并返回新值：每发生一次外部写入前进一拍，前端据此判断是否新的一次写入。 */
+  /** Advance the external write sequence number and return the new value: Each time an external write occurs, advance one beat, and the front end will judge whether it is a new write based on this. */
   const nextExternalWorkSeq = (): number => (externalWorkSeq += 1);
 
   return {

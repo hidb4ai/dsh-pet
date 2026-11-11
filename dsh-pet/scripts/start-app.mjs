@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * 开发期直接拉起「单进程桌宠应用」，不打包。
+ * During the development period, the "single-process desktop pet application" is launched directly without packaging.
  *
- * 与打包产物的差别只有 Electron 从哪来：这里用本机已解压的 Electron 跑 lib/app.js，
- * 打包产物则把同一批文件塞进自己的 exe；环境变量与打包版一致，方便对照排查。
- * 不下载 Electron、不构建：解压目录与 lib/app.js 都要事先备好，缺 Electron 时这里直接报错退出。
- * 必须始终：清掉 ELECTRON_RUN_AS_NODE，否则 Electron 会以纯 Node 模式启动。
+ * The only difference from the packaged product is where Electron comes from: here we use the local decompressed
+ * Electron to run lib/app.js, while the packaged product stuffs the same batch of files into its own exe; the
+ * environment variables are consistent with the packaged version, which facilitates comparison and troubleshooting. Do
+ * not download Electron and do not build: the decompression directory and lib/app.js must be prepared in advance. If
+ * Electron is missing, an error will be reported and exited directly. MUST ALWAYS clear ELECTRON_RUN_AS_NODE,
+ * otherwise Electron will start in pure Node mode.
  * @module dsh-pet/scripts/start-app
  */
 import { spawn } from 'node:child_process';
@@ -17,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
 
-/** Electron 可执行文件相对解压目录的路径（按平台）。 */
+/** The path of the Electron executable file relative to the decompression directory (by platform). */
 const ELECTRON_REL =
   process.platform === 'win32'
     ? 'electron.exe'
@@ -30,12 +32,12 @@ const electron = [process.env.DSH_PET_ELECTRON_PATH, join(dshHome, 'electron', E
   (value) => value && existsSync(value),
 );
 if (!electron) {
-  console.error('[start-app] 找不到 Electron：先跑 `npm run ensure:electron` 或设置 DSH_PET_ELECTRON_PATH。');
+  console.error('[start-app] Electron not found. Run npm run ensure:electron or set DSH_PET_ELECTRON_PATH.');
   process.exit(1);
 }
 
 const env = { ...process.env };
-// 宿主里可能带着它：会让 Electron 以纯 Node 模式启动，应用入口 require('electron') 直接失败
+// The host may have it: it will cause Electron to start in pure Node mode, and the application of entry point require (' electron ') will fail directly.
 delete env.ELECTRON_RUN_AS_NODE;
 
 const child = spawn(electron, [join(root, 'lib', 'app.js')], { cwd: root, env, stdio: 'inherit' });

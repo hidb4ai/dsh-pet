@@ -1,33 +1,34 @@
 /**
- * 独立模式设置接口的校验与白名单：给 HTTP 层与单进程入口共用。
+ * Standalone mode sets the verification and whitelist of the interface: shared by the HTTP layer and single-process
+ * entry point.
  *
- * 不依赖任何模型后端，便于在没有 AI 客户端时测试；不负责持久化。
- * 必须始终成立：只放行已知字段，密钥永远不会出现在白名单输出里。
+ * Does not rely on any model backend, making it easy to test when there is no AI client; it is not responsible for
+ * persistence. Must always be true: only known fields are allowed, the key will never appear in the whitelist output.
  * @module dsh-pet/src/standalone/settings
  */
 import type { ModelDiscoveryInput, ModelDiscoveryResult } from './ai-provider/types.ts';
 import { z } from 'zod';
 
-/** 设置服务的对外形状，不绑定具体模型后端。 */
+/** Set the external shape of the service without binding the specific model backend. */
 export interface StandaloneSettingsService {
-  /** 读当前设置。 */
+  /** Read current settings. */
   getSettings(): unknown;
-  /** 保存设置并返回新视图。 */
+  /** Save settings and return to new view. */
   saveSettings(input: unknown): Promise<unknown>;
-  /** 可选：用一次请求验证连接。 */
+  /** Optional: Verify the connection with a single request. */
   testConnection?(input: {
     protocol?: string;
     baseUrl?: string;
     model?: string;
     apiKey?: string;
   }): Promise<{ ok: boolean; message: string; reply?: string }>;
-  /** 可选：拉取端点声明可用的模型。 */
+  /** Optional: Pull endpoint declaration available models. */
   discoverModels?(input: ModelDiscoveryInput): Promise<ModelDiscoveryResult>;
-  /** 可选：按已保存的服务商与密钥查询余额。 */
+  /** Optional: Check the balance according to the saved service provider and key. */
   queryBalance?(): Promise<unknown>;
 }
 
-/** 接口地址的校验：只允许干净的 HTTP 或 HTTPS 地址，凭据不放进 URL。 */
+/** Verification of interface addresses: only clean HTTP or HTTPS addresses are allowed, and credentials are not put into URL. */
 const endpoint = z
   .string()
   .max(2048)
@@ -40,13 +41,13 @@ const endpoint = z
       return false;
     }
   }, '接口地址必须是 HTTP(S) 地址，且不能含账号、查询参数或片段');
-/** 设置补丁的契约：未知字段一律拒绝。 */
+/** Contract for setting patches: Unknown fields are always rejected. */
 const settingsSchema = z
   .object({
     protocol: z.enum(['openai-compatible', 'anthropic']).optional(),
     baseUrl: endpoint.optional(),
     model: z.string().max(200).optional(),
-    /** 只限长度；取值枚举由 ai-config.ts 的持久化校验把关，避免两处各写一份名单。 */
+    /** Length only; the value enumeration is checked by the persistence verification of ai-config.ts to avoid writing a list in two places. */
     balanceProvider: z.string().max(40).optional(),
     apiKey: z.string().max(8192).optional(),
     clearApiKey: z.boolean().optional(),
@@ -57,14 +58,17 @@ const settingsSchema = z
   })
   .strict();
 
-/** 校验设置补丁。 */
+/** Verification settings patch. */
 export function validateSettings(input: unknown): z.infer<typeof settingsSchema> {
   const result = settingsSchema.safeParse(input);
-  if (!result.success) throw new Error('设置无效：请检查协议、接口地址、间隔（至少 60 秒）和输出上限（128–4096）');
+  if (!result.success)
+    throw new Error(
+      'Invalid settings: check the protocol, endpoint, interval (at least 60 seconds) and output limit (128-4096)',
+    );
   return result.data;
 }
 
-/** 可出现在响应里的字段白名单。 */
+/** Whitelist of fields that can appear in responses. */
 const publicNames = [
   'protocol',
   'baseUrl',
@@ -76,7 +80,7 @@ const publicNames = [
   'timeoutMs',
   'hasKey',
 ] as const;
-/** 过滤出可公开的设置字段。 */
+/** Filter out public setting fields. */
 export function publicSettings(input: unknown): Record<string, unknown> {
   if (input === null || typeof input !== 'object') return {};
   const record = input as Record<string, unknown>;

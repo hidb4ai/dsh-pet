@@ -1,103 +1,109 @@
 /**
- * 余额查询的契约层（host 半侧）：服务商定义、取数上下文、路由结果与展示形态。
+ * Contract layer of balance query (host side): service provider definition, access context, route results and display
+ * form.
  *
- * 只有形状，不含具体服务商知识：接口地址、额度与解析各在 ./providers/<名>.ts。
- * 不 import 展示层（DSH 单文件加载约束），因此与 src/shared 各声明一份同构类型。
- * 始终成立：失败必须显式，0 余额只能来自接口。契约见 openapi.yaml。
+ * Only the shape, without specific service provider knowledge: the interface address, quota and analysis are each in
+ * ./providers/<name>.ts. There is no import presentation layer (DSH single file loading constraint), so it declares an
+ * isomorphic type with src/shared. Always true: failure must be explicit, 0 balances can only come from the interface.
+ * See openapi.yaml for the contract.
  *
  * @module dsh-pet/src/host/balance/types
  */
 
 /**
- * 凭证来源：ref 是 DSH credentialRef 名，由调用方解析后注入；none 表示该路由没有 API Key，
- * 凭证是 DSH 账号服务持有的授权记录，只能经服务查询。
+ * Certificate source: ref is the name of DSH credentialRef, which is parsed and injected by the caller; none means
+ * that the route does not have API Key. The certificate is the authorization record held by the DSH account service
+ * and can only be queried by the service.
  */
 export type CredentialSpec = { mode: 'ref'; ref: string } | { mode: 'none' };
 
-/** 内置服务商取数时收到的上下文。 */
+/** The context received when the built-in service provider retrieves data. */
 export interface BalanceFetchContext {
-  /** 命中的 provider id，原样回填进结果。 */
+  /** Hitting provider id, backfill the result as it is. */
   provider: string;
-  /** 已解析的 API Key；none 路由为空串。 */
+  /** API Key has been parsed; none route is an empty string. */
   key: string;
-  /** 账号余额查询；仅 none 路由使用。 */
+  /** Account balance query; only used by none route. */
   resolveAccount?: () => Promise<AccountBalanceSnapshot | null | undefined>;
 }
 
 /**
- * 第三方注册的 provider：只有 id 与取数。
- * 拿不到宿主解析的 key，也拿不到 resolveAccount；凭证由注册方自行解决。
+ * provider of third-party register: only id can be retrieved. You cannot get the key parsed by the host, nor can you
+ * get the resolveAccount; the certificate will be resolved by the register party.
  */
 export interface PluginProvider {
-  /** 命中的 provider id（必须与 agentDefaultModel 报告的 id 完全一致）。 */
+  /** Hit provider id (must exactly match id reported by agentDefaultModel). */
   id: string;
-  /** 取数并解析；只走成功路径，失败抛错，由 queryBalance 统一落成 fetch-error。 */
+  /** Get the number and analyze it; only take the successful path, throw an error if it fails, and queryBalance will be unified into fetch-error. */
   fetch(ctx: PluginFetchContext): Promise<BalanceSuccess>;
 }
 
-/** 第三方取数上下文：只有 provider。 */
+/** Third-party access context: only provider. */
 export interface PluginFetchContext {
-  /** 命中的 provider id，原样回填进结果。 */
+  /** Hitting provider id, backfill the result as it is. */
   provider: string;
 }
 
 /**
- * 一个内置服务商的余额查询定义：一个文件即一个自包含服务商。
- * 接口地址、业务常量与响应解析都在 ./providers/ 下它自己的文件里。
+ * Balance query definition of a built-in service provider: a file is a self-contained service provider. The interface
+ * address, business constants and response parsing are all in its own file under ./providers/.
  */
 export interface BalanceProvider {
-  /** 可命中的 provider id（agentDefaultModel 报告的 id）。 */
+  /** Hittable provider id (agentDefaultModel reported id). */
   id: string;
-  /** 凭证来源，决定 queryBalance 是解析凭证还是调服务。 */
+  /** The source of the certificate determines whether queryBalance parses the certificate or adjusts the service. */
   credential: CredentialSpec;
-  /** 取数并解析；只走成功路径，失败抛错，由 queryBalance 统一落成 fetch-error。 */
+  /** Get the number and analyze it; only take the successful path, throw an error if it fails, and queryBalance will be unified into fetch-error. */
   fetch(ctx: BalanceFetchContext): Promise<BalanceSuccess>;
 }
 
 /**
- * 展示形态：windows 为三窗口用量，money 为账户金额，points 为积分，custom 为第三方声明式布局。
- * 积分单列是因为 granted/toppedUp 在积分里没有意义；custom 则把布局也交给服务商。
- * 形态本身不含任何服务商信息。
+ * Display format: windows is the three-window usage, money is the account amount, points is the points, and custom is
+ * the third-party declarative layout. The points are listed separately because granted/toppedUp has no meaning in the
+ * points; custom also leaves the layout to the service provider. The form itself does not contain any service provider
+ * information.
  */
 export type BalanceShape = 'windows' | 'money' | 'points' | 'custom';
 
-/** 自定义气泡节点可用的标签。 */
+/** Customize the labels available for bubble nodes. */
 export type CustomTag = 'div' | 'span' | 'i' | 'b' | 'strong' | 'em' | 'img';
 
 /**
- * 自定义气泡节点（shape 为 custom 时的声明式布局树）。
- * 与 src/shared/balance/types.ts 的 CustomNode 同构；合法 tag、样式白名单与容量上限
- * 由客户端解析层强制，宿主半侧只负责把结构原样写进叶子。
+ * Custom bubble node (declarative layout tree when shape is custom). Isomorphic to CustomNode of
+ * src/shared/balance/types.ts; valid tag, style whitelist and capacity limit are enforced by the client parsing layer,
+ * and the host side is only responsible for writing the structure into the leaves as is.
  */
 export interface CustomNode {
   tag: CustomTag;
   text?: string;
-  /** 仅 img：http/https 地址。 */
+  /** img only: http/https address. */
   src?: string;
-  /** camelCase 内联样式。 */
+  /** camelCase inline style. */
   style?: Record<string, string>;
   children?: CustomNode[];
 }
 
-/** shape 为 custom 的载荷：多页视图（或单页/两页写法）与可选档位百分比。 */
+/** shape is the load of custom: multi-page view (or single page/two page writing) and optional state percentage. */
 export interface CustomBalance {
-  /** 多页视图（1~4 项，首项为初始页）；点击气泡循环切页，只有 1 页时不可点。 */
+  /** Multi-page view (1~4 items, the first item is the initial page); click the bubble to cycle through pages, and cannot be clicked when there is only 1 page. */
   views?: CustomNode[];
-  /** 单页或两页写法：收起态树；给了 detailRows 等价于 views: [rows, detailRows]。 */
+  /** Single page or two page writing method: collapse the state tree; giving detailRows is equivalent to views: [ rows , detailRows ]. */
   rows?: CustomNode;
-  /** 展开态树：仅两页写法使用。 */
+  /** Expanded state tree: only two pages are used. */
   detailRows?: CustomNode;
-  /** 已用百分比（0-100），驱动档位动画；缺省不播。 */
+  /** Used percentage (0-100), driving state animation; not played by default. */
   percent?: number;
 }
 
-/** 计价档位装饰（气泡上的「峰/谷」），由服务商按自身计价规则算好后随数据带出。 */
+/** The pricing state decoration (the "peak/valley" on the bubble) is calculated by the service provider according to its own pricing rules and then brought out with the data. */
 export type PricingTier = 'peak' | 'idle';
 
 /**
- * 区间累计用量（本期）：目前只有 commandcode 回传，给不出时整个字段缺省，气泡也就没有这一页。
+ * Interval cumulative usage (this issue): Currently, only commandcode is returned. If it is not available, the entire
+ * field will be defaulted, and bubble will not have this page.
  *
- * tokens 是毛值——接口不提供缓存命中拆分；requests 与 tokens 来自批量聚合，可能比窗口百分比滞后数分钟。
+ * tokens is a gross value - the interface does not provide cache hit splitting; requests and tokens are from the batch
+ * aggregate and may lag several minutes behind the window percentage.
  */
 export interface BalanceUsage {
   totalTokens: number;
@@ -108,9 +114,11 @@ export interface BalanceUsage {
 }
 
 /**
- * 三窗口用量（windows 形态）：opencode 与 commandcode 共用，展示层因此共用「取最紧迫窗口」逻辑。
- * monthly 必有；rolling 与 weekly 缺省表示服务商没有该窗口，而非 0。三个满额度齐全时按剩余额度
- * 比较，否则退化为已用百分比；rollingLabel 是服务商业务事实，重置时间缺省按「已重置」处理。
+ * Three-window usage (windows form): opencode and commandcode are shared, so the display layer shares the "take the
+ * most urgent window" logic. monthly must be present; rolling and weekly default to indicate that the service provider
+ * does not have this window, not 0. When the three full quotas are complete, the comparison is based on the remaining
+ * quota, otherwise it is reduced to a used percentage; rollingLabel is the service provider's business fact, and the
+ * reset time is treated as "reset" by default.
  */
 export interface WindowsUsage {
   monthly: number;
@@ -123,14 +131,15 @@ export interface WindowsUsage {
   rollingResetsAt?: string;
   weeklyResetsAt?: string;
   monthlyResetsAt?: string;
-  /** 区间累计用量（可选页）；缺省表示该服务商没有这项数据 */
+  /** Interval cumulative usage (optional page); the default means that the service provider does not have this data */
   usage?: BalanceUsage;
 }
 
 /**
- * 一个币种的余额（money 形态）：DeepSeek 官方路由与 DSH 账号路由同构。
- * 金额串与接口一致，不做换算、不重算；fullBalance 是该币种的档位基准，缺省表示无基准、不参与折算。
- * 账户可同时持有多个币种，故为数组；不同币种的基准不能互换。
+ * The balance of a currency (money form): DeepSeek official route is isomorphic to DSH account route. The amount
+ * string is consistent with the interface, and no conversion or recalculation is performed; fullBalance is the level
+ * benchmark of the currency, and the default means no benchmark and no conversion. The account can hold multiple
+ * currencies at the same time, so it is an array; the benchmarks of different currencies cannot be interchanged.
  */
 export interface MoneyWallet {
   currency: string;
@@ -140,15 +149,16 @@ export interface MoneyWallet {
   fullBalance?: string;
 }
 
-/** 账户金额（money 形态）；tier 为可选峰谷装饰，只有提供该规则的服务商才带。 */
+/** Account amount (money form); tier is an optional peak and valley decoration, which is only provided by service providers that provide this rule. */
 export interface MoneyBalance {
   wallets: MoneyWallet[];
   tier?: PricingTier;
 }
 
 /**
- * 积分/点数余额（points 形态）：total 与接口一致，不做换算、不重算。
- * unit 只是数字后缀，不参与计算；full 是档位基准，缺省不折算、不播档位动画。
+ * Points/Points Balance (points form): total is consistent with the interface, no conversion or recalculation. unit is
+ * just a numeric suffix and does not participate in the calculation; full is the state benchmark and does not convert
+ * or play state animations by default.
  */
 export interface PointsBalance {
   unit: string;
@@ -157,19 +167,20 @@ export interface PointsBalance {
 }
 
 /**
- * DSH 账号服务的余额快照（ctx.deepseekAccount.getBalance 的返回，只取用到的字段）。
- * 与 dsh-deepseek-account 的 AccountDetails['balance'] 同构；金额是保留服务端精度的十进制字符串。
- * failed 表示查过但失败，与未登录的 null 不同。
+ * Balance snapshot of DSH account service (return of ctx.deepseekAccount.getBalance, only the used fields are taken).
+ * Isomorphic to AccountDetails [' balance '] of dsh-deepseek-account; the amount is a decimal character string that
+ * preserves server-side precision. failed means it was checked but failed, which is different from null which is not
+ * logged in.
  */
 export interface AccountBalanceSnapshot {
   status: 'ready' | 'failed';
-  /** 充值钱包（normal_wallets）。 */
+  /** Recharge wallet (normal_wallets). */
   value?: readonly { currency?: unknown; balance?: unknown }[];
-  /** 赠送钱包（bonus_wallets）。 */
+  /** Free wallet (bonus_wallets). */
   bonusWallets?: readonly { currency?: unknown; balance?: unknown }[];
 }
 
-/** 成功结果：shape 是展示形态，provider 是实际取数的服务商；client 与 host 同构使用。 */
+/** Success result: shape is the display form, provider is the service provider that actually retrieves the number; client and host are used isomorphically. */
 export type BalanceSuccess =
   | { ok: true; provider: string; shape: 'windows'; data: WindowsUsage }
   | { ok: true; provider: string; shape: 'money'; data: MoneyBalance }
@@ -177,8 +188,8 @@ export type BalanceSuccess =
   | { ok: true; provider: string; shape: 'custom'; data: CustomBalance };
 
 /**
- * 查询结果：成功，或带 reason 的失败；失败绝不返回伪造数字。
- * reason 为 unsupported、credential-missing 或 fetch-error，message 可选。
+ * Query result: success, or failure with reason; failure will never return a forged number. reason is unsupported,
+ * credential-missing or fetch-error, message is optional.
  */
 export type BalanceResult =
   | BalanceSuccess

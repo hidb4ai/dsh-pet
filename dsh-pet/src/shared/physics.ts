@@ -1,8 +1,8 @@
 /**
- * 拖拽抛掷物理的公开出口：常量、弹簧、挤压、抛掷与碰撞。
+ * Exposed exits for drag-and-throw physics: constants, springs, squeeze, throw, and collision.
  *
- * 只做再导出，不含逻辑；子模块按变化原因分居 ./physics/。
- * 必须始终成立：浏览器半侧与桌面 Helper 消费同一份实现，手感不得分叉。
+ * Only re-export, no logic; sub-modules are separated according to the reason of change./physics/. It must always be
+ * true: the browser side and the desktop Helper consume the same implementation, and the feel cannot be forked.
  * @module dsh-pet/src/shared/physics
  */
 export {

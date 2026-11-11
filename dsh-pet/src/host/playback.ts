@@ -1,8 +1,8 @@
 /**
- * 播放回执的公开出口：状态判定、路径解析与记录表。
+ * Public exit of playback receipt: status determination, path analysis and record table.
  *
- * 只做再导出，逻辑分居 ./playback/。
- * 必须始终成立：记录只由渲染端上报推进，宿主不猜播放结果。
+ * Only re-export, logical separation ./playback/. It must always be true: the record is only reported and advanced by
+ * the renderer, and the host does not guess the playback result.
  * @module dsh-pet/src/host/playback
  */
 export {

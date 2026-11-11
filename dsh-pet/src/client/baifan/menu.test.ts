@@ -1,10 +1,13 @@
 /**
- * 「吃白饭」菜单控制器的契约测试 —— 钉住三个判定：读点击的三种输入、注册菜单的前置条件、
- * 点播归属条目的查找。这三个判定不碰 DOM，是这段逻辑里唯一能脱离浏览器断言的部分。
+ * Contract test of the "eat free rice" menu controller - verify three judgments: read the three inputs of the click,
+ * register the precondition of the menu, and search for the playback request attribute entry. These three
+ * determinations do not touch DOM and are the only part of this logic that can be separated from the browser
+ * assertion.
  *
- * 假传输层与假演出只实现被调用的成员；`retryMs` 传负数，让首拍必定进入补注册分支。
+ * The fake transport layer and fake performance only implement the called members; `retryMs` passes a negative number,
+ * so that the first shot must enter the complement register branch.
  *
- * 跑法：node --experimental-strip-types --test src/client/baifan/menu.test.ts
+ * Running method: node --experimental-strip-types --test src/client/baifan/menu.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,17 +17,17 @@ import { createMenu } from './menu.ts';
 import type { Show } from './show.ts';
 import type { Transport } from './transport.ts';
 
-/** 记录一次接口调用。 */
+/** Record an interface call. */
 interface CallRecord {
-  /** HTTP 方法。 */
+  /** HTTP method. */
   method: string;
-  /** 路径（不含前缀）。 */
+  /** Path (without prefix). */
   path: string;
-  /** 请求体（有则记录）。 */
+  /** Request body (record if available). */
   body?: unknown;
 }
 
-/** 假传输层：只实现 `call`，其余成员给空实现。 */
+/** Fake transport layer: only `call` is implemented, and the remaining members are implemented empty. */
 function fakeTransport(reply: (rec: CallRecord) => Record<string, unknown>): {
   transport: Transport;
   calls: CallRecord[];
@@ -45,7 +48,7 @@ function fakeTransport(reply: (rec: CallRecord) => Record<string, unknown>): {
   return { transport, calls };
 }
 
-/** 假演出：只记录开演请求。 */
+/** Fake show: only record start request. */
 function fakeShow(): { show: Show; starts: Array<{ petId: string; assets: ActivityAssets }> } {
   const starts: Array<{ petId: string; assets: ActivityAssets }> = [];
   const show: Show = {
@@ -58,26 +61,26 @@ function fakeShow(): { show: Show; starts: Array<{ petId: string; assets: Activi
   return { show, starts };
 }
 
-/** 等异步链跑完：`launch` 里只有一次 await，两轮 setImmediate 足够。 */
+/** Wait for the asynchronous chain to finish running: there is only one await in `launch`, two rounds of setImmediate are enough. */
 async function flush(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-/** 造一份默认依赖；`get` 的返回值按用例覆盖。 */
+/** Create a default dependency; the return value of `get` is overwritten according to use cases. */
 function makeMenu(get: (name: string) => unknown, transport: Transport, show: Show): ReturnType<typeof createMenu> {
   return createMenu({
     get,
     transport,
     show,
     signal: new AbortController().signal,
-    // 负数：`performance.now() - 0` 恒大于它，首拍必定进入补注册分支。
+    // Negative number: `performance.now() - 0` is always greater than it, and the first beat must enter the complement register branch.
     retryMs: -1,
   });
 }
 
 describe('createMenu', () => {
-  test('读点击：页面内服务缺失 → 补注册菜单，不点播', async () => {
+  test('Read click: The service in the page is missing → add register menu, no playback request', async () => {
     const { transport, calls } = fakeTransport(() => ({ ok: true }));
     const { show, starts } = fakeShow();
     const menu = makeMenu(() => undefined, transport, show);
@@ -88,12 +91,12 @@ describe('createMenu', () => {
     assert.deepEqual(
       calls.map((rec) => rec.method + ' ' + rec.path),
       ['GET /config'],
-      '服务缺失时应只补注册，不应发生点播',
+      'When the service is missing, only register should be added, and playback request should not occur.',
     );
-    assert.equal(starts.length, 0, '没有点击就不该开演');
+    assert.equal(starts.length, 0, 'The show should not start without clicks');
   });
 
-  test('读点击：owner 还没进快照（ok:false）→ 补注册菜单', async () => {
+  test('Read click: owner has not entered the snapshot (ok:false) → add register menu', async () => {
     const { transport, calls } = fakeTransport(() => ({ ok: true }));
     const { show } = fakeShow();
     const menu = makeMenu(() => ({ menuEvents: () => ({ ok: false }) }), transport, show);
@@ -104,11 +107,11 @@ describe('createMenu', () => {
     assert.deepEqual(
       calls.map((rec) => rec.method + ' ' + rec.path),
       ['GET /config'],
-      'owner 不在快照里时按间隔重试注册',
+      'Retry register at intervals when owner is not in the snapshot',
     );
   });
 
-  test('读点击：命中「吃白饭」→ 按 petId 找归属条目并开演', async () => {
+  test('Read click: Hit "Eat for free" → Press petId to find the entry and start the performance', async () => {
     const { transport, calls } = fakeTransport(() => ({
       main: { pets: [{ id: 'pet-1' }], animations: { baifan: ['a', 'b'] } },
     }));
@@ -121,13 +124,13 @@ describe('createMenu', () => {
     assert.deepEqual(
       calls.map((rec) => rec.method + ' ' + rec.path),
       ['GET /config'],
-      '命中后只读一次配置，不再补注册',
+      'Read-only configuration after hit, no more register',
     );
-    assert.equal(starts.length, 1, '找到归属条目应开演一次');
-    assert.equal(starts[0].petId, 'pet-1', '开演的是被点的那只宠物');
+    assert.equal(starts.length, 1, 'Found the belonging entry and should start the show once');
+    assert.equal(starts[0].petId, 'pet-1', 'The show starts with the pet that was selected.');
   });
 
-  test('注册菜单：main 没配 animations.baifan → 不发 POST', async () => {
+  test('register menu: main does not match animations.baifan → does not send POST', async () => {
     const { transport, calls } = fakeTransport(() => ({ main: { animations: {} } }));
     const { show } = fakeShow();
     const menu = makeMenu(() => undefined, transport, show);
@@ -137,11 +140,11 @@ describe('createMenu', () => {
     assert.deepEqual(
       calls.map((rec) => rec.method + ' ' + rec.path),
       ['GET /config'],
-      '没有这个玩法就不该往宿主注册菜单项',
+      'Without this method, you should not go to the host register menu item',
     );
   });
 
-  test('注册菜单：配了 animations.baifan → POST 带上 owner', async () => {
+  test('register menu: equipped with animations.baifan → POST with owner', async () => {
     const { transport, calls } = fakeTransport(() => ({ ok: true, main: { animations: { baifan: ['a'] } } }));
     const { show } = fakeShow();
     const menu = makeMenu(() => undefined, transport, show);
@@ -149,12 +152,16 @@ describe('createMenu', () => {
     await menu.ensureMenu();
 
     const post = calls.find((rec) => rec.method === 'POST');
-    assert.ok(post !== undefined, '配了玩法应发 POST /menu/item');
+    assert.ok(post !== undefined, 'Equipped with gameplay, POST / menu/item should be issued');
     assert.equal(post.path, '/menu/item');
-    assert.deepEqual((post.body as Record<string, unknown>).owner, 'dsh-pet-baifan', '菜单项 owner 固定为吃白饭');
+    assert.deepEqual(
+      (post.body as Record<string, unknown>).owner,
+      'dsh-pet-baifan',
+      'Menu item owner is fixed for eating rice',
+    );
   });
 
-  test('点播：被点的宠物不属于任何条目 → 不开演', async () => {
+  test('playback request: The clicked pet does not belong to any entry → the show will not start', async () => {
     const { transport } = fakeTransport(() => ({ main: { pets: [{ id: 'other' }], animations: { baifan: ['a'] } } }));
     const { show, starts } = fakeShow();
     const menu = makeMenu(() => ({ menuEvents: () => ({ ok: true, events: { 吃白饭: 'pet-1' } }) }), transport, show);
@@ -162,10 +169,10 @@ describe('createMenu', () => {
     menu.tick();
     await flush();
 
-    assert.equal(starts.length, 0, '找不到归属条目就不演');
+    assert.equal(starts.length, 0, 'The performance will not be performed if the attribution entry cannot be found.');
   });
 
-  test('dispose 后：不再读点击', async () => {
+  test('After dispose: No more reading clicks', async () => {
     const { transport, calls } = fakeTransport(() => ({ ok: true }));
     const { show } = fakeShow();
     const menu = makeMenu(() => ({ menuEvents: () => ({ ok: true, events: { 吃白饭: 'pet-1' } }) }), transport, show);
@@ -174,6 +181,6 @@ describe('createMenu', () => {
     menu.tick();
     await flush();
 
-    assert.equal(calls.length, 0, '卸载后不应再发请求');
+    assert.equal(calls.length, 0, 'No more requests should be sent after unmounting');
   });
 });

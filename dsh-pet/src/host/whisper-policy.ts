@@ -1,18 +1,20 @@
 /**
- * 自动碎碎念的调度结论：把「宠物自身开关」与「独立模式 AI 是否就绪」合成是否启用，周期只取宠物配置。
- * 不负责计时与生成；周期唯一来源是宿主侧的 `eventsRefreshSec.whisper`。
+ * The scheduling conclusion of automatic whisper: whether the "pet self-switch" and "standalone mode AI ready"
+ * synthesis are enabled, the cycle only takes the pet configuration. It is not responsible for timing and generation;
+ * the only source of the cycle is `eventsRefreshSec.whisper` on the host side.
  * @module dsh-pet/src/host/whisper-policy
  */
 
 export interface StandaloneWhisperPolicy {
-  /** 独立模式服务是否已就绪（配置齐全且未暂停）。 */
+  /** Is the standalone mode service ready (fully configured and not paused). */
   isReady(): boolean;
 }
 
 /**
- * 自动碎碎念的调度结论：是否启用 + 实际周期。
+ * Automatic whisper scheduling conclusion: enabled + actual period.
  *
- * 独立模式另需 AI 就绪；DSH 宿主模式下只看宠物配置自身的开关与周期。
+ * In standalone mode, AI is required to be ready; in DSH host mode, only the switch and cycle of the pet
+ * configuration itself are viewed.
  */
 export function automaticWhisperSchedule(
   policy: StandaloneWhisperPolicy | undefined,

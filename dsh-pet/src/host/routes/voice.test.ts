@@ -1,6 +1,6 @@
 /**
- * 语音路由的契约测试（src/host/routes/voice.ts）。
- * 只断言协议层：方法判定、JSON 判定，以及把语音服务的结论映射成应答；不发真实请求。
+ * Contract test of voice route (src/host/routes/voice.ts). Only assertion protocol layer: method determination, JSON
+ * determination, and mapping the conclusion of the voice service to a response; no real request is sent.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -9,7 +9,7 @@ import { handleVoiceRoutes } from './voice.ts';
 
 const VOICES = [{ id: 'zh-CN-XiaoxiaoNeural', name: '晓晓', tag: '女 · 通用', default: true }];
 
-/** 造最小依赖：只提供 voice 与 speech，其余字段这条路由不会碰。 */
+/** Provide only voice and speech; this route does not access other dependencies. */
 function makeDeps(
   speak: (raw: unknown) => Promise<unknown>,
   hear: (raw: unknown, signal?: AbortSignal) => Promise<unknown> = async () => ({ ok: true, text: '你好' }),
@@ -17,12 +17,12 @@ function makeDeps(
   return { voice: { listVoices: () => VOICES, speak }, speech: { hear } } as unknown as PetRouteDeps;
 }
 
-/** 造一次路由输入。 */
+/** Create a route input. */
 function input(rest: string, method: string, body?: string) {
   return { url: new URL(`http://127.0.0.1:1/dsh-pet-7340/${rest}`), rest, method, body };
 }
 
-test('GET /voice/voices：返回音色列表', async () => {
+test('GET /voice/voices: Return to the tone list', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: true, file: '/x.mp3' })),
     input('voice/voices', 'GET'),
@@ -33,7 +33,7 @@ test('GET /voice/voices：返回音色列表', async () => {
   assert.deepEqual((result.obj as { voices: unknown }).voices, VOICES);
 });
 
-test('POST /voice/speak 成功：交回 mp3 文件', async () => {
+test('POST /voice/speak Success: Return the mp3 file', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: true, file: '/cache/a.mp3' })),
     input('voice/speak', 'POST', '{"text":"hi"}'),
@@ -41,7 +41,7 @@ test('POST /voice/speak 成功：交回 mp3 文件', async () => {
   assert.deepEqual(result, { kind: 'file', file: '/cache/a.mp3', contentType: 'audio/mpeg' });
 });
 
-test('POST /voice/speak 业务失败：200 + 失败实体（不做成 4xx）', async () => {
+test('POST /voice/speak business failure: 200 + failed entity (not made into 4 xx)', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: false, reason: 'bad-request', message: 'nope' })),
     input('voice/speak', 'POST', '{"text":""}'),
@@ -52,7 +52,7 @@ test('POST /voice/speak 业务失败：200 + 失败实体（不做成 4xx）', a
   assert.equal((result.obj as { reason: string }).reason, 'bad-request');
 });
 
-test('POST /voice/speak 请求体不是 JSON：400', async () => {
+test('POST /voice/speak request body is not JSON: 400', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: true, file: '/x' })),
     input('voice/speak', 'POST', 'not json'),
@@ -61,7 +61,7 @@ test('POST /voice/speak 请求体不是 JSON：400', async () => {
   if (result?.kind === 'json') assert.equal(result.status, 400);
 });
 
-test('POST /voice/hear 成功：返回识别文字', async () => {
+test('POST /voice/hear Success: Return recognition text', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: true, file: '/x.mp3' })),
     input('voice/hear', 'POST', '{"audio":"AAAA"}'),
@@ -72,7 +72,7 @@ test('POST /voice/hear 成功：返回识别文字', async () => {
   assert.deepEqual(result.obj, { ok: true, text: '你好' });
 });
 
-test('POST /voice/hear 业务失败：200 + 失败实体（与 /chat 同一口径）', async () => {
+test('POST /voice/hear business failure: 200 + failed entities (same conventions as / chat)', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(
       async () => ({ ok: true, file: '/x.mp3' }),
@@ -90,7 +90,7 @@ test('POST /voice/hear 业务失败：200 + 失败实体（与 /chat 同一口�
   assert.equal((result.obj as { reason: string }).reason, 'unsupported');
 });
 
-test('POST /voice/hear 请求体不是 JSON：400', async () => {
+test('POST /voice/hear request body is not JSON: 400', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: true, file: '/x' })),
     input('voice/hear', 'POST', 'nope'),
@@ -98,7 +98,7 @@ test('POST /voice/hear 请求体不是 JSON：400', async () => {
   assert.equal(result?.kind === 'json' ? result.status : 0, 400);
 });
 
-test('POST /voice/hear 把断开信号交给识别服务', async () => {
+test('POST /voice/hear hand over the disconnect signal to the identification service', async () => {
   let received: AbortSignal | undefined;
   const abort = new AbortController();
   await handleVoiceRoutes(
@@ -111,10 +111,10 @@ test('POST /voice/hear 把断开信号交给识别服务', async () => {
     ),
     { ...input('voice/hear', 'POST', '{"audio":"AAAA"}'), signal: abort.signal },
   );
-  assert.equal(received, abort.signal, '调用方断开时识别应能中止');
+  assert.equal(received, abort.signal, 'Recognition should be aborted when the caller is disconnected');
 });
 
-test('方法不对：三个端点都是 405', async () => {
+test('Wrong method: all three endpoints are 405', async () => {
   const speak = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: true, file: '/x' })),
     input('voice/speak', 'GET'),
@@ -132,7 +132,7 @@ test('方法不对：三个端点都是 405', async () => {
   assert.equal(hear?.kind === 'json' ? hear.status : 0, 405);
 });
 
-test('不相干的路径：交回 undefined，让下一个处理器接手', async () => {
+test('Irrelevant path: hand back undefined and let next processor take over', async () => {
   const result = await handleVoiceRoutes(
     makeDeps(async () => ({ ok: true, file: '/x' })),
     input('state', 'GET'),

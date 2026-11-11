@@ -1,41 +1,42 @@
 /**
- * `@deepseek-ai/dsh-llm` 的独立模式替身：消息工厂、文本块拼装与 reasoning 标识。
+ * Standalone mode standalone for `@deepseek-ai/dsh-llm` : message factory, text block assemble and reasoning flag.
  *
- * 独立模式没有模型后端，这些实现只为让静态 import 的模块图能加载。
- * 形状必须与 DSH 契约一致：配置里显式写了模型时，生成侧会真的走到这里。
- * 只在独立模式构建里生效，由 alias 指向本文件。
+ * There is no model backend in standalone mode, these are implemented only to allow the static import module graph to
+ * be loaded. The shape must be consistent with the DSH contract: when the model is explicitly written in the
+ * configuration, the generation side will actually go here. Only effective in standalone mode builds, pointed to by
+ * alias.
  * @module dsh-pet/src/standalone/shims/dsh-llm
  */
 
-/** 消息的最小形状：只有角色、内容与来源。 */
+/** Minimal shape of message: only role, content and source. */
 export interface StandaloneLlmMessage {
   role: 'user' | 'assistant';
   content: unknown;
   source: unknown;
 }
 
-/** 创建用户消息。 */
+/** Create user message. */
 export function createUserMessage(input: { content: unknown; source: unknown }): StandaloneLlmMessage {
   return { role: 'user', content: input.content, source: input.source };
 }
 
-/** 创建助手消息。 */
+/** Create assistant message. */
 export function createAssistantMessage(input: { content: unknown; source: unknown }): StandaloneLlmMessage {
   return { role: 'assistant', content: input.content, source: input.source };
 }
 
-/** 文本块形状。 */
+/** Text block shape. */
 export interface StandaloneTextBlock {
   type: 'text';
   text: string;
 }
 
-/** 流式文本拼装：只收集文本块，独立模式只会有空流。 */
+/** Streaming text assemble: only collects text blocks, standalone mode will only have empty streams. */
 export class BlockAssembler {
-  /** 已收集的文本片段。 */
+  /** Collected text fragments. */
   private readonly chunks: string[] = [];
 
-  /** 收集一个文本块；其他类型忽略。 */
+  /** Collect a block of text; other types are ignored. */
   push(chunk: unknown): void {
     if (chunk !== null && typeof chunk === 'object' && (chunk as { type?: unknown }).type === 'text') {
       const text = (chunk as { text?: unknown }).text;
@@ -43,14 +44,14 @@ export class BlockAssembler {
     }
   }
 
-  /** 返回当前拼装结果。 */
+  /** Return the current assemble result. */
   blocks(): StandaloneTextBlock[] {
     const text = this.chunks.join('');
     return text === '' ? [] : [{ type: 'text', text }];
   }
 }
 
-/** reasoning effort 标识工厂：原样返回传入值。 */
+/** reasoning effort Identity factory: Returns the incoming value unchanged. */
 export function ReasoningEffortId(id: string): string {
   return id;
 }

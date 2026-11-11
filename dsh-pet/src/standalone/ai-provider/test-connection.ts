@@ -1,20 +1,22 @@
 /**
- * 设置页「测试连接」：用一次最小请求验证地址、模型与密钥，把常见失败翻成可操作的说明。
+ * "Test Connection" on the settings page: Use a minimum request to verify the address, model and key, and turn common
+ * failures into actionable instructions.
  *
- * 不复用正式通道：不污染限流窗口、忙状态与暂停标记，超时也是独立的 15 秒。
- * 不判断服务是否已释放（归 ./create），也不校验设置是否已保存（用户可能正在填表单）。
+ * Do not reuse the formal channel: do not pollute the rate limiting window, busy status and pause mark, and the
+ * timeout is also independent of 15 seconds. It does not determine whether the service has been released (returned to
+ * ./create), nor does it verify whether the settings have been saved (the user may be filling in a form).
  * @module dsh-pet/src/standalone/ai-provider/test-connection
  */
 import { DEFAULT_AI_SETTINGS, type StandaloneAiSettings } from '../ai-config.ts';
 import { isAuthenticationFailure, isRateLimitFailure, sdkTextStream, type AiFetch } from '../ai-transport.ts';
 import type { TestConnectionInput, TestConnectionResult } from './types.ts';
 
-/** 探测请求的封顶时长：与正式通道的设置超时无关，固定 15 秒。 */
+/** The capping time of the detection request: has nothing to do with the set timeout of the official channel, and is fixed at 15 seconds. */
 const PROBE_TIMEOUT_MS = 15_000;
-/** 收到这么多字符就认为连通，不再等模型把话说完。 */
+/** After receiving so many characters, it is considered connected and no longer waits for the model to finish speaking. */
 const PROBE_MAX_CHARS = 40;
 
-/** 三项必填的提示文案；都填了返回 null。 */
+/** Three required prompts; fill in all and return null. */
 function missingField(baseUrl: string, model: string, apiKey: string): string | null {
   if (!baseUrl) return '请先填写接口地址（Base URL）';
   if (!model) return '请先填写模型名称';
@@ -22,7 +24,7 @@ function missingField(baseUrl: string, model: string, apiKey: string): string | 
   return null;
 }
 
-/** 把探测失败翻成可操作的一句话；原始 message 只在兜底分支透出。 */
+/** Translate detection failure into an actionable sentence; the original message is only exposed in the fallback branch. */
 function describeFailure(error: unknown, controller: AbortController): string {
   if (controller.signal.aborted) return '连接超时（15 秒未响应）：请检查网络连通性或服务器状态';
   if (isAuthenticationFailure(error)) return '身份验证失败 (HTTP 401/403)：请检查 API 密钥是否正确';
@@ -36,11 +38,11 @@ function describeFailure(error: unknown, controller: AbortController): string {
 }
 
 /**
- * 跑一次探测请求。
- * @param fetcher - 传输实现（生产是官方 SDK 的 fetch）。
- * @param current - 当前已保存的设置：输入里缺省的字段从这里取。
- * @param input - 用户在表单里填的值。
- * @returns 成功时带一句模型回复；失败时 message 说明该改哪里。
+ * Run a detection request.
+ * @param fetcher - transmission implementation (production is fetch which is the official SDK).
+ * @param current - Current saved settings: The default fields in the input are taken from here.
+ * @param input - The value filled in by the user in the form.
+ * @returns will provide a model reply if it succeeds; if it fails, message will explain where to change it.
  */
 export async function testAiConnection(
   fetcher: AiFetch,

@@ -1,35 +1,40 @@
 /**
- * 宿主半侧的系统通知帧生成（自包含，不 import src/shared——DSH 单文件加载约束）。
+ * System notification frame generation for host side (self-contained, no import src/shared - DSH single file load
+ * constraints).
  *
- * 监听 DSH 宿主事件（`session/event` 的 turn/end、approval/asked、tool/call，以及 `agent/error`），
- * 生成与 shared/notify.ts 同契约的帧写进 S 的 sections.notify，浏览器轮询 /state 后弹 toast
- * （与其余叶子同族：单槽，后到覆盖先到）。不负责去重与展示。
- * 必须始终成立：推帧前先过两道门——会话门（子代理与深层委派不发）与活动门（还有活在跑时
- * 「对话完成」不发）；判据拿不到一律放行，宁可多弹一条，也不能让通知整体失效。
- * 契约见 API.md 与 openapi.yaml。
+ * Monitor the DSH host event (turn/end, approval/asked, tool/call, and `agent/error` of `session/event` ), generate a
+ * frame with the same contract as shared/notify.ts and write it into sections.notify of S, and then the browser will
+ * polling / state and then pop up toast (same family as the rest of the leaves: single slot, last-come
+ * override-first-come). Not responsible for deduplicate and display. It must always be true: before pushing the frame,
+ * it must pass through two gates - session gate (subagent and deep delegation are not sent) and activity gate (also
+ * "conversation completed" is not sent when running); if the criterion is not obtained, it will be released. It is
+ * better to play one more than to invalidate the entire notification. See API.md and openapi.yaml for contracts.
  * @module dsh-pet/src/host/notify-events
  */
 
-/** 通知帧（与 shared/notify.ts 的 NotifyFrame 同形状；宿主半侧自包含定义，避免跨端 import）。 */
+/** Notification frame (same shape as NotifyFrame of shared/notify.ts; host side self-contained definition to avoid cross-end import). */
 export interface HostNotifyFrame {
   type: string;
   [key: string]: unknown;
 }
 
-/** 会话参数（`ctx.on('session/event')` 第一个实参）里与本判定相关的字段，全部宽松读取。 */
+/** All fields related to this judgment in the session parameters (the first actual parameter `ctx.on('session/event')`) are read loosely. */
 interface NotifySessionLike {
   id?: unknown;
   header?: { id?: unknown; origin?: unknown; delegationDepth?: unknown } | null;
 }
 
 /**
- * 这条会话的事件该不该变成通知。
+ * Should the event of this conversation become a notification?
  *
- * 子代理（`origin === 'subagent'`）与更深层委派（`delegationDepth > 0`）一律不发：你等的是父对话，
- * 不是某一路子代理跑完（实测 3 个子代理会连弹 3 条「对话完成」）。
- * 判据必须是 `origin`，绝不能用 `parentSession`——后者的语义是「fork 自哪条会话」，普通 fork 也带
- * 它，用它判子代理会把主对话一起静音（官方 dsh-subagent 的归档准入是同一套判据）。
- * 判据不可用（session / header 缺失或形状不对）→ 放行：宿主换字段形状不该让通知整体失效。
+ * Subagents (`origin === 'subagent'`) and deeper delegations (`delegationDepth > 0`) are not sent: what you are
+ * waiting for is the parent dialogue, not the completion of a certain path of subagents (in actual testing, 3
+ * subagents will pop up 3 "Conversation Completed" messages in a row). The criterion must be `origin` , and
+ * `parentSession` must not be used - the semantics of the latter is "Which conversation does fork come from". Ordinary
+ * fork also carries it, and using it to judge the sub-agent will mute the main conversation together (the archive
+ * access of official dsh-subagent is the same set of criteria). The criterion is not available (session / header is
+ * missing or has the wrong shape) → Release: Host Changing the field shape should not invalidate the entire
+ * notification.
  */
 export function shouldNotifySession(session: unknown): boolean {
   const header = (session as NotifySessionLike | null)?.header;
@@ -40,28 +45,33 @@ export function shouldNotifySession(session: unknown): boolean {
   return true;
 }
 
-/** 会话 id（活动门的定时器以它为键）：`header.id` 优先，回落顶层 `id`，都取不到用 'unknown'
- *  （与 index.ts work-status 侧的取法一致）。 */
+/**
+ * Session id (the timer of the activity gate uses it as the key): `header.id` takes priority, and the fallback top
+ * level `id` cannot be obtained using 'unknown' (the same as the method on the index.ts work-status side).
+ */
 export function sessionIdOf(session: unknown): string {
   const s = session as { id?: unknown; header?: { id?: unknown } | null } | null;
   return String(s?.header?.id ?? s?.id ?? 'unknown');
 }
 
 /**
- * 把会话 id 附到通知帧上——点击通知时网页据此跳到那条会话（客户端 `uiWorkspace.openSession`）。
+ * Attach session id to the notification frame - when the notification is clicked, the web page jumps to that session
+ * (client `uiWorkspace.openSession` ) accordingly.
  *
- * 回落值 `'unknown'` 不是真会话，不能拿去跳转：只有真 id 才写进帧，取不到就原样返回，点击退化成
- * 「只把窗口叫回前台」。`'unknown'` 仍是活动门定时器的 Map 键，必须存在。
+ * The fallback value `'unknown'` is not a real session and cannot be used to jump: only the real id is written into
+ * the frame. If it cannot be retrieved, it will be returned as is. Clicking will degenerate into "only calling the
+ * window back to the foreground". `'unknown'` is still the Map key of the activity gate timer and must be present.
  */
 export function withSessionId(frame: HostNotifyFrame, sessionId: string): HostNotifyFrame {
   return sessionId === 'unknown' ? frame : { ...frame, sessionId };
 }
 
 /**
- * 这一条事件是不是「对话完成」——活动门只拦它。
+ * Is this event "conversation completed" - activity gate only blocks it.
  *
- * 只认 `turn/end` + `reason.kind === 'completed'`：生成失败 / 输出截断是「真出事了」，权限申请与
- * 用户选择是在等人操作，都不该因为还有活在跑而静默。
+ * Only recognize `turn/end` + `reason.kind === 'completed'` : Generation failure/output truncation means "something
+ * really happened". Permission application and user selection are waiting for someone to operate, and they should not
+ * be silent because there is still life running.
  */
 export function isCompletionTurnEnd(event: unknown): boolean {
   const e = event as { type?: unknown; data?: { reason?: { kind?: unknown } } } | null;
@@ -69,13 +79,15 @@ export function isCompletionTurnEnd(event: unknown): boolean {
 }
 
 /**
- * 活动门：这条会话还有没有在跑的活——入参是宿主 `workspace/session-activity` waterfall 的答案
- * （各族条目的数组）。
+ * activity gate: Is there any running activity in this session? The input parameter is the answer of host
+ * `workspace/session-activity` waterfall (array of entries of each family).
  *
- * 只看 `job`（后台任务）、`subagent`（在跑的子代理与 Agent Teams 团队成员，成员按血缘记在这一族）、
- * `schedule`（活跃的定时提醒）。故意不看 `turn`：触发这一帧的就是该会话回合的结束，而 `turn` 读的是
- * 活 Agent 的 `status`，那时它自己仍是 running，算进来会把每一条「对话完成」都自己挡掉。
- * 形状不对 / 空 / 非数组 / 未知族 → 放行：宿主加一族或改字段不该让通知整体失效。
+ * Only look at `job` (background tasks), `subagent` (running subagents and Agent Teams team members, members are
+ * recorded in this family by blood), `schedule` (active scheduled reminders). Deliberately not looking at `turn` :
+ * what triggers this frame is the end of the conversation round, and `turn` reads `status` of live Agent. At that
+ * time, it itself is still running, and it will block every "conversation completion" by itself. Wrong shape / empty /
+ * not an array / unknown family → release: host Adding a family or changing fields should not invalidate the entire
+ * notification.
  */
 export function hasBlockingActivity(activity: unknown): boolean {
   if (!Array.isArray(activity)) return false;
@@ -86,14 +98,15 @@ export function hasBlockingActivity(activity: unknown): boolean {
   return false;
 }
 
-/** 回复开头在会话状态里的缓存上限：只用于一条 toast，留太长没有意义。 */
+/** The cache limit of the beginning of the reply in the session state: only used for one toast, leaving it too long is meaningless. */
 const MAX_REPLY_TEXT = 200;
 
 /**
- * 从一条 `assistant/message` 事件里取最后一段文本，压平空白并截断。
+ * Take the last text from a `assistant/message` event, flatten the white space and truncate it.
  *
- * 只认 `data.message.content[]` 里最后一个 `{ type: 'text' }` 块：reasoning 块与工具块不是给用户看的，
- * 混进来只会把内部过程推上锁屏。取不到、形状不对一律返回 null（放行而不是报错）。
+ * Only the last `{ type: 'text' }` block in `data.message.content[]` is recognized: The reasoning block and the tool
+ * block are not for users to see, and sneaking in will only push the internal process to the lock screen. If it cannot
+ * be obtained or the shape is wrong, null will be returned (released instead of reporting an error).
  */
 export function lastAssistantText(event: { type?: string; data?: Record<string, unknown> }): string | null {
   if (event?.type !== 'assistant/message') return null;
@@ -109,18 +122,18 @@ export function lastAssistantText(event: { type?: string; data?: Record<string, 
   return null;
 }
 
-/** turn/end reason.kind → 通知类别；不弹的分支返回 null（与 shared/notify.ts 过滤一致）。 */
+/** turn/end reason.kind → notification category; unbounced branches return null (consistent with shared/notify.ts filtering). */
 export function turnEndNotifyKind(kind: string | undefined): 'completed' | 'error' | 'max-tokens' | null {
   if (kind === 'completed') return 'completed';
   if (kind === 'error' || kind === 'max-tokens') return kind;
-  // aborted（用户/父代理取消）、interrupted（崩溃恢复）、blocked（等确认）等不弹
+  // aborted (user/parent agent cancellation), interrupted (crash recovery), blocked (waiting for confirmation), etc. do not pop up
   return null;
 }
 
-/** ask_user_question 工具名（与 work-status.ts 同源；该工具触发时模型在等用户答复）。 */
+/** ask_user_question tool name (same origin as work-status.ts; the model is waiting for user reply when this tool is triggered). */
 const USER_QUESTION_TOOL = 'ask_user_question';
 
-/** 解析 tool/call 的 arguments（JSON 字符串）→ questions 数组；解析失败或非数组 → null。 */
+/** Parsing arguments (JSON character string) → questions array of tool/call; parsing failed or is not an array → null. */
 export function parseToolQuestions(args: unknown): Array<{ question?: string }> | null {
   if (typeof args !== 'string') return null;
   try {
@@ -134,12 +147,14 @@ export function parseToolQuestions(args: unknown): Array<{ question?: string }> 
 }
 
 /**
- * 把一条 session/event 子事件压缩成通知帧；不关心或被过滤的事件返回 null。
- * 帧形状与 shared/notify.ts 的 frameToToast 期望完全一致（浏览器侧映射零改动）。
- * data 按宽松 Record 接收（approval/asked 的 reason 是字符串、turn/end 的是对象），内部各自安全取值。
+ * Compress a session/event sub-event into a notification frame; do not care or filtered events return null. The frame
+ * shape is exactly what frameToToast expects from shared/notify.ts (zero changes to browser-side mapping). data is
+ * received as loosely as Record (reason of approval/asked is a character string, turn/end is an object), and each
+ * internal value is safe.
  *
- * @param event - 会话子事件。
- * @param replyText - 本回合最后一段回复的开头；只在 completed 时挂进帧，缺省则不写该字段。
+ * @param event - Session sub-event.
+ * @param replyText - The beginning of the last reply of this round; only framed when completed, this field is not
+ * written by default.
  */
 export function reduceNotifyFrame(
   event: { type?: string; data?: Record<string, unknown> },
@@ -155,7 +170,7 @@ export function reduceNotifyFrame(
         type: 'session/event',
         event: {
           type: 'turn/end',
-          // 完成时把最后一条回复的开头一并带走：通知正文因此能显示内容而不是只有状态。
+          // Take away the beginning of the last reply when completed: the notification body can therefore display the content instead of just the status.
           data: kind === 'completed' && replyText ? { reason, text: replyText } : { reason },
         },
       };
@@ -180,9 +195,9 @@ export function reduceNotifyFrame(
 }
 
 /**
- * agent/error（无回合位置的失败）→ host/agent-error 帧（与 shared 期望的 message 字段一致）。
- * 它的载荷只有 { turn, step, error }，不带会话标识，过不了会话门——子代理的生成失败仍会弹；
- * 要根治得让宿主把会话带进载荷。
+ * agent/error (failure without round position) → host/agent-error frame (consistent with shared expected message
+ * field). Its payload is only { turn , step , error }, without a session identifier, and cannot pass the session gate
+ * - the generation of the subagent will still fail; to cure it, the host must bring the session into the payload.
  */
 export function agentErrorFrame(error: unknown): HostNotifyFrame {
   const message = typeof error === 'string' ? error : error instanceof Error ? error.message : String(error ?? '');

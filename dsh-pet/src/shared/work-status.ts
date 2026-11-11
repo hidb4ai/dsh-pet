@@ -1,35 +1,39 @@
 /**
- * 工作状态联动：档位常量与快照解析。
- * 宿主半侧有自包含的实现（DSH 单文件加载约束，宿主不 import 本目录），负责监听 DSH 会话事件
- * 聚合成快照并写进 /state 的 sections.workStatus；本模块只有档位常量与叶子解析。
- * 气泡文案不在代码里：浏览器半侧直接读配置的 events.workStatusTexts。纯函数无副作用，不依赖 React / DOM。
+ * Working status linkage: state constant and snapshot analysis. The host side has a self-contained implementation (DSH
+ * single file loading constraint, host is not import in this directory), which is responsible for monitoring DSH
+ * session events, aggregating synthesis snapshots and writing sections.workStatus into / state; this module only has
+ * state constants and leaf parsing. The bubble copy is not in the code: the browser side directly reads the configured
+ * events.workStatusTexts. Pure functions have no side effects and do not depend on React / DOM.
  * @module dsh-pet/src/shared/work-status
  */
 
-/** 工作状态档位（对应 animations.events.workStatus 数组索引，顺序即档位，勿在中间插入新档）。 */
+/** Working status state (corresponding to animations.events.workStatus array index, the order is the state, do not insert new state in the middle). */
 export const WORK_STATUS_STATES = ['thinking', 'working', 'result', 'waiting', 'success', 'error'] as const;
 export type WorkStatusState = (typeof WORK_STATUS_STATES)[number];
 
-/** 档位 → workStatus 数组索引（与 events.workStatus 的顺序严格一致）。 */
+/** Gear → workStatus array index (strictly consistent with the order of events.workStatus). */
 export const WORK_STATUS_INDEX: Record<WorkStatusState, number> = {
-  thinking: 0, // turn/start → 思考
-  working: 1, // tool/call → 工作
-  result: 2, // tool/result → 整理
-  waiting: 3, // approval/asked → 等待
-  success: 4, // turn/end completed → 完成
-  error: 5, // turn/end error/max-tokens → 出错
+  thinking: 0, // turn/start → Thinking
+  working: 1, // tool/call → Work
+  result: 2, // tool/result → Organize
+  waiting: 3, // approval/asked → Wait
+  success: 4, // turn/end completed → Complete
+  error: 5, // turn/end error/max-tokens → Error
 };
 
-/** 工作状态快照（= /state 里 sections.workStatus 的 data，与宿主半侧的同构）。
- *  没有 ts：「变了没有」由叶子的 counter 承担；text 不在此——气泡文案由客户端读配置，宿主不生成。 */
+/**
+ * Working status snapshot (= data of sections.workStatus in / state, isomorphic with the host side). No ts: "Has it
+ * changed?" is borne by counter of the leaf; text is not here - the bubble copy is read and configured by the client,
+ * and the host is not generated.
+ */
 export interface WorkStatusSnapshot {
-  state: WorkStatusState | null; // null = 空闲
-  task: string | null; // 当前任务详情（todo/write 提供，可 null）
-  /** 当前展示条目所属会话；空闲 / 外部槽 / 老版本宿主缺该字段时都不出现，气泡因此不可点。 */
+  state: WorkStatusState | null; // null = Idle
+  task: string | null; // Current task details (provided by todo/write, available at null)
+  /** The session to which the current display entry belongs; idle/external slot/old version host will not appear if this field is missing, so bubble cannot be clicked. */
   sessionId?: string | null;
 }
 
-/** 快照解析：档位不认识 → 归一成 null（空闲）；形状非法 → null，消费端跳过这一拍。 */
+/** Snapshot analysis: Unknown state → normalize to null (idle); invalid shape → null, consumer skips this shot. */
 export function toWorkStatus(raw: unknown): WorkStatusSnapshot | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as { state?: unknown; task?: unknown; sessionId?: unknown };

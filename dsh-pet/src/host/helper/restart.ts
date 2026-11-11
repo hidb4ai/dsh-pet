@@ -1,29 +1,31 @@
 /**
- * 重启策略：退避间隔、熔断条件、「跑稳了没有」的判定，以及崩溃现场的可读化（退出码含义与处理建议）。
+ * Restart strategy: backoff interval, circuit breaker conditions, determination of "whether running is stable or not",
+ * and readability of the crash scene (exit code meaning and handling suggestions).
  *
- * 不启动也不停止进程，只给 ./child 提供纯计算的决策与文案。
- * 必须始终成立：退避单调不减，熔断后不再自动重试。
+ * It does not start or stop the process, but only provides purely computational decisions and text for ./
+ * child. It must always be true: the backoff is monotonous and does not decrease, and there will no longer be
+ * automatic retries after the circuit breaker is broken.
  * @module dsh-pet/src/host/helper/restart
  */
 
-/** 停止 helper 的等待上限（ms）：超过就升级 SIGKILL。 */
+/** Stop the upper limit of waiting for helper (ms): upgrade to SIGKILL if it exceeds it. */
 export const HELPER_STOP_TIMEOUT_MS = 3000;
 
-/** SIGKILL 之后还给进程多久退出（ms）；到点仍未退出就放弃等待，绝不无限挂住调用方。 */
+/** How long does it take for the process to exit after SIGKILL (ms); if it has not exited at the end, it will give up waiting and will never hang the caller indefinitely. */
 export const HELPER_STOP_GRACE_MS = 1000;
 
-/** 稳定运行判定阈值：Helper 连续无崩溃运行 ≥ 3 分钟后，重启失败计数清零。 */
+/** Stable operation judgment threshold: Helper After continuous crash-free operation ≥ 3 minutes, the restart failure count is cleared to zero. */
 export const HELPER_STABLE_MS = 3 * 60 * 1000;
 
-/** Electron 沙箱初始化失败时的退出码 0x80000003（STATUS_BREAKPOINT）；Node 的两种报法靠 `>>> 0` 归一。 */
+/** Electron The exit code when the sandbox initialization fails is 0x80000003 (STATUS_BREAKPOINT); the two reporting methods of Node are normalized by `>>> 0`. */
 const SANDBOX_INIT_FAILED_CODE = 0x80000003;
 
-/** 只有在这个时间窗内秒退、且一行输出都没有时，才把退出当成「沙箱起不来」。 */
+/** Only when exiting within this time window and there is no line of output, will the exit be regarded as "the sandbox cannot be started". */
 const SANDBOX_FALLBACK_WINDOW_MS = 5000;
 
 /**
- * 指数退避：第 n 次（0 起）失败后等待 base × 2ⁿ，封顶 30s。
- * 默认 base 750ms，序列 750 → 1500 → 3000 → … → 30000。
+ * Exponential backoff: wait for base × 2ⁿ after the n time (starting from 0) failure, capped at 30 s. Default base 750
+ * ms, sequence 750 → 1500 → 3000 → … → 30000.
  */
 export function restartBackoffDelayMs(consecutiveFailures: number, baseMs = 750): number {
   const MAX = 30_000;
@@ -31,31 +33,32 @@ export function restartBackoffDelayMs(consecutiveFailures: number, baseMs = 750)
   return Math.min(raw, MAX);
 }
 
-/** 熔断判定：连续崩溃 ≥ limit（默认 12，按默认退避累计约 3 分钟）次后不再自动重启。 */
+/** Circuit breaker judgment: It will no longer automatically restart after crashing ≥ limit (default 12, cumulative default backoff is about 3 minutes) times. */
 export function shouldCircuitBreak(consecutiveFailures: number, limit = 12): boolean {
   return consecutiveFailures >= limit;
 }
 
-/** 稳定运行判定：距上次拉起 ≥ HELPER_STABLE_MS 视为一次「成功运行」，可清零计数。 */
+/** Stable operation judgment: The time since the last pull-up ≥ HELPER_STABLE_MS is regarded as a "successful operation" and the count can be cleared. */
 export function helperRunIsStable(elapsedMs: number): boolean {
   return elapsedMs >= HELPER_STABLE_MS;
 }
 
-/** Windows NTSTATUS 退出码 → 中文短语；只收「进程被系统当场终止」这一类，其余不收录。 */
+/** Windows NTSTATUS exit code → English description; only the category "the process was terminated by the system on the spot" is included, and the others are not included. */
 const WINDOWS_EXIT_MEANINGS: Readonly<Record<number, string>> = {
-  0xc0000005: '访问违例',
-  [SANDBOX_INIT_FAILED_CODE]: '断点（沙箱初始化失败）',
-  0xc0000135: '缺少 DLL',
-  0xc0000142: 'DLL 初始化失败',
+  0xc0000005: 'access violation',
+  [SANDBOX_INIT_FAILED_CODE]: 'breakpoint (sandbox initialization failed)',
+  0xc0000135: 'missing DLL',
+  0xc0000142: 'DLL initialization failed',
 };
 
 /**
- * 把子进程退出码翻成一句人话。
+ * Translate the child process exit code into a human sentence.
  *
- * 只认 Windows 的 NTSTATUS 形态（无符号值 ≥ 0x80000000）：POSIX 退出码只有 0–255，不会撞上这张表。
- * 入参同时认 Node 的两种报法——`3221225477` 与 `-1073741819` 指向同一个 `0xC0000005`。
- * @param code - 子进程退出码；null 表示被信号终止。
- * @returns 中文短语；未收录或 code 为 null 时返回 undefined。
+ * Only the NTSTATUS form of Windows is recognized (unsigned value ≥ 0x80000000): The POSIX exit code is only 0–255
+ * and will not hit this table. The input parameters recognize two reporting methods of Node at the same time -
+ * `3221225477` and `-1073741819` point to the same `0xC0000005` .
+ * @param code - child process exit code; null means terminated by signal.
+ * @returns English description; undefined is returned when it is not included or code is null.
  */
 function explainExitCode(code: number | null): string | undefined {
   if (code === null) return undefined;
@@ -63,18 +66,19 @@ function explainExitCode(code: number | null): string | undefined {
 }
 
 /**
- * 拼一段「退出状态」日志片段：`code=3221225477 (0xC0000005 访问违例), signal=null`。
+ * Put together an "exit status" log fragment: `code=3221225477 (0xC0000005 access violation), signal=null` .
  *
- * 十六进制形态与含义只在这里出现一次，崩溃日志与熔断日志共用，避免两处各拼一份而漂移。
- * @param code - 退出码；null 表示被信号终止。
- * @param signal - 终止信号；正常退出为 null。
- * @returns 可直接拼进日志的一行文本。
+ * The hexadecimal form and meaning only appear once here, and the crash log and the circuit breaker log are shared to
+ * avoid drifting due to a copy of each.
+ * @param code - exit code; null means terminated by signal.
+ * @param signal - Termination signal; normal exit is null.
+ * @returns can be directly spelled into a line of text in the log.
  */
 export function describeExit(code: number | null, signal: NodeJS.Signals | null): string {
   return `code=${String(code)}${describeCodeDetail(code)}, signal=${String(signal)}`;
 }
 
-/** 退出码的括号说明：形态像 NTSTATUS 才补十六进制，含义未收录时只留十六进制。 */
+/** Bracket description of the exit code: Only hexadecimal is added when the shape is like NTSTATUS. When the meaning is not included, only hexadecimal is left. */
 function describeCodeDetail(code: number | null): string {
   if (code === null) return '';
   const unsigned = code >>> 0;
@@ -85,36 +89,40 @@ function describeCodeDetail(code: number | null): string {
 }
 
 /**
- * 熔断时给用户的处理建议。
+ * Suggestions for handling the problem when the circuit breaker is broken.
  *
- * Windows 与 Linux 的病因完全不同：Windows 上「配置 DISPLAY」是无效建议（曾误导过装了虚拟显示器的用户），
- * 能起作用的只有换运行时或指向现成的可执行文件；Linux 才谈显示环境。
- * @param platform - 进程平台；由调用方传入，本函数不读全局。
- * @returns 一句面向用户的建议文本（含可复制的环境变量名）。
+ * The causes of Windows and Linux are completely different: "Configure DISPLAY" on Windows is an invalid suggestion
+ * (it has misled users who installed virtual monitors). The only thing that can work is changing the runtime or
+ * pointing to a ready-made executable file; Linux only talks about the display environment.
+ * @param platform - process platform; passed in by caller, this function does not read the global situation.
+ * @returns A user-oriented suggestion text (including copyable environment variable names).
  */
 export function crashLoopAdvice(platform: NodeJS.Platform): string {
-  const raise = '或设 DSH_PET_RESTART_MAX_FAILURES 提高重试上限后重启。';
+  const raise = 'Alternatively, increase DSH_PET_RESTART_MAX_FAILURES and restart.';
   if (platform === 'win32') {
     return (
-      '换一个 Electron 版本（删掉日志里 electron= 指向的目录，用 DSH_PET_ELECTRON_VERSION 指定可用版本后重启），' +
-      `或用 DSH_PET_ELECTRON_PATH 指向本机能开窗的 electron.exe；${raise}`
+      'Try another Electron version: remove the directory shown by electron= in the log, set DSH_PET_ELECTRON_VERSION, and restart. ' +
+      `Or set DSH_PET_ELECTRON_PATH to a working local electron.exe. ${raise}`
     );
   }
   if (platform === 'linux') {
-    return `确认有可用显示环境（DISPLAY / WAYLAND_DISPLAY，无显示时用 Xvfb 并设 DSH_PET_DESKTOP_FORCE=1）；${raise}`;
+    return `Check DISPLAY / WAYLAND_DISPLAY. Without a display, use Xvfb and set DSH_PET_DESKTOP_FORCE=1. ${raise}`;
   }
-  return `用 DSH_PET_ELECTRON_PATH 指向本机能开窗的 Electron；${raise}`;
+  return `Set DSH_PET_ELECTRON_PATH to a working local Electron executable. ${raise}`;
 }
 
 /**
- * 是否值得改用 `--no-sandbox` 重试一次。
+ * Is it worth trying again using `--no-sandbox` instead.
  *
- * 判定必须收紧，否则会把真正的崩溃吞成「换参数」：退出码 0x80000003、stdout/stderr 一行没有、
- * 5s 内就退、只试一次、自定义 command 不猜。沙箱建不起来的机器是确定性失败，重试 12 次只会把同一行
- * 日志刷 12 遍再熔断；真崩的（有输出 / 跑了一阵）照旧走退避与熔断，不会被掩盖。
- * 宿主侧已对 GPU 进程沙箱做过一层窄开关，本条处理的是更早、连 JS 都没跑起来的那个阶段。
- * @param input - 本次退出现场；`sandboxOptOut` 由调用方按环境给出，纯函数不读全局。
- * @returns true 表示下一次 start() 应在参数最前面加 `--no-sandbox`。
+ * The judgment must be tightened, otherwise the real crash will be converted into "changing parameters": exit code 0
+ * x80000003, stdout/stderr without a line, exit within 5 s, try only once, customize command without guessing. A
+ * machine that cannot build a sandbox is a deterministic failure. Retrying 12 times will only flush the same line of
+ * logs 12 times and then fuse; if it is really broken (there is output/running for a while), it will still retreat and
+ * fuse, and will not be covered up. The host side has made a narrow switch for the GPU process sandbox. This article
+ * deals with the earlier stage when JS was not even running yet.
+ * @param input - Exit the scene this time; `sandboxOptOut` is given by the caller according to the environment, and
+ * the pure function does not read the global situation.
+ * @returns true means that next time start() should add `--no-sandbox` at the front of the parameter.
  */
 export function shouldFallbackToNoSandbox(input: {
   code: number | null;
@@ -131,33 +139,35 @@ export function shouldFallbackToNoSandbox(input: {
 }
 
 /**
- * 子进程输出是否算「进程真的跑起来了」：纯空白不算。
+ * Does the output of the child process count as "the process is really running": pure blank does not count.
  *
- * Electron 在低完整性环境 abort 前会往 stdout 写 2 字节 `\r\n`；把它当输出会让
- * {@link shouldFallbackToNoSandbox} 的秒退兜底永远不触发（#286）。
- * @param chunk - 本次管道数据。
- * @returns 去掉首尾空白后仍有内容时为 true。
+ * Electron will write 2 bytes `\r\n` to stdout before abort in a low integrity environment; treating it as output will
+ * make the fallback of {@link shouldFallbackToNoSandbox} never trigger (#286).
+ * @param chunk - This pipeline data.
+ * @returns is true when there is still content after removing the leading and trailing blanks.
  */
 export function helperOutputIsMeaningful(chunk: string): boolean {
   return Boolean(chunk.trim());
 }
 
-/** 退避基值（ms）：默认 750 与旧版首延一致，DSH_PET_RESTART_BASE_MS 可调。 */
+/** Backoff base value (ms): The default value is 750, which is consistent with the old version of first delay, and DSH_PET_RESTART_BASE_MS is adjustable. */
 export const RESTART_BASE_MS_DEFAULT = 750;
 
-/** 熔断阈值（连续崩溃次数）：默认 12，DSH_PET_RESTART_MAX_FAILURES 可调。 */
+/** Meltdown threshold (number of consecutive crashes): Default 12, DSH_PET_RESTART_MAX_FAILURES adjustable. */
 export const RESTART_MAX_FAILURES_DEFAULT = 12;
 
-/** 非负整数 env 解析（非法/未设回落默认），供重启参数读取共用。 */
+/** Non-negative integer env parsing (invalid/no fallback default), shared by restart parameter reading. */
 export function envPositiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 /**
- * 等子进程真正退出：已经退出（exitCode / signalCode 有值）→ 立即 resolve，不挂监听；只等 `exit`，
- * `close` 只代表 stdio 管道关闭，远早于进程真正退出；到 timeoutMs 调 onTimeout()（调用方升级
- * SIGKILL），再给 HELPER_STOP_GRACE_MS 宽限；宽限到点仍未退出就 resolve——调用方绝不能被无限挂住。
+ * Wait for the child process to actually exit: Already exited (exitCode / signalCode has a value) → resolve
+ * immediately, no monitoring; just wait for `exit` , `close` only means the stdio pipe is closed, much earlier than
+ * the process actually exits; call onTimeout() on timeoutMs (caller upgrade SIGKILL), and then give
+ * HELPER_STOP_GRACE_MS grace; if the grace does not exit until the end, resolve - the caller must not be hung
+ * indefinitely.
  */
 export function waitForChildExit(
   child: import('node:child_process').ChildProcess,

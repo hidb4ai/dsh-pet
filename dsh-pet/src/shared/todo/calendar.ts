@@ -1,28 +1,30 @@
 /**
- * 日历格的纯计算：某年某月排成 7 列几行、哪些格子属于前后月。
+ * Pure calculation of calendar grid: arrange 7 columns and rows of a certain year and month, and which grids belong to
+ * the preceding and following months.
  *
- * 不碰 DOM 与当前时间；周一起算的列偏移与补位规则由测试钉住。
+ * Do not touch DOM and the current time; the column offset and padding rules calculated from Monday are tested by
+ * verify .
  * @module dsh-pet/src/shared/todo/calendar
  */
 
-/** 日历格：某年某月的 7 列网格，含前后月补位。 */
+/** Calendar grid: a 7-column grid for a certain month of a certain year, including the preceding and following months. */
 export interface MonthCell {
-  /** 该格对应的日期；可能属于上/下月。 */
+  /** The date corresponding to this box; it may belong to the previous/next month. */
   readonly date: Date;
-  /** 是否不属于本月（渲染成浅色）。 */
+  /** Does it not belong to this month (rendered in light color). */
   readonly out: boolean;
 }
 
 /**
- * 某个月的日历格：从周一起算，补满最后一整周。
+ * The calendar grid of a certain month: starting from Monday and filling up the last whole week.
  *
- * @param year - 四位年份。
- * @param month - 0 起的月份。
- * @returns 行优先的格子，长度是 7 的倍数（通常是 5 行，跨 6 周的月份 6 行）。
+ * @param year - Four digit year.
+ * @param month - Month starting from 0.
+ * @returns A row-major grid whose length is a multiple of 7 (usually 5 rows, 6 rows across a 6-week month).
  */
 export function monthCells(year: number, month: number): MonthCell[] {
   const first = new Date(year, month, 1);
-  // getDay 里周日是 0，这里换成「周一起算」的列偏移。
+  // Sunday in getDay is 0, here it is replaced by the column offset of "counting on Monday".
   const lead = (first.getDay() + 6) % 7;
   const days = new Date(year, month + 1, 0).getDate();
   const rows = Math.ceil((lead + days) / 7);

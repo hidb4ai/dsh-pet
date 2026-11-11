@@ -1,8 +1,8 @@
 /**
- * 静态素材：/font、/pic（含表情包链）、/sound、/thumb 的取文件与路径守卫。
+ * Static asset: file retrieval and path guard for / font, / pic (including meme chain), / sound, / thumb.
  *
- * 不决定素材归属，只按给定目录链查找。
- * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
+ * Does not determine asset ownership, only searches according to the given directory chain. Dependency (PetRouteDeps)
+ * is passed in explicitly, and the module does not read global information or create status.
  * @module dsh-pet/src/host/routes/assets
  */
 import { join } from 'node:path';
@@ -14,30 +14,32 @@ import { existsSync } from 'node:fs';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
 
-/** 静态素材领域：未命中返回 undefined，命中返回应答。 */
+/** Static asset field: undefined is returned on a miss and response is returned on a hit. */
 export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { assetRootFor, memeDirsFor, petConfigDir, userRootFor } = deps;
   const { rest, url } = input;
 
-  // 动画素材：/thumb/<素材根>/<file>，扩展名 webm（默认）/ mov（macOS 定制）。
-  // 存在 `pet/<素材根>-animation/` 的宠物只查自己的目录，查不到即 404，绝不混用；
-  // 否则走主素材链：用户 main-animation/<ext> 优先 → 包内 assets/<ext>（所有主配置宠物共用）。
-  // mov（HEVC-with-Alpha）不随包发布，用户从 GitHub Release 下载后放 main-animation/mov/，
-  // 并把客户端播放常量 ANIMATION_EXT 改为 .mov。
-  // font / pic 是扁平的 /<scope>/<file>，只有 thumb 是 /<scope>/<petId>/<file>：先拆 scope 再各自拆剩余段。
+  // Animation asset:/thumb/<asset root>/<file>, extension webm (default)/mov (macOS customized). Pets with
+  // `pet/<asset-root>-animation/` will only check their own directory. If not found, it will be 404, and will never be mixed;
+  // otherwise, the main asset chain will be used: user main-animation /< ext > takes priority → assets /< ext > in the
+  // package (shared by all main configuration pets). mov (HEVC-with-Alpha) is not released with the package. Users
+  // download GitHub Release and then play main-animation/mov /, and change the client playback constant ANIMATION_EXT
+  // to . mov. font / pic are flat /< scope >/< file >, only thumb is /< scope >/< petId >/< file >: first disassemble
+  // scope and then disassemble the remaining segments respectively.
   const [scope, ...restParts] = rest.split('/');
 
-  // 插件 logo / 宠物头像：/logo → 包内 assets/logo.png。只放行这一个文件——不把 assets 根开放成静态目录
-  // （同目录还有 config.jsonc）。对话面板拿它当宠物头像。
-  // 带 ?root=<素材根> 时先找该宠物的自定义头像（pet/<素材根>-avatar.<ext>），没有就回退包内 logo：
-  // 「没上传过」与「上传后又删掉」都由这一处兜底，前端不必区分。
-  // main 不查自定义文件：pet/ 只归 pet pack，内置条目永远用包内 logo。
-  // 参数叫 root 而不是 pet：这里要的是素材根（目录前缀），不是 pets[].id。
+  // Plugin logo / Pet avatar: / logo → assets/logo.png in the package. Only allow this file - do not open the assets
+  // root into a static directory (there is also config.jsonc in the same directory). Use it as a pet avatar in the
+  // dialogue panel. With ? root =<asset root>, first look for the custom avatar of the pet (pet /<asset root>- avatar
+  // .<ext>). If not, fallback to logo in the package: "Not uploaded" and "Deleted after uploading" are both fallbacked
+  // by this fallback, and the front end does not need to distinguish. main does not check custom files: pet / only pet
+  // pack, built-in entries always use the package logo. The parameter is called root instead of pet: what is needed
+  // here is the asset root (directory prefix), not pets []. id.
   if (scope === 'logo') {
     if (restParts.length > 0) return { kind: 'text', status: 400, body: 'dsh-pet: expected /dsh-pet-7340/logo' };
     const assetRoot = (url.searchParams.get('root') ?? '').trim();
     if (assetRoot !== '' && assetRoot !== 'main') {
-      // 素材根是标识符不是路径片段：含分隔符/保留字符即显式 400，早于任何路径拼接。
+      // The asset root is an identifier and not a path fragment: contains delimiter/reserved character i.e. explicit 400, earlier than any path concatenate.
       if (!isValidPetId(assetRoot)) return { kind: 'text', status: 400, body: 'dsh-pet: invalid asset root' };
       const own = petAvatarFile(petConfigDir, assetRoot);
       if (own !== undefined) return { kind: 'file', file: own.file, contentType: own.contentType };
@@ -55,15 +57,17 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
     return { kind: 'file', file: fontFile, contentType: MIME[ext] ?? 'application/octet-stream' };
   }
 
-  // 通知图标：/pic/<file> → 包内 assets/pic（方形 png，系统通知 icon 用）。
-  // 表情包：/pic/memes/<素材根>/<名称>.png → 按素材根走 memeDirsFor 的目录链，与 /thumb 同一套
-  // 归属语义；名称含中文，URL 段已在上方解码。旧的两段形式 /pic/memes/<名称>.png 保留，
-  // 等价于素材根 main 的目录链。
+  // Notification icon: / pic /< file > → assets/pic in the package (square png, used for system notification icon).
+  // Meme: / pic/memes /<asset root>/<name>. png → According to the asset root, go to the directory chain
+  // of memeDirsFor, which has the same set of ownership semantics as / thumb; the name contains Chinese, and the URL
+  // segment has been decoded above. The old two-part form / pic/memes /<name>. png is retained and is equivalent to
+  // the directory chain of the asset root main.
   if (scope === 'pic') {
     if (restParts[0] === 'memes') {
       const segs = restParts.slice(1);
-      // 段数 ≥ 2 = <素材根>/<名称…>；恰好 1 段 = 旧扁平形式。表情包名称即文件名（不含子目录），
-      // 所以两种形式不歧义；素材根与 /thumb 的 petId 同规矩：含分隔符 / 保留字符即显式 400。
+      // Number of segments ≥ 2 = <asset root>/<name…>; exactly 1 segment = old flat form. The name of the emoticon
+      // package is the file name (excluding subdirectories), so the two forms are not ambiguous; the asset root has
+      // the same rules as petId of / thumb: it contains the delimiter / reserved character, which is explicit 400.
       const scoped = segs.length >= 2;
       const assetRoot = scoped ? segs[0] : 'main';
       if (scoped && !isValidPetId(assetRoot)) {
@@ -86,8 +90,8 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
     return { kind: 'file', file: picFile, contentType: MIME[ext] ?? 'application/octet-stream' };
   }
 
-  // 点击音效：/dsh-pet-7340/sound/<file> → 包内 assets/sound（当前只有 click-duck.wav）。
-  // 与 font 同一种扁平形式（<scope>/<file>）：只有包内一份，不做用户目录覆盖。
+  // Click sound effect: / dsh-pet-7340/sound /< file > → assets/sound in the package (currently only click-duck.wav).
+  // The same flat form as font (< scope >/< file >): only one copy in the package, no user directory coverage.
   if (scope === 'sound') {
     const soundRoot = join(PACKAGE_ROOT, 'assets', 'sound');
     const soundFile = resolveExisting(soundRoot, restParts.join('/'));
@@ -100,17 +104,18 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
     return { kind: 'text', status: 400, body: 'dsh-pet: expected /dsh-pet-7340/thumb/<petId>/<file>' };
   }
 
-  // thumb 是三段式：/<scope>/<petId>/<file>——从这里再拆宠物 id 与文件名
+  // thumb is a three-stage format: /< scope >/< petId >/< file >——From here, we can disassemble the pet id and the file name.
   const [petId, ...nameParts] = restParts;
 
   if (!petId || nameParts.length === 0) {
     return { kind: 'text', status: 400, body: 'dsh-pet: expected /dsh-pet-7340/thumb/<petId>/<file>' };
   }
 
-  // petId 是标识符（= pet/<名>-animation/ 的 <名>，来源是 pet/ 下的文件名前缀），不是路径片段：
-  // 含分隔符/保留字符即显式 400，早于任何路径拼接判定。合法名（含中文）照常——
-  // 用非法字符类而不是 ASCII 白名单。非法输入不再静默回落到主素材池（攻击尝试与「没有独立素材」可区分），
-  // 也给下面的 resolveAsset 之外再留一道结构性防线。
+  // petId is an identifier (= pet/<name>-<name> of animation/, the source is the file name prefix under pet/), not a
+  // path fragment: contains delimiter/reserved character i.e. explicit 400, earlier than any path concatenate
+  // determination. Valid names (including Chinese) are as usual - use the invalid character class instead of the ASCII
+  // whitelist. Invalid inputs no longer silently fallback to the main asset pool (attack attempts can be distinguished
+  // from "no independent asset"), leaving another structural line of defense in addition to the resolveAsset below.
   if (!isValidPetId(petId)) {
     return { kind: 'text', status: 400, body: 'dsh-pet: invalid pet id' };
   }
@@ -123,12 +128,13 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
     return { kind: 'text', status: 400, body: 'dsh-pet: unsupported animation format (expected .webm or .mov)' };
   }
 
-  // 素材归属：存在 `pet/<素材根>-animation/` 只查自己目录（唯一例外：mov 缺失时退回同名 webm），
-  // 否则走主素材链。extraAnimDir 必须先过 resolveAsset：petId 是解码后的 URL 段，Windows 上 %5C
-  // 解出的反斜杠不会被 split('/') 切开，直接 join 会让 `..\..\x` 逃出用户根读盘。
+  // Asset ownership: If `pet/<asset-root>-animation/` exists, only check its own directory (the only exception: when mov is
+  // missing, the same name webm will be returned), otherwise the main asset chain will be used. extraAnimDir must pass
+  // through resolveAsset first: petId is the decoded URL segment. The backslash decoded by %5 C on Windows will not be
+  // cut by split ('/'). Direct join will cause `..\..\x` to escape the user root reading disk.
   const extraAnimDir = resolveAsset(petConfigDir, petId + '-animation');
 
-  /** 按扩展名查同名素材（专属目录优先；否则用户根 → 包内根） */
+  /** Check the asset with the same name by extension (private directory takes precedence; otherwise user root → package root) */
   const findAnim = (e: string): string | undefined => {
     const name = fileName.replace(/\.(webm|mov)$/i, '') + e;
     return extraAnimDir !== undefined && existsSync(extraAnimDir)
@@ -140,9 +146,10 @@ export async function handleAssetsRoutes(deps: PetRouteDeps, input: RouteInput):
 
   let servedExt = ext;
 
-  // mov（HEVC-with-Alpha，macOS 定制）不随包发布：缺失时退回同名 webm。
-  // 宿主是唯一知道素材在不在的一方——宁可让 Safari 播黑底（webm 的 alpha 被丢弃），
-  // 也不能让整段动画 404（表现就是宠物完全不显示）。
+  // mov (HEVC-with-Alpha, macOS customized) is not released with the package: if missing, the same name webm will be
+  // returned. The host is the only party that knows whether the asset is present - it would rather have Safari
+  // broadcast a black background (alpha of webm is discarded) than have the entire animation 404 (the performance is
+  // that the pet is not displayed at all).
   if (file === undefined && ext === '.mov') {
     const fb = findAnim('.webm');
     if (fb !== undefined) {

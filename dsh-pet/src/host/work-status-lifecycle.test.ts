@@ -1,14 +1,17 @@
 /**
- * 任务详情文案的生命周期回归（issue #59）—— 在 handler 层跑真实事件序列，断言 `/work-status` 快照。
+ * Lifecycle return of task details text (issue #59) - run the real event sequence at the handler layer and
+ * assert the `/work-status` snapshot.
  *
- * 为什么单独有这一层：`currentTaskFromTodo` / `WorkStatusStore` 的单测只能证明"纯逻辑算得对"，
- * 而现场症状都出在事件序列 + 生命周期上：
- *   ① 分阶段任务里文案必须随进度走（多个 in_progress 时取最后一个）；
- *   ② 任务结束、之后开一段完全无关的对话，气泡必须不挂旧文案（task 不能是全局粘性字段）。
- * 因此这里用最小 ctx 桩把插件真跑起来（与 routes.test.ts 同一套桩思路），发一串真事件，再 GET 端点
- * 读快照——修坏了就会在这条测试上响。每个用例都 apply() 一个全新实例，避免用例之间互相影响。
+ * Why there is this separate layer: The single test of `currentTaskFromTodo` / `WorkStatusStore` can only prove that
+ * "pure logic is correct", and the on-site symptoms are all in the event sequence + lifecycle: ① In the staged task,
+ * the text must follow the progress (when there are multiple in_progress, the last one is taken); ② After the
+ * task is completed and a completely unrelated dialogue is opened, the bubble must not hang the old text (task)
+ * Cannot be a global sticky field). Therefore, here we use the minimum ctx stub to really run the plugin (the same
+ * stub idea as routes.test.ts), send a series of real events, and then use the GET endpoint to read the snapshot - if
+ * it is repaired, it will ring on this test. Each use case is apply() a brand new instance to prevent use cases from
+ * affecting each other.
  *
- * 跑法：node --experimental-strip-types --test src/host/work-status-lifecycle.test.ts
+ * Running method: node --experimental-strip-types --test src/host/work-status-lifecycle.test.ts
  */
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,10 +22,10 @@ import { Writable } from 'node:stream';
 
 import { apply } from './index.ts';
 
-/** 工作状态快照（= S 里 sections.workStatus 的 data；ts 已由叶子 counter 取代，不再出现） */
+/** Working status snapshot (= data of sections.workStatus in S; ts has been replaced by leaf counter and no longer appears) */
 type Snapshot = { state: string | null; task: string | null };
 type Listener = (session: unknown, event: unknown) => void;
-/** 一个插件的测试实例：发事件 + 读快照 + 收尾 */
+/** A plugin test example: sending events + reading snapshots + cleanup */
 type Harness = {
   emit: (sessionId: string, event: Record<string, unknown>) => void;
   snapshot: () => Promise<Snapshot>;
@@ -32,10 +35,10 @@ type Harness = {
 let dir = '';
 let savedHome: string | undefined;
 let savedElectron: string | undefined;
-/** 本文件建过的全部实例（after 里统一释放：apply() 现在会起常驻的余额周期定时器） */
+/** All instances created in this file (unified release in after: apply() will now start the resident balance period timer) */
 const harnesses: Harness[] = [];
 
-/** 最小响应桩：writeHead 记状态码，Writable 收集 body */
+/** Minimum response pile: writeHead records status code, Writable collects body */
 class FakeRes extends Writable {
   declare status: number;
   declare chunks: Buffer[];
@@ -54,14 +57,14 @@ class FakeRes extends Writable {
   }
 }
 
-/** 起一个全新的插件实例（每个用例一份，用例之间零串扰） */
+/** Create a new plugin instance (one copy for each use case, zero crosstalk between use cases) */
 function setup(): Harness {
   let handler: ((req: unknown, res: unknown) => Promise<void>) | undefined;
   const listeners: Listener[] = [];
   const disposers: Array<() => void> = [];
   const noop = (): void => {};
   apply({
-    // 对外 Cordis 服务（ctx.provide）：与 DSH 一致，返回释放函数
+    // External Cordis service (ctx.provide): consistent with DSH, returns the release function
     provide: () => noop,
     effect: (fn: () => unknown) => {
       try {
@@ -69,7 +72,7 @@ function setup(): Harness {
         if (typeof ret === 'function') disposers.push(ret as () => void);
         return ret;
       } catch {
-        /* 源码形态下内置配置不可达，refreshDesktop 会抛给调用方——这里吞掉，不影响监听注册 */
+        /* The built-in configuration is unreachable in source code form. refreshDesktop will be thrown to the caller - it will be swallowed here and will not affect the monitoring register. */
       }
     },
     on: (name: string, cb: Listener) => {
@@ -82,20 +85,20 @@ function setup(): Harness {
     agentDefaultModel: { currentSelection: () => undefined },
     credentials: { resolve: async () => undefined },
   });
-  assert.ok(handler, 'apply() 应注册 /dsh-pet-7340 prefix handler');
-  assert.ok(listeners.length > 0, 'apply() 应监听 session/event');
+  assert.ok(handler, 'apply () should register / dsh-pet-7340 prefix handler');
+  assert.ok(listeners.length > 0, 'apply () should listen for session/event');
 
   const harness: Harness = {
     emit: (sessionId, event) => {
-      // 同时喂给 work-status 与 notify 两个监听者，与宿主行为一致
+      // Feed two listeners work-status and notify at the same time, which is consistent with the host behavior.
       for (const l of listeners) l({ header: { id: sessionId } }, event);
     },
     snapshot: () =>
       new Promise<Snapshot>((done) => {
         const res = new FakeRes();
         res.on('finish', () => {
-          // 快照现在住在 S 的 sections.workStatus 叶子里（/work-status 端点已删）：
-          // 读它同时也是对"事件 → 写 S → /state 可读"这条新链路的端到端验证。
+          // The snapshot now lives in the sections.workStatus leaf of S (the /work-status endpoint was deleted):
+          // reading it is also an end-to-end validation of the new link "Event → Write S → /state Readable".
           const body = JSON.parse(Buffer.concat(res.chunks).toString('utf8')) as {
             sections?: { workStatus?: { data?: Snapshot | null } };
           };
@@ -104,13 +107,14 @@ function setup(): Harness {
         void handler?.({ method: 'GET', url: '/dsh-pet-7340/state', on: noop }, res);
       }),
     dispose: () => {
-      // 插件收尾：清掉待执行的定时器（终态清理 60s；余额周期刷新是常驻的）——
-      // 不释放的话测试进程跑完不退出。splice 先取走再执行：重复 dispose 是安全的空操作。
+      // Plugin cleanup: clear the timer to be executed (final state cleanup 60 s; balance cycle refresh is permanent)
+      // - if it is not released, the test process will not exit after running. splice is taken and then executed:
+      // repeating dispose is a safe no-op.
       for (const d of disposers.splice(0).reverse()) {
         try {
           d();
         } catch {
-          /* 收尾失败不影响断言 */
+          /* Cleanup failure does not affect assertion */
         }
       }
     },
@@ -124,13 +128,14 @@ before(() => {
   savedHome = process.env.DSH_HOME;
   savedElectron = process.env.DSH_PET_ELECTRON_PATH;
   process.env.DSH_HOME = join(dir, 'home');
-  // 命中一个已存在的文件：桌面 Helper 无论走哪条分支都不会真的下载/拉起
+  // Hitting an existing file: Desktop Helper will not actually download/pull up no matter which branch you take.
   process.env.DSH_PET_ELECTRON_PATH = process.execPath;
 });
 
 after(() => {
-  // 每个用例都 apply() 过一个全新实例：统一在这里释放（否则余额周期定时器等常驻句柄
-  // 会把测试进程拖住不退出）。用例里也可以自行 dispose()，重复调用是安全的。
+  // Each use case apply() passes a new instance: it is released here uniformly (otherwise, resident handles such as
+  // the balance cycle timer will drag the test process and not exit). You can also use dispose() by yourself in the
+  // use case, and it is safe to call it repeatedly.
   for (const h of harnesses.splice(0)) h.dispose();
   if (savedHome === undefined) delete process.env.DSH_HOME;
   else process.env.DSH_HOME = savedHome;
@@ -157,15 +162,15 @@ const DETAILED_CALL = (seq: number, callId: string | undefined, file: string): R
   seq,
   data: { name: 'read', callId, arguments: JSON.stringify({ file_path: file }) },
 });
-/** 结果事件的调用标识在 `message.source.callId`（`ToolMessageSource` 必带），`toolCallId` 同时存一份。 */
+/** The call identifier of the result event is in `message.source.callId` (required for `ToolMessageSource`), and `toolCallId` also saves a copy. */
 const TOOL_RESULT = (seq: number, callId?: string): Record<string, unknown> => ({
   type: 'tool/result',
   seq,
   data: { message: { role: 'tool', source: { kind: 'tool', callId }, toolCallId: callId } },
 });
 
-describe('并行工具的详情与调用对应', () => {
-  test('无详情工具返回时保留仍在执行的文件操作，全部结束后恢复最新 todo', async (t) => {
+describe('Parallel tool details and calls correspond to', () => {
+  test('When the tool returns without details, the file operations still being executed will be retained, and the latest todo will be restored after all are completed.', async (t) => {
     let now = Date.now();
     t.mock.method(Date, 'now', () => now);
     const h = setup();
@@ -174,33 +179,49 @@ describe('并行工具的详情与调用对应', () => {
     h.emit('s', TODO(2, ['in_progress', '原清单']));
     h.emit('s', DETAILED_CALL(3, 'read-A', 'active.ts'));
     h.emit('s', { type: 'tool/call', seq: 4, data: { name: 'get_goal', callId: 'goal-B', arguments: '{}' } });
-    now += 6000; // 越过原有档位缓冲，直接验证最终可见状态
+    now += 6000; // Override the original state buffer and directly verify the final visible state
     h.emit('s', TOOL_RESULT(5, 'goal-B'));
-    assert.equal((await h.snapshot()).state, 'working', '无详情工具结束不该结束工作档');
-    assert.match((await h.snapshot()).task ?? '', /active\.ts/, '仍在跑的文件操作应留在气泡上');
+    assert.equal((await h.snapshot()).state, 'working', 'Tool end without details should not end the work file');
+    assert.match(
+      (await h.snapshot()).task ?? '',
+      /active\.ts/,
+      'File operations that are still running should remain on the bubble',
+    );
     h.emit('s', TODO(6, ['in_progress', '最新清单']));
-    assert.match((await h.snapshot()).task ?? '', /active\.ts/, 'todo 不该盖掉仍在跑的详情');
+    assert.match(
+      (await h.snapshot()).task ?? '',
+      /active\.ts/,
+      'todo should not cover up the details that are still running.',
+    );
     now += 6000;
     h.emit('s', TOOL_RESULT(7, 'read-A'));
     assert.deepEqual(
       await h.snapshot(),
       { state: 'result', task: '最新清单', sessionId: 's' },
-      '全部结束后应回落到最新 todo',
+      'After everything is finished, fallback to the latest todo',
     );
   });
 
-  test('最后开始的工具先完成时，立即显示另一项仍在执行的操作', async (t) => {
+  test('When the tool started last finishes first, another operation that is still being executed is immediately displayed.', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('s', TURN_START(1));
     h.emit('s', DETAILED_CALL(2, 'read-A', 'active.ts'));
     h.emit('s', DETAILED_CALL(3, 'read-B', 'finished.ts'));
     h.emit('s', TOOL_RESULT(4, 'read-B'));
-    assert.equal((await h.snapshot()).state, 'working', '还有活没完应保持工作档');
-    assert.match((await h.snapshot()).task ?? '', /active\.ts/, '气泡不该继续显示已完成的那个操作');
+    assert.equal(
+      (await h.snapshot()).state,
+      'working',
+      'There is still work to be done and the work file should be kept',
+    );
+    assert.match(
+      (await h.snapshot()).task ?? '',
+      /active\.ts/,
+      'bubble should not continue to display the completed operation',
+    );
   });
 
-  test('先开始的工具先完成时，剩余操作继续显示工作状态', async (t) => {
+  test('When the tool started first is completed first, the remaining operations continue to display the working status.', async (t) => {
     let now = Date.now();
     t.mock.method(Date, 'now', () => now);
     const h = setup();
@@ -210,11 +231,11 @@ describe('并行工具的详情与调用对应', () => {
     h.emit('s', DETAILED_CALL(3, 'read-B', 'active.ts'));
     now += 6000;
     h.emit('s', TOOL_RESULT(4, 'read-A'));
-    assert.equal((await h.snapshot()).state, 'working', '先完成一个不代表全部结束');
-    assert.match((await h.snapshot()).task ?? '', /active\.ts/, '应切到仍在执行的那一项');
+    assert.equal((await h.snapshot()).state, 'working', 'Finishing one first does not mean finishing them all');
+    assert.match((await h.snapshot()).task ?? '', /active\.ts/, 'Should switch to the item that is still executing');
   });
 
-  test('未知和重复结果不能移除其他调用的详情', async (t) => {
+  test('Unknown and duplicate results cannot remove details from other calls', async (t) => {
     let now = Date.now();
     t.mock.method(Date, 'now', () => now);
     const h = setup();
@@ -229,12 +250,16 @@ describe('并行工具的详情与调用对应', () => {
       [6, 'unknown'],
     ] as const) {
       h.emit('s', TOOL_RESULT(seq, id));
-      assert.equal((await h.snapshot()).state, 'working', `${id} 是重复或未知结果，不该结束工作档`);
-      assert.match((await h.snapshot()).task ?? '', /active\.ts/, `${id} 不该移除别的调用的详情`);
+      assert.equal(
+        (await h.snapshot()).state,
+        'working',
+        `${id} is a duplicate or unknown result and must not end the working state`,
+      );
+      assert.match((await h.snapshot()).task ?? '', /active\.ts/, `${id} should not remove details of other calls`);
     }
   });
 
-  test('不同会话可以使用相同的调用标识', async (t) => {
+  test('Different sessions can use the same call ID', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('a', TURN_START(1));
@@ -242,12 +267,20 @@ describe('并行工具的详情与调用对应', () => {
     h.emit('b', TURN_START(3));
     h.emit('b', DETAILED_CALL(4, 'same-id', 'second.ts'));
     h.emit('b', TOOL_RESULT(5, 'same-id'));
-    assert.equal((await h.snapshot()).state, 'working', 'b 会话还有活，不应回落到完成档');
-    assert.match((await h.snapshot()).task ?? '', /first\.ts/, 'a 会话的详情不该被 b 的同名标识删掉');
+    assert.equal(
+      (await h.snapshot()).state,
+      'working',
+      'The b session is still alive and should not fallback to the completion file.',
+    );
+    assert.match(
+      (await h.snapshot()).task ?? '',
+      /first\.ts/,
+      'The details of the a session should not be deleted by the b identifier.',
+    );
   });
 
   for (const interrupted of [false, true]) {
-    test(`${interrupted ? '回合中断后' : '新回合开始时'}清理上一轮未完成的工具`, async (t) => {
+    test(`${interrupted ? 'After a turn is interrupted' : 'When a new turn starts'}, clear unfinished tools from the previous turn`, async (t) => {
       let now = Date.now();
       t.mock.method(Date, 'now', () => now);
       const h = setup();
@@ -262,25 +295,33 @@ describe('并行工具的详情与调用对应', () => {
       assert.deepEqual(
         await h.snapshot(),
         { state: 'result', task: null, sessionId: 's' },
-        '上一轮未完成的条目不该被带到这一轮',
+        'Unfinished entries from the previous round should not be carried over to this round',
       );
     });
   }
 
-  test('缺少调用标识的结果只释放无标识调用，不影响已识别的工具', async (t) => {
+  test('The result of missing call identification only releases unidentified calls and does not affect the identified tools.', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('s', TURN_START(1));
     h.emit('s', DETAILED_CALL(2, 'identified', 'active.ts'));
     h.emit('s', DETAILED_CALL(3, undefined, 'anonymous.ts'));
     h.emit('s', TOOL_RESULT(4));
-    assert.equal((await h.snapshot()).state, 'working', '已识别的调用仍在跑，应保持工作档');
-    assert.match((await h.snapshot()).task ?? '', /active\.ts/, '缺标识的结果不该删掉具名调用的详情');
+    assert.equal(
+      (await h.snapshot()).state,
+      'working',
+      'The identified call is still running and the work file should be kept',
+    );
+    assert.match(
+      (await h.snapshot()).task ?? '',
+      /active\.ts/,
+      'Missing identification results should not delete named call details',
+    );
   });
 });
 
-describe('任务文案生命周期 —— 现场场景 1：分阶段任务', () => {
-  test('文案随当前进行中的步骤走：多个 in_progress 时取最后一个', async (t) => {
+describe('Task text lifecycle - On-site scene 1: Phased tasks', () => {
+  test('The text follows the current step: when there are multiple in_progress, the last one is taken', async (t) => {
     const h = setup();
     t.after(h.dispose);
 
@@ -292,11 +333,11 @@ describe('任务文案生命周期 —— 现场场景 1：分阶段任务', () 
     h.emit('s1', TODO(2, ['in_progress', '正在执行 phase1']));
     assert.equal((await h.snapshot()).task, '正在执行 phase1');
 
-    // agent 把 phase2 也标成 in_progress 却没收回 phase1：必须取最后一个进行中的步骤
+    // agent also marked phase2 as in_progress but did not withdraw phase1: the last step in progress must be taken
     h.emit('s1', TODO(3, ['in_progress', '正在执行 phase1'], ['in_progress', '正在执行 phase2']));
     assert.equal((await h.snapshot()).task, '正在执行 phase2');
 
-    // phase1/2 收回、phase3 开始
+    // phase1/2 withdrawn, phase3 started
     h.emit(
       's1',
       TODO(4, ['completed', '正在执行 phase1'], ['completed', '正在执行 phase2'], ['in_progress', '正在执行 phase3']),
@@ -304,7 +345,7 @@ describe('任务文案生命周期 —— 现场场景 1：分阶段任务', () 
     assert.equal((await h.snapshot()).task, '正在执行 phase3');
   });
 
-  test('清单里全部完成 → 文案清空（回落档位文案，不再永久屏蔽 workStatusTexts）', async (t) => {
+  test('All items in the list are completed → text clear (fallback file text, workStatusTexts will no longer be permanently blocked)', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('s2', TURN_START(1));
@@ -314,7 +355,7 @@ describe('任务文案生命周期 —— 现场场景 1：分阶段任务', () 
     assert.equal((await h.snapshot()).task, null);
   });
 
-  test('新一轮 turn/start 清掉上一轮的详情；本轮再写 todo 会立刻填回来', async (t) => {
+  test('A new round of turn/start clears the details of the previous round; if you write todo in this round, it will be filled in immediately.', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('s3', TURN_START(1));
@@ -322,32 +363,40 @@ describe('任务文案生命周期 —— 现场场景 1：分阶段任务', () 
     assert.equal((await h.snapshot()).task, '上一轮的任务');
     h.emit('s3', TURN_END(3, 'completed'));
     h.emit('s3', TURN_START(4));
-    assert.equal((await h.snapshot()).task, null, '新一轮不得继续挂着上一轮的详情');
+    assert.equal(
+      (await h.snapshot()).task,
+      null,
+      'The new round must not continue to hang the details of the previous round.',
+    );
     assert.equal((await h.snapshot()).state, 'thinking');
     h.emit('s3', TODO(5, ['in_progress', '本轮的任务']));
     assert.equal((await h.snapshot()).task, '本轮的任务');
   });
 });
 
-describe('任务文案生命周期 —— 现场场景 2：任务结束后永久残留', () => {
-  test('任务完成后再开一段无关对话：旧文案不得跟过来', async (t) => {
+describe('Task text lifecycle - On-site scene 2: Permanent residue after the task ends', () => {
+  test('Open an unrelated conversation after the task is completed: old copywriters are not allowed to follow.', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('r1', TURN_START(1));
     h.emit('r1', TODO(2, ['in_progress', '早就做完的旧任务']));
     h.emit('r1', TURN_END(3, 'completed'));
-    assert.equal((await h.snapshot()).task, '早就做完的旧任务', '终态展示窗口内仍显示最后做的事');
+    assert.equal(
+      (await h.snapshot()).task,
+      '早就做完的旧任务',
+      'The last thing done is still displayed in the final state display window.',
+    );
 
-    // 完全无关的新一轮：不写 todo
+    // Completely unrelated new round: don’t write todo
     h.emit('r1', TURN_START(4));
     h.emit('r1', TOOL_CALL(5));
     h.emit('r1', TURN_END(6, 'completed'));
     const snap = await h.snapshot();
-    assert.equal(snap.task, null, '无关对话期间不得残留旧任务文案');
+    assert.equal(snap.task, null, 'Old mission copy must not remain during irrelevant conversations');
     assert.equal(snap.state, 'success');
   });
 
-  test('回合被打断（aborted）→ 会话条目与文案一并清掉，展示回空闲', async (t) => {
+  test('The round is interrupted (aborted) → the conversation entries and copy are cleared together, and the display returns to idle', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('r2', TURN_START(1));
@@ -358,7 +407,7 @@ describe('任务文案生命周期 —— 现场场景 2：任务结束后永久
     assert.equal(snap.task, null);
   });
 
-  test('终态展示窗口（60s）过后条目连同文案一起清掉', async (t) => {
+  test('After the final display window (60 s), the entries are cleared together with the copy.', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('r3', TURN_START(1));
@@ -373,7 +422,7 @@ describe('任务文案生命周期 —— 现场场景 2：任务结束后永久
     assert.equal(snap.task, null);
   });
 
-  test('会话没有活动条目时写 todo 不生效（不制造不会被展示的幽灵文案）', async (t) => {
+  test('Writing todo when there are no active entries in the session does not take effect (does not create ghost copy that will not be displayed)', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('ghost', TODO(1, ['in_progress', '幽灵任务']));
@@ -381,8 +430,8 @@ describe('任务文案生命周期 —— 现场场景 2：任务结束后永久
   });
 });
 
-describe('任务文案生命周期 —— 多会话不串文案', () => {
-  test('展示取优先级最高的会话，文案跟它走（不拿别的会话的文案冒充）', async (t) => {
+describe('Task text lifecycle - multiple sessions without text', () => {
+  test('Display the conversation with the highest priority, and the text will follow it (do not pretend to be the text of other conversations)', async (t) => {
     const h = setup();
     t.after(h.dispose);
     h.emit('m1', TURN_START(1));
@@ -391,16 +440,16 @@ describe('任务文案生命周期 —— 多会话不串文案', () => {
     assert.equal((await h.snapshot()).state, 'working');
     assert.equal((await h.snapshot()).task, 'M1 的任务');
 
-    // m2 也进 working（seq 更大 → 同档取最近）→ 展示切到 m2；m2 没有详情 → task 必须为 null
+    // m2 also enters working (seq is larger → the nearest one in the same file) → the display switches to m2; m2 has no details → task must be null
     h.emit('m2', TURN_START(4));
     h.emit('m2', TOOL_CALL(5));
     assert.equal((await h.snapshot()).state, 'working');
-    assert.equal((await h.snapshot()).task, null, '不得用 m1 的文案冒充 m2');
+    assert.equal((await h.snapshot()).task, null, 'Do not use copywriting of m1 to impersonate m2');
 
     h.emit('m2', TODO(6, ['in_progress', 'M2 的任务']));
     assert.equal((await h.snapshot()).task, 'M2 的任务');
 
-    // m2 回合被打断 → 条目清掉，展示回 m1，文案也跟着回到 m1 的
+    // m2 round is interrupted → the entry is cleared, the display returns to m1, and the copy also returns to m1
     h.emit('m2', TURN_END(7, 'aborted'));
     const snap = await h.snapshot();
     assert.equal(snap.state, 'working');

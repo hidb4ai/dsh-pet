@@ -1,10 +1,11 @@
 /**
- * 面板落点几何：决定级联子菜单摆在父面板的哪一侧，保证不与任何已展开面板重叠。
- * 纯函数，不碰 DOM；调用方只负责读矩形与写样式。
+ * Panel landing point geometry: Determine which side of the parent panel the cascading submenu is placed, ensuring
+ * that it does not overlap with any expanded panels. Pure function, does not touch DOM; caller is only responsible for
+ * reading the rectangle and writing the style.
  * @module dsh-pet/src/shared/menu/position
  */
 
-/** 面板矩形（只需定位用到的边）。 */
+/** Panel rectangle (only the edges used for positioning are needed). */
 export interface PanelBox {
   left: number;
   top: number;
@@ -12,28 +13,29 @@ export interface PanelBox {
   bottom: number;
 }
 
-/** {@link pickPanelPosition} 的入参。 */
+/** Input parameter of {@link pickPanelPosition}. */
 export interface PanelPositionInput {
-  /** 待摆放面板的尺寸。 */
+  /** The size of the panel to be placed. */
   panel: { w: number; h: number };
-  /** 触发它的菜单项。 */
+  /** The menu item that triggers it. */
   item: { left: number; right: number; top: number };
-  /** 它所属的那一层面板：子面板平级挂载，只有 DOM 父节点能给出正确的层。 */
+  /** The layer panel it belongs to: sub-panel is mounted horizontally, and only the DOM parent node can give the correct layer. */
   parent: { left: number; right: number; top: number };
-  /** 其它已展开面板的矩形：新面板不得与其中任何一个相交。 */
+  /** Rectangles of other expanded panels: the new panel must not intersect any of them. */
   others: PanelBox[];
-  /** 允许显示的范围（窗口 ∩ 工作区，视口坐标）。 */
+  /** Allowed display range (window ∩ working area, viewport coordinates). */
   clamp: { x: number; y: number; w: number; h: number };
 }
 
-/** 面板与边界、面板之间的间距（px）。 */
+/** The spacing between panels and borders and panels (px). */
 const PANEL_GAP = 4;
 
 /**
- * 决定子面板的落点：优先不与任何已展开面板重叠，其次贴边。
+ * Determine the placement point of the sub-panel: the priority is not to overlap with any expanded panel, and the
+ * second is to fit the edge.
  *
- * @param input - 面板尺寸、触发项/父面板矩形、其它面板矩形与 clamp 范围。
- * @returns 面板左上角在视口坐标里的落点。
+ * @param input - Panel size, trigger/parent panel rectangle, other panel rectangle, and clamp range.
+ * @returns The position of the upper left corner of the panel in the viewport coordinates.
  */
 export function pickPanelPosition(input: PanelPositionInput): { left: number; top: number } {
   const { panel, item, parent, others, clamp } = input;
@@ -41,7 +43,7 @@ export function pickPanelPosition(input: PanelPositionInput): { left: number; to
   const minTop = clamp.y + PANEL_GAP;
   const maxLeft = clamp.x + clamp.w - PANEL_GAP - panel.w;
   const maxTop = clamp.y + clamp.h - PANEL_GAP - panel.h;
-  /** 夹进 clamp；面板比 clamp 还宽/高时贴左上角。 */
+  /** Clamp into clamp; stick to the upper left corner when the panel is wider/higher than clamp. */
   const clampX = (v: number): number => Math.max(minLeft, Math.min(v, Math.max(minLeft, maxLeft)));
   const clampY = (v: number): number => Math.max(minTop, Math.min(v, Math.max(minTop, maxTop)));
   const hitsOther = (left: number, top: number): boolean =>
@@ -50,7 +52,7 @@ export function pickPanelPosition(input: PanelPositionInput): { left: number; to
     left >= minLeft - 0.5 && left <= maxLeft + 0.5 && top >= minTop - 0.5 && top <= maxTop + 0.5;
   const topAtItem = clampY(item.top);
   const topAtParent = clampY(parent.top);
-  // 以父面板（不是触发项）为基准：触发项长在父面板里，按它往左翻必然盖回父面板。
+  // Based on the parent panel (not the trigger item): the trigger item grows in the parent panel, and if you press it to turn left, it will cover the parent panel.
   const cands = [
     { left: parent.right + PANEL_GAP, top: topAtItem },
     { left: parent.left - PANEL_GAP - panel.w, top: topAtItem },
@@ -59,11 +61,11 @@ export function pickPanelPosition(input: PanelPositionInput): { left: number; to
   ];
   const ideal = cands.find((cd) => fitsClamp(cd.left, cd.top) && !hitsOther(cd.left, cd.top));
   if (ideal) return ideal;
-  // 次优：夹进 clamp 后仍要避开其它面板——贴边但不重叠，好过完整落位但压住上层。
+  // Suboptimal: After clamping into clamp, you still need to avoid other panels - it is better to fit the edges but not overlap, than to fully position but press the upper layer.
   const fitted = cands
     .map((cd) => ({ left: clampX(cd.left), top: clampY(cd.top) }))
     .find((cd) => !hitsOther(cd.left, cd.top));
   if (fitted) return fitted;
-  // 兜底：窗口太窄，任何落点都会压到——贴父面板右侧夹取，宁可贴边也不叠在一起。
+  // fallback: The window is too narrow, and any landing point will be pressed - clamp on the right side of the parent panel, and would rather welt the edges than overlap them.
   return { left: clampX(parent.right + PANEL_GAP), top: clampY(topAtItem) };
 }

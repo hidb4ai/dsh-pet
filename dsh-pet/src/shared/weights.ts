@@ -1,52 +1,53 @@
 /**
- * 动作频率权重的纯计算：夹取与「随机动作」占比推导。
- * 浏览器设置页与独立模式设置页共用同一份规则，避免两边各算一遍。
+ * Pure calculation of action frequency weight: derivation of clamping and "random action" proportions. The browser
+ * settings page and the standalone mode settings page share the same rules to avoid counting them twice on both sides.
  * @module dsh-pet/src/shared/weights
  */
 import type { Weights } from './types.ts';
 
-/** 三个可编辑的权重字段；随机动作是余量，不单独存配置。 */
+/** Three editable weight fields; random actions are margins and are not configured separately. */
 export const WEIGHT_KEYS = ['idle', 'turn', 'move'] as const;
 
-/** 权重合计上限（百分比）：三项之和不能超过它，否则随机动作会是负数。 */
+/** The upper limit of the total weight (percentage): the sum of the three items cannot exceed it, otherwise the random action will be a negative number. */
 export const WEIGHTS_TOTAL = 100;
 
-/** 内置默认值：与 assets/config.jsonc 的 animationWeights 一致；配置缺失或未就绪时的占位。 */
+/** Built-in default value: consistent with animationWeights of assets/config.jsonc; placeholder when configuration is missing or not ready. */
 export const DEFAULT_WEIGHTS: Weights = { idle: 10, turn: 5, move: 5 };
 
 /**
- * 取整并夹取；非有限数按下限处理，输入框里出现脏值时不写坏状态。
+ * Rounding and clamping; non-finite numbers are processed according to the upper limit, and no bad status is written
+ * when dirty values appear in the input box.
  *
- * @param value - 待归一的数值。
- * @param min - 下限。
- * @param max - 上限。
- * @returns 夹取后的整数。
+ * @param value - the value to be normalized.
+ * @param min - Lower limit.
+ * @param max - upper limit.
+ * @returns is the integer after clamping.
  */
 const clampInt = (value: number, min: number, max: number): number => {
   const rounded = Math.round(value);
   if (!Number.isFinite(rounded)) return min;
-  // 手写坏配置可能让上限低于下限（三项合计已超过 100）：夹到下限，绝不产出负数。
+  // Bad handwritten configuration may make the upper limit lower than the lower limit (the total of the three items has exceeded 100): when the lower limit is clamped, a negative number will never be generated.
   const upper = Math.max(min, max);
   return Math.min(Math.max(rounded, min), upper);
 };
 
 /**
- * 随机动作占比：总上限减去三项之和，最低 0。
+ * The proportion of random actions: the total upper limit minus the sum of the three items, with a minimum of 0.
  *
- * @param weights - 当前三项权重。
- * @returns 0–100 的整数；手写过大的值时按 0 处理。
+ * @param weights - The current three weights.
+ * @returns An integer from 0 to 100; if a handwritten value is too large, it will be treated as 0.
  */
 export function actionPercent(weights: Weights): number {
   return Math.max(0, WEIGHTS_TOTAL - weights.idle - weights.turn - weights.move);
 }
 
 /**
- * 改一个权重：其余两项不动，夹到「给随机动作留 0」的上限。
+ * Change one weight: leave the other two items unchanged and reach the upper limit of "leaving 0 for random actions".
  *
- * @param weights - 当前三项权重。
- * @param key - 要改的字段。
- * @param value - 目标值；小数取整，越界夹取。
- * @returns 新的权重对象（不修改入参）。
+ * @param weights - The current three weights.
+ * @param key - the field to be changed.
+ * @param value - target value; decimal rounding, out-of-bounds clipping.
+ * @returns New weight object (no modification of input parameters).
  */
 export function withWeight(weights: Weights, key: keyof Weights, value: number): Weights {
   const others = weights.idle + weights.turn + weights.move - weights[key];
@@ -54,10 +55,11 @@ export function withWeight(weights: Weights, key: keyof Weights, value: number):
 }
 
 /**
- * 从不可信输入解析权重：三项都是非负有限数才采用。
+ * Parse weights from untrusted input: only use all three items if they are non-negative finite numbers.
  *
- * @param raw - 成品配置里的 `animationWeights`。
- * @returns 解析出的权重；缺字段、非数字或负数返回 `undefined`，调用方保留表单现值。
+ * @param raw - `animationWeights` in finished configuration.
+ * @returns parsed weight; missing fields, non-numeric or negative numbers return `undefined` , caller retains the
+ * current value of the form.
  */
 export function parseWeights(raw: unknown): Weights | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;

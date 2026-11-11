@@ -1,9 +1,12 @@
 /**
- * 生成通道：把一次请求跑成文本增量序列，途中守住忙状态与额度上限。
+ * Generate channel: run a request into a sequence of text increments, keeping the busy status and quota limit during
+ * the process.
  *
- * 不组装请求（归 ./request）、不定义限额（归 ./limits）、不管服务生命周期（归 ./create）。
- * 失败一律归一成固定文案：SDK 错误可能带地址、请求头或正文，只能进 cause 与日志。
- * 必须始终成立：同一时刻只有一个在途请求；返回或抛错前一定释放控制器并关闭传输。
+ * Do not assemble requests (returned to ./request), do not define limits (returned to ./limits), and ignore service
+ * lifecycle (returned to ./create). Failures will be summarized into a fixed copy: SDK errors may contain addresses,
+ * request headers or text, and can only be entered into cause and logs. It must always be true: there is only one
+ * request in transit at the same time; the controller must be released and the transmission must be closed before
+ * returning or throwing an error.
  * @module dsh-pet/src/standalone/ai-provider/stream
  */
 import { isAuthenticationFailure, isRateLimitFailure, sdkTextStream, type AiTransportEvent } from '../ai-transport.ts';
@@ -11,14 +14,14 @@ import { MAX_EVENTS, MAX_OUTPUT_CHARS } from './limits.ts';
 import { abortable, parseRequest } from './request.ts';
 import type { AiRuntime } from './types.ts';
 
-/** 本层自己写的固定文案：只有这些能原样透出给调用方。 */
+/** Fixed text written by this layer: only these can be revealed to the caller as they are. */
 const OWN_MESSAGES: readonly string[] = [
   'Standalone AI could not answer this request.',
   'Standalone AI returned no text.',
   'Standalone AI response exceeds limits.',
 ];
 
-/** 把传输层异常归一成可示人的错误；鉴权失败顺带置位暂停，等用户重新保存设置。 */
+/** Convert transport layer exceptions into visible errors; if authentication fails, the bit will be set to pause and wait for the user to save the settings again. */
 function normalizeFailure(runtime: AiRuntime, controller: AbortController, error: unknown): Error {
   if (isAuthenticationFailure(error)) {
     runtime.paused = true;
@@ -39,9 +42,9 @@ function normalizeFailure(runtime: AiRuntime, controller: AbortController, error
 }
 
 /**
- * 造生成函数。
- * @param runtime - 共享运行态（就绪判定、限流窗口、在途控制器）。
- * @returns 接受 DSH 请求对象、产出文本增量的异步序列。
+ * Generate function.
+ * @param runtime - Shared running state (readiness determination, rate limiting window, in-transit controller).
+ * @returns accepts the DSH request object and produces an asynchronous sequence of text increments.
  */
 export function createTextStream(
   runtime: AiRuntime,
@@ -63,10 +66,10 @@ export function createTextStream(
     try {
       while (true) {
         const part: IteratorResult<AiTransportEvent> = await abortable(iterator.next(), controller.signal);
-        // 流式过程中设置可能被保存、服务也可能被释放，每次都重新确认。
+        // During the streaming process, the settings may be saved and the service may be released. Please reconfirm each time.
         if (controller.signal.aborted || !runtime.ready()) throw new Error('Standalone AI request cancelled.');
         if (part.done) break;
-        // 事件数也要有上限，防止对端用大量空块拖住进程。
+        // There should also be an upper limit on the number of events to prevent the peer from holding up the process with a large number of empty blocks.
         if (++events > MAX_EVENTS) throw new Error('Standalone AI response exceeds limits.');
         if (part.value.refusal) throw new Error('Standalone AI could not answer this request.');
         const text = part.value.text;
@@ -83,7 +86,7 @@ export function createTextStream(
       callerSignal?.removeEventListener('abort', abort);
       controller.abort();
       if (runtime.active === controller) runtime.active = undefined;
-      // return() 可能等待挂起的读取；只观察结果，绝不阻塞取消。
+      // return() may wait for pending reads; only observes results, never blocks cancellation.
       void iterator.return?.().catch(() => runtime.logger.debug('Standalone AI transport closed.'));
     }
   };

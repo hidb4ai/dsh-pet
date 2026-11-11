@@ -10,7 +10,7 @@ import { listenStandaloneServer, type StandaloneServer } from '../standalone/ser
 import { createRequestSecurity } from '../standalone/request-security.ts';
 import { readUserConfig } from './config.ts';
 
-// 把真实 host 打包进临时包，让它的 assets 能解析，同时不改动 src/assets。
+// Pack the real host into a temporary package so that its assets can be parsed without changing src/assets.
 const source = fileURLToPath(new URL('..', import.meta.url));
 const pet = (id: string) => ({
   id,
@@ -36,7 +36,7 @@ before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'dsh-pet-config-concurrency-'));
   const pkg = join(dir, 'package');
   mkdirSync(join(pkg, 'assets'), { recursive: true });
-  // 临时包与已安装产品一样需要外置运行依赖，不能依赖临时目录的父级恰好有 node_modules。
+  // Temporary packages require external running dependencies just like installed products, and cannot rely on the parent of the temporary directory having exactly node_modules.
   symlinkSync(
     fileURLToPath(new URL('../../node_modules', import.meta.url)),
     join(pkg, 'node_modules'),
@@ -146,20 +146,20 @@ test('concurrent pack write and settings save do not overwrite each other', asyn
   ]);
   assert.ok(
     results.every((r) => r.status === 200 && r.body.main),
-    '两条写端点都要成功，且响应都是成品聚合',
+    'Both write endpoints must succeed, and the responses are all finished aggregate',
   );
   assert.deepEqual(
     read().pets.map((p: { id: string }) => p.id),
     ['alpha', 'beta'],
-    '设置页保存的 main 实例不得被种类写回覆盖',
+    'The main instance saved in the settings page must not be overwritten by type writeback',
   );
-  assert.equal(read().notificationsEnabled, false, '全局字段不得被种类写回覆盖');
+  assert.equal(read().notificationsEnabled, false, 'Global fields must not be overwritten by type writeback');
   assert.deepEqual(
     read(packFile).pets.map((p: { id: string }) => p.id),
     ['pack-a', 'pack-b'],
-    '种类写回的结果不得被设置页保存覆盖',
+    'Category write-back results must not be overwritten by setting page save',
   );
-  assert.equal(read(packFile).whisperPrompt, 'keep this persona', '条目人设要保留');
+  assert.equal(read(packFile).whisperPrompt, 'keep this persona', 'Entry persona to be retained');
 });
 
 test('display changes cannot undo a concurrent settings save', async () => {

@@ -1,10 +1,11 @@
 /**
- * 子路径部署复现工具：把 `/app/DeepSeek-Harness/fngateway/*` 剥掉前缀转发给本机 DSH，
- * 前缀之外一律 404——与 fnOS 应用网关这类反向代理同一口径，用来复现 issue #242。
- * 开发自测工具，不入 npm 包。不实现鉴权、不改写响应体；Cookie 与请求头原样透传，
- * 只改写 Host，因此浏览器在 DSH 站点上已有的登录态可直接复用。
- * 端口、目标与前缀分别取 argv[2..4]，默认 9090 → http://127.0.0.1:8080 → /app/DeepSeek-Harness/fngateway；
- * 入口是 npm run dev:subpath。
+ * Sub-path deployment reproduction tool: strip off the prefix of `/app/DeepSeek-Harness/fngateway/*` and forward it to
+ * the local machine DSH. Everything except the prefix will be 404 - the same conventions as reverse proxies such as
+ * fnOS application gateway, used to reproduce issue #242. Develop self-test tools, not included in npm package.
+ * Authentication is not implemented and the response body is not rewritten; Cookie and the request header are
+ * transparently transmitted as they are, and only Host is rewritten, so the browser can directly reuse the existing
+ * login status on the DSH site. The port, target and prefix are respectively argv [2..4], the default is 9090 → http
+ * ://127.0.0.1:8080 → / app/DeepSeek-Harness/fngateway; the entry point is npm run dev:subpath.
  * @module dsh-pet/scripts/dev/subpath-proxy
  */
 import { createServer, request } from 'node:http';
@@ -12,12 +13,12 @@ import { connect } from 'node:net';
 
 const LISTEN_PORT = Number(process.argv[2] || 9090);
 const TARGET = new URL(process.argv[3] || 'http://127.0.0.1:8080');
-/** 去掉尾部斜杠：前缀本身不是可请求地址，带斜杠的形式由下面的重定向补齐。 */
+/** Remove the trailing slash: the prefix itself is not a requestable address, and the slashed form is completed by the redirect below. */
 const PREFIX = (process.argv[4] || '/app/DeepSeek-Harness/fngateway').replace(/\/+$/, '');
-/** 改写后的 Host：宿主按自己认的 authority 校验签名 Cookie，端口必须与目标一致。 */
+/** Rewritten Host: The host verifies the signature Cookie according to the authority it recognizes, and the port must be consistent with the target. */
 const UPSTREAM_AUTHORITY = `${TARGET.hostname}:${TARGET.port}`;
 
-/** 剥掉前缀后的上游路径；挂载根本身映射成 `/`。 */
+/** The upstream path after stripping the prefix; the mount root itself is mapped to `/`. */
 function upstreamPath(url) {
   const rest = url.slice(PREFIX.length);
   return rest === '' ? '/' : rest;
@@ -25,7 +26,7 @@ function upstreamPath(url) {
 
 const server = createServer((req, res) => {
   const url = req.url || '/';
-  // 不带尾斜杠的挂载根必须重定向：否则文档基准退到上一层目录，相对请求会全部指错
+  // The mount root without a trailing slash must be redirected: otherwise the document reference will be returned to the upper directory, and all relative requests will be incorrect.
   if (url === PREFIX || url.startsWith(PREFIX + '?')) {
     res.writeHead(301, { location: PREFIX + '/' + url.slice(PREFIX.length) });
     res.end();
@@ -56,7 +57,7 @@ const server = createServer((req, res) => {
   req.pipe(upstream);
 });
 
-// WebSocket 握手同样受前缀约束：DSH 的会话事件走 ws，缺了它页面能开但会话连不上
+// The WebSocket handshake is also subject to the prefix: the session event of DSH goes to ws. Without it, the page can be opened but the session cannot be connected.
 server.on('upgrade', (req, socket, head) => {
   const url = req.url || '/';
   if (!url.startsWith(PREFIX + '/')) {
@@ -80,7 +81,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(LISTEN_PORT, '127.0.0.1', () => {
-  console.log(`子路径环境就绪：http://127.0.0.1:${LISTEN_PORT}${PREFIX}/`);
-  console.log(`转发目标：${TARGET.origin}（Host 改写为 ${UPSTREAM_AUTHORITY}）`);
-  console.log('前缀之外的请求一律 404：与真实应用网关同口径');
+  console.log(`Subpath environment ready: http://127.0.0.1:${LISTEN_PORT}${PREFIX}/`);
+  console.log(`Upstream: ${TARGET.origin} (Host rewritten to ${UPSTREAM_AUTHORITY})`);
+  console.log('Requests outside the prefix return 404, matching a real application gateway');
 });

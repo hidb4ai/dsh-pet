@@ -1,11 +1,11 @@
-/** 记忆向导的独立生成与向量表单，模型发现结果不覆盖草稿或已有向量空间。 */
+/** Independent generation and vector form of Memory Wizard, model discovery results do not cover draft or existing vector spaces. */
 import { MODEL_PRESETS, sameModelEndpoint } from '../../shared/memory-presets.ts';
 import { ROUTE_PATH } from '../../shared/constants.ts';
 import type { MemorySetupModels } from '../../shared/memory-setup.ts';
 import type { SettingsRuntime } from './runtime.ts';
 import { INPUT_CLASS, makeUiKit } from './ui.ts';
 
-/** 凭据只存在编辑草稿中，不从状态接口读回。 */
+/** The credentials only exist in the edit draft and are not read back from the status interface. */
 export const EMPTY_MEMORY_DRAFT = {
   baseUrl: '',
   model: '',
@@ -16,10 +16,10 @@ export const EMPTY_MEMORY_DRAFT = {
   embeddingDimension: '',
   embeddingSendDimensions: true,
 };
-/** 两个角色的表单共享状态，由向导负责提交。 */
+/** The forms of the two roles share status and are submitted by the wizard. */
 export type MemoryModelDraft = typeof EMPTY_MEMORY_DRAFT;
 
-/** 每个角色独立管理模型发现请求；切换地址、密钥或卸载时废弃旧结果。 */
+/** Each role manages model discovery requests independently; old results are discarded when switching addresses, keys, or unmounting. */
 export function makeMemoryModelFields(rt: SettingsRuntime) {
   const { h, t, useState, useEffect, useRef } = rt;
   const { field } = makeUiKit(rt);

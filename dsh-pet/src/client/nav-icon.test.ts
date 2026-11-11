@@ -1,47 +1,53 @@
 /**
- * 设置面板导航图标补丁的契约测试 —— 钉住「按标题认行 + 打标记 + CSS 换字形」这套机制的全部前提。
- * DSH 没有给第三方设置分区配图标的入口（`navIcon(id)` 按 id 硬编码白名单 + 兜底齿轮，slot 契约里
- * 也没有图标位），只能靠 DOM 层补；失效表现是「图标还是齿轮」而不是报错，升级后容易无声退化。
+ * Set the contract test of the panel navigation icon patch - verify all the prerequisites of the mechanism of
+ * "recognize rows by title + mark + CSS glyph change". DSH does not have an entry point for the third party to set
+ * partition icons (`navIcon(id)` uses id hard-coded whitelist + fallback state, and slot does not have an icon bit in
+ * the contract), so it can only rely on DOM to make up for it; the failure performance is "icon or state" rather than
+ * an error, and it is easy to degrade silently after upgrading.
  *
- * 前提：只有标题匹配的那一行被打标记，其余行原样不动；标题为空（locale 未就绪）时不打标记，避免
- * 误伤标题同为空的其它行；标记打在 `data-*` 上，DSH 重渲染 / 切语言都不会摘掉（不换 DOM 节点）；
- * 样式只注入一次（盖住齿轮 + 画上 mask）；两段式观察：body 只盯直接子节点，命中后改盯面板子树；
- * 面板关掉再开、插件在面板已打开时装配都能补上标记；dispose 后观察者断开，不再打标记；
- * 字形推迟到认出面板时才解析（sprite 那会儿才在页面里），sprite 的 `<use>` 必须先展开成自包含 SVG；
- * 取不到字形（渲不出 / 引用的 symbol 缺失）→ 不注入样式、只告警一次，齿轮留在原地而不是变成零图标。
+ * Premise: Only the line with a matching title is marked, and the other lines remain unchanged; no marking is made
+ * when the title is empty (locale is not ready) to avoid accidental damage to other lines with empty titles; the mark
+ * is marked on `data-*` , DSH will not be removed regardless of re-rendering / switching languages (without changing
+ * the DOM node); the style is only injected once (cover the state + draw mask ); two-stage observation: body only
+ * targets the direct child node, and changes to the panel subtree after hitting it; the mark can be added when the
+ * panel is closed and reopened, or when the plugin is assembled when the panel is open; after dispose, the observer
+ * is disconnected and no longer marked; the glyph is deferred until the panel is recognized (sprite is only on the
+ * page at that time), sprite's `<use>` must first be expanded into self-contained SVG; The glyph cannot be obtained
+ * (cannot be rendered/the referenced symbol is missing) → no style is injected, only an warning is issued, and the state
+ * remains in place instead of turning into a zero icon.
  *
- * 假 DOM 只实现本模块用到的成员（不引 jsdom）：选择器只支持 `tag` / `[attr]` / `[attr="v"]` /
- * `[attr*="v"]` 四种形态。
+ * False DOM only implements the members used by this module (does not reference jsdom): the selector only supports
+ * four forms: `tag` / `[attr]` / `[attr="v"]` / `[attr*="v"]` .
  *
- * 跑法：node --experimental-strip-types --test src/client/nav-icon.test.ts
+ * Running method: node --experimental-strip-types --test src/client/nav-icon.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { expandUseRefs, installSectionNavIcon, svgMaskUri, symbolIn } from './nav-icon.ts';
 
-/** 标记属性名（与模块内 MARK 一致；这里独立写一份，避免测试跟着实现改名而失效）。 */
+/** Mark attribute name (consistent with MARK in the module; write a separate copy here to avoid the test becoming invalid after the implementation changes its name). */
 const MARK = 'data-dsh-pet-nav';
 
-/** camelCase → `data-` 属性名（复刻 `dataset` 的映射规则）。 */
+/** camelCase → `data-` attribute name (replicate the mapping rule of `dataset`). */
 function dataName(key: string): string {
   return 'data-' + key.replace(/[A-Z]/g, (char) => '-' + char.toLowerCase());
 }
 
-/** 极简元素替身。 */
+/** Minimalist element stand-in. */
 class El {
   readonly tag: string;
   readonly attrs = new Map<string, string>();
   readonly children: El[] = [];
   readonly dataset: Record<string, string>;
-  /** 自身的文本（真实 DOM 里 textContent 是读写属性，模块用它写 `<style>` 内容）。 */
+  /** Its own text (textContent in real DOM is a read-write attribute, and the module uses it to write `<style>` content). */
   ownText = '';
 
   constructor(tag: string, attrs: Record<string, string> = {}) {
     this.tag = tag;
     for (const [key, value] of Object.entries(attrs)) this.attrs.set(key, value);
-    // dataset 写回属性：模块用 `tag.dataset.pluginCss = ...` 打去重标记，
-    // 随后又用 `style[data-plugin-css="..."]` 查重，两者必须连通。
+    // dataset write-back attribute: The module uses `tag.dataset.pluginCss = ...` to mark deduplicate, and then uses
+    // `style[data-plugin-css="..."]` to check duplication. The two must be connected.
     this.dataset = new Proxy({} as Record<string, string>, {
       set: (_target, key, value: string) => {
         this.attrs.set(dataName(String(key)), value);
@@ -93,7 +99,7 @@ class El {
   }
 }
 
-/** 支持 `tag` / `[attr]` / `[attr="v"]` / `[attr*="v"]` 四种形态。 */
+/** Supports four forms: `tag` / `[attr]` / `[attr="v"]` / `[attr*="v"]`. */
 function matches(el: El, selector: string): boolean {
   const parsed = /^([a-z]*)(?:\[([a-zA-Z-]+)(?:(\*?=)"([^"]*)")?\])?$/.exec(selector);
   if (parsed === null) throw new Error('假 DOM 不支持的 selector：' + selector);
@@ -106,7 +112,7 @@ function matches(el: El, selector: string): boolean {
   return op === '*=' ? actual.includes(value ?? '') : actual === value;
 }
 
-/** 极简 document 替身：querySelector 同时覆盖 body 与 head（模块两处都查）。 */
+/** Minimalist document substitute: querySelector covers both body and head (check both modules). */
 class FakeDocument {
   readonly head = new El('head');
   readonly body = new El('body');
@@ -120,7 +126,7 @@ class FakeDocument {
   }
 }
 
-/** 极简 MutationObserver 替身：手动 `fire()` 模拟一次 DOM 变化。 */
+/** Minimalist MutationObserver stand-in: manual `fire()` simulates a DOM change. */
 class FakeObserver {
   static created: FakeObserver[] = [];
   readonly callback: () => void;
@@ -145,7 +151,7 @@ class FakeObserver {
   }
 }
 
-/** 造一个设置面板：`[data-shortcut-modal="settings"]` > `[class*="navList"]` > N 个 navCell。 */
+/** Create a settings panel: `[data-shortcut-modal="settings"]` > `[class*="navList"]` > N navCell. */
 function panelWith(labels: string[]): { panel: El; cells: El[] } {
   const panel = new El('div', { 'data-shortcut-modal': 'settings' });
   const list = new El('div', { class: 'VOzbGW_navList' });
@@ -161,12 +167,12 @@ function panelWith(labels: string[]): { panel: El; cells: El[] } {
   return { panel, cells };
 }
 
-/** 触发所有仍存活的观察者（模拟「DOM 变了」）。 */
+/** Trigger all still alive observers (simulating "DOM changed"). */
 function poke(): void {
   for (const observer of FakeObserver.created) observer.fire();
 }
 
-/** 装一套假 DOM 全局，返回 document 与还原函数。 */
+/** Install a fake DOM global and return document with the reduction function. */
 function withFakeDom(): { doc: FakeDocument; restore: () => void } {
   const doc = new FakeDocument();
   const previousDocument = globalThis.document;
@@ -185,8 +191,9 @@ function withFakeDom(): { doc: FakeDocument; restore: () => void } {
 }
 
 /**
- * 临时接管 `console.warn`，返回收集到的消息与还原函数。
- * 降级路径的告警既要断言（否则「静默失效」这条就没人守），又不该污染测试输出。
+ * Temporarily take over `console.warn` and return the collected messages and restore function. Warnings on the downgrade
+ * path must be assertions (otherwise the "silent failure" section will not be guarded) and should not pollute the test
+ * output.
  */
 function captureWarn(): { messages: string[]; restore: () => void } {
   const messages: string[] = [];
@@ -202,7 +209,7 @@ function captureWarn(): { messages: string[]; restore: () => void } {
   };
 }
 
-/** 一个能用的假字形渲染器（记录调用次数）。 */
+/** A working fake glyph renderer (records the number of calls). */
 function fakeRenderer(svg = '<svg viewBox="0 0 16 16" stroke="currentColor"><path d="M1 1h2"/></svg>'): {
   calls: number;
   renderSvg: () => string;
@@ -217,59 +224,59 @@ function fakeRenderer(svg = '<svg viewBox="0 0 16 16" stroke="currentColor"><pat
   return renderer;
 }
 
-describe('svgMaskUri —— 内联 SVG 转 CSS mask 用的 data URI', () => {
-  test('补上 xmlns（React 渲染出的 DOM svg 不带命名空间，data URI 里缺了就不渲染）', () => {
+describe('svgMaskUri - Inline SVG to CSS mask for data URI', () => {
+  test('Add xmlns (DOM svg rendered by React does not have a namespace, data URI will not be rendered if it is missing)', () => {
     const uri = svgMaskUri('<svg viewBox="0 0 16 16"><path d="M1 1"/></svg>');
     assert.ok(uri.startsWith('url("data:image/svg+xml,'));
     assert.ok(decodeURIComponent(uri).includes('xmlns="http://www.w3.org/2000/svg"'));
   });
 
-  test('已经有 xmlns 时不重复插一份', () => {
+  test('Do not insert a duplicate copy when xmlns already exists', () => {
     const uri = svgMaskUri('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"/>');
     const decoded = decodeURIComponent(uri);
     assert.equal(decoded.split('xmlns=').length - 1, 1);
   });
 
-  test('currentColor 定成不透明黑（mask 只看 alpha，data URI 里 currentColor 会退化）', () => {
+  test('currentColor is set to opaque black (mask only looks at alpha, currentColor in data URI will degrade)', () => {
     const decoded = decodeURIComponent(svgMaskUri('<svg stroke="currentColor"/>'));
     assert.ok(decoded.includes('stroke="#000"'));
     assert.equal(decoded.includes('currentColor'), false);
   });
 
-  test('引号与尖括号被编码，不会把 CSS 的 url("...") 提前闭合', () => {
+  test('Quotation marks and angle brackets are encoded and will not prematurely close url ("...") of CSS', () => {
     const uri = svgMaskUri('<svg a="b"/>');
-    // 只该有包裹用的那一对引号；SVG 里的引号必须被编码掉
+    // Only the pair of quotation marks used for the package should be present; the quotation marks in SVG must be encoded
     assert.equal(uri.split('"').length - 1, 2);
     assert.ok(uri.includes('%22'));
     assert.ok(uri.includes('%3C'));
   });
 
-  test('空 / 纯空白源码返回空串（调用方据此判定不可用）', () => {
+  test('Empty/purely blank source code returns an empty string (the caller determines that it is unavailable based on this)', () => {
     assert.equal(svgMaskUri(''), '');
     assert.equal(svgMaskUri('   \n '), '');
   });
 });
 
-describe('expandUseRefs —— 把 sprite 引用展开成自包含 SVG', () => {
-  test('sprite 引用：<use> 换成 symbol 的属性和内容', () => {
+describe('expandUseRefs - Expand sprite reference into self-contained SVG', () => {
+  test('sprite reference: < use > replaced by the attributes and content of symbol', () => {
     const svg = '<svg width="16" height="16" data-icon="i"><use href="#i"></use></svg>';
     const expanded = expandUseRefs(svg, () => ({ attrs: { viewBox: '0 0 16 16' }, content: '<path d="M1 1h2"/>' }));
     assert.equal(expanded, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M1 1h2"/></svg>');
   });
 
-  test('xlink:href 也认（老 React 的写法）', () => {
+  test('xlink:href is also recognized (the old way of writing React)', () => {
     const expanded = expandUseRefs('<svg><use xlink:href="#i"/></svg>', () => ({ attrs: {}, content: '<path/>' }));
     assert.ok(expanded?.includes('<path/>'));
   });
 
-  test('引用取不到 → undefined（调用方保留兜底齿轮，不注入一片空白的 mask）', () => {
+  test('The reference cannot be obtained → undefined (the caller retains the fallback state and does not inject a blank mask)', () => {
     assert.equal(
       expandUseRefs('<svg><use href="#missing"></use></svg>', () => undefined),
       undefined,
     );
   });
 
-  test('没有引用的内联 SVG 原样透传（0.2.1 及更早的图标形态）', () => {
+  test('Inline SVG without reference is passed through as is (0.2.1 and earlier icon forms)', () => {
     const svg = '<svg viewBox="0 0 16 16"><path d="M1 1"/></svg>';
     assert.equal(
       expandUseRefs(svg, () => ({ attrs: {}, content: '不该用到' })),
@@ -278,8 +285,8 @@ describe('expandUseRefs —— 把 sprite 引用展开成自包含 SVG', () => {
   });
 });
 
-describe('symbolIn —— 从宿主 <symbol> 取属性和内容', () => {
-  test('搬属性时跳过 id，内容原样带过来；查不到时返回 undefined', () => {
+describe('symbolIn - Get attributes and content from host < symbol >', () => {
+  test('Skip id when moving attributes, and bring the content as it is; return undefined if it cannot be found.', () => {
     const rows = [
       { name: 'id', value: 'i' },
       { name: 'viewBox', value: '0 0 16 16' },
@@ -298,8 +305,8 @@ describe('symbolIn —— 从宿主 <symbol> 取属性和内容', () => {
   });
 });
 
-describe('installSectionNavIcon —— 设置面板导航换图标', () => {
-  test('只给标题匹配的那一行打标记，其余行原样不动', () => {
+describe('installSectionNavIcon - Settings panel navigation icon change', () => {
+  test('Only mark the line whose title matches, leaving the other lines unchanged.', () => {
     const { doc, restore } = withFakeDom();
     try {
       const { panel, cells } = panelWith(['通用', '桌宠配置', '子智能体']);
@@ -316,7 +323,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('标题为空（locale 未就绪）时不打标记，避免误伤标题同为空的其它行', () => {
+  test('Do not mark when the title is empty (locale not ready) to avoid accidentally damaging other lines with empty titles.', () => {
     const { doc, restore } = withFakeDom();
     try {
       const { panel, cells } = panelWith(['', '']);
@@ -334,7 +341,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('标记打在 React 从不 diff 的 data-* 上：标题变了也不会掉（重渲染不摘标记）', () => {
+  test('The mark is placed on React but not data -* which is never diff: the title will not be removed even if the title is changed (re-rendering will not remove the mark)', () => {
     const { doc, restore } = withFakeDom();
     try {
       const { panel, cells } = panelWith(['桌宠配置']);
@@ -343,7 +350,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
       const dispose = installSectionNavIcon({ label: () => label, renderSvg: fakeRenderer().renderSvg });
       assert.equal(cells[0].getAttribute(MARK), '');
 
-      // 模拟切语言：DSH 重渲染这一行、标题文本变了；React 不会碰我们加的 data-*
+      // Simulate switching languages: DSH re-renders this line and the title text changes; React will not touch the data -* we added
       label = 'Pet Config';
       const span = cells[0].querySelector('[class*="navLabel"]');
       assert.ok(span !== null);
@@ -357,7 +364,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('样式只注入一次，且确实「盖住齿轮 + 画上 mask」', () => {
+  test('The style is only injected once, and it is indeed "cover the state + draw mask"', () => {
     const { doc, restore } = withFakeDom();
     try {
       const { panel } = panelWith(['桌宠配置']);
@@ -378,7 +385,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('字形只渲一次（图标是静态的，不该每次开面板都重渲）', () => {
+  test('The glyph is only rendered once (the icon is static and should not be re-rendered every time the panel is opened)', () => {
     const { doc, restore } = withFakeDom();
     try {
       const { panel } = panelWith(['桌宠配置']);
@@ -395,17 +402,17 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('两段式观察：body 只盯直接子节点，命中后改盯面板子树（不在全文档上跑 subtree）', () => {
+  test('Two-stage observation: body only targets the direct child node, and changes to the panel subtree after hitting it (do not run subtree on the full document)', () => {
     const { doc, restore } = withFakeDom();
     try {
-      // 面板还没开：只有一个盯 body 的观察者，且没开 subtree（否则聊天区 DOM 抖动会拖慢整页）
+      // The panel is not open yet: there is only one observer staring at body, and subtree is not open (otherwise the jitter of DOM in the chat area will slow down the entire page)
       const disposeBefore = installSectionNavIcon({ label: () => '桌宠配置', renderSvg: fakeRenderer().renderSvg });
       assert.equal(FakeObserver.created.length, 1);
       assert.equal(FakeObserver.created[0].observed[0].target, doc.body);
       assert.deepEqual(FakeObserver.created[0].observed[0].options, { childList: true });
       disposeBefore();
 
-      // 面板已开：多一个盯面板子树的观察者，body 那个仍然只盯直接子节点
+      // The panel is open: there is one more observer watching the panel subtree, the one body still only watches the direct child nodes
       FakeObserver.created = [];
       const { panel } = panelWith(['桌宠配置']);
       doc.body.append(panel);
@@ -414,8 +421,8 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
       assert.equal(FakeObserver.created.length, 2);
       const onPanel = FakeObserver.created.find((observer) => observer.observed[0]?.target === panel);
       const onBody = FakeObserver.created.find((observer) => observer.observed[0]?.target === doc.body);
-      assert.ok(onPanel !== undefined, '应该有一个盯面板的观察者');
-      assert.ok(onBody !== undefined, '应该有一个盯 body 的观察者');
+      assert.ok(onPanel !== undefined, 'There should be an observer watching the panel');
+      assert.ok(onBody !== undefined, 'There should be an observer watching body');
       assert.deepEqual(onPanel.observed[0].options, { childList: true, subtree: true });
       assert.deepEqual(onBody.observed[0].options, { childList: true });
       disposeAfter();
@@ -424,7 +431,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('面板后开：body 变化触发同步后补上标记', () => {
+  test('Panel rear opening: body changes trigger synchronization and add mark after synchronization', () => {
     const { doc, restore } = withFakeDom();
     try {
       const dispose = installSectionNavIcon({ label: () => '桌宠配置', renderSvg: fakeRenderer().renderSvg });
@@ -440,7 +447,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('面板关掉再开：观察者换到新面板，新行照样打上标记', () => {
+  test('The panel is closed and reopened: the observer switches to a new panel, and the new lines are still marked.', () => {
     const { doc, restore } = withFakeDom();
     try {
       const first = panelWith(['桌宠配置']);
@@ -460,7 +467,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('dispose 后观察者断开，新面板不再被打标记', () => {
+  test('After dispose the observer is disconnected and new panels are no longer marked.', () => {
     const { doc, restore } = withFakeDom();
     try {
       const dispose = installSectionNavIcon({ label: () => '桌宠配置', renderSvg: fakeRenderer().renderSvg });
@@ -475,7 +482,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('图标渲染抛错 → 不注入样式、只告警一次（齿轮照旧，那一行不会变成零图标）', () => {
+  test('Icon rendering error → No style injection, only one warning (the state remains the same, that row will not become a zero icon)', () => {
     const { doc, restore } = withFakeDom();
     const warn = captureWarn();
     try {
@@ -499,11 +506,11 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('渲成空 SVG → 不注入样式、告警（不注入一条指向空图的 mask）', () => {
+  test('Rendered to empty SVG → No style or warning will be injected (mask pointing to empty image will not be injected)', () => {
     const { doc, restore } = withFakeDom();
     const warn = captureWarn();
     try {
-      // 字形解析推迟到认出面板时，所以先装、后开面板。
+      // Glyph analysis is delayed until the panel is recognized, so install the panel first and then open the panel.
       const dispose = installSectionNavIcon({ label: () => '桌宠配置', renderSvg: () => '  ' });
       const { panel } = panelWith(['桌宠配置']);
       doc.body.append(panel);
@@ -519,7 +526,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('缺 MutationObserver → 不装、告警', () => {
+  test('Missing MutationObserver → not installed, warning', () => {
     const { restore } = withFakeDom();
     const warn = captureWarn();
     try {
@@ -534,7 +541,7 @@ describe('installSectionNavIcon —— 设置面板导航换图标', () => {
     }
   });
 
-  test('标题 thunk 抛错 → 跳过本轮、只告警一次（齿轮照旧，不刷屏）', () => {
+  test('The title thunk is thrown incorrectly → skip this round and only alert once (the state remains the same and the screen is not refreshed)', () => {
     const { doc, restore } = withFakeDom();
     const warn = captureWarn();
     try {

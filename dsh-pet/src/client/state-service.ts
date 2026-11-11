@@ -1,24 +1,27 @@
 /**
- * 轮询状态的客户端出口：留下最近一拍，供同页插件经 Cordis 服务读取。
- * 只存引用、不比对也不分发状态变化：比对在 shared/state，分发在 pet/multi，本模块没有第二份判据。
- * 页面级单例，标签页之间不共享；`/state` 首拍之前为 `null`。
+ * Client exit in polling state: Leave the latest beat for the same page plugin to read through the Cordis service.
+ * Only references are stored, no comparison is made, and no status changes are distributed: the comparison is in
+ * shared/state and the distribution is in pet/multi. This module does not have a second criterion. Page-level
+ * singleton, not shared between tabs; `/state` was `null` before the first shot.
  * @module dsh-pet/src/client/state-service
  */
 import type { PollState } from '../shared/state.ts';
 
-/** 最近一拍的状态；`null` = 本页还没拉到过。 */
+/** The status of the latest shot; `null` = This page has not been pulled yet. */
 let latest: PollState | null = null;
 
-/** 订阅者：每来一拍通知一次。 */
+/** Subscriber: Notified once for every beat. */
 const listeners = new Set<(state: PollState) => void>();
 
 /**
- * 记下最近一拍的状态（唯一调用点是 pet/multi 的分发入口）。
+ * Record the status of the latest beat (the only call point is the distribution entry point of pet/multi).
  *
- * 逐个通知订阅者并各自兜错：某个面板的回调抛了，不能连累这一拍继续分发——
- * 轮询是整页宠物渲染的入口，一个消费方出错不该让所有人都停在旧画面。
+ * Notify subscribers one by one and tell their own mistakes: the callback of a certain panel is thrown, and this beat
+ * cannot be continued to be distributed - polling is the entry point for full-page pet rendering. An error on the
+ * consumer side should not make everyone stop at the old screen.
  *
- * @param state - 刚拉到的轮询状态；整包替换，不深拷贝——每拍本来就是新对象。
+ * @param state - The polling status just pulled; the whole package is replaced, no deep copy - each tick is originally
+ * a new object.
  */
 export function setStateSnapshot(state: PollState): void {
   latest = state;
@@ -26,21 +29,21 @@ export function setStateSnapshot(state: PollState): void {
     try {
       listener(state);
     } catch (error) {
-      console.error('[dsh-pet] 状态订阅回调出错（已忽略，不影响轮询）：', error);
+      console.error('[dsh-pet] State subscriber callback failed; polling will continue:', error);
     }
   }
 }
 
-/** 读最近一拍的状态；本页 `/state` 还没回来时为 `null`。 */
+/** Read the status of the latest shot; this page is `null` when `/state` has not come back. */
 export function getStateSnapshot(): PollState | null {
   return latest;
 }
 
 /**
- * 订阅后续每一拍（不补发当前这拍：调用方自己决定要不要先读一次）。
+ * subscribe for each subsequent beat (the current beat is not reissued: the caller decides whether to read it first).
  *
- * @param listener - 收到新一拍时调用。
- * @returns 退订函数。
+ * @param listener - Called when a new beat is received.
+ * @returns unsubscribe function.
  */
 export function subscribeStateSnapshot(listener: (state: PollState) => void): () => void {
   listeners.add(listener);
@@ -49,8 +52,10 @@ export function subscribeStateSnapshot(listener: (state: PollState) => void): ()
   };
 }
 
-/** 清空快照与订阅；测试用，让每个用例从不含状态的页面开始。
- * @internal 只给测试重置全局单例，不对外承诺。 */
+/**
+ * clear snapshot and subscribe; for testing, let each use case start from a page without status.
+ * @internal only resets the global singleton for testing and does not promise to the outside world.
+ */
 export function resetStateSnapshot(): void {
   latest = null;
   listeners.clear();

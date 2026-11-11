@@ -1,14 +1,15 @@
 /**
- * 点击音效（src/client/pet/click-sound.ts）的契约测试：开关关闭时不构造不播放；
- * 打开后播放一次、节流窗口内连点只响一次；音频构造或播放失败都不外抛。
- * 用假的 Audio 与假时钟，不碰真实设备。
+ * Contract test of click sound effect (src/client/pet/click-sound.ts): when the switch is turned off, it will not be
+ * constructed or played; it will be played once after it is turned on, and the connection point in the throttling
+ * window will only sound once; the audio construction or playback failure will not be thrown. Use fake Audio with fake
+ * clock without touching the real device.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { playClickSound, setClickSoundEnabled } from './click-sound.ts';
 
-/** 假 Audio：记录构造与播放次数。 */
+/** False Audio: Record structure and play times. */
 class FakeAudio {
   static constructed = 0;
   static plays = 0;
@@ -25,12 +26,12 @@ class FakeAudio {
   }
 }
 
-/** 假时钟；用例直接改 `now` 推进时间。 */
+/** Fake clock; the use case directly changes the `now` advance time. */
 interface Clock {
   now: number;
 }
 
-/** 换掉 Audio 与 Date.now，跑一段用例后还原（包括把开关关回去）。 */
+/** Replace Audio and Date.now and restore after running a use case (including turning off the switch). */
 function withFakeAudio(run: (clock: Clock) => void): void {
   const previousAudio = globalThis.Audio;
   const previousNow = Date.now;
@@ -48,8 +49,8 @@ function withFakeAudio(run: (clock: Clock) => void): void {
   }
 }
 
-describe('playClickSound —— 点击音效', () => {
-  test('开关关闭：不构造、不播放', () => {
+describe('playClickSound —— Click sound effect', () => {
+  test('Switch off: no construction, no playback', () => {
     withFakeAudio(() => {
       setClickSoundEnabled(false);
       playClickSound();
@@ -58,22 +59,26 @@ describe('playClickSound —— 点击音效', () => {
     });
   });
 
-  test('开关打开：播放一次，节流窗口内连点只响一次，audio 实例复用', () => {
+  test('Switch on: play once, the connected dots in the throttling window only sound once, audio instance reuse', () => {
     withFakeAudio((clock) => {
       setClickSoundEnabled(true);
       playClickSound();
-      assert.equal(FakeAudio.plays, 1, '第一次要响');
+      assert.equal(FakeAudio.plays, 1, 'Ringing for the first time');
       clock.now += 50;
       playClickSound();
-      assert.equal(FakeAudio.plays, 1, '节流窗口内连点不重复响');
+      assert.equal(
+        FakeAudio.plays,
+        1,
+        'The throttling window does not sound repeatedly when connected dots are connected.',
+      );
       clock.now += 200;
       playClickSound();
-      assert.equal(FakeAudio.plays, 2, '超过节流窗口后恢复');
-      assert.equal(FakeAudio.constructed, 1, 'audio 实例复用，不重复构造');
+      assert.equal(FakeAudio.plays, 2, 'Recovery after throttling window exceeded');
+      assert.equal(FakeAudio.constructed, 1, 'audio instance reuse, no repeated construction');
     });
   });
 
-  test('音频不可用：不抛（没有声音不该变成报错）', () => {
+  test('Audio is not available: do not throw (no sound should not turn into an error)', () => {
     const previousAudio = globalThis.Audio;
     const previousNow = Date.now;
     const clock: Clock = { now: 30_000 };

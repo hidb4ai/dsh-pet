@@ -1,10 +1,10 @@
-/** DSH 本机记忆设置：安装进度与生命周期操作独立于宿主聊天模型。 */
+/** DSH Native Memory Settings: Installation progress and lifecycle operations are independent of the host chat model. */
 import { EMPTY_MEMORY_DRAFT, makeMemoryModelFields, type MemoryModelDraft } from './memory-model-fields.ts';
 import { useMemorySetup, type MemorySetupCallbacks } from './memory-setup-state.ts';
 import { makeUiKit } from './ui.ts';
 import type { SettingsRuntime } from './runtime.ts';
 
-/** 沿用设置页样式；保留编辑草稿，轮询不会重置用户正在输入的字段。 */
+/** Inherit the settings page style; keep editing drafts, polling does not reset the fields the user is entering. */
 export function makeMemorySetup(rt: SettingsRuntime) {
   const { h, t, useState, useRef, useEffect } = rt;
   const { cardHead } = makeUiKit(rt);

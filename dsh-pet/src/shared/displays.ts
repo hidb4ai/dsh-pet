@@ -1,18 +1,20 @@
 /**
- * 多显示器几何：把「桌面」建模为工作区矩形的并集，而不是它们的外接矩形。
- * 摆放不规则时会留下大片不属于任何屏的空洞（实测右倒 T 型双屏近四分之一面积），
- * 以外接矩形为边界会把宠物放进用户看不见的地方。
- * 坐标系由调用方决定，本文件不假定原点在 0；浏览器半侧 overlay 只有一块屏，退化为单矩形。
+ * Multi-monitor geometry: Model the "desktop" as the union of the workspace rectangles, rather than their bounding
+ * rectangles. When placed irregularly, a large hole will be left that does not belong to any screen (actually measured
+ * is nearly a quarter of the area of the right-inverted T double screen), and the bounded rectangle will put the pet
+ * in a place where the user cannot see it. The coordinate system is determined by the caller. This document does not
+ * assume that the origin is at 0; the browser side overlay has only one screen and degenerates into a single
+ * rectangle.
  * @module dsh-pet/src/shared/displays
  */
 import type { Rect } from './types.ts';
 
-/** 矩形右缘（不含）。 */
+/** Right edge of rectangle (not included). */
 export const rectRight = (r: Rect): number => r.x + r.width;
-/** 矩形下缘（不含）。 */
+/** Lower edge of rectangle (not included). */
 export const rectBottom = (r: Rect): number => r.y + r.height;
 
-/** 外接矩形：视口原点与比例换算仍取它，但边界判定一律走并集；空列表返回 0×0。 */
+/** Encircling rectangle: It is still used for viewport origin and scale conversion, but the boundary determination is always based on union; an empty list returns 0×0. */
 export const boundingRect = (rects: Rect[]): Rect => {
   if (rects.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
   let x0 = Infinity;
@@ -28,30 +30,30 @@ export const boundingRect = (rects: Rect[]): Rect => {
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 };
 
-/** 点是否落在矩形内（右/下缘不含）：相邻两屏缝隙为 0 时，点归左/上那块。 */
+/** Whether the point falls within the rectangle (excluding the right/lower edge): When the gap between two adjacent screens is 0, the point falls on the left/top area. */
 export const pointInRect = (r: Rect, x: number, y: number): boolean =>
   x >= r.x && x < rectRight(r) && y >= r.y && y < rectBottom(r);
 
-/** 点被哪块屏覆盖；无则 null。重叠时取列表中第一块（与 Chromium「先发现者优先」一致）。 */
+/** Which screen is the point covered by? If not, null. When overlapping, the first block in the list is taken (consistent with Chromium "first discovered first"). */
 export const rectAtPoint = (rects: Rect[], x: number, y: number): Rect | null => {
   for (const r of rects) if (pointInRect(r, x, y)) return r;
   return null;
 };
 
-/** 同 rectAtPoint，返回下标（−1 = 无覆盖）；抛掷要用下标记住当前所在屏。 */
+/** Same as rectAtPoint, returns the subscript (−1 = no coverage); when throwing, use the subscript to cover the current screen. */
 export const indexAtPoint = (rects: Rect[], x: number, y: number): number => {
   for (let i = 0; i < rects.length; i++) if (pointInRect(rects[i], x, y)) return i;
   return -1;
 };
 
-/** 点到矩形的最短距离平方（点在矩形内为 0）。 */
+/** The square of the shortest distance from the point to the rectangle (the point is 0 within the rectangle). */
 export const distToRectSq = (r: Rect, x: number, y: number): number => {
   const dx = Math.max(r.x - x, 0, x - rectRight(r));
   const dy = Math.max(r.y - y, 0, y - rectBottom(r));
   return dx * dx + dy * dy;
 };
 
-/** 离点最近的屏下标；空列表返回 −1。用于宠物落在空洞或屏幕被拔掉后归位。 */
+/** Screen index closest to point; empty list returns −1. Used to return pets to places after they fall into hollows or the screen is unplugged. */
 export const nearestIndex = (rects: Rect[], x: number, y: number): number => {
   let best = -1;
   let bestD = Infinity;
@@ -65,7 +67,7 @@ export const nearestIndex = (rects: Rect[], x: number, y: number): number => {
   return best;
 };
 
-/** 点所在屏；不在任何屏上时取最近的那块（列表为空才返回 null）。 */
+/** The screen where the point is located; if it is not on any screen, take the nearest block (null will be returned only when the list is empty). */
 export const resolveRect = (rects: Rect[], x: number, y: number): Rect | null => {
   const hit = rectAtPoint(rects, x, y);
   if (hit) return hit;
@@ -73,13 +75,13 @@ export const resolveRect = (rects: Rect[], x: number, y: number): Rect | null =>
   return i < 0 ? null : rects[i];
 };
 
-/** 把点夹进指定矩形（右/下缘留 1px，保证结果仍满足 pointInRect）。 */
+/** Clamp the point into the specified rectangle (leaving 1 px on the right/lower edge to ensure that the result still satisfies pointInRect). */
 export const clampPointInRect = (r: Rect, x: number, y: number): { x: number; y: number } => ({
   x: Math.min(Math.max(x, r.x), rectRight(r) - 1),
   y: Math.min(Math.max(y, r.y), rectBottom(r) - 1),
 });
 
-/** 把点夹进并集：已在并集内原样返回，否则夹进最近的那块屏。用于显示器拔插后把落在空洞里的宠物拉回可见区。 */
+/** Clamp the point into the union: it has been returned as it is in the union, otherwise it will be clamped into the nearest screen. It is used to pull pets that have fallen into the cavity back into the visible area after the monitor is unplugged and plugged in. */
 export const clampPointToRegion = (rects: Rect[], x: number, y: number): { x: number; y: number } => {
   if (rectAtPoint(rects, x, y)) return { x, y };
   const i = nearestIndex(rects, x, y);
@@ -87,8 +89,10 @@ export const clampPointToRegion = (rects: Rect[], x: number, y: number): { x: nu
 };
 
 /**
- * 显示器拓扑变化后重定位宠物中心：世界坐标守恒，只有点不落在任何屏上才夹到最近屏。
- * 参数与返回值都是新视口的相对坐标；视口原点随拓扑平移，直接拿旧坐标去夹会让宠物每次开合都漂一次。
+ * Repositioning the pet center after the display topology changes: World coordinates are conserved, and only the point
+ * that does not fall on any screen is clipped to the nearest screen. The parameters and return value are the relative
+ * coordinates of the new viewport; the viewport origin translates with the topology, and directly clamping the old
+ * coordinates will cause the pet to drift every time it is opened and closed.
  */
 export const rebaseCenter = (
   center: { x: number; y: number },
@@ -98,10 +102,10 @@ export const rebaseCenter = (
 ): { x: number; y: number } =>
   clampPointToRegion(areas, center.x + fromView.x - toView.x, center.y + fromView.y - toView.y);
 
-/** 并集面积（各屏不重叠时等于面积和；重叠会重复计，仅作诊断）。 */
+/** Union area (when the screens do not overlap, it is equal to the sum of the areas; overlapping will result in repeated counting, for diagnosis only). */
 export const regionArea = (rects: Rect[]): number => rects.reduce((s, r) => s + r.width * r.height, 0);
 
-/** 外接矩形中不属于任何屏的面积占比 0~1（诊断用；矩形不重叠时精确）。 */
+/** The area ratio of the external rectangle that does not belong to any screen is 0~1 (for diagnosis; accurate when the rectangles do not overlap). */
 export const regionHoleRatio = (rects: Rect[]): number => {
   const hull = boundingRect(rects);
   const hullArea = hull.width * hull.height;
@@ -109,6 +113,6 @@ export const regionHoleRatio = (rects: Rect[]): number => {
   return Math.max(0, 1 - regionArea(rects) / hullArea);
 };
 
-/** 整体平移一组矩形（屏幕坐标 → 视口相对坐标：减去视口原点）。 */
+/** Translate a group of rectangles as a whole (screen coordinates → viewport relative coordinates: minus the viewport origin). */
 export const translateRects = (rects: Rect[], dx: number, dy: number): Rect[] =>
   rects.map((r) => ({ x: r.x + dx, y: r.y + dy, width: r.width, height: r.height }));

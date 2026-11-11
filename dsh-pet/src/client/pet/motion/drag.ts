@@ -1,9 +1,11 @@
 /**
- * 指针拖拽：按下态、拖拽阈值、触屏长按菜单与点击互动。
- * 不负责飞行与走位；弹簧跟随在 ./drag-follow，松手结算在 ./drag-release。
- * 依赖 PetCard 每帧给出的当帧能力 getter：尺寸、动画池、状态设置器与停/起运动。
- * 不变量：按下后所有位置写入都经包围盒读写；舞台脚垫位移恒定；松手必须先停弹簧跟随再结算落点。
- * 鼠标松开兜底也在这里：指针捕获被浏览器提前丢掉时，window 上的 mouseup 走同一套收尾。
+ * Pointer drag: press state, drag threshold, touch screen long press menu and click interaction. It is not responsible
+ * for flight and positioning; the spring follows at ./drag-follow, and the release is settled at ./drag-release.
+ * Depends on the current frame capabilities given by PetCard per frame getter: size, animation pool, state setter and
+ * stop/start motion. Invariant: after pressing, all position writing will be read and written through the bounding
+ * box; the displacement of the stage pad is constant; when you release, you must first stop the spring to follow and
+ * then settle the landing point. The mouse release fallback is also here: when the pointer capture is discarded in
+ * advance by the browser, mouseup on window uses the same set of cleanup.
  * @module dsh-pet/src/client/pet/motion/drag
  */
 import { trimTrail, type DragSample } from '../../../shared/physics.ts';
@@ -17,119 +19,119 @@ import type { BoxPoint } from './geometry.ts';
 import type { PhysicsParams } from '../../../shared/types.ts';
 import type * as ReactNS from 'react';
 
-/** 指针按下的状态：阈值判定、弹弓与长按各占几个字段。 */
+/** The state of pointer press: threshold judgment, slingshot and long press each occupy several fields. */
 interface PressState {
-  /** 已按下。 */
+  /** Pressed. */
   active: boolean;
-  /** 已超过拖动阈值。 */
+  /** Drag threshold exceeded. */
   dragging: boolean;
-  /** 按下点（px）。 */
+  /** Press point (px). */
   sx: number;
-  /** 按下点（px）。 */
+  /** Press point (px). */
   sy: number;
-  /** 按下点到宠物中心的偏移（px）。 */
+  /** The offset of the pressed point to the center of the pet (px). */
   offX: number;
-  /** 按下点到宠物中心的偏移（px）。 */
+  /** The offset of the pressed point to the center of the pet (px). */
   offY: number;
-  /** 本次拖拽按拉距算力度。 */
+  /** The drag force is calculated based on the drag distance. */
   sling: boolean;
-  /** 按下时的宠物中心 X（px）。 */
+  /** Pet center when pressed X (px). */
   anchorX: number;
-  /** 按下时的宠物中心 Y（px）。 */
+  /** Pet center when pressed Y (px). */
   anchorY: number;
 }
 
-/** 一次松手的现场：React 事件在入口处折算成它，收尾逻辑只认这里。 */
+/** The scene of a let go: React event is converted to it at the entry point, and the cleanup logic only recognizes it here. */
 interface ReleasePoint {
-  /** 指针横坐标（px）。 */
+  /** Pointer abscissa coordinate (px). */
   x: number;
-  /** 指针纵坐标（px）。 */
+  /** Pointer ordinate (px). */
   y: number;
-  /** 命中区节点：摘拖拽类与判定提示落点都用它。 */
+  /** Hit area node: Use it to pick drag and drop classes and determine the placement point of prompts. */
   hit: HTMLDivElement;
 }
 
-/** 拖拽驱动每次处理事件时取的当帧能力。 */
+/** The drag driver takes the current frame capability each time it handles an event. */
 export interface DragCard {
-  /** 本宠物 id，用于日志。 */
+  /** This pet is id, used for logs. */
   petId: string;
-  /** 宠物宽度（px）。 */
+  /** Pet width (px). */
   size: number;
-  /** 盒半宽（px）。 */
+  /** Box half width (px). */
   halfW: number;
-  /** 盒半高（px）。 */
+  /** Box half height (px). */
   halfH: number;
-  /** 该宠物的物理参数。 */
+  /** The physical parameters of this pet. */
   physics: PhysicsParams;
-  /** 拖拽动画池。 */
+  /** Drag animation pool. */
   dragAnims: string[];
-  /** 点击动画池。 */
+  /** Click on the animation pool. */
   clickAnims: string[];
-  /** 待机动画池。 */
+  /** Standby animation pool. */
   idleAnims: string[];
-  /** 当前动画名，抽待机时用来避开自己。 */
+  /** The name of the current animation, used to avoid yourself when on standby. */
   currentAnim: string;
-  /** 换源播一次。 */
+  /** Change the source once. */
   setOnce: (on: boolean) => void;
-  /** 换成指定动画。 */
+  /** Change to the specified animation. */
   playAnim: (anim: string) => void;
-  /** 递增换源序号，强制 switchTo 走一遍。 */
+  /** Increment the source sequence number and force switchTo to go through it again. */
   bumpSeq: () => void;
-  /** 标记「等新首帧就位后压 Q 弹」。 */
+  /** Mark "Wait for the new first frame to be in place before pressing the Q bullet". */
   markSquash: () => void;
-  /** 恢复非终态工作循环；返回 false 表示没有可恢复的状态。 */
+  /** Restore non-final state work cycle; returning false means there is no recoverable state. */
   resumeWork: () => boolean;
-  /** 停走位与位置跟随。 */
+  /** Stop-and-go position and position following. */
   stopAutonomy: () => void;
-  /** 停飞。 */
+  /** Grounded. */
   stopFlight: () => void;
-  /** 起飞。 */
+  /** Take off. */
   startFlight: (px: number, py: number, vx: number, vy: number) => void;
-  /** 本卡是否被占用锁冻结。 */
+  /** Is this card frozen by the occupation lock? */
   isFrozen: () => boolean;
-  /** 本地解冻并释放宿主锁。 */
+  /** Local unfreeze and release host lock. */
   releaseLock: () => void;
-  /** 抓取瞬间的飞行速度；没在飞时为 null。 */
+  /** The flight speed at the moment of grabbing; when not flying, it is null. */
   grabVelocity: () => { vx: number; vy: number } | null;
-  /** 点击音效。 */
+  /** Click sound effects. */
   playClickSound: () => void;
-  /** 悬浮提示是否点亮。 */
+  /** Whether the floating prompt is lit. */
   tipOn: () => boolean;
-  /** 把提示摆到光标旁。 */
+  /** Place the prompt next to the cursor. */
   placeTip: (x: number, y: number) => void;
-  /** 切换提示显隐。 */
+  /** Switch the prompt between visible and hidden. */
   setTipOn: (on: boolean) => void;
-  /** 根元素。 */
+  /** Root element. */
   root: () => HTMLDivElement | null;
-  /** 当前包围盒位置。 */
+  /** Current bounding box position. */
   box: () => BoxPoint | null;
-  /** 写回包围盒位置。 */
+  /** Write back bounding box position. */
   setBox: (box: BoxPoint) => void;
-  /** 原地放下：提交夹取后的归一化中心。 */
+  /** Put down in place: submit the normalized center after clamping. */
   commitPlace: (box: BoxPoint) => void;
 }
 
-/** 拖拽驱动对外的读写面。 */
+/** The external read and write surface of the drag driver. */
 export interface Drag {
-  /** 按下：处理积分、拖拽与弹弓，并开启指针捕获。 */
+  /** Press: Handles points, drag and slingshot, and turns on pointer capture. */
   onPointerDown(e: ReactNS.PointerEvent<HTMLDivElement>): void;
-  /** 移动：更新悬浮提示、拖拽阈值与弹簧目标。 */
+  /** Mobile: Updated hover tips, drag thresholds and spring targets. */
   onPointerMove(e: ReactNS.PointerEvent<HTMLDivElement>): void;
-  /** 松开与取消：结算拖拽或抛掷，并复位悬浮提示。 */
+  /** Release and Cancel: Resets the drag or throw and resets the hover prompt. */
   onPointerUp(e: ReactNS.PointerEvent<HTMLDivElement>): void;
-  /** 点击：播放点击动画并触发 Q 弹。 */
+  /** Click: Play the click animation and trigger the Q bomb. */
   onClick(): void;
-  /** 停弹簧跟随，不碰指针捕获状态。 */
+  /** Stop spring following and do not touch the pointer capture state. */
   stopFollow(): void;
-  /** 摘掉鼠标松开兜底监听；卸载时调用，之后这个驱动不可再用。 */
+  /** Remove the mouse and release fallback monitoring; called when unmounting, after which this driver cannot be used again. */
   dispose(): void;
-  /** 指针是否按着（含未超过拖动阈值）。 */
+  /** Whether the pointer is pressed (including whether the drag threshold has not been exceeded). */
   isActive(): boolean;
-  /** 是否刚拖完：松手后的短窗口内为真，右键菜单要忽略这段时间。 */
+  /** Whether it has just finished dragging: it is true within the short window after letting go, and the right-click menu should ignore this period. */
   justDragged(): boolean;
 }
 
-/** 复位的按下状态：避免每个实例各写一份字面量。 */
+/** Reset pressed state: avoid writing a literal per instance. */
 const IDLE_PRESS: PressState = {
   active: false,
   dragging: false,
@@ -142,24 +144,25 @@ const IDLE_PRESS: PressState = {
   anchorY: 0,
 };
 
-/** 松手后这段时间内的指针事件视为同一次拖拽的尾巴（ms）。 */
+/** The pointer events within this period after letting go are regarded as the tail of the same drag (ms). */
 const JUST_DRAGGED_MS = 100;
 
-/** 日志行的时刻前缀。 */
+/** Time prefix for log lines. */
 const stamp = (): string => new Date().toTimeString().slice(0, 8);
 
-/** 一行带时刻与宠物 id 的日志：客户端统一前缀，便于按宠物 grep。 */
+/** A line of logs with time and pet id: The client unifies the prefix to facilitate pressing pet grep. */
 const log = (petId: string, message: string): void => {
   console.log('[dsh-pet] ' + stamp() + ' pet=' + petId + ' ' + message);
 };
 
 /**
- * 抓取瞬间记一行速度，手速够快就打分。
+ * Record one line of speed at the moment of grabbing, and score if the hand speed is fast enough.
  *
- * @param current - 当帧能力。
- * @param x - 指针横坐标（px），分数从这里弹出。
- * @param y - 指针纵坐标（px）。
- * @returns 是否打过分；调用方据此让随后的 click 不再播普通点击动画。
+ * @param current - when frame capability.
+ * @param x - The abscissa of the pointer ( px ), where the score pops up.
+ * @param y - pointer ordinate (px).
+ * Whether @returns has a score; the caller will use this to prevent subsequent click from playing ordinary click
+ * animations.
  */
 function noteGrab(current: DragCard, x: number, y: number): boolean {
   const grab = current.grabVelocity();
@@ -182,31 +185,33 @@ function noteGrab(current: DragCard, x: number, y: number): boolean {
 }
 
 /**
- * 造拖拽驱动。
+ * Build a drag driver.
  *
- * @param card - 取当帧能力的 getter；每次事件处理时调用一次。
- * @returns 可反复调用的驱动；指针状态在实例内跨渲染保留。
+ * @param card - Get the getter of the current frame capability; called once for each event processing.
+ * @returns Recallable driver; pointer state is retained across renders within the instance.
  */
 export function createDrag(card: () => DragCard): Drag {
   let press: PressState = { ...IDLE_PRESS };
-  /** 「刚拖完」窗口的截止时刻（ms）；用时刻而不是定时器，读的时候再判，少一个待清理的句柄。 */
+  /** The deadline of the "just finished dragging" window (ms); use time instead of timer, and judge when reading, leaving one less handle to be cleaned. */
   let justDraggedUntil = 0;
   let pressScoreFired = false;
   let lastPressAt = 0;
-  /** 指针轨迹采样，供初速估算。 */
+  /** Pointer trajectory sampling for muzzle velocity estimation. */
   let trail: DragSample[] = [];
   const follow = createDragFollow({ card });
-  // 指针捕获可能先于鼠标松开被浏览器丢掉，那时真正的 pointerup 落在别的元素上，拖拽会卡在按下态。
-  // 只在鼠标按下期间挂一个 window 级 mouseup 兜底，按当前坐标走同一套收尾，不伪造 pointerup 事件。
+  // The pointer capture may be discarded by the browser before the mouse is released. At that time, the real pointerup
+  // falls on other elements, and the drag will be stuck in the pressed state. Only hang a window level mouseup
+  // fallback while the mouse is pressed, follow the same set of cleanup according to the current coordinates, and do
+  // not forge pointerup events.
   let mousePressHit: HTMLDivElement | null = null;
-  /** 捕获丢失后的松手：坐标来自 mouseup，落点判定与正常松开完全一致。 */
+  /** Release after loss of capture: The coordinates come from mouseup, and the landing point determination is completely consistent with normal release. */
   function onWindowMouseUp(e: MouseEvent): void {
     const hit = mousePressHit;
-    // 右键或还有别的键按着时不算松手，只认左键完全松开的那一次。
+    // When the right button or other keys are pressed, it is not counted as being released. Only the time when the left button is completely released is recognized.
     if (!hit || e.button !== 0 || e.buttons !== 0) return;
     endPress(card(), { x: e.clientX, y: e.clientY, hit });
   }
-  /** 鼠标按下时登记命中区并挂兜底；node 里的测试没有 window，替身自己提供。 */
+  /** Register the hit area and hang fallback when the mouse is pressed; the test in node does not have window, the avatar is provided by itself. */
   const armMouseFallback = (hit: HTMLDivElement): void => {
     mousePressHit = hit;
     if (typeof window !== 'undefined') window.addEventListener('mouseup', onWindowMouseUp, true);
@@ -215,15 +220,15 @@ export function createDrag(card: () => DragCard): Drag {
     mousePressHit = null;
     if (typeof window !== 'undefined') window.removeEventListener('mouseup', onWindowMouseUp, true);
   };
-  /** 触屏长按：计时与容差在 motion/touch-press.ts，到点后把这次按压当右键。 */
+  /** Long press on the touch screen: The timing and tolerance are at motion/touch-press.ts. After reaching the point, this press will be treated as the right button. */
   const touchPress = createTouchPress({
     onMenu: (target) => {
-      // 结束本次按压：松手时既不抛掷也不播点击动画。
+      // End this press: neither throwing nor clicking animation will be played when letting go.
       press.active = false;
       pressScoreFired = true;
       if (target.el.hasPointerCapture(target.pointerId)) target.el.releasePointerCapture(target.pointerId);
       log(card().petId, '-> [TOUCH-MENU]');
-      // 与鼠标右键同一入口：派发 contextmenu 交给右键处理。
+      // The same entry point as the right mouse button: dispatch contextmenu to the right button for processing.
       target.el.dispatchEvent(
         new MouseEvent('contextmenu', {
           bubbles: true,
@@ -239,16 +244,16 @@ export function createDrag(card: () => DragCard): Drag {
   });
 
   /**
-   * 记下这次按下的几何与弹弓判定。
+   * Write down the geometry and slingshot judgment of this press.
    *
-   * @param c - 当帧能力。
-   * @param e - 按下事件。
-   * @returns 新的按下状态。
+   * @param c - when frame capability.
+   * @param e - Press event.
+   * @returns New pressed state.
    */
   const beginPress = (c: DragCard, e: ReactNS.PointerEvent<HTMLDivElement>): PressState => {
     e.currentTarget.classList.add('dragging');
     e.currentTarget.setPointerCapture(e.pointerId);
-    // 指针捕获期间 pointerleave 不触发，不主动收起提示就会一直跟着跑。
+    // pointerleave is not triggered during pointer capture, and the prompt will keep running if it is not actively closed.
     c.setTipOn(false);
     const rootEl = c.root();
     let offX = 0;
@@ -259,10 +264,10 @@ export function createDrag(card: () => DragCard): Drag {
       offY = e.clientY - (rr.top + rr.height / 2);
       c.setBox({ x: rr.left, y: rr.top });
     }
-    // 弹弓只比较两次按下的间隔，与本次拖了多久、何时松手无关。
+    // The slingshot only compares the interval between two presses, and has nothing to do with how long it was dragged or when it was released.
     const pressNow = performance.now();
     const sling = pressNow - lastPressAt < SLINGSHOT_DOUBLE_MS;
-    lastPressAt = sling ? 0 : pressNow; // 命中后清零，免得连点三下弹两次。
+    lastPressAt = sling ? 0 : pressNow; // Clear after hitting, so as not to bounce twice in three consecutive clicks.
     const anchor = c.box();
     return {
       active: true,
@@ -279,21 +284,22 @@ export function createDrag(card: () => DragCard): Drag {
 
   const onPointerDown = (e: ReactNS.PointerEvent<HTMLDivElement>): void => {
     const c = card();
-    // 只认左键：右键会与菜单判定打架，两端一致。
+    // Only the left click is recognized: the right click will determine conflict with the menu, and both ends are consistent.
     if (e.button !== 0) return;
-    // 用户点了或拖了这只宠物就是接管：立即本地解冻并 force 释放宿主锁。
-    // 先本地解冻是为了不等一次往返；此刻确实有锁，乐观释放是安全的。
+    // The user clicks or drags this pet to take over: immediately unfreeze locally and force release the host lock.
+    // Unfreezing locally first is to avoid waiting for a round trip; there is indeed a lock at this moment, and
+    // optimistic release is safe.
     if (c.isFrozen()) c.releaseLock();
-    // 抓取瞬间的积分：手速够快就打分，随后这次 click 不再播普通点击动画。
+    // Points for grabbing the moment: points will be awarded if the hand speed is fast enough. Then this time click will no longer play the normal click animation.
     pressScoreFired = noteGrab(c, e.clientX, e.clientY);
-    // 空中抓取：停掉抛掷、漫游与弹簧跟随，从当前落点开始拖拽。
+    // Mid-air grabbing: Stop throwing, roaming and spring following, and start dragging from the current landing point.
     c.stopFlight();
     follow.stop();
     c.stopAutonomy();
     trail = [];
     press = beginPress(c, e);
     clearMouseFallback();
-    // 笔与触屏的 pointerup 会正常送达命中区；只有鼠标需要这条兜底。
+    // pointerup for pen and touch screens will be delivered to the hit area normally; only the mouse requires this fallback.
     if (e.pointerType === 'mouse') armMouseFallback(e.currentTarget);
     touchPress.arm({
       el: e.currentTarget,
@@ -306,12 +312,12 @@ export function createDrag(card: () => DragCard): Drag {
 
   const onPointerMove = (e: ReactNS.PointerEvent<HTMLDivElement>): void => {
     const c = card();
-    // 提示跟随光标，必须在拖拽早退之前。
+    // Prompt to follow the cursor, must be before dragging and exiting early.
     if (c.tipOn()) c.placeTip(e.clientX, e.clientY);
     if (!press.active) return;
     const dx = e.clientX - press.sx;
     const dy = e.clientY - press.sy;
-    // 长按窗口内手指移动超过容差即取消。
+    // If the finger moves beyond the tolerance after long pressing in the window, it will be cancelled.
     touchPress.move(Math.hypot(dx, dy));
     if (!press.dragging) {
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
@@ -323,23 +329,24 @@ export function createDrag(card: () => DragCard): Drag {
         c.playAnim(name);
       }
     }
-    // 记录指针轨迹，供初速估算。
+    // Record the pointer trajectory for muzzle velocity estimation.
     const now = performance.now();
     trail = trimTrail([...trail, { t: now, x: e.clientX, y: e.clientY }], now);
-    // 弹簧目标是包围盒左上角，跟随循环逐帧追赶。
+    // The spring target is the upper left corner of the bounding box, and it follows the loop to catch up frame by frame.
     follow.aim({ x: e.clientX - press.offX - c.halfW, y: e.clientY - press.offY - c.halfH });
     const rootEl = c.root();
     if (rootEl) follow.start(rootEl);
   };
 
   /**
-   * 松手结算：原地放下、甩抛或弹弓。
+   * Let go and settle: put down on the spot, throw or slingshot.
    *
-   * @param c - 当帧能力。
-   * @param point - 松手现场；指针没跟上时用它的坐标兜底算落点。
+   * @param c - when frame capability.
+   * @param point - Let go at the scene; when the pointer does not keep up, use its coordinate fallback to calculate
+   * the landing point.
    */
   const settleRelease = (c: DragCard, point: ReleasePoint): void => {
-    // 释放位置取弹簧跟随的实时包围盒，而不是指针目标。
+    // The release position takes the real-time bounding box that the spring follows instead of the pointer target.
     const current = c.box();
     const box = current ?? { x: point.x - press.offX - c.halfW, y: point.y - press.offY - c.halfH };
     const decision = decideRelease({
@@ -371,19 +378,20 @@ export function createDrag(card: () => DragCard): Drag {
     if (decision.kind === 'throw') {
       const { vx, vy } = decision.velocity;
       log(c.petId, 'release vx=' + Math.round(vx) + ' vy=' + Math.round(vy) + ' |v|=' + Math.round(Math.hypot(vx, vy)));
-      // 飞行期间由 rAF 直接写 left/top，落定后才提交归一化中心。
+      // During flight, rAF directly writes left/top, and is submitted to the normalization center after finalization.
       c.startFlight(box.x, box.y, vx, vy);
       return;
     }
-    // 原地放下：夹到可见下限后提交归一化中心；根节点位置由 commitPlace 直接写，不依赖重渲染。
+    // Put it down in place: Clamp to the visible lower limit and submit to the normalized center; the root node position is directly written by commitPlace, without relying on re-rendering.
     c.commitPlace(box);
   };
 
   /**
-   * 松手后把提示摆回光标处并点亮；指针已移出命中区时保持收起。
+   * After letting go, the prompt returns to the cursor and lights up; the pointer remains retracted when it has moved
+   * out of the hit zone.
    *
-   * @param c - 当帧能力。
-   * @param point - 松手现场。
+   * @param c - when frame capability.
+   * @param point - Let go scene.
    */
   const restoreTip = (c: DragCard, point: ReleasePoint): void => {
     const hitRect = point.hit.getBoundingClientRect();
@@ -395,14 +403,15 @@ export function createDrag(card: () => DragCard): Drag {
   };
 
   /**
-   * 松手收尾的唯一路径：复位按下态、摘拖拽类、结算去向并把提示摆回去。
+   * The only way to release the cleanup: reset the pressed state, remove the drag and drop class, settle the
+   * destination and put the prompt back.
    *
-   * @param c - 当帧能力。
-   * @param point - 松手现场；正常 pointerup 与捕获丢失后的 window mouseup 都折算成它。
+   * @param c - when frame capability.
+   * @param point - Release scene; normal pointerup and window mouseup after capture loss are converted into it.
    */
   const endPress = (c: DragCard, point: ReleasePoint): void => {
     clearMouseFallback();
-    // pointercancel 也走这条路径，长按计时器在这里一并清掉。
+    // pointercancel also takes this path, long press the timer to clear it here.
     touchPress.cancel();
     const wasDragging = press.dragging;
     press.active = false;
@@ -411,8 +420,9 @@ export function createDrag(card: () => DragCard): Drag {
     follow.stop();
     if (wasDragging) {
       justDraggedUntil = performance.now() + JUST_DRAGGED_MS;
-      // 拖拽松手：非终态恢复工作循环，否则播一遍待机后回随机链。
-      // once 必须为 true，否则 ended 不触发，随机链回不来。
+      // Drag and release: non-final state resumes the work cycle, otherwise it plays once and returns to the random
+      // chain after standby. once must be true, otherwise ended will not be triggered and the random chain will not be
+      // returned.
       if (!c.resumeWork()) {
         if (c.idleAnims.length) c.playAnim(pick(c.idleAnims, c.currentAnim));
         c.setOnce(true);
@@ -429,24 +439,24 @@ export function createDrag(card: () => DragCard): Drag {
   const onClick = (): void => {
     const c = card();
     if (press.active || press.dragging || performance.now() < justDraggedUntil) return;
-    // 本次按下已触发过积分：只收手停住，不再播普通点击动画。
+    // This press has already triggered points: just close the hand and stop, and no longer play the normal click animation.
     if (pressScoreFired) {
       pressScoreFired = false;
       c.stopFlight();
       c.stopAutonomy();
       return;
     }
-    c.stopFlight(); // 点击飞行中的宠物即收手停住。
+    c.stopFlight(); // Click on a flying pet to stop it.
     c.stopAutonomy();
-    // 点击音效放在所有「不播点击动画」的早退分支之后。
+    // Click sound effects are placed after all early exit branches of "no click animation".
     c.playClickSound();
     c.setOnce(true);
     if (!c.clickAnims.length) return;
     const name = pick(c.clickAnims);
     log(c.petId, '-> [CLICK] ' + name);
-    c.markSquash(); // 等新点击动画切到前台后再压新首帧。
-    // 单动画点击时状态不变，effect 不会重放；递增 seq 强制 switchTo 走一遍，
-    // 防重分支负责消费 Q 弹标记。
+    c.markSquash(); // Wait for the new click animation to switch to the foreground before pressing the new first frame. When a single
+    // animation is clicked, the state remains unchanged and effect will not be replayed; incrementing seq forces switchTo
+    // to go through once, and the anti-replication branch is responsible for consuming the Q bullet mark.
     c.bumpSeq();
     c.playAnim(name);
   };

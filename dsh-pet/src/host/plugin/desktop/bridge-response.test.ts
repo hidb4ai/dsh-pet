@@ -1,30 +1,33 @@
 /**
- * 管道应答映射的单元测试（素材走文件、文本与 JSON 走 body、无需应答落 204）。
+ * Unit test of pipeline response mapping (asset goes to file, text and JSON goes to body, no need to respond to 204).
  *
- * 钉住的不变式：
- *   - id 原样带回：管道上并存的请求靠它配对，串号等于把 A 的响应交给 B；
- *   - 素材恒 200 且只带路径，正文交给主进程读盘（大视频不进管道）；
- *   - 业务失败（200 + ok:false）原样透传，不在这一层改状态码。
+ * Invariants of verify:
+ * - id is brought back as it is: the concurrent requests on the pipeline are matched by it, and the serial number is
+ * equivalent to giving the response of A to B;
+ * - The asset is constant 200 and only contains the path, and the text is handed over to the main process to read the
+ * disk (large videos do not enter the pipeline);
+ * - Business failure (200 + ok:false) is transparently transmitted as it is, and the status code is not changed at
+ * this layer.
  *
- * 跑法：node --experimental-strip-types --test src/host/plugin/desktop/bridge-response.test.ts
+ * Running method: node --experimental-strip-types --test src/host/plugin/desktop/bridge-response.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { toBridgeResponse } from './bridge-response.ts';
 
-describe('toBridgeResponse —— 路由结果 → 管道应答', () => {
-  test('素材：恒 200，只带文件路径与类型（正文由主进程读盘）', () => {
+describe('toBridgeResponse —— route result → pipe response', () => {
+  test('asset: Heng 200, only with file path and type (the text is read by the main process)', () => {
     const res = toBridgeResponse(7, { kind: 'file', file: '/tmp/a.webm', contentType: 'video/webm' });
     assert.deepEqual(res, { id: 7, status: 200, contentType: 'video/webm', file: '/tmp/a.webm' });
   });
 
-  test('文本：状态码与正文原样带回，类型固定 text/plain', () => {
+  test('Text: status code and text are brought back as they are, the type is fixed text/plain', () => {
     const res = toBridgeResponse(2, { kind: 'text', status: 404, body: 'not found' });
     assert.deepEqual(res, { id: 2, status: 404, contentType: 'text/plain; charset=utf-8', body: 'not found' });
   });
 
-  test('JSON：业务失败体原样透传（200 + ok:false 不在这一层改成 5xx）', () => {
+  test('JSON: The service failure body is transparently transmitted as it is (200 + ok:false is not changed to 5 xx in this layer)', () => {
     const obj = { ok: false, reason: 'invalid-config' };
     const res = toBridgeResponse(3, { kind: 'json', status: 200, obj });
     assert.equal(res.status, 200);
@@ -32,17 +35,17 @@ describe('toBridgeResponse —— 路由结果 → 管道应答', () => {
     assert.deepEqual(JSON.parse(res.body ?? ''), obj);
   });
 
-  test('JSON：非 2xx 也照传（405/413 由路由决定，映射层不改判）', () => {
+  test('JSON: If it is not 2, xx is also passed (405/413 is determined by route, and the mapping layer does not change the judgment)', () => {
     const res = toBridgeResponse(4, { kind: 'json', status: 405, obj: { ok: false, reason: 'method-not-allowed' } });
     assert.equal(res.status, 405);
   });
 
-  test('无需应答：落成空的 204（连接已断开，不写正文）', () => {
+  test('No response required: empty 204 (the connection has been disconnected, no text is written)', () => {
     const res = toBridgeResponse(5, { kind: 'none' });
     assert.deepEqual(res, { id: 5, status: 204, contentType: 'text/plain; charset=utf-8', body: '' });
   });
 
-  test('id 原样带回：并存的两次请求不会串号', () => {
+  test('id is brought back as it is: two concurrent requests will not have serial numbers.', () => {
     const first = toBridgeResponse(11, { kind: 'text', status: 200, body: 'a' });
     const second = toBridgeResponse(12, { kind: 'text', status: 200, body: 'b' });
     assert.equal(first.id, 11);

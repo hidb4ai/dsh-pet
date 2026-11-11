@@ -1,12 +1,13 @@
 /**
- * ctx.llm 替身：有独立 AI 服务时转调，没有时显式不可用。
+ * ctx.llm stand-in: transposed when there is an independent AI service, and explicitly unavailable when not.
  *
- * 形状必须与 DSH 的 llm 服务一致（路由与设置页只认这几个方法）；不实现生成逻辑（归 ./ai-provider）。
- * 必须始终成立：未接入模型时每个调用都抛错或给空清单，绝不假装成功。
+ * The shape must be consistent with the llm service of DSH (the route and settings pages only recognize these
+ * methods); the generation logic is not implemented (returned to ./ai-provider). This must always be true: when not
+ * connected to the model, every call throws an error or gives an empty list, and never pretends to be successful.
  * @module dsh-pet/src/standalone/llm-facade
  */
 
-/** ctx.llm 替身的契约，形状必须与 DSH 一致。 */
+/** The contract for ctx.llm's substitute must have the same shape as DSH. */
 export interface StandaloneModelService {
   currentSelection(): { provider: string; model: string };
   listProviders(): unknown[];
@@ -15,17 +16,18 @@ export interface StandaloneModelService {
   stream(options: unknown): AsyncIterable<unknown>;
   isReady(): boolean;
   /**
-   * 余额查询要用的服务商与密钥。
+   * Service provider and key used for balance inquiry.
    *
-   * 独立模式的余额不经过 DSH 的 credential store 与账号服务，只能由这里把自填的密钥交出去。
-   * 单独开一个方法而不是塞进 currentSelection：余额服务商与聊天用的模型服务商是两件事，
-   * 混在一起会让模型解析认不出自己的 provider。
+   * The balance in standalone mode does not go through DSH's credential store and account services, and the
+   * self-filled key can only be handed over here. Open a separate method instead of stuffing it into currentSelection:
+   * the balance service provider and the model service provider for chatting are two different things. If they are
+   * mixed together, the model parser will not be able to recognize its own provider.
    */
   balanceAuth(): { provider: string; apiKey: string };
   dispose(): void;
 }
 
-/** 宿主路由实际用到的 llm 面。 */
+/** llm plane actually used by host route. */
 export interface LlmFacade {
   listProviders(): unknown[];
   listModels(provider: string): Promise<unknown[]>;
@@ -33,7 +35,7 @@ export interface LlmFacade {
   stream(request: unknown): AsyncIterable<unknown>;
 }
 
-/** 有 AI 服务：直接转调，不做任何转换。 */
+/** There is AI service: direct transposition without any conversion. */
 export function createLlmFacade(ai: StandaloneModelService): LlmFacade {
   return {
     listProviders: () => ai.listProviders(),
@@ -43,20 +45,21 @@ export function createLlmFacade(ai: StandaloneModelService): LlmFacade {
   };
 }
 
-/** 没有 AI 服务：模型能力明确不可用，让调用方拿到可读原因而不是空结果。 */
+/** No AI service: The model capability is explicitly unavailable, allowing the caller to get a readable reason instead of an empty result. */
 export function createOfflineLlm(): LlmFacade {
   return {
     listProviders: () => [],
     listModels: async () => [],
-    // 契约是异步的，替身也必须返回 Promise：同步返回 undefined 时，任何 .then() 都会立刻炸。
+    // The contract is asynchronous, and the substitute must also return Promise: when returning undefined synchronously, any . then() will explode immediately.
     resolveModelInfo: async () => undefined,
-    // 契约要求 AsyncIterable：写成 async 函数会让 for await 立刻抛 TypeError，且被拒的 Promise
-    // 无人接管，可能直接终止进程。不用 async function*：只抛错不 yield 会被 require-yield 拦下。
+    // Contract requirement AsyncIterable: The function written as async will cause for await to immediately throw
+    // TypeError, and the rejected Promise will not be taken over, and the process may be terminated directly. No need
+    // to async function *: If you throw yield incorrectly, it will be blocked by require-yield.
     stream: () => ({
       [Symbol.asyncIterator](): AsyncIterator<never> {
         return {
           next: async (): Promise<IteratorResult<never>> => {
-            throw new Error('dsh-pet standalone: 独立模式未接入模型（碎碎念/对话不可用）');
+            throw new Error('dsh-pet standalone: no model configured; whispers and chat are unavailable');
           },
         };
       },

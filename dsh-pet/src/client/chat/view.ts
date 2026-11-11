@@ -1,7 +1,7 @@
 /**
- * 对话面板的根元素：宠物标签条 + 工具栏 + 列表 + 错误行 + 输入区。
+ * The root element of the dialog panel: pet tag strip + toolbar + list + error line + input area.
  *
- * 只做装配，节点细节在 ./view-node；不取数、不持状态。
+ * Only assembly is done, the node details are in ./view-node; no numbers are taken, no status is maintained.
  * @module dsh-pet/src/client/chat/view
  */
 import { HISTORY_ROUNDS, memoryBoundaryIndex, MEMORY_LINE_ATTR } from './api.ts';
@@ -10,7 +10,7 @@ import type { ChatPanelState } from './types.ts';
 import { composerNode, confirmNode, orphansNode, personaNode, toolsNode } from './view-node.ts';
 import { roundNode } from './view-message.ts';
 
-/** 宠物标签条：点击切换对话。 */
+/** Pet Tag Bar: Click to switch conversations. */
 function tabsNode(h: ChatPanelRuntime['h'], state: ChatPanelState): unknown {
   return h('div', {
     className: 'pet-chat-tabs',
@@ -28,12 +28,13 @@ function tabsNode(h: ChatPanelRuntime['h'], state: ChatPanelState): unknown {
 }
 
 /**
- * 顶部「加载更早」：与 DSH 自己的历史加载同一个位置与形态。
+ * Top "load earlier": the same position and form as DSH's own history loading.
  *
- * 内存里没有更早的轮时，同一个位置换成一行说明——不然按钮消失后用户不知道是「到底了」还是「坏了」。
+ * If there are no earlier rounds in the memory, replace the same position with a line of explanation - otherwise the
+ * user will not know whether it is "finished" or "broken" after the button disappears.
  */
 function olderNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: ChatPanelState): unknown {
-  if (state.rounds.length === 0) return null; // 空态由列表里的提示负责
+  if (state.rounds.length === 0) return null; // Empty states are handled by hints in the list
   if (state.hasOlder) {
     return h('div', {
       className: 'pet-chat-older',
@@ -47,7 +48,7 @@ function olderNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: Ch
       ],
     });
   }
-  // 取满 200 轮时再加一句上限说明：再多接口也给不出来了
+  // When 200 rounds are reached, add an upper limit explanation: No matter how many interfaces are available, they cannot be provided.
   const capped = state.rounds.length >= HISTORY_ROUNDS;
   return h('div', {
     className: 'pet-chat-older',
@@ -60,18 +61,18 @@ function olderNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], state: Ch
   });
 }
 
-/** 记忆边界：线以下才是桌宠每次真正带进上下文的最近 N 轮。 */
+/** Memory Boundary: Below the line is the most recent N round that desktop pet actually brings into context each time. */
 function memoryLineNode(h: ChatPanelRuntime['h'], t: ChatPanelRuntime['t'], rounds: number): unknown {
   return h('div', {
     key: 'memory-line',
     className: 'pet-chat-memory',
-    // 工具栏的「记忆线」按钮按这个标记滚过来：线在不在窗口里、第几个，都由渲染决定
+    // Press this mark on the "Memory Line" button in the toolbar to scroll over: Whether the line is in the window and its position are all determined by rendering.
     [MEMORY_LINE_ATTR]: 'true',
     children: [h('span', { className: 'pet-chat-memory-note', children: t('memoryLine', { n: rounds }) })],
   });
 }
 
-/** 消息列表：加载更早 + 记忆边界 + 空态提示或按轮渲染。 */
+/** Message list: load earlier + memory bounds + empty state prompt or render on wheel. */
 function listNode(rt: ChatPanelRuntime, state: ChatPanelState): unknown {
   const emptyText = state.loading ? rt.t('loading') : state.petId === '' ? rt.t('emptyNoPet') : rt.t('emptyNoChat');
   const body =
@@ -90,10 +91,11 @@ function listNode(rt: ChatPanelRuntime, state: ChatPanelState): unknown {
 }
 
 /**
- * 图片放大：直接用平台的 `ImageLightbox`——与 DSH 会话里点开图片是同一个组件，
- * 全屏遮罩、Esc / 点遮罩关闭、关闭后焦点回到原处都由它负责。
+ * Picture enlargement: directly use the `ImageLightbox` of the platform - it is the same component as the picture
+ * clicked in the DSH session. It is responsible for the full screen mask, Esc / point mask closing, and the focus
+ * returning to the original position after closing.
  *
- * @returns 没有预览或拿不到 primitives 时是 null。
+ * @returns is null when there is no preview or primitives cannot be obtained.
  */
 function previewNode(rt: ChatPanelRuntime, state: ChatPanelState): unknown {
   if (state.previewUrl === undefined || rt.ui === undefined) return null;
@@ -107,17 +109,17 @@ function previewNode(rt: ChatPanelRuntime, state: ChatPanelState): unknown {
 }
 
 /**
- * 造面板根元素。
+ * Create panel root elements.
  *
- * @param rt - 注入的 react 能力。
- * @param state - 当前状态与动作。
- * @returns 面板根元素。
+ * @param rt - Injected react capability.
+ * @param state - Current status and actions.
+ * @returns Panel root element.
  */
 export function buildPanel(rt: ChatPanelRuntime, state: ChatPanelState, memoryStatus?: unknown): unknown {
   const { h } = rt;
   return h('div', {
     className: 'pet-chat',
-    // Esc 收起卷帘：焦点在按钮上还是在输入框里都收得到（事件冒泡到根节点）
+    // Esc close the rolling shutter: it can be received whether the focus is on the button or in the input box (event bubbles to the root node)
     onKeyDown: (event: { key: string }) => {
       if (state.personaOpen && event.key === 'Escape') state.closePersona();
     },

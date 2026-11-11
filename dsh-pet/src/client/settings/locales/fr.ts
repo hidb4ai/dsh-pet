@@ -1,5 +1,5 @@
 /**
- * 设置页法语文案；键集与 zh 完全一致。
+ * French text on the settings page; the key set is exactly the same as zh.
  */
 import type { Key } from './zh.ts';
 
@@ -29,7 +29,7 @@ export const fr: Record<Key, string> = {
   nav: 'Configuration des compagnons',
   intro:
     "Gérez plusieurs compagnons : chacun a sa taille et sa position (appliquées immédiatement après l'enregistrement).",
-  // 卡片标题与卡片级说明；说明统一进问号气泡。
+  // Card title and card-level description; descriptions are unified into question mark bubble.
   petCardTitle: 'Compagnon',
   avatarLabel: 'Avatar',
   avatarHint:
@@ -46,7 +46,7 @@ export const fr: Record<Key, string> = {
   cornerHint: "Le coin de l'écran auquel le compagnon se colle (par zone de travail de chaque écran en mode bureau).",
   marginXHint: "Distance horizontale au coin choisi (px) ; n'importe quel nombre.",
   marginYHint: "Distance verticale au coin choisi (px) ; n'importe quel nombre.",
-  // 「/」命令菜单的行标题（图标由 app.ts 经 command-faces.ts 补上）。
+  // The row title of the "/" command menu (the icon is added by app.ts via command-faces.ts).
   'cmd.chat': 'Discussion',
   'cmd.pet': 'Compagnon',
   'cmd.balance': 'Solde',

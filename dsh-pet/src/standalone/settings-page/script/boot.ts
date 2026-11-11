@@ -1,13 +1,14 @@
 /**
- * 设置页启动：分区切换、初次加载与保存按钮接线。
+ * Setting page startup: partition switching, initial load and save button wiring.
  *
- * 配置页把桌宠与 AI 两块放在同一个面板里，各自加载各自的接口：桌宠读 /config，
- * AI 读 /standalone-ai/settings，两套保存互不影响。
- * 缺令牌时只提示、不发任何请求——本页所有写操作都依赖那次运行有效的凭证。
+ * The configuration page puts desktop pet and AI in the same panel, and each loads its own interface: desktop pet
+ * reads / config, AI reads / standalone-ai/settings, and the two sets of saves do not affect each other. When the
+ * token is missing, it only prompts and does not send any requests - all write operations on this page rely on the
+ * valid credentials for that run.
  * @module dsh-pet/src/standalone/settings-page/script/boot
  */
 
-/** 生成启动片段。 */
+/** Generate startup fragment. */
 export function bootScript(): string {
   return `
 let protocolSelect = null;
@@ -115,8 +116,10 @@ async function loadAi() {
 function boot() {
   wireTabs();
   selectTab('chat');
-  // 刷新后地址栏里的令牌已被清掉，此时靠首次访问换来的 HttpOnly cookie 继续；
-  // cookie 也没了的时候，各面板自己的请求会失败并显示重新打开设置的提示。
+  // The token in the address bar has been cleared after refreshing. At this time, the HttpOnly cookie
+  // exchanged for the first visit continues;
+  //  When cookie is gone, each panel's own request will fail and a prompt to reopen the settings will be
+  // displayed.
   mountProtocolSelect();
   mountBalanceSelect();
   wireAiPanel();

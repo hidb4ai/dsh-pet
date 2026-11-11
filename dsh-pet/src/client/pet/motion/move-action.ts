@@ -1,58 +1,60 @@
 /**
- * 一次自主走位的规划：选动作、算方向与距离、交给共享层的 `planMove` 判可达性。
- * 距离按宠物尺寸等比缩放（`minDist`/`maxDist` 是基准宽度下的像素），越界就返回 `null` 让调用方退回原地动作。
- * 纯规划：占用判定（rAF 是否在跑）留在调用方，因为那是 ref 状态。
+ * Planning for an autonomous movement: selecting actions, calculating direction and distance, and handing it over to
+ * the `planMove` of the shared layer to determine reachability. The distance is scaled proportionally according to the
+ * pet size (`minDist` / `maxDist` is the pixel under the base width). If it exceeds the boundary, `null` will be
+ * returned to let the caller return to the original position. Pure planning: The occupancy determination (whether rAF
+ * is running) remains in the caller because that is the ref state.
  * @module dsh-pet/src/client/pet/motion/move-action
  */
 import { planMove, type MovePlan } from '../../../shared/motion.ts';
 import { PET_REF_WIDTH } from '../../../shared/constants.ts';
 import type { MovesConfig } from '../../../shared/types.ts';
 
-/** 一次待执行的走位：几何比例 + 方向与首尾留白（秒）。 */
+/** A movement to be executed: geometric proportion + direction and blank space at the beginning and end (seconds). */
 export interface PendingMove extends MovePlan {
-  /** 1 = 向右，-1 = 向左。 */
+  /** 1 = to the right, -1 = to the left. */
   dir: 1 | -1;
-  /** 动作开头多少秒内不位移（起脚）。 */
+  /** How many seconds does the movement start without moving (foot kick). */
   leadSec: number;
-  /** 动作结尾多少秒前就到位（收脚）。 */
+  /** How many seconds before the end of the movement does it reach the position (retract the feet). */
   tailSec: number;
 }
 
-/** 规划输入。 */
+/** Planning input. */
 export interface MoveActionInput {
-  /** 该宠物的走位池。 */
+  /** The moving pool of this pet. */
   moves: MovesConfig;
-  /** 菜单点播指定的动作名；缺省随机。 */
+  /** The action name specified by the menu playback request; the default is random. */
   preferredName?: string;
-  /** 当前朝向，决定走位方向。 */
+  /** The current orientation determines the moving direction. */
   facing: 'left' | 'right';
-  /** 宠物宽度（px）。 */
+  /** Pet width (px). */
   size: number;
-  /** 当前宠物中心（px）。 */
+  /** Current pet center (px). */
   center: { x: number; y: number };
-  /** 视口尺寸（px）。 */
+  /** Viewport size ( px ). */
   viewport: { width: number; height: number };
-  /** 盒的半宽。 */
+  /** Half width of the box. */
   halfW: number;
-  /** 身体相对视频盒左右各留的像素（透明边）。 */
+  /** The left and right pixels (transparent edges) of the body relative to the video box. */
   sideAllow: number;
-  /** 随机源，默认 `Math.random`；注入以便测试。 */
+  /** Random source, default `Math.random`; injected for testing. */
   random?: () => number;
 }
 
-/** 规划结果：`null` = 没有可用动作或落点越界。 */
+/** Planning result: `null` = No action available or the landing point is out of bounds. */
 export interface MoveAction {
-  /** 要播的走位动作名。 */
+  /** The name of the movement action to be played. */
   anim: string;
-  /** 待执行的走位（rAF 驱动时才消费）。 */
+  /** Position to be executed (consumed only when driven by rAF). */
   pending: PendingMove;
 }
 
 /**
- * 规划一次自主走位。
+ * Plan an autonomous movement.
  *
- * @param input - 走位池、朝向、尺寸与视口。
- * @returns 动作名与待执行走位；无法移动时返回 `null`。
+ * @param input - Position pool, orientation, size and viewport.
+ * @returns action name and position to be executed; return `null` when unable to move.
  */
 export function planMoveAction(input: MoveActionInput): MoveAction | null {
   const actions = input.moves.actions;
@@ -63,9 +65,9 @@ export function planMoveAction(input: MoveActionInput): MoveAction | null {
     : actions[Math.floor(random() * actions.length)];
   if (!chosen) return null;
   const params = Object.assign({}, input.moves.default, chosen.params ?? {});
-  // 走路方向只看当前 facing；不要用 turn 动画反推方向。
+  // The walking direction only looks at the current facing; do not use the turn animation to reverse the direction.
   const dir: 1 | -1 = input.facing === 'right' ? 1 : -1;
-  // 移动距离随宠物缩放：基准尺寸下的 px 按 size / PET_REF_WIDTH 等比放大。
+  // The moving distance scales with the pet: px at the base size is enlarged according to size / PET_REF_WIDTH.
   const distScale = input.size / PET_REF_WIDTH;
   const plan = planMove({
     cx: input.center.x,

@@ -1,8 +1,10 @@
 /**
- * 播放状态机：换源、前后台交替、收尾、冻结与占用锁、空闲随机链。
+ * Playback state machine: source change, front and back alternation, cleanup, freeze and occupation lock, idle random
+ * chain.
  *
- * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
- * 只读实例状态与 shared-core 的选池函数，副作用是 DOM 视频源与 this.* 字段。
+ * PetSprite is defined by sprite.js. This file only adds methods to the prototype and must be loaded afterwards. The
+ * read-only instance state and the pool selection function of shared-core, the side effect is the DOM video source and
+ * the this .* field.
  * @module dsh-pet/runtime/electron-helper/sprite-playback
  */
 'use strict';
@@ -10,19 +12,22 @@
 Object.assign(PetSprite.prototype, {
   switchTo(next, nextOnce, playbackId, url) {
     if (!next) return;
-    // 「当前在播哪一段」只在这里写：ended 分流、回空闲补丁、随机链避重都读它。
-    // 交给调用方维护时 switchTo(x, false) 会留下过期值，events.js 判「是不是工作动画」就永远不成立。
+    // "Which segment is currently being played" is only written here: ended. Read it for offloading, returning to idle
+    // patches, and random links to avoid duplication. When handed over to the caller for maintenance, switchTo ( x ,
+    // false ) will leave expired values, and the events.js judgment of "whether it is a working animation" will never
+    // be established.
     this.anim = next;
     this.once = !nextOnce;
     const pending = this.pending;
     if (pending && pending.anim === next && pending.once === nextOnce) {
-      // 防重命中（单动画点击时目标=当前动画，不重播）：仍消费 Q 弹标记，压当前前台视频，
-      // 保证「点击唯一动画」时挤压反馈不丢（与浏览器同构）。
+      // Anti-rehit (target = current animation when single animation is clicked, no replay): still consume the Q
+      // bullet mark, press the current foreground video, and ensure that the squeeze feedback is not lost when
+      // "clicking on the only animation" (isomorphic to the browser).
       if (this.pendingSquash) {
         this.pendingSquash = false;
         this.startSquash(this.front === 0 ? this.videoA : this.videoB);
       }
-      // 这次点播的目标本来就在播（没换源但确实在播）→ 如实回 playing，否则调用方只能干等 timeout
+      // The target of this playback request is already playing (the source is not changed but it is actually playing) → return playing truthfully, otherwise the caller can only wait for timeout
       if (playbackId) {
         this.playback = playbackId;
         this.reportPlayback(playbackId, 'playing');
@@ -34,21 +39,31 @@ Object.assign(PetSprite.prototype, {
     const target = this.front === 0 ? this.videoB : this.videoA;
     const el = target;
     if (!el) return;
-    // 素材地址两条路：url 形态直接用第三方给的完整地址（宿主已把 scheme 卡在 http/https，
-    // 不经 bridge、也不拼 BASE）；name 形态按「素材根 + 名字」拼。
+    // There are two ways of asset address: url form directly uses the complete address given by the third party (the
+    // host has stuck scheme in http/https, without going through bridge, nor spelling BASE); name form is spelled by
+    // "asset root + name".
     el.src = url || this.assetBase + encodeURIComponent(next) + (S.ANIMATION_EXT || '.webm');
     el.loop = !nextOnce;
     el.muted = true;
     el.autoplay = true;
     el.playsInline = true;
     el.onended = nextOnce ? () => this.handleEnded() : () => this.restartLoop(el);
-    // 加载兜底（同浏览器端 10s 超时）：素材加载失败或卡住时必须释放 pending，否则它永久挂起——
-    // 相同目标会被防重分支吞掉、不同目标靠 gen 覆盖，表现就是「点了没反应」。
+    // Loading fallback (same as the browser side 10 s timeout): pending must be released when the asset fails to load
+    // or is stuck, otherwise it will hang permanently - the same target will be swallowed by the anti-duplication
+    // branch, and different targets will be covered by gen. The performance is "no response after clicking".
     const loadGuard = (why) => {
       if (!this.pending || this.pending.gen !== gen) return;
       this.pending = null;
-      console.warn('[dsh-pet] 素材加载失败 pet=' + this.pet.id + ' anim=' + next + '：' + why + '（已释放本次切换）');
-      // 播放回执：这一段没能播起来 → 如实回 failed（而不是让调用方干等到 timeout）
+      console.warn(
+        '[dsh-pet] Asset loading failed pet=' +
+          this.pet.id +
+          ' anim=' +
+          next +
+          '：' +
+          why +
+          '(source switch already disposed)',
+      );
+      // Playback receipt: This segment could not be played → truthfully return failed (instead of letting the caller wait until timeout)
       if (playbackId) {
         if (this.playback === playbackId) this.playback = null;
         this.reportPlayback(playbackId, 'failed', why === 'video error' ? 'decode-error' : 'asset-load');
@@ -71,8 +86,10 @@ Object.assign(PetSprite.prototype, {
         old.classList.remove('is-front');
         old.onended = null;
         old.pause();
-        // 被换下去的那一段若属第三方点播且没播完 → 如实回 cancelled（被新点播顶掉由宿主受理时标记，
-        // 这里补的是点击/拖拽/碎碎念/余额/工作状态/空闲回收这类非点播打断）。
+        // If the section that is replaced is a third-party playback request and has not finished playing → return to
+        // cancelled truthfully (marked when the new playback request is pushed out and accepted by the host, what is
+        // added here is click/drag/whisper/balance/work status/idle recycling and other non-playback request
+        // interruptions).
         if (this.playback && this.playback !== playbackId) {
           this.reportPlayback(this.playback, 'cancelled', 'superseded');
         }
@@ -83,16 +100,16 @@ Object.assign(PetSprite.prototype, {
       el.style.transform = this.facing === 'right' ? 'scaleX(-1)' : '';
       el.play()
         .then(() => {
-          // 只有 play() 兑现才代表确实开始出画（loadeddata 只代表可解码）
+          // Only the cashing of play() means that the painting has actually started (loadeddata only means that it can be decoded)
           if (playbackId) this.reportPlayback(playbackId, 'playing');
         })
         .catch(() => {
-          // 自动播放被拒 / 元素不可播：如实回 failed，不改播放控制
+          // Automatic playback rejected/element not playable: return failed truthfully without changing the playback control
           if (!playbackId) return;
           if (this.playback === playbackId) this.playback = null;
           this.reportPlayback(playbackId, 'failed', 'play-rejected');
         });
-      // 点击 Q 弹：等新动画就位后才压（压的是新点击动画的首帧，与浏览器一致）
+      // Click Q to pop up: wait for the new animation to be in place before pressing (the first frame of the new click animation is pressed, consistent with the browser)
       if (this.pendingSquash) {
         this.pendingSquash = false;
         this.startSquash(el);
@@ -104,10 +121,11 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 循环段收到 ended：原地回起点续播。
+   * The loop segment received ended: Return to the starting point to resume broadcasting.
    *
-   * 循环段本不该有 ended；出现说明素材被截断或解码提前结束，画面已停在末帧。
-   * 不换源：换源会重建整条播放链，代价更大，还可能在同一处再次截断。
+   * The loop segment should not have ended; its appearance indicates that the asset has been truncated or the decoding
+   * has ended prematurely, and the picture has stopped at the last frame. Do not change the source: Changing the
+   * source will rebuild the entire playback chain, which is more expensive and may be cut off again at the same place.
    */
   restartLoop(el) {
     el.currentTime = 0;
@@ -118,21 +136,24 @@ Object.assign(PetSprite.prototype, {
     this.switchTo(name, true, playbackId, url);
   },
 
-  // 直接播一个外部地址。单独一个方法、不复用 onMenuAction：那套是菜单语义（文字类强制朝左的镜像
-  // 修正、移动类走真实位移），裸地址没有这些属性。这里只停掉漫游并换源播一次，播完回到正常动画链；
-  // 地址本身同时是 pending 的防重键与日志标识。
+  // Directly broadcast an external address. A single method, no reuse onMenuAction: That set is the menu semantics
+  // (the text class is forced to correct the image to the left, the mobile class uses the real displacement), and the
+  // naked address does not have these attributes. Here we only need to stop roaming and change the source to play
+  // once, and then return to the normal animation chain after playing; the address itself is also the anti-duplication
+  // key and log identification of pending.
   playUrlOnce(url, playbackId) {
     this.stopMove();
     this.playOnce(url, playbackId, url);
   },
 
   /**
-   * 占用锁：冻结 / 解冻（与浏览器同一套语义）。
+   * Occupying lock: freeze/unfreeze (same semantics as browser).
    *
-   * 冻结期间只挡四件事，且都在渲染端：随机链、当前自播动画（暂停定帧）、自动来源的余额与
-   * 工作状态表现（见 events.js 的 onBalanceTick / onWorkTick / showBalanceNotice）、屏上的任务
-   * 状态气泡（锁生效就收掉，解冻不补亮）。
-   * 显式指令（say / anim / position / throw）一概不挡——那正是占用要保护的东西。
+   * Only four things are blocked during the freezing period, and they are all in the renderer: random chain, current
+   * self-playing animation (pause and freeze frame), balance and working status performance of automatic sources (see
+   * events.js's onBalanceTick / onWorkTick / showBalanceNotice), and task status bubble on the screen (closed when the
+   * lock is in effect, not highlighted when unfrozen). Explicit instructions ( say / anim / position / throw ) are not
+   * blocked at all - that's what occupancy is meant to protect.
    */
   applyFreeze(next) {
     if (this.frozen === next) return;
@@ -140,39 +161,45 @@ Object.assign(PetSprite.prototype, {
     const el = this.front === 0 ? this.videoA : this.videoB;
     const stamp = '[dsh-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + this.pet.id;
     if (next) {
-      // 停住正在播的那一段：宿主停不掉一段视频，完全静止只能由渲染端执行；只堵随机链入口不够，
-      // 那个入口要等动画播完才被调用。
+      // Stop the currently playing segment: The host cannot stop a video, and complete stillness can only be executed
+      // by the renderer; just blocking the random chain entry point is not enough, and that entry point will not be
+      // called until the animation is finished.
       this.stopMove();
       if (el) el.pause();
-      // 播放回执：冻结打断了正在播的第三方点播 → 如实回 cancelled，而不是让它一直挂着 playing
-      // （挂 wait=ended 的调用方会白等一个 timeout）。解冻走的是回 idle/恢复档位，不会把它接回来。
-      // 先清 this.playback 再上报，免得后续换源又当成「被顶掉」再报一次。
+      // Playback receipt: Freezing interrupts the third-party playback request being played → Return cancelled
+      // truthfully instead of letting it hang playing (the caller hanging wait = ended will wait for a timeout in
+      // vain). Unfreezing goes back to the idle/restore state and will not bring it back. Clear this.playback first and
+      // then report it to avoid reporting it again as "rejected" after subsequent source changes.
       const interrupted = this.playback;
       if (interrupted) {
         this.playback = null;
         this.reportPlayback(interrupted, 'cancelled', 'frozen');
       }
-      // 任务状态气泡：锁一生效就收掉，解冻不补亮
+      // Task status bubble: it will be closed as soon as the lock takes effect, and will not be filled in after thawing.
       if (this.workTimer !== null) window.clearTimeout(this.workTimer);
       this.workTimer = null;
       this.workOn = false;
       this.renderBubble();
-      console.log(stamp + ' 占用锁生效：冻结（随机链停 + 当前动画暂停 + 任务状态气泡收起）');
+      console.log(
+        stamp + ' Lock acquired: freeze random actions, pause current animation and dismiss work-state bubbles',
+      );
       return;
     }
-    console.log(stamp + ' 占用锁解除：恢复');
-    // 解冻：睡姿优先接回（冻结只暂停、没换源，续播即可），其次非终态工作状态回档位循环，
-    // 否则回 idle 一次，播完由 handleEnded 接回随机链。
+    console.log(stamp + ' Lock released: resume');
+    // Unfreezing: sleeping position is given priority to be retrieved (freezing only pauses, does not change the
+    // source, and resumes broadcasting), and then returns to the non-final working state to cycle, otherwise it
+    // returns to idle once, and handleEnded is used to retrieve the random chain after broadcasting.
     if (this.resumeSleepAnim()) return;
     if (this.resumeWorkStatusAnim()) return;
     if (this.animations.idle.length) this.playOnce(S.pick(this.animations.idle, this.anim));
   },
 
   /**
-   * 锁叶子 → 冻结 / 解冻。
+   * Lock leaves → freeze/thaw.
    *
-   * expiresAt 已经过去 = 没有锁：窗口重载后拿到的陈旧叶子必须这么判，不能只看 locked。
-   * 宿主不会到点推「锁没了」，所以这里自己定时解除，两端的「到点」因此同源。
+   * expiresAt has passed = no lock: the stale leaves obtained after the window is reloaded must be judged this way,
+   * and you cannot just look at locked. The host will not push "the lock is gone" when it reaches the point, so it is
+   * released periodically here, and the "points" at both ends have the same source.
    */
   setLock(state) {
     if (this.lockTimer !== null) {
@@ -192,74 +219,86 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 睡觉叶子 → 进睡 / 醒来（与 setLock 同风格：只认叶子里的值，不往回写）。
+   * Sleeping leaves → going to sleep/waking up (same style as setLock: only recognize the value in the leaves, do not
+   * write back).
    *
-   * 三段名由宿主挑定，这里照播不重挑——自己挑会让两端播到不同的一套（蹲着入睡、趴着醒来）。
-   * 醒来不立刻清睡觉态：`end` 还得播一遍，清态与回随机链都在 handleEnded 里收尾。
-   * @param state - `{ sleeping: true, start, loop, end }` 或 `{ sleeping: false }`。
+   * The names of the three segments are selected by the host. There is no need to select the names again here -
+   * choosing by yourself will cause different sets to be broadcast on both ends (squatting to fall asleep, lying on
+   * the stomach to wake up). If you don’t clear the sleep state immediately after waking up: `end` has to be played
+   * again. The cleanup and random chain recovery are in handleEnded.
+   * @param state - `{ sleeping: true, start, loop, end }` or `{ sleeping: false }` .
    */
   setSleep(state) {
     if (!state) return;
     const stamp = '[dsh-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + this.pet.id;
     if (!state.sleeping) {
-      // 没在睡：醒来是幂等的空操作（重复叶子、老宿主，或叫醒一个本来醒着的宠物）
+      // Not sleeping: waking up is an idempotent no-op (repeat leaf, old host, or wake up an originally awake pet)
       if (!this.sleeping || this.sleepPhase === 'end') return;
-      // 入睡过渡里被叫醒：取消这次入睡，不播「起来」——它不是真的睡着过。
-      // 这里不换源：点击路径已自己播了点击回应；菜单叫醒时当前「开始」播完会自然回随机链。
+      // Being woken up during the transition to falling asleep: Cancel this fall asleep and do not play "get up" - it
+      // did not really fall asleep. There is no source change here: clicking on the path has already played the
+      // broadcast by itself, and clicking on the response; when the menu wakes up, the current "Start" will naturally
+      // return to the random link after playing.
       if (this.sleepPhase === 'start') {
         this.sleeping = false;
         this.sleepSet = null;
         this.sleepPhase = null;
-        console.log(stamp + ' 入睡被打断：不播起来');
+        console.log(stamp + ' Sleep entry interrupted: skip the wake animation');
         return;
       }
       this.sleepPhase = 'end';
       this.stopMove();
       this.playOnce(this.sleepSet.end);
-      console.log(stamp + ' 醒来：播 ' + this.sleepSet.end + ' 一遍');
+      console.log(stamp + ' Waking: play ' + this.sleepSet.end + ' once');
       return;
     }
-    // 已在睡（含正在播「起来」的过渡段）：重复叶子不重放，保持原套
+    // Already sleeping (including the transition section of "Get Up" being played): Repeating leaves will not play back, and the original set will be kept.
     if (this.sleeping) return;
     this.sleeping = true;
     this.sleepSet = { start: state.start, loop: state.loop, end: state.end };
     this.sleepPhase = 'start';
     this.stopMove();
-    // 与占用锁同一口径：进睡就把任务状态气泡收掉（醒来不补亮，等下一次状态变化再对齐）
+    // The same conventions as occupation lock: close the task status bubble when you go to sleep (do not fill in the light when you wake up, wait for the next status change to align again)
     if (this.workTimer !== null) window.clearTimeout(this.workTimer);
     this.workTimer = null;
     this.workOn = false;
     this.renderBubble();
     this.playOnce(state.start);
-    console.log(stamp + ' 进睡：' + state.start + ' → ' + state.loop);
+    console.log(stamp + ' Entering sleep:' + state.start + ' → ' + state.loop);
   },
 
   /**
-   * 请求进睡 / 叫醒：只发请求，画面等 sleep 叶子回来才动（三段名由宿主挑定）。
+   * Request to sleep/wake up: only send a request, the screen will not move until the sleep leaf comes back (the
+   * three-segment name is selected by the host).
    *
-   * 点击与右键菜单共用这一条路径；失败只记日志，不弹框——菜单动作不该打断用户。
-   * @param action - `'sleep'` = 睡下，`'wake'` = 叫醒。
+   * The click and right-click menu share this path; if it fails, only the log will be recorded, and no box will pop up
+   * - the menu action should not interrupt the user.
+   * @param action - `'sleep'` = go to sleep, `'wake'` = wake up.
    */
   postSleepAction(action) {
     const route = action === 'wake' ? '/wake' : '/sleep';
     S.postAction(BASE + route + '?pet=' + encodeURIComponent(this.pet.id)).then((ok) => {
-      if (!ok) console.error('[dsh-pet] ' + (action === 'wake' ? '叫醒' : '进睡') + '请求未成功 pet=' + this.pet.id);
+      if (!ok)
+        console.error('[dsh-pet] ' + (action === 'wake' ? 'Wake' : 'Sleep') + 'Request failed pet=' + this.pet.id);
     });
   },
 
-  // 动画链（纯逻辑在 shared）
+  // Animation chain (pure logic in shared)
   playIdle() {
-    // 占用锁：锁生效时不掷骰。这里是随机链的唯一入口（动画播完才会走到），一句判断就把随机动画、
-    // 随机转向与自主走位一起停住——宠物停在最后一帧，等持锁者的下一条指令（走 /anim，不经这里）。
+    // Occupied lock: No dice roll while lock is in effect. This is the only entry point of the random chain (it will
+    // be reached only after the animation is played). With one judgment, the random animation, random steering and
+    // autonomous movement will be stopped together - the pet stops at the last frame, waiting for the next instruction
+    // from the lock holder (walk / anim, do not pass here).
     if (this.frozen) return;
-    // 睡觉：随机链整个停住——不掷骰、不自己走、不自己翻朝向。醒来时 setSleep 先播 end，
-    // 播完由 handleEnded 清掉睡觉态再回到这里（那时 sleeping 已经为 false）。
+    // Sleeping: The random chain stops completely - no dice roll, no walking, no turning direction. When waking up,
+    // setSleep plays end first, and after playing, handleEnded clears the sleeping state and then returns here
+    // (sleeping is already false at that time).
     if (this.sleeping) return;
     this.stopMove();
     const { animations, animationWeights } = { animations: this.animations, animationWeights: this.weights };
     const roll = Math.random();
-    // 宠物固定：掷骰时把「转向 / 移动」两档权重按 0 算，随机链不再让宠物自己翻朝向或走开；
-    // 菜单点播与 /anim 不走这里，不受影响。
+    // Pet fixed: When rolling the dice, the two weights of "Turn/Move" are calculated as 0, and the random chain will
+    // no longer allow the pet to turn its own direction or move away; the menu playback request and / anim will not go
+    // here and will not be affected.
     const k = S.rollKind(roll, animationWeights, { fixed: this.pet.fixedEnabled });
     let next;
     if (k === 'idle') {
@@ -274,7 +313,7 @@ Object.assign(PetSprite.prototype, {
       } else if (typeof moved === 'string') {
         next = moved;
       } else {
-        // 已有一场移动进行中：重播当前动画，不另设（绝不加载不存在的动作）
+        // There is already a move in progress: replay the current animation without setting another one (never load a non-existing move)
         this.playOnce(this.anim);
         return;
       }
@@ -286,50 +325,58 @@ Object.assign(PetSprite.prototype, {
   },
 
   handleEnded() {
-    // 播放回执：前台视频真的播完了 → 如实回 ended。放在拖拽守卫之前——「播完了」是既成事实，
-    // 拖拽守卫管的是动画链怎么推进，不该影响回执的准确性。
+    // Playback receipt: The front-end video has really finished playing → truthfully reply to ended. Place it before
+    // the drag guard - "The broadcast is over" is a fait accompli. The drag guard manages how the animation chain
+    // advances and should not affect the accuracy of the receipt.
     if (this.playback) {
       const done = this.playback;
-      this.playback = null; // 先清再上报：后续链式换源不该把它当成「被打断」
+      this.playback = null; // Clear first and then report: subsequent chain source changes should not be regarded as "interrupted"
       this.reportPlayback(done, 'ended');
     }
-    // 睡觉：动画链的推进归睡觉状态机（start 播完 → loop；end 播完 → 清态回随机链）。
-    // 放在拖拽守卫之前：睡着时拖拽不换动画、睡姿照播，start 播完必须照常切 loop，否则松手就停在末帧。
-    // 这几条分支都提前 return，其余 ended 逻辑（事件轮换、朝向翻转、随机链）在被拦住时一律不执行。
+    // Sleep: The advancement of the animation chain returns to the sleep state machine (start finishes playing → loop;
+    // end finishes playing → clears the state and returns to the random chain). Place it before the drag guard: the
+    // animation will not be changed when dragging while sleeping, and the sleeping position will still be played.
+    // After playing start, you must switch to loop as usual, otherwise it will stop at the last frame when you let go.
+    // These branches are all return in advance, and the rest of the ended logic (event rotation, direction flip,
+    // random chain) will not be executed when blocked.
     if (this.sleeping) {
       const set = this.sleepSet;
       if (set && this.sleepPhase === 'start') {
         this.sleepPhase = 'loop';
-        // 循环段：loop=true；万一素材提前 ended，restartLoop 原地续播，不进 handleEnded。
+        // Loop segment: loop = true; in case the asset advances ended, restartLoop will continue playing in place and will not enter handleEnded.
         this.switchTo(set.loop, false);
         return;
       }
       if (this.sleepPhase === 'end') {
-        // 醒来收尾：先清睡觉态再回随机链，否则 playIdle 会被自己的门禁挡住
+        // Wake up cleanup: clear the sleeping state first and then return to the random chain, otherwise playIdle will be blocked by its own validation check
         this.sleeping = false;
         this.sleepSet = null;
         this.sleepPhase = null;
         this.playIdle();
         return;
       }
-      // loop 段本不该有 ended；真收到说明前台被别的动画（本地菜单点播）顶掉过，接回睡姿，别停在末帧
+      // The loop segment should not have ended; if it is received, it means that the foreground has been pushed by other animations (local menu playback request). Take the sleeping position back and don't stop at the last frame.
       if (set && this.anim !== set.loop) {
         this.switchTo(set.loop, false);
       }
       return;
     }
     if (this.dragState.active) return;
-    // 占用锁：冻结期间动画链一律不推进，事件动画播完就停在最后一帧。下面几条路都会换源播放，
-    // 而它们读的是实时 workState、与 workTick 无关，onWorkTick 的门禁拦不住——尤其「事件动画播完
-    // 恢复档位」：持锁者每投一次带 anim 的气泡，说话动画播完就把工作状态动画点回来。
-    // 播放回执已在上面上报，不受这一行影响。
+    // Occupying lock: The animation chain will not advance during the freezing period, and the event animation will
+    // stop at the last frame after playing. The following channels will change the source and play, and what they read
+    // is real-time workState, which has nothing to do with workTick. The validation check of onWorkTick cannot stop it
+    // - especially "restore the state after the event animation is played": every time the lock holder casts a bubble
+    // with anim, the working status animation will be restored after the speaking animation is played. Playback
+    // receipts are reported above and are not affected by this line.
     if (this.frozen) return;
     const { animations } = { animations: this.animations };
-    // 事件动画播完：回 idle（与 drag/clicks 同分支，不进随机链）；气泡由定时器自动消失，与动画解耦
+    // After the event animation is played: return to idle (the same branch as drag/clicks, not entering the random chain); the bubble disappears automatically by the timer and is decoupled from the animation
     const isEvent = S.isEventAnim(animations.events, this.anim);
     if (isEvent) {
-      // 工作状态多候选档位：播完一段自动轮换到下一候选，长时间状态不单段重复；仅非终态档位轮换，
-      // 终态播完即止；单候选档位由 loop 无限循环（正常不触发 ended，走不到这里）。
+      // Multiple candidate states in working state: automatically rotate to the next candidate after playing one
+      // segment, and the long-term state does not repeat in a single segment; only the non-final state states rotate,
+      // and the final state stops after the broadcast is completed; the single candidate state is infinitely looped by
+      // loop (normally, ended is not triggered, and it cannot go here).
       const nonTerminal = this.workState && this.workState !== 'success' && this.workState !== 'error';
       const nextWork = nonTerminal ? S.nextWorkStatusAnim(animations.events?.workStatus ?? [], this.anim) : null;
       if (nextWork !== null) {
@@ -338,26 +385,27 @@ Object.assign(PetSprite.prototype, {
             new Date().toTimeString().slice(0, 8) +
             ' pet=' +
             this.pet.id +
-            ' workStatus 档内轮换: ' +
+            ' workStatus animation rotation: ' +
             this.anim +
             ' -> ' +
             nextWork,
         );
-        this.playOnce(nextWork); // 继续播一遍（once=true）→ ended 再轮换
+        this.playOnce(nextWork); // Continue to play again (once = true) → ended and rotate again
         return;
       }
-      // 非 workStatus 事件动画（余额/碎碎念）播完：workStatus 仍非终态 → 立即恢复档位循环动画，
-      // 不进随机链（长事件期间状态不变，随机链会一直播到状态切换才被拉回）
+      // After the non-workStatus event animation (balance/whisper) is played: workStatus is still not the final state
+      // → immediately resume the state cycle animation and do not enter the random chain (the state remains unchanged
+      // during the long event, the random chain will be played until the state is switched and then pulled back)
       if (this.resumeWorkStatusAnim()) return;
       if (animations.idle.length) this.playOnce(S.pick(animations.idle, this.anim));
       return;
     }
     if (animations.turn.includes(this.anim)) {
       const next = this.facing === 'left' ? 'right' : 'left';
-      this.facing = next; // 立即同步：翻转后的 pickNext 用新朝向过滤 noMirror
+      this.facing = next; // Immediate synchronization: flipped pickNext filtered with new orientation noMirror
     }
     if (animations.drag.includes(this.anim) || animations.clicks.includes(this.anim)) {
-      // 互动动画播完：workStatus 非终态时恢复状态循环，否则回 idle（与浏览器同一语义）
+      // After the interactive animation is played: workStatus returns to the state loop when it is not the final state, otherwise it returns to idle (same semantics as the browser)
       if (this.resumeWorkStatusAnim()) return;
       if (animations.idle.length) this.playOnce(S.pick(animations.idle, this.anim));
       return;
@@ -365,13 +413,16 @@ Object.assign(PetSprite.prototype, {
     this.playIdle();
   },
 
-  // 互动/事件动画播完后恢复工作状态档位循环：非终态 → 按当前档位重选动画（避开当前段）；
-  // 终态/空闲 → false 不接管，调用方走原逻辑。
+  // After the interactive/event animation is played, the working state is restored. The state cycle: non-final state →
+  // reselect the animation according to the current state (avoiding the current segment); final state/idle → false does
+  // not take over, and the caller follows the original logic.
   resumeWorkStatusAnim() {
-    // 占用锁：冻结期间不许由这条路把工作状态动画点回来——它读的是实时 workState，与 workTick 无关，
-    // 持锁者每投一次带 anim 的气泡，说话动画播完就会走到这里。解冻路径是先置 frozen=false 再调它。
+    // Occupied lock: During the freezing period, the working status animation is not allowed to be clicked back
+    // through this path - it reads real-time workState, which has nothing to do with workTick. Every time the lock
+    // holder casts a bubble with anim, he will come here after the talking animation is played. The unfreezing path is
+    // to set frozen = false first and then adjust it.
     if (this.frozen) return false;
-    // 睡觉：自动来源不接管动画——睡姿循环整段归睡觉状态机，醒来由 end 播完回随机链。
+    // Sleep: The automatic source does not take over the animation - the entire sleeping posture cycle returns to the sleep state machine, and when you wake up, end plays back to the random chain.
     if (this.sleeping) return false;
     const state = this.workState;
     if (!state || state === 'success' || state === 'error') return false;
@@ -380,19 +431,25 @@ Object.assign(PetSprite.prototype, {
     const idx = S.WORK_STATUS_INDEX[state];
     const slot = pool[idx];
     if (slot === undefined) return false;
-    const name = S.pickSlot(slot, this.anim); // 避开当前正播动画（避免连续重复）
+    const name = S.pickSlot(slot, this.anim); // Avoid the currently playing animation (avoid continuous repetition)
     console.log(
-      '[dsh-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + this.pet.id + ' 恢复工作状态动画: ' + name,
+      '[dsh-pet] ' +
+        new Date().toTimeString().slice(0, 8) +
+        ' pet=' +
+        this.pet.id +
+        ' Resuming work-state animation: ' +
+        name,
     );
     const rotating = Array.isArray(slot) && slot.length > 1;
     if (rotating)
-      this.playOnce(name); // 多候选：播完由 handleEnded 轮换
-    else this.switchTo(name, false); // 单候选：无限循环
+      this.playOnce(name); // Multiple candidates: rotate by handleEnded after broadcast
+    else this.switchTo(name, false); // Single candidate: infinite loop
     return true;
   },
 
-  // 睡觉期间被冻结暂停的那段接回播放（冻结只 pause、不换源，原地续播即可，start 播完照样能走 handleEnded）。
-  // 不在睡返回 false，让调用方继续走它原来的恢复路径。
+  // The section that was frozen and paused during sleep can be resumed and played (only pause can be frozen, and the
+  // source can be continued without changing the source. start can still be played after playing handleEnded). Return
+  // to false when no longer sleeping, allowing the caller to continue on its original recovery path.
   resumeSleepAnim() {
     if (!this.sleeping) return false;
     const el = this.front === 0 ? this.videoA : this.videoB;
@@ -400,8 +457,9 @@ Object.assign(PetSprite.prototype, {
     return true;
   },
 
-  // 漫游（rAF 驱动，动画首尾各 leadSec/tailSec 秒原地不动；几何在 shared/planMove）。
-  // preferredName 传入时固定用该动画（菜单点播移动动画），否则与随机链一致随机选。
+  // Roaming (rAF driver, leadSec/tailSec seconds at the beginning and end of animation; geometry at shared/planMove).
+  // This animation is fixed when preferredName is passed in (menu playback request mobile animation), otherwise it is
+  // randomly selected consistent with the random chain.
   tryMove(preferredName, playbackId) {
     if (this.moveRef !== null || this.pendingMove || this.throwRef !== null) return true;
     const moves = this.animations.moves;
@@ -412,17 +470,21 @@ Object.assign(PetSprite.prototype, {
       : actions[Math.floor(Math.random() * actions.length)];
     if (!chosen) return false;
     const mp = Object.assign({}, moves.default, chosen.params || {});
-    // 朝向 → 走路方向：只看当前 facing。turn 播完会立即同步朝向，所以这里不能再做 XOR 修正，
-    // 否则方向会多翻一次（镜像朝右、人往左走）。
+    // Heading → Walking direction: only look at the current facing. turn will synchronize the direction immediately
+    // after playing, so XOR correction cannot be made here, otherwise the direction will be flipped one more time (the
+    // mirror will face right and the person will go left).
     const dir = this.facing === 'right' ? 1 : -1;
     const W = VIEW.w;
     const H = VIEW.h;
     const distScale = this.size / S.PET_REF_WIDTH;
     const cx = this.currentCenterX();
     const cy = this.currentCenterY();
-    // 落点按显示器判定：默认走并集（能骑缝跨屏，但走不进外接矩形里的空洞）。confineToScreen 开启时
-    // 只按宠物现在所在那块屏判定，屏缝与空洞一样当墙、越界那一步直接取消。抛掷是逐帧物理边界，
-    // 漫游是一次性落点规划、没有反弹语义；宠物落在空洞里时 resolveRect 取最近那块屏，仍走得动。
+    // The landing point is determined by the monitor: the default is union (can cross the screen across the seam, but
+    // cannot enter the hole in the outer rectangle). When confineToScreen is turned on, only the part of the screen
+    // where the pet is currently is judged. The screen seams and holes are used as walls, and the step beyond the
+    // boundary is directly canceled. Throwing is a frame-by-frame physical boundary, and roaming is a one-time landing
+    // point planning without rebound semantics; when a pet falls into a hole, resolveRect takes the nearest screen and
+    // can still move.
     const wanderArea = this.confineToScreen ? S.resolveRect(AREAS, cx, cy) : null;
     const plan = S.planMove({
       cx,
@@ -432,7 +494,7 @@ Object.assign(PetSprite.prototype, {
       dir,
       minDist: mp.minDist * distScale,
       maxDist: mp.maxDist * distScale,
-      margin: mp.margin, // 同 position() 的 marginX/marginY：配置值不再乘 scale
+      margin: mp.margin, // Same as position() for marginX/marginY: configuration value is no longer multiplied by scale
       halfW: this.halfW,
       sideAllow: this.sideAllow,
       areas: wanderArea ? [wanderArea] : AREAS,

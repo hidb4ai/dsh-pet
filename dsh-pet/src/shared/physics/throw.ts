@@ -1,9 +1,11 @@
 /**
- * 抛掷物理：甩抛初速估算、重力积分、边界反弹与屏间穿越。
+ * Throwing physics: Throwing initial velocity estimation, gravity integration, boundary rebound and inter-screen
+ * crossing.
  *
- * 不处理指针事件与渲染；输入是坐标与 dt，输出是下一帧状态。
- * 撞击统一交给 contact.ts 按接触面法向分解：法向反弹、切向摩擦。
- * 必须始终成立：同一输入必得同一输出，两端（浏览器与桌面）手感一致。
+ * Does not handle pointer events and rendering; the input is coordinates and dt, and the output is the next frame
+ * state. The impact is uniformly handed over to contact.ts and decomposed according to the normal direction of the
+ * contact surface: normal rebound and tangential friction. This must always be true: the same input must result in the
+ * same output, and both ends (browser and desktop) feel the same.
  * @module dsh-pet/src/shared/physics/throw
  */
 import { type PhysicsParams, type Rect } from '../types.ts';
@@ -11,14 +13,14 @@ import { indexAtPoint, nearestIndex, rectBottom, rectRight } from '../displays.t
 import { DEFAULT_PHYSICS, MAX_STEP_DT, SUBSTEP_MAX, SUBSTEP_PX } from './constants.ts';
 import { type ContactEdge, isRestingOnContacts, resolveContact } from './contact.ts';
 
-/** 一次轨迹采样（t = performance.now() 时间戳 ms；x/y = 指针绝对坐标 px）。 */
+/** One trajectory sampling (t = performance.now() timestamp ms; x/y = pointer absolute coordinates px). */
 export interface DragSample {
   t: number;
   x: number;
   y: number;
 }
 
-/** 抛掷边界：包围盒左上角的允许活动范围（与浏览器 root 的 left/top、桌面窗口位置同一套身体贴边语义）。 */
+/** Throwing boundary: the allowed activity range of the upper left corner of the bounding box (the same set of body edge semantics as left/top of the browser root and the desktop window position). */
 export interface ThrowBounds {
   minX: number;
   minY: number;
@@ -26,7 +28,7 @@ export interface ThrowBounds {
   maxY: number;
 }
 
-/** 抛体当前状态（包围盒左上角 px + 速度 px/s）。 */
+/** Current state of the projectile (upper left corner of bounding box px + speed px/s). */
 export interface ThrowState {
   x: number;
   y: number;
@@ -34,13 +36,13 @@ export interface ThrowState {
   vy: number;
 }
 
-/** 由 W/H/size 计算抛掷碰撞边界：身体（盒内缩 sideAllow）贴屏幕边缘才反弹。 */
+/** Calculate the throwing collision boundary from W/H/size: the body (sideAllow retracted inside the box) will only bounce when it touches the edge of the screen. */
 export const throwBounds = (o: { W: number; H: number; size: number; sideAllow: number }): ThrowBounds => {
   const h = (o.size * 9) / 16;
   return { minX: -o.sideAllow, minY: 0, maxX: o.W - o.size + o.sideAllow, maxY: o.H - h };
 };
 
-/** 同 throwBounds，但基于任意一块工作区矩形（原点不必是 0）；area 取整个视口时两者逐位相同。 */
+/** Same as throwBounds, but based on any rectangle of the work area (the origin does not have to be 0); area is the same bit by bit when taking the entire viewport. */
 export const throwBoundsIn = (area: Rect, size: number, sideAllow: number): ThrowBounds => {
   const h = (size * 9) / 16;
   return {
@@ -51,33 +53,39 @@ export const throwBoundsIn = (area: Rect, size: number, sideAllow: number): Thro
   };
 };
 
-/** 抛掷空间：每块屏一套 AABB，而不是整个桌面一个大 AABB。
- *  不规则多屏布局下外接矩形含空洞，用它当边界会让宠物飞进不可见区域（见 shared/displays.ts）。 */
+/**
+ * Throwing space: one set of AABB for each screen, instead of one large AABB for the entire desktop. In an irregular
+ * multi-screen layout, the bounding rectangle contains holes. Using it as a border will cause pets to fly into
+ * invisible areas (see shared/displays.ts).
+ */
 export interface ThrowSpace {
-  /** 逐屏的包围盒左上角允许范围（与 areas 同序） */
+  /** Allowable range of the upper left corner of the bounding box on a screen-by-screen basis (same order as areas) */
   bounds: ThrowBounds[];
-  /** 逐屏工作区（反弹与归属判定；任务栏挖掉的条带不在此列） */
+  /** Screen-by-screen workspace (rebound and ownership determination; strips removed from the taskbar are not included in this list) */
   areas: Rect[];
-  /** 逐屏完整面板（含任务栏区，与 areas 同序）：越界侧有没有邻屏要用面板探测——任务栏位于屏缝时
-   *  工作区之间会空出一条不属于任何 workArea 的带，按工作区探测会把接缝当墙。
-   *  缺省 = areas（单屏时两者等价）。 */
+  /**
+   * Screen-by-screen complete panel (including taskbar area, same sequence as areas): Use the panel to detect whether
+   * there are adjacent screens on the cross-border side - when the taskbar is located at the screen seam, there will
+   * be a strip between the work areas that does not belong to any workArea. If detected by the work area, the seam
+   * will be regarded as a wall. Default = areas (the two are equivalent in single screen).
+   */
   panels: Rect[];
-  /** 宠物包围盒宽 */
+  /** Pet bounding box width */
   size: number;
-  /** 身体相对包围盒左右各内缩的量 */
+  /** The amount of shrinkage of the body relative to the left and right sides of the bounding box */
   sideAllow: number;
 }
 
-/** 由工作区列表构造抛掷空间（单块屏时等价于 throwBounds）。 */
+/** Construct the throwing space from the workspace list (equivalent to throwBounds when using a single screen). */
 export const throwSpace = (o: { areas: Rect[]; panels?: Rect[]; size: number; sideAllow: number }): ThrowSpace => ({
   bounds: o.areas.map((a) => throwBoundsIn(a, o.size, o.sideAllow)),
   areas: o.areas,
-  panels: o.panels && o.panels.length === o.areas.length ? o.panels : o.areas, // 面板缺失或不同序：退化用工作区
+  panels: o.panels && o.panels.length === o.areas.length ? o.panels : o.areas, // Panels missing or out of order: degraded workspace
   size: o.size,
   sideAllow: o.sideAllow,
 });
 
-/** 宠物当前该归属哪块屏：身体中心所在屏，落在空洞里时取最近的一块。 */
+/** Which screen should the pet currently belong to: the screen where the center of the body is located, and when it falls into a hole, the closest one will be taken. */
 export const screenOfBox = (space: ThrowSpace, x: number, y: number): number => {
   const cx = x + space.size / 2;
   const cy = y + (space.size * 9) / 16 / 2;
@@ -85,23 +93,28 @@ export const screenOfBox = (space: ThrowSpace, x: number, y: number): number => 
   return hit >= 0 ? hit : nearestIndex(space.areas, cx, cy);
 };
 
-/** 本步撞到的边与撞击速度。 */
+/** The edge hit in this step and the impact speed. */
 export interface ThrowHit {
-  /** 撞的是哪条边。 */
+  /** Which side did it hit? */
   edge: ContactEdge;
-  /** 撞击前的法向速度绝对值（px/s）：振动强度与挤压强度都按它算。 */
+  /** Absolute value of normal velocity before impact (px/s): Vibration intensity and extrusion intensity are calculated according to this. */
   speed: number;
 }
 
-/** 平面重力向量（px/s²）：体感模式把重力方向交给手机姿态，默认仍是竖直向下。 */
+/** Plane gravity vector (px/s²): The somatosensory mode assigns the direction of gravity to the posture of the phone, and the default is still vertically downward. */
 export interface GravityVector {
   readonly gx: number;
   readonly gy: number;
 }
 
-/** 抛体单步积分与边界反弹。返回值带上两个标志：bounced = 本步是否碰边或落地，
- *  atRest = 所有接触面都已贴住且切向低速，调用方应停止循环；contacts = 本步接触到的边。
- *  physics 取成品配置的物理参数，缺失时用默认值兜底；gravity 覆盖重力方向与大小（缺省竖直向下）。 */
+/**
+ * Projectile single-step integration and boundary rebound. The return value carries two flags: bounced = Whether this
+ * step hits the edge or lands,
+ * atRest = All contact surfaces are attached and the tangential speed is low, the caller should stop the cycle;
+ * contacts = The edge contacted in this step. physics takes the physical parameters of the resolved value
+ * configuration. If missing, the default value fallback is used; gravity covers the gravity direction and size
+ * (default is vertical downward).
+ */
 export const throwStep = (
   s: ThrowState,
   dtRaw: number,
@@ -119,7 +132,7 @@ export const throwStep = (
   let bounced = false;
   let hit: ThrowHit | null = null;
   const contacts: ContactEdge[] = [];
-  /** 同一步撞到两条边（角落）时 hit 留更重的那个（手感只按主撞击算），contacts 全量保留。 */
+  /** When two sides (corners) are hit in the same step, hit will retain the heavier one (the feel is only calculated based on the main impact), and contacts will be retained in full. */
   const record = (edge: ContactEdge, speed: number): void => {
     contacts.push(edge);
     if (hit === null || speed > hit.speed) hit = { edge, speed };
@@ -140,7 +153,7 @@ export const throwStep = (
     bounced = true;
   }
   if (y < b.minY) {
-    // ceilingBounce=false：顶部无边界，不夹不弹——宠物飞出屏幕顶部，靠重力落回（y 保持越界状态）
+    // ceilingBounce = false: No boundary at the top, no clamping or bouncing - the pet flies out of the top of the screen and falls back by gravity (y remains out of bounds)
     if (physics.ceilingBounce) {
       record('ceiling', Math.abs(vy));
       y = b.minY;
@@ -160,14 +173,22 @@ export const throwStep = (
   return { x, y, vx, vy, bounced, atRest: isRestingOnContacts(contacts, { vx, vy }), hit, contacts };
 };
 
-/** 多屏抛掷步进：物理与 throwStep 同一套，区别是边界取自身体中心所在屏，越界后多问一句越界侧有没有屏。
- *  越界侧有别的屏就原样放行（不夹不弹，自然跨屏飞行或落到下一块屏），什么都没有才按该边反弹。
- *  探测用完整面板而不是工作区：任务栏位于上下屏接缝时 workArea 之间会空出一条带，按工作区探测
- *  会把接缝当墙，宠物永远穿不过去。探测点取当前面板的边外第一像素，面板底即物理屏底。
- *  放行时不改位置也不记录当前屏，下一帧由身体中心重新定位——相邻两屏的 AABB 在缝隙处留有
- *  2×sideAllow 宽的重叠盲区，改成「越界即切屏」会在盲区里逐帧对跳。
- *  lockScreen ≥ 0 表示锁定该屏（confineToScreen）：边界恒取该屏、跳过邻屏探测，屏缝与空洞一样当墙；
- *  索引越界（飞行途中拔掉显示器）即退回不锁定，免得拿一块不存在的屏当边界。 */
+/**
+ * Multi-screen throwing step: The physics is the same as throwStep. The difference is that the boundary is taken from
+ * the screen where the center of the body is. After crossing the boundary, ask if there is a screen on the side of the
+ * boundary. If there are other screens on the cross-border side, let it go as it is (no clamping or bouncing, it will
+ * naturally fly across the screen or fall to the next screen). If there is nothing, just press that side to bounce.
+ * Use the complete panel instead of the workspace for detection: When the taskbar is located at the seam between the
+ * upper and lower screens, there will be a strip between workArea. If you detect by the workspace, the seam will be
+ * used as a wall, and pets will never be able to get through. The detection point is the first pixel outside the edge
+ * of the current panel, and the bottom of the panel is the bottom of the physical screen. When released, the position
+ * is not changed and the current screen is not recorded. The next frame is repositioned by the center of the body -
+ * AABB on two adjacent screens leaves a 2 × sideAllow wide overlapping blind area in the gap. If it is changed to "cut
+ * the screen when crossing the boundary", it will jump frame by frame in the blind area. lockScreen ≥ 0 means locking
+ * the screen (confineToScreen): the border always takes this screen and skips detection of adjacent screens. The
+ * screen seam is like a hole as a wall; if the index crosses the border (unplug the monitor during flight), it will
+ * return without locking, so as not to use a non-existent screen as a border.
+ */
 export const throwStepRegion = (
   s: ThrowState,
   dtRaw: number,
@@ -197,17 +218,17 @@ export const throwStepRegion = (
   let bounced = false;
   let hit: ThrowHit | null = null;
   const contacts: ContactEdge[] = [];
-  /** 同一步撞到两条边时 hit 留更重的那个，与 {@link throwStep} 同口径；contacts 全量保留。 */
+  /** When hitting two sides in the same step, hit will keep the heavier one, which has the same conventions as {@link throwStep}; contacts will keep all of them. */
   const record = (edge: ContactEdge, speed: number): void => {
     contacts.push(edge);
     if (hit === null || speed > hit.speed) hit = { edge, speed };
   };
-  // 锁定屏（confineToScreen）：索引越界（飞行途中拔掉显示器导致屏数变少）即视为不锁定
+  // Locked screen (confineToScreen): The index is out of bounds (unplugging the monitor during the flight causes the number of screens to decrease), which means it is not locked.
   const locked = Number.isInteger(lockScreen) && lockScreen >= 0 && lockScreen < space.areas.length;
-  /** 该用哪块屏的 AABB / 工作区 / 面板：锁定时恒为锁定屏，否则取身体中心所在屏 */
+  /** Which screen should be used? AABB/Workspace/Panel: When locked, it will always be the locked screen, otherwise it will be the screen where the center of the body is. */
   const pick = (i: number): number => (locked ? lockScreen : i);
 
-  // 横向：边界来自身体中心所在屏，放行与否看缝外同高度处有没有像素
+  // Horizontal: The boundary comes from the screen where the center of the body is. Whether to release or not depends on whether there are pixels at the same height outside the seam.
   let cur = screenOfBox(space, x, y);
   let b = space.bounds[pick(cur)];
   let a = space.areas[pick(cur)];
@@ -233,14 +254,14 @@ export const throwStepRegion = (
     }
   }
 
-  // 纵向：横向若被夹回，身体中心可能已换屏，重新定位
+  // Portrait: If the landscape is pinched back, the center of the body may have changed the screen and repositioned it.
   cur = screenOfBox(space, x, y);
   b = space.bounds[pick(cur)];
   a = space.areas[pick(cur)];
   const pa2 = space.panels[pick(cur)] || a;
   const cx = x + space.size / 2;
   if (y < b.minY) {
-    // ceilingBounce=false：顶部无边界，不夹不弹——宠物飞出屏幕顶部，靠重力落回
+    // ceilingBounce = false: No border at the top, no clamping or bouncing - the pet flies out of the top of the screen and falls back by gravity
     if (physics.ceilingBounce && (locked || indexAtPoint(space.panels, cx, pa2.y - 1) < 0)) {
       record('ceiling', Math.abs(vy));
       y = b.minY;
@@ -250,7 +271,7 @@ export const throwStepRegion = (
       bounced = true;
     }
   } else if (y >= b.maxY) {
-    // 下方还有一块屏（上下排布的桌面）⇒ 不当地面，继续往下掉
+    // There is a screen below (a desktop arranged up and down) ⇒ It is not on the ground and continues to fall down
     if (locked || indexAtPoint(space.panels, cx, rectBottom(pa2)) < 0) {
       record('floor', Math.abs(vy));
       y = b.maxY;
@@ -275,9 +296,13 @@ export const throwStepRegion = (
   };
 };
 
-/** 一帧该积几步（整数 ≥ 1）。N = 1 是常态：普通甩抛一帧位移远小于 8px；
- *  只有弹弓拉得很远、初速几千 px/s 时才拆多步，否则一帧跨过上百 px 会跳过落地与反弹那几帧。
- *  dt 先按 MAX_STEP_DT 夹取（与 throwStep 内部同源），保证步数算的就是实际要积的时间。 */
+/**
+ * How many steps should be accumulated in one frame (integer ≥ 1). N = 1 is the normal state: the displacement of one
+ * frame of ordinary throwing is much less than 8 px; only when the slingshot is pulled very far and the initial
+ * velocity is several thousand px/s, multiple steps can be taken. Otherwise, if one frame spans hundreds of px, the
+ * landing and rebound frames will be skipped. dt is clamped by MAX_STEP_DT first (same internal origin as throwStep)
+ * to ensure that the number of steps is the actual time to be accumulated.
+ */
 export const throwSubsteps = (vx: number, vy: number, dt: number): number => {
   const travel = Math.hypot(vx, vy) * Math.min(Math.max(dt, 0), MAX_STEP_DT);
   if (!(travel > SUBSTEP_PX)) return 1;

@@ -1,15 +1,16 @@
 /**
- * 语音领域：`/voice/speak` 合成、`/voice/hear` 识别与 `/voice/voices` 音色列表。
+ * Speech routes: `/voice/speak` for synthesis, `/voice/hear` for recognition and `/voice/voices` for available voices.
  *
- * 校验、排队与缓存都在语音服务里；这里只判定方法与 JSON，并把结论映射成路由应答。
- * 契约见 openapi.yaml，本模块不重复描述字段。
+ * The speech service owns validation, queuing and caching. This layer checks methods/JSON and maps results to HTTP
+ * responses.
+ * See openapi.yaml for field contracts.
  * @module dsh-pet/src/host/routes/voice
  */
 import type { RouteResult } from '../http.ts';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 import { failResult, invalidJson, methodNotAllowed, okResult } from './result.ts';
 
-/** 语音领域：未命中返回 undefined，命中返回应答。 */
+/** Return a voice-route response, or undefined when the path does not match. */
 export async function handleVoiceRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { body, method, rest, signal } = input;
 
@@ -31,7 +32,7 @@ export async function handleVoiceRoutes(deps: PetRouteDeps, input: RouteInput): 
     return { kind: 'file', file: result.file, contentType: 'audio/mpeg' };
   }
 
-  // 与 /voice/speak 反向：音频进、文字出。格式由宿主 provider 校验，这里只转发结论。
+  // The inverse of /voice/speak: audio in, text out. The host provider validates formats; this layer forwards the result.
   if (rest === 'voice/hear') {
     if (method !== 'POST') return methodNotAllowed();
     let parsed: unknown;

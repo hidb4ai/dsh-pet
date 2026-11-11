@@ -1,11 +1,12 @@
 /**
- * 表情包池单元测试 —— 钉住「配置 memes ↔ 磁盘图片」的对齐规则与选图/校验语义：
- * 文件缺失的条目必须剔除（用户删图不必同步改配置）、描述为空的条目剔除、
- * 非对象/数组等非法形态 → 空池（不抛错，退化为纯文本碎碎念）；
- * 目录链（种类独占 → 用户目录 → 包内）按顺序查盘：链上任一目录里有该图即命中；
- * limitPool（对话配图张数上限）：0/非法 = 不限制，N>0 = 取前 N 张。
+ * Emoticon pool unit test - verify the alignment rules and image selection/verification semantics of "Configuration
+ * memes ↔ Disk Image": Missing entries in the file must be eliminated (users do not have to change the configuration
+ * simultaneously when deleting images), entries with empty descriptions, non-object/array and other invalid forms →
+ * Empty pool (no error thrown, degraded to plain text whisper); Directory chain (category exclusive → User directory →
+ * Package) Check the disk in order: if the picture is found in any directory on the chain, it is a hit; limitPool (the
+ * upper limit of the number of dialogue pictures): 0/invalid = no limit, N >0 = take the first N picture.
  *
- * 跑法：node --experimental-strip-types --test src/host/memes.test.ts
+ * Running method: node --experimental-strip-types --test src/host/memes.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ import { tmpdir } from 'node:os';
 
 import { limitPool, matchMeme, pickMeme, readMemePool } from './memes.ts';
 
-/** 造一个临时表情包目录，并按 names 写同名 png（内容无关，只要存在） */
+/** Create a temporary meme directory and write the same name png as names (the content is irrelevant, as long as it exists) */
 function withMemes(names: string[], run: (memesDir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-memes-test-'));
   try {
@@ -28,8 +29,8 @@ function withMemes(names: string[], run: (memesDir: string) => void): void {
   }
 }
 
-describe('readMemePool —— 配置与磁盘的对齐', () => {
-  test('命中的条目进池（描述去空白）', () => {
+describe('readMemePool - Configuration and disk alignment', () => {
+  test('The hit entry is put into the pool (the description is blank)', () => {
     withMemes(['可爱', '吃白饭的大肥鱼'], (memesDir) => {
       const pool = readMemePool({ 可爱: ' 卖萌立绘 ', 吃白饭的大肥鱼: '躺平扒饭' }, [memesDir]);
       assert.equal(pool.length, 2);
@@ -38,7 +39,7 @@ describe('readMemePool —— 配置与磁盘的对齐', () => {
     });
   });
 
-  test('配置里有、磁盘上没有的图 → 剔除（删图不必同步改配置）', () => {
+  test('Pictures that are in the configuration but not on the disk → Delete (deleting pictures does not require simultaneous configuration changes)', () => {
     withMemes(['可爱'], (memesDir) => {
       const pool = readMemePool({ 可爱: '卖萌', 不存在的图: '随便写' }, [memesDir]);
       assert.deepEqual(
@@ -48,21 +49,21 @@ describe('readMemePool —— 配置与磁盘的对齐', () => {
     });
   });
 
-  test('磁盘上有、配置里没写的图 → 不进池（无从得知描述）', () => {
+  test('There are pictures on the disk that are not written in the configuration → do not enter the pool (no way to know the description)', () => {
     withMemes(['可爱', '未登记的图'], (memesDir) => {
       const pool = readMemePool({ 可爱: '卖萌' }, [memesDir]);
       assert.equal(pool.length, 1);
     });
   });
 
-  test('描述为空/仅空白/非字符串 → 剔除', () => {
+  test('Description is empty/blank only/non-character string → eliminate', () => {
     withMemes(['a', 'b', 'c'], (memesDir) => {
       const pool = readMemePool({ a: '', b: '   ', c: 42 }, [memesDir]);
       assert.equal(pool.length, 0);
     });
   });
 
-  test('非法 memes 形态 → 空池且不抛错', () => {
+  test('Invalid memes form → empty pool without throwing error', () => {
     withMemes(['可爱'], (memesDir) => {
       for (const bad of [undefined, null, 42, 'str', ['可爱'] as unknown]) {
         assert.deepEqual(readMemePool(bad, [memesDir]), []);
@@ -70,7 +71,7 @@ describe('readMemePool —— 配置与磁盘的对齐', () => {
     });
   });
 
-  test('目录不存在 → 空池（未打包/被删也不崩）', () => {
+  test('Directory does not exist → Empty pool (not packaged/deleted but does not crash)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-memes-test-'));
     try {
       assert.deepEqual(readMemePool({ 可爱: '卖萌' }, [join(dir, 'nope')]), []);
@@ -80,22 +81,22 @@ describe('readMemePool —— 配置与磁盘的对齐', () => {
   });
 });
 
-describe('readMemePool —— 目录链（种类独占 / 用户 / 包内）', () => {
-  /** 名称集合比较：池的顺序语义另有专门用例钉住，这里只关心"谁进了池" */
+describe('readMemePool —— Directory chain (type exclusive/user/in-package)', () => {
+  /** Comparison of name sets: There is a special use case verify for the sequential semantics of the pool. Here we only care about "who entered the pool" */
   const names = (pool: { name: string }[]): string[] => pool.map((m) => m.name).sort();
 
-  test('池的顺序 = 配置里写的顺序（"前 N 张"必须由用户可控，不能是拼音序）', () => {
+  test('The order of the pool = the order written in the configuration ("the first N pictures" must be controllable by the user and cannot be in Pinyin order)', () => {
     withMemes(['次', '阿', '波'], (memesDir) => {
       const pool = readMemePool({ 次: 'C', 阿: 'A', 波: 'B' }, [memesDir]);
       assert.deepEqual(
         pool.map((m) => m.name),
         ['次', '阿', '波'],
-        '按书写顺序原样返回；曾经按 zh 拼音排序（会变成 阿/波/次），已改掉',
+        'Return to the original writing order; it used to be sorted by zh pinyin (it will become a/wave/times), which has been changed',
       );
     });
   });
 
-  test('剔除缺失条目后，剩余项仍保持书写顺序（不因过滤而重排）', () => {
+  test('After eliminating missing items, the remaining items still maintain the writing order (not rearranged due to filtering)', () => {
     withMemes(['乙', '甲'], (memesDir) => {
       const pool = readMemePool({ 甲: 'A', 缺图: 'X', 乙: 'B' }, [memesDir]);
       assert.deepEqual(
@@ -105,7 +106,7 @@ describe('readMemePool —— 目录链（种类独占 / 用户 / 包内）', ()
     });
   });
 
-  test('链上任一目录里有该图 → 命中（顺序只决定谁先被查到）', () => {
+  test('The picture exists in any directory on the chain → hit (the order only determines who is found first)', () => {
     withMemes(['独占的图'], (ownDir) => {
       withMemes(['包内的图'], (pkgDir) => {
         assert.deepEqual(names(readMemePool({ 独占的图: '自己带的', 包内的图: '包里的' }, [ownDir, pkgDir])), [
@@ -116,7 +117,7 @@ describe('readMemePool —— 目录链（种类独占 / 用户 / 包内）', ()
     });
   });
 
-  test('链上哪个目录都没有 → 剔除（与单目录口径一致）', () => {
+  test('There is no directory in the chain → Eliminate (consistent with single directory conventions)', () => {
     withMemes(['a'], (dirA) => {
       withMemes(['b'], (dirB) => {
         assert.deepEqual(names(readMemePool({ a: 'A', b: 'B', c: 'C' }, [dirA, dirB])), ['a', 'b']);
@@ -124,56 +125,57 @@ describe('readMemePool —— 目录链（种类独占 / 用户 / 包内）', ()
     });
   });
 
-  test('空链 → 空池（不查任何目录）', () => {
+  test('Empty link → Empty pool (no directory checked)', () => {
     withMemes(['可爱'], () => {
       assert.deepEqual(readMemePool({ 可爱: '卖萌' }, []), []);
     });
   });
 
-  test('独占语义不在本函数里：链只给一个目录时，别的目录里的图一概不参与', () => {
+  test('Exclusive semantics are not in this function: when the chain is only given to one directory, pictures in other directories will not participate.', () => {
     withMemes(['同名图'], (ownDir) => {
       withMemes(['同名图', '只在包内'], (pkgDir) => {
         const memes = { 同名图: '自己的', 只在包内: '包里的' };
-        // 调用方（host/index.ts 的 memeDirsFor）在种类独占命中时只传自己的目录：
-        // 只有包内目录里才有的图不进池——链里根本没有那个目录，同名图取的也是自己那份
+        // The caller (memeDirsFor of host/index.ts) only passes its own directory when the type is exclusive: only
+        // pictures that are in the directory in the package are not entered into the pool - there is no such directory
+        // in the chain at all, and the picture with the same name is also its own share.
         assert.deepEqual(names(readMemePool(memes, [ownDir])), ['同名图']);
-        // 对照：把包内目录也放进链（非独占的回落链），同一张图立刻进池
+        // Control: put the directory in the package into the chain (non-exclusive fallback chain), and the same picture will be put into the pool immediately
         assert.deepEqual(names(readMemePool(memes, [ownDir, pkgDir])), ['只在包内', '同名图']);
       });
     });
   });
 });
 
-describe('pickMeme —— 随机抽图', () => {
+describe('pickMeme —— Random drawing', () => {
   const pool = [
     { name: 'a', desc: 'A' },
     { name: 'b', desc: 'B' },
     { name: 'c', desc: 'C' },
   ];
 
-  test('空池 → undefined', () => {
+  test('Empty pool → undefined', () => {
     assert.equal(pickMeme([]), undefined);
   });
 
-  test('按 random 落点取对应项', () => {
+  test('Press the random drop point to get the corresponding item', () => {
     assert.equal(pickMeme(pool, () => 0)?.name, 'a');
     assert.equal(pickMeme(pool, () => 0.5)?.name, 'b');
     assert.equal(pickMeme(pool, () => 0.99)?.name, 'c');
   });
 
-  test('random 返回 1（边界）不越界', () => {
+  test('random returns 1 (boundary) without crossing the boundary', () => {
     assert.equal(pickMeme(pool, () => 1)?.name, 'a');
   });
 });
 
-describe('limitPool —— 对话配图张数上限（chatImageLimit）', () => {
+describe('limitPool ——The upper limit of the number of dialogue pictures (chatImageLimit)', () => {
   const pool = [
     { name: 'a', desc: 'A' },
     { name: 'b', desc: 'B' },
     { name: 'c', desc: 'C' },
   ];
 
-  test('limit > 0 → 取池内前 limit 张', () => {
+  test('limit > 0 → Take the first limit pictures in the pool', () => {
     assert.deepEqual(
       limitPool(pool, 2).map((m) => m.name),
       ['a', 'b'],
@@ -184,53 +186,53 @@ describe('limitPool —— 对话配图张数上限（chatImageLimit）', () => 
     );
   });
 
-  test('limit 超过池大小 → 原样返回（不补、不报错）', () => {
+  test('limit exceeds the pool size → return as is (no supplement, no error)', () => {
     assert.deepEqual(limitPool(pool, 99), pool);
   });
 
-  test('0 = 不限制（原样返回，与旧行为逐字一致）', () => {
+  test('0 = No limit (return unchanged, consistent with the old behavior verbatim)', () => {
     assert.deepEqual(limitPool(pool, 0), pool);
   });
 
-  test('负数 / 非有限数 / 非数字 → 一律按「不限制」处理（绝不返回空池）', () => {
+  test('Negative numbers / non-finite numbers / non-numbers → all processed as "unlimited" (never return to empty pool)', () => {
     for (const bad of [-1, -0.5, NaN, Infinity, -Infinity, undefined as unknown as number]) {
-      assert.deepEqual(limitPool(pool, bad), pool, `limit=${String(bad)} 必须原样返回`);
+      assert.deepEqual(limitPool(pool, bad), pool, `limit = ${String(bad)} must be returned as is`);
     }
   });
 
-  test('小数向下取整（不出现"取 2.5 张"这种含糊值）', () => {
+  test('Decimals are rounded down (there is no such ambiguous value as "take 2.5 pictures")', () => {
     assert.deepEqual(
       limitPool(pool, 2.9).map((m) => m.name),
       ['a', 'b'],
     );
   });
 
-  test('空池 → 空池（任何 limit 都不变）', () => {
+  test('Empty pool → Empty pool (any limit is unchanged)', () => {
     assert.deepEqual(limitPool([], 3), []);
   });
 });
 
-describe('matchMeme —— 模型选图校验', () => {
+describe('matchMeme —— Model selection verification', () => {
   const pool = [
     { name: '可爱', desc: '卖萌' },
     { name: '死掉了', desc: '累瘫' },
   ];
 
-  test('池内命中 → 返回该条目', () => {
+  test('Hit in the pool → Return to this entry', () => {
     assert.equal(matchMeme(pool, '死掉了')?.desc, '累瘫');
   });
 
-  test('池外名称（模型幻觉）→ undefined', () => {
+  test('Name outside the pool (model illusion) → undefined', () => {
     assert.equal(matchMeme(pool, '不存在的图'), undefined);
   });
 
-  test('空白/非字符串 → undefined', () => {
+  test('Blank/non-character string → undefined', () => {
     assert.equal(matchMeme(pool, ''), undefined);
     assert.equal(matchMeme(pool, '   '), undefined);
     assert.equal(matchMeme(pool, undefined as unknown as string), undefined);
   });
 
-  test('前后空白被容忍（模型多打空格也能命中）', () => {
+  test('Blank spaces before and after are tolerated (the model can hit even if there are multiple spaces)', () => {
     assert.equal(matchMeme(pool, ' 可爱 ')?.desc, '卖萌');
   });
 });

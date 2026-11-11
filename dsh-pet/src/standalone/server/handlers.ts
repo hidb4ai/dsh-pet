@@ -1,8 +1,8 @@
 /**
- * 内置路由处理器：设置页、连通性自检与模型清单。
+ * Built-in route processor: settings page, connectivity self-test and model list.
  *
- * 不负责分发与监听；请求体已由上层解析并限长。
- * 必须始终成立：设置页只回本机数据，绝不回显凭据。
+ * It is not responsible for distribution and monitoring; the request body has been parsed by the upper layer and its
+ * length is limited. Must always be true: the settings page only returns local data, never credentials.
  * @module dsh-pet/src/standalone/server/handlers
  */
 import { publicSettings, validateSettings, type StandaloneSettingsService } from '../settings.ts';
@@ -19,7 +19,7 @@ export function setupHandler(
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     if (!setup) {
-      rejectRequest(res, 503, '当前环境未启用快速开始');
+      rejectRequest(res, 503, 'Quick setup is unavailable in this environment');
       return;
     }
     if (req.method === 'GET') {
@@ -27,11 +27,11 @@ export function setupHandler(
       return;
     }
     if (req.method !== 'POST') {
-      rejectRequest(res, 405, '仅支持 GET 或 POST');
+      rejectRequest(res, 405, 'GET or POST required');
       return;
     }
     if (req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
-      rejectRequest(res, 415, '请使用 JSON');
+      rejectRequest(res, 415, 'JSON required');
       return;
     }
     try {
@@ -44,12 +44,12 @@ export function setupHandler(
       sendJson(res, 202, setup.status());
     } catch (error) {
       const busy = error instanceof Error && error.message === 'setup_busy';
-      rejectRequest(res, busy ? 409 : 400, busy ? '正在准备，请稍候。' : setupErrorMessage(error));
+      rejectRequest(res, busy ? 409 : 400, busy ? 'Preparation in progress; please wait.' : setupErrorMessage(error));
     }
   };
 }
 
-/** 读完请求体并解析成 JSON；空体当作空对象。 */
+/** The request body is read and parsed into JSON; the empty body is treated as an empty object. */
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
@@ -61,15 +61,15 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return text ? JSON.parse(text) : {};
 }
 
-/** 只接受对象形态的草稿；数组、标量与 null 一律当未填。 */
+/** Only drafts in the form of objects are accepted; arrays, scalars, and null are treated as unfilled. */
 function asDraft(body: unknown): ModelDiscoveryInput {
   return body !== null && typeof body === 'object' && !Array.isArray(body) ? (body as ModelDiscoveryInput) : {};
 }
 
 /**
- * 创建设置读写处理器（GET 读，POST 存）。
- * @param ai - 设置服务。
- * @returns 处理请求的异步函数。
+ * Create and set the read and write processor (GET reads, POST stores).
+ * @param ai - Setup service.
+ * @returns Asynchronous function that handles requests.
  */
 export function settingsHandler(
   ai: StandaloneSettingsService | undefined,
@@ -78,7 +78,7 @@ export function settingsHandler(
   let count = 0;
   return async (req, res) => {
     if (!ai) {
-      rejectRequest(res, 503, '本机 AI 设置尚未就绪');
+      rejectRequest(res, 503, 'Local AI settings are not ready');
       return;
     }
     if (req.method === 'GET') {
@@ -86,7 +86,7 @@ export function settingsHandler(
       return;
     }
     if (req.method !== 'POST') {
-      rejectRequest(res, 405, '仅支持 GET 或 POST');
+      rejectRequest(res, 405, 'GET or POST required');
       return;
     }
     if (Date.now() - windowStart >= 60000) {
@@ -94,35 +94,35 @@ export function settingsHandler(
       count = 0;
     }
     count += 1;
-    // 保存是重操作，按一分钟窗口限流，避免设置页反复重试打爆磁盘。
+    // Saving is a heavy operation, and the one-minute window rate limiting is used to prevent the settings page from being retried repeatedly and exploding the disk.
     if (count > 20) {
-      rejectRequest(res, 429, '保存过于频繁，请稍后再试');
+      rejectRequest(res, 429, 'Too many save requests; try again later');
       return;
     }
     if (req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') {
-      rejectRequest(res, 415, '请使用 JSON 保存设置');
+      rejectRequest(res, 415, 'Use JSON to save settings');
       return;
     }
     try {
       const input = validateSettings(await readJsonBody(req));
       sendJson(res, 200, publicSettings(await ai.saveSettings(input)));
     } catch {
-      rejectRequest(res, 400, '设置未保存：请检查接口地址、模型名称、密钥和数值范围');
+      rejectRequest(res, 400, 'Settings were not saved; check the endpoint, model, key and numeric ranges');
     }
   };
 }
 
 /**
- * 创建连通性测试处理器（POST）。
- * @param ai - 设置服务。
- * @returns 处理请求的异步函数。
+ * Create connectivity test handler (POST).
+ * @param ai - Setup service.
+ * @returns Asynchronous function that handles requests.
  */
 export function testHandler(
   ai: StandaloneSettingsService | undefined,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     if (req.method !== 'POST') {
-      rejectRequest(res, 405, '仅支持 POST');
+      rejectRequest(res, 405, 'POST required');
       return;
     }
     try {
@@ -136,16 +136,16 @@ export function testHandler(
 }
 
 /**
- * 创建模型清单处理器（POST）。
- * @param ai - 设置服务。
- * @returns 处理请求的异步函数。
+ * Create model manifest processor (POST).
+ * @param ai - Setup service.
+ * @returns Asynchronous function that handles requests.
  */
 export function modelsHandler(
   ai: StandaloneSettingsService | undefined,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     if (req.method !== 'POST') {
-      rejectRequest(res, 405, '仅支持 POST');
+      rejectRequest(res, 405, 'POST required');
       return;
     }
     if (!ai?.discoverModels) {
@@ -161,18 +161,19 @@ export function modelsHandler(
 }
 
 /**
- * 创建余额查询处理器（POST）。
+ * Create balance query processor (POST).
  *
- * 服务商与密钥都取自已保存的设置，请求体不参与：避免调用方把密钥经查询接口再传一遍。
- * @param ai - 设置服务。
- * @returns 处理请求的异步函数。
+ * The service provider and key are taken from the saved settings, and the request body does not participate: to
+ * prevent the caller from passing the key again through the query interface.
+ * @param ai - Setup service.
+ * @returns Asynchronous function that handles requests.
  */
 export function balanceHandler(
   ai: StandaloneSettingsService | undefined,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     if (req.method !== 'POST') {
-      rejectRequest(res, 405, '仅支持 POST');
+      rejectRequest(res, 405, 'POST required');
       return;
     }
     if (!ai?.queryBalance) {

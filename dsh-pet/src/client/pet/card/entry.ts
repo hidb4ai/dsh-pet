@@ -1,7 +1,9 @@
 /**
- * 右键菜单、对话弹窗与悬浮提示的入口：三样都是贴在宠物上的浮层，共享同一套关闭与定位时机。
- * 不负责动作本身：菜单叶子交给 menu-actions 派发，对话内容由 shared/chat 与宿主 /chat 处理。
- * 浮层句柄只在本模块持有，卸载时统一关闭；提示位置直接写 style，不走 React 状态。
+ * The entry point of the right-click menu, dialogue pop-up window and floating prompt: all three are floating layers
+ * attached to the pet, sharing the same set of closing and positioning timings. Not responsible for the action itself:
+ * the menu leaves are distributed by menu-actions, and the conversation content is handled by shared/chat and host /
+ * chat. The floating layer handle is only held by this module and is closed when unmounted; directly write style at
+ * the prompt position and do not enter the React state.
  * @module dsh-pet/src/client/pet/card/entry
  */
 import {
@@ -39,61 +41,61 @@ import type { MenuActions } from '../menu-actions.ts';
 import type { RuntimePet } from '../types.ts';
 import type * as ReactNS from 'react';
 
-/** 注入的 react 能力。 */
+/** Injected react capability. */
 export interface CardEntryRuntime {
-  /** 副作用；卸载时关闭浮层。 */
+  /** side effect; close the floating layer when unmounting. */
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
-  /** 引用；浮层句柄与提示节点。 */
+  /** Reference; floating layer handle and prompt node. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }
 
-/** 浮层入口的输入。 */
+/** Input of floating layer entry point. */
 export interface CardEntryInput {
-  /** 卡状态：提示显隐与写入口。 */
+  /** Card status: Prompt showing and hiding and writing entry point. */
   card: CardStateApi;
-  /** 成品配置的最新值。 */
+  /** Latest value of resolved configuration. */
   cfgRef: ReactNS.MutableRefObject<RuntimePet>;
-  /** 装配根迟绑槽。 */
+  /** Assemble root binding groove. */
   live: ReactNS.MutableRefObject<CardLive>;
-  /** 运动面：开菜单前要停飞与停走。 */
+  /** Sports surface: Stop and go before opening the menu. */
   motion: CardMotion;
-  /** 拖拽驱动：拖拽中或刚拖完不弹菜单。 */
+  /** Drag driver: The menu does not pop up during dragging or just after dragging. */
   drag: Drag;
-  /** 第三方菜单项快照；只在右键那一刻读。 */
+  /** Snapshot of third-party menu items; only read at the moment of right-clicking. */
   menuItemsRef: ReactNS.MutableRefObject<MenuMoreItem[]>;
-  /** 菜单动作派发。 */
+  /** Menu action dispatch. */
   runMenuAction: MenuActions['run'];
-  /** 打开待办面板：面板占气泡槽，显隐归气泡单槽管。 */
+  /** Open the to-do panel: the panel occupies the bubble slot, and the visibility is returned to the bubble single slot tube. */
   showTodo: () => void;
-  /** 开关待办面板：D 键用，已开则收起。 */
+  /** Switch to-do panel: Used for D keys, closed if opened. */
   toggleTodo: () => void;
-  /** 悬浮提示节点：位置由本模块直接写 style。 */
+  /** Floating prompt node: The position is directly written by this module to style. */
   tipRef: ReactNS.MutableRefObject<HTMLDivElement | null>;
-  /** 舞台节点：对话弹窗贴命中区右上角。 */
+  /** Stage node: The upper right corner of the hit area of the dialogue pop-up window. */
   stage: () => HTMLDivElement | null;
 }
 
-/** 浮层入口对外的读写面。 */
+/** The external reading and writing surface of the floating layer entry point. */
 export interface CardEntry {
-  /** 把提示框摆到光标右下，放不下时翻边并夹回视口。 */
+  /** Place the prompt box to the lower right of the cursor. If it cannot be placed, turn it over and clip it back to the viewport. */
   placeTip: (clientX: number, clientY: number) => void;
-  /** 打开右键菜单。 */
+  /** Open the right-click menu. */
   handleContextMenu: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
-  /** 打开对话弹窗：菜单里「对话」那一项走这里；带图时直接进入待发送状态（拖拽用）。 */
+  /** Open the dialogue pop-up window: Go here for the "Dialogue" item in the menu; when adding a picture, directly enter the pending state (drag and drop). */
   openChat: (image?: File) => void;
-  /** 打开待办面板（右键菜单入口）。 */
+  /** Open the to-do panel (right-click menu entry point). */
   openTodo: () => void;
-  /** 指针进入：先摆位再显示。 */
+  /** Pointer entry: first set the position and then display. */
   onPointerEnter: (e: ReactNS.PointerEvent<HTMLDivElement>) => void;
-  /** 指针离开：收起提示。 */
+  /** The pointer leaves: hide the prompt. */
   onPointerLeave: () => void;
 }
 
 /**
- * 造浮层入口的 hook。
+ * Create floating layer entry point hook.
  *
- * @param rt - 注入的 react 能力。
- * @returns 接收装配输入的 hook，返回菜单、对话与提示的入口。
+ * @param rt - Injected react capabilities.
+ * @returns receives the hook of assembly input and returns the entry point for menus, dialogs and prompts.
  */
 export function createCardEntry(rt: CardEntryRuntime) {
   const { useEffect, useRef } = rt;
@@ -101,12 +103,14 @@ export function createCardEntry(rt: CardEntryRuntime) {
   return function useCardEntry(input: CardEntryInput): CardEntry {
     const { card, cfgRef, drag, live, menuItemsRef, motion, runMenuAction, showTodo, stage, tipRef, toggleTodo } =
       input;
-    // 右键菜单与对话弹窗当前的句柄，卸载或重开前清理。对话弹窗还要按住说话遥控开录/收尾。
+    // The current handle of the right-click menu and dialog pop-up window should be cleared before unmounting or reopening. In the dialogue pop-up window, you also need to press and hold to speak to remotely start recording/cleanup.
     const menuRef = useRef<{ close: () => void } | null>(null);
     const chatRef = useRef<ChatDialogMount | null>(null);
 
-    /** 把提示框摆到光标右下，放不下时翻边并夹回视口。
-     *  直接写 DOM style：每次鼠标移动都走 React 状态会让整个 PetCard 重渲染。
+    /**
+     * Place the prompt box to the lower right of the cursor. If it cannot be placed, turn it over and clip it back to
+     * the viewport. Directly write DOM style: every time the mouse moves, the React state will cause the entire
+     * PetCard to be re-rendered.
      */
     const placeTip = (clientX: number, clientY: number): void => {
       const tipEl = tipRef.current;
@@ -122,7 +126,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
       tipEl.style.top = p.y + 'px';
     };
 
-    // 卸载时关闭可能开着的右键菜单与对话弹窗。
+    // Close the right-click menu and dialog pop-up window that may be open when unmounting.
     useEffect(
       () => () => {
         if (menuRef.current) {
@@ -137,7 +141,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
       [],
     );
 
-    /** 挂载对话弹窗：弹窗贴在身体命中区右上角，视频框右上角不等于宠物右上角；超出视口夹回。 */
+    /** Mount dialog pop-up window: The pop-up window is attached to the upper right corner of the body hit area, and the upper right corner of the video frame is not equal to the upper right corner of the pet; it is clipped back beyond the viewport. */
     const mountChat = (seed: { image?: File; encoded?: EncodedImage }): void => {
       if (chatRef.current) chatRef.current.close();
       const hitRect = stage()?.querySelector('.dsh-pet-hit')?.getBoundingClientRect();
@@ -149,11 +153,11 @@ export function createCardEntry(rt: CardEntryRuntime) {
         y: hitRect ? hitRect.top + 6 : 8,
         ...(seed.image ? { initialImage: seed.image } : {}),
         ...(seed.encoded ? { initialEncoded: seed.encoded } : {}),
-        // 浏览器侧截屏：getDisplayMedia 抓一帧，系统选择器由用户确认
+        // Browser side screenshot: getDisplayMedia captures a frame, the system selector is confirmed by the user
         capture: captureDisplayFrame,
         onSent: () => {
-          // 发送成功：回复已写进 /state，长轮询会立刻返回并弹气泡。
-          console.info('[dsh-pet] 对话已发送 pet=' + cfgRef.current.id);
+          // Sent successfully: the reply has been written into / state, long polling will return immediately and pop the bubble.
+          console.info('[dsh-pet] Chat sent pet=' + cfgRef.current.id);
         },
         onClose: () => {
           chatRef.current = null;
@@ -161,10 +165,10 @@ export function createCardEntry(rt: CardEntryRuntime) {
       });
     };
 
-    /** 打开对话（菜单、悬停 L、拖拽都走这条）；带图时直接进入待发送状态。 */
+    /** Open the dialogue (menu, hover L, drag and drop all go this way); when adding a picture, enter the pending state directly. */
     const openChat = (image?: File): void => mountChat(image ? { image } : {});
 
-    /** 把一张图送进对话：已开着就塞进去（不丢写了一半的字），没开就带图打开。 */
+    /** Send a picture into the conversation: insert it if it is already open (without losing the half-written words), or open it with the picture if it is not open. */
     const openChatWithImage = (file: File): void => {
       const existing = chatRef.current;
       if (existing !== null) {
@@ -174,19 +178,19 @@ export function createCardEntry(rt: CardEntryRuntime) {
       openChat(file);
     };
 
-    /** 打开待办面板：面板占气泡槽，重复点击是幂等的。 */
+    /** Open the to-do panel: the panel occupies the bubble slot, and repeated clicks are idempotent. */
     const openTodo = (): void => showTodo();
 
-    /** 「按住说话」按下：弹窗没开就先开一个，再让它开录；已开着就直接在它上面开录。 */
+    /** Press "Hold to speak": If the pop-up window is not open, open it first, and then let it start recording; if it is open, start recording directly on it. */
     const startChatHear = (): void => {
       if (!chatRef.current) openChat();
       chatRef.current?.startHear();
     };
-    /** 「按住说话」松开：只收尾，不关弹窗——识别结果要落进输入框让人看一眼。 */
+    /** "Press and speak" release: only cleanup, do not close the pop-up window - the recognition result must fall into the input box for people to take a look. */
     const stopChatHear = (): void => {
       chatRef.current?.stopHear();
     };
-    /** 打开对话：已经开着就只把焦点交回输入框，重开会把打了一半的字丢掉。 */
+    /** Open a dialog: If it is already open, just return the focus to the input box. If you reopen it, the half-typed words will be lost. */
     const openChatOrFocus = (): void => {
       const existing = chatRef.current;
       if (existing === null) {
@@ -196,7 +200,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
       existing.el.querySelector<HTMLTextAreaElement>('.dsh-pet-chat-input')?.focus();
     };
 
-    /** 截一帧塞进对话；截不到时照样开弹窗，把原因写在弹窗里——静默失败会被当成快捷键坏了。 */
+    /** Cut a frame and insert it into the dialogue; if the cut cannot be taken, the pop-up window will still open and the reason will be written in the pop-up window - silent failure will be treated as a broken shortcut key. */
     const captureInto = async (): Promise<void> => {
       let encoded: EncodedImage;
       try {
@@ -220,34 +224,34 @@ export function createCardEntry(rt: CardEntryRuntime) {
       mountChat({ encoded });
     };
 
-    /** 截图动作的对外形状；异步收在里面，调用方不关心。 */
+    /** The external shape of the screenshot action; asynchronous collection is inside, the caller does not care. */
     const screenshot = (): void => {
       void captureInto();
     };
 
-    // 悬停标记：快捷键与拖拽都只在"鼠标停在这只宠物上"时生效，避免和页面其它交互抢事件。
+    // Hover mark: Shortcut keys and drag will only take effect when "the mouse is parked on this pet" to avoid grabbing events from other interactions on the page.
     const hoverRef = useRef(false);
-    // 挂载时注册一次监听，但始终调用最新的 openChat 闭包（它读 ref，不能捕获旧值）。
+    // Register the listener once when mounting, but the latest openChat closure is always called (it reads ref and cannot capture the old value).
     const openChatRef = useRef<(image?: File) => void>(openChat);
     openChatRef.current = openChat;
-    // stage 是 getter（首次渲染时节点还不存在），effect 里再取一次，并用 ref 避开依赖告警。
+    // stage is getter (the node does not exist when rendering for the first time), fetch it again from effect, and use ref to avoid dependency warnings.
     const stageGetterRef = useRef(stage);
     stageGetterRef.current = stage;
-    // 待办开关同样只在悬停时生效；存 ref 是因为它每次渲染都新建，闭包会捕获旧的那份。
+    // The to-do switch also only takes effect when hovering; ref is saved because it is newly created every time it is rendered, and the closure will capture the old one.
     const toggleTodoRef = useRef(toggleTodo);
     toggleTodoRef.current = toggleTodo;
-    // 睡觉同样是切换语义：按下的那一刻现读状态，决定发 /sleep 还是 /wake（与菜单那一项同一件事）。
+    // Sleeping also has switching semantics: the moment you press it, the current reading state determines whether to send / sleep or / wake (the same thing as the menu item).
     const toggleSleepRef = useRef<() => void>(() => {});
     toggleSleepRef.current = () => {
       const asleep = live.current.flow?.sleeping() ?? false;
       runMenuAction(asleep ? { label: '起来', action: 'wake' } : { label: '睡觉', action: 'sleep' });
     };
-    // 数字键切显示位置：与右键「显示位置」子菜单同一条动作派发（写 display 配置，宿主重启生效）。
+    // Numeric keys change the display position: the same action is dispatched as the right-click "Display Position" submenu (write display configuration, the host restarts to take effect).
     const switchDisplayRef = useRef<(display: PetDisplay) => void>(() => {});
     switchDisplayRef.current = (display) => {
       runMenuAction({ label: '显示位置', action: 'set-display', display });
     };
-    // 按住说话的按下/松开同样每次渲染都新建闭包；状态机只建一次，只能经 ref 取最新的那两个。
+    // When pressing/releasing while holding down the language, a new closure will be created for each rendering; the state machine is only built once, and the latest two can only be fetched through ref.
     const startChatHearRef = useRef<() => void>(startChatHear);
     startChatHearRef.current = startChatHear;
     const stopChatHearRef = useRef<() => void>(stopChatHear);
@@ -258,13 +262,15 @@ export function createCardEntry(rt: CardEntryRuntime) {
     openChatWithImageRef.current = openChatWithImage;
     const screenshotRef = useRef<() => void>(screenshot);
     screenshotRef.current = screenshot;
-    // 全局快捷键要能遥控这一只：登记开关窗、开关录音，卸载时摘掉。
-    // 句柄里全走 ref，卡片重渲染不会让登记表拿到过期闭包；cfgRef 本身也是稳定引用，列进依赖只为满足规则。
+    // The global shortcut keys must be able to control this one: register the switch window, switch the recording, and
+    // remove it when unmounting. All ref is used in the handle, and card re-rendering will not let the registration
+    // table get the expired closure; cfgRef itself is also a stable reference, and the dependency is only included to
+    // satisfy the rules.
     useEffect(
       () =>
         registerPetChatHandle(cfgRef.current.id, {
           open: () => openChatOrFocusRef.current(),
-          // close 走弹窗自己的 onClose，句柄随之置空，isOpen 立刻转假。
+          // close pops up the pop-up window's own onClose, the handle is then left blank, and isOpen immediately turns fake.
           close: () => chatRef.current?.close(),
           isOpen: () => chatRef.current !== null,
           startHear: () => startChatHearRef.current(),
@@ -274,17 +280,19 @@ export function createCardEntry(rt: CardEntryRuntime) {
         }),
       [cfgRef],
     );
-    // 悬停键共用一次挂载：L 开对话、按住 M 说话、S 截图、Z 切换睡/醒、D 开关待办、1-4 切显示位置。
-    // 全部只在鼠标停在这只宠物上时生效；按住说话另有一条——焦点在宠物自己的弹窗里也算，
-    // 但在弹窗输入框里打字时不算（否则拼音里的 m 会被当成开录，见 createHearHold）。
+    // The hover keys share one mount: L opens a conversation, press and hold M to speak, S takes a screenshot, Z
+    // switches sleep/wake, D switches to-do, 1-4 switches display positions. All of them only take effect when the
+    // mouse is parked on this pet; there is another one when pressing and talking - the focus is in the pet's own
+    // pop-up window, but it does not count when typing in the pop-up window input box (otherwise m in Pinyin will be
+    // regarded as open recording, see createHearHold).
     useEffect(() => {
-      // 挂载时注册一次监听，但始终调用最新的闭包（它们读 ref，不能捕获旧值）。
+      // Register the listener once when mounting, but the latest closure is always called (they read ref and cannot capture old values).
       const offChat = bindOpenChat({
         stage: stageGetterRef.current(),
         isHovered: () => hoverRef.current,
         openChat: (image) => (image === undefined ? openChatRef.current() : openChatWithImageRef.current(image)),
       });
-      // 按住 M：按下开录、松手收尾。状态机自己管自动重复与松开，这里只管把事件送进去。
+      // Press and hold M: press to start recording, release to cleanup. The state machine takes care of automatic repetition and release, so here we just send the events.
       const hearHold = createHearHold({
         isArmed: () => {
           if (hoverRef.current) return true;
@@ -330,29 +338,33 @@ export function createCardEntry(rt: CardEntryRuntime) {
         document.removeEventListener('keyup', onKeyUp, true);
       };
     }, []);
-    // 菜单的动作面里含「对话」一条，回调注册一次即可：弹窗句柄在闭包里。
+    // The action surface of the menu contains a "Dialogue" item. Just register the callback once: the pop-up window handle is in the closure.
     live.current.placeTip = placeTip;
     live.current.tipOn = () => card.state.tipOn;
 
-    /** 打开右键菜单。 */
+    /** Open the right-click menu. */
     const handleContextMenu = (e: ReactNS.MouseEvent<HTMLDivElement>): void => {
-      // 工具项与动作树；「查看余额」无条件显示，手动请求不受开关限制。
-      // 第三方菜单项统一收在「更多」下：label 唯一的平铺，重名的按 owner 分子菜单（见 buildMoreBranch）。
+      // Tool items and action tree; "View balance" is displayed unconditionally, and manual requests are not subject
+      // to switch restrictions. Third-party menu items are unified under "More": label is the only tile, press owner
+      // molecule menu with the same name (see buildMoreBranch).
       const more = buildMoreBranch(menuItemsRef.current);
-      // 「配图」：按配置里的清单分成「纳入对话的配图 / 其他」，点一张就用它说一句。
-      // 没有可用图时返回 null，整项不出现（不占一个点开是空的菜单）。
-      // 缩略图靠 /pic/memes/<素材根>/<名称>.png：素材根就是拍平时写入的条目 key。
+      // "Pictures": According to the list in the configuration, it is divided into "Pictures included in the
+      // conversation/others", click on one and use it to say a sentence. When there is no available picture, null is
+      // returned, and the entire item does not appear (it does not occupy an empty menu when clicked). The thumbnail
+      // is located at /pic/memes/<asset root>/<name>. png: The asset root is the entry key that is usually written.
       const pic = cfgRef.current;
       const memes = buildMemeBranch(pic, (name) => memeThumbUrl(ROUTE_PATH, pic.assetRoot, name));
-      // 睡觉/起来是同一个入口的两种文案：睡着时点它等于叫醒（与「点击宠物」同义）。
-      // 该条目没配 animations.sleep 就整项不出现——与配置注释「不写 = 没有睡觉功能」一致。
+      // Sleeping/waking up are two texts of the same entry point: clicking it when sleeping is equivalent to
+      // waking up (synonymous with "clicking on the pet"). If this entry is not configured with animations.sleep, the
+      // entire entry will not appear - consistent with the configuration comment "not written = no sleep function".
       const asleep = live.current.flow?.sleeping() ?? false;
       const canSleep = (cfgRef.current.animations.sleep ?? []).length > 0;
       const sleepItem: MenuNode = asleep
         ? { label: '起来', action: 'wake', hint: SLEEP_HOTKEY_HINT }
         : { label: '睡觉', action: 'sleep', hint: SLEEP_HOTKEY_HINT };
-      // 顺序与桌面端同一排法：余额 / 待办 / 碎碎念 / 对话 / 配图 / 睡觉 → 动作树 → 显示位置 / 回到初始位置。
-      // 桌面专属的两项（打开软件、重载配置）在网页端没有对应动作，不出现。
+      // The order is the same as the desktop version: balance / to-do / whisper / conversation / picture / sleep →
+      // action tree → display position / return to the initial position. The two desktop-specific items (opening the
+      // software and reloading the configuration) have no corresponding actions on the web page and do not appear.
       const tools: MenuNode[] = [
         { label: '查看余额', action: 'show-balance' },
         { label: '待办事项', action: 'todo', hint: TODO_HOTKEY_HINT },
@@ -362,7 +374,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
         ...(canSleep ? [sleepItem] : []),
       ];
       const tail: MenuNode[] = [
-        // 显示位置子菜单与桌面端同一份；改成不含 web 的值后本宠物会从页面消失。
+        // The display position submenu is the same as the desktop version; after changing it to a value that does not contain web, the pet will disappear from the page.
         displayMenuBranch(),
         { label: '回到初始位置', action: 'home' },
       ];
@@ -374,17 +386,17 @@ export function createCardEntry(rt: CardEntryRuntime) {
       ];
       if (!tree.length) return;
       e.preventDefault();
-      e.stopPropagation(); // 不触碰 DSH 页面的菜单与右键处理。
+      e.stopPropagation(); // The menu and right-click processing of the DSH page are not touched.
       if (drag.isActive() || drag.justDragged()) return;
-      motion.flight.stop(); // 菜单弹出前停住飞行中的宠物。
-      motion.stopMove(); // 菜单悬停期间宠物不漫游。
+      motion.flight.stop(); // Stop the flying pet before the menu pops up.
+      motion.stopMove(); // Pets do not roam during menu hover.
       if (menuRef.current) menuRef.current.close();
       menuRef.current = mountContextMenu({
         tree,
         x: e.clientX,
         y: e.clientY,
         onAction: runMenuAction,
-        // 菜单被点外或 Esc 关闭时置空句柄，避免残留引用。
+        // Clear the handle when an outside click or Escape closes the menu, avoiding stale references.
         onClose: () => {
           if (menuRef.current) menuRef.current = null;
         },
@@ -395,7 +407,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
       handleContextMenu,
       onPointerEnter: (e) => {
         hoverRef.current = true;
-        placeTip(e.clientX, e.clientY); // 先摆位再显示，否则会先在兜底坐标闪一帧。
+        placeTip(e.clientX, e.clientY); // Set the position first and then display it, otherwise it will flash for one frame at the fallback coordinates.
         card.actions.setTipOn(true);
       },
       onPointerLeave: () => {

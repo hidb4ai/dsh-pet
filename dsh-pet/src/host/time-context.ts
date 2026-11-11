@@ -1,8 +1,9 @@
 /**
- * 时间背景的公开出口：时段、星期与节日的组合结果，以及历史消息的时间前缀。
+ * Public export of time background: combination results of time period, week and holiday, and time prefix of
+ * historical messages.
  *
- * 只做再导出；常量在 ./time-context/constants，节日表在 ./time-context/entries。
- * 必须始终成立：不读时钟（Date 由调用方传入），非法 Date 返回空串。
+ * Only re-export; constants are in ./time-context/constants and holiday tables are in ./time-context/entries. Must
+ * always be true: do not read the clock (Date is passed in by caller), invalid Date returns an empty string.
  * @module dsh-pet/src/host/time-context
  */
 export { dayKindOf, timeSlotOf } from './time-context/constants.ts';

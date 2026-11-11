@@ -1,7 +1,8 @@
 /**
- * 右键菜单的动作派发：把菜单叶子（内置动作、第三方项、显示位置、点播动画）翻译成一次副作用。
- * 只做「点了之后发生什么」，不建菜单、不管浮层定位与开关时序——那些归右键入口。
- * 依赖以取值函数注入，避免捕获渲染期的状态快照。
+ * Action dispatch of right-click menu: Translate menu leaves (built-in actions, third-party items, display position,
+ * playback request animation) into a side effect. Only "what happens after clicking" is done, no menu is built, no
+ * floating layer positioning and switching timing are ignored - those belong to the right-click entry point.
+ * Dependencies are injected with value functions to avoid capturing state snapshots during rendering.
  * @module dsh-pet/src/client/pet/menu-actions
  */
 import { isNoMirrorAnimation, isSleepAllowedAction } from '../../shared/menu.ts';
@@ -11,63 +12,66 @@ import type { Animations } from '../../shared/types.ts';
 import { postAction } from '../../shared/state.ts';
 import { setMenuClick } from '../menu-service.ts';
 
-/** 菜单派发的依赖。 */
+/** Dependencies on menu dispatch. */
 export interface MenuActionDeps {
-  /** 宠物 id：上报、点播与显示位置切换都要带。 */
+  /** Pet id: reporting, playback request and display position switching are required. */
   petId: string;
-  /** 该宠物的动画池（移动池、分类镜像规则都读它）。 */
+  /** The pet's animation pool (movement pool, category mirroring rules all read it). */
   animations: () => Animations;
-  /** 当前朝向是否为右（文字类动画强制朝左前先看它）。 */
+  /** Is the current orientation to the right (look at it before forcing the text animation to face left). */
   isFacingRight: () => boolean;
-  /** 把朝向改成左，并同步给换源用的事实值。 */
+  /** Change the orientation to left and synchronize the fact value for the source change. */
   faceLeft: () => void;
-  /** 试发起一次走位；`true` = 占用中，`false` = 无法移动，字符串 = 动作名。 */
+  /** Try to initiate a movement; `true` = occupied, `false` = unable to move, character string = action name. */
   tryMove: (preferredName?: string) => boolean | string;
-  /** 停掉走位与位置跟随。 */
+  /** Stop moving and position following. */
   stopMove: () => void;
-  /** 停掉抛掷飞行。 */
+  /** Stop throwing flight. */
   stopThrow: () => void;
-  /** 提交一次自播切换（once 语义）。 */
+  /** Submit a self-broadcast switch (once semantics). */
   playOnce: (anim: string, playbackId: string | null) => void;
-  /** 清掉会话位置，回到配置角落。 */
+  /** Clear the session location and return to the configuration corner. */
   resetPosition: () => void;
-  /** 打开对话弹窗。 */
+  /** Open the dialogue pop-up window. */
   openChat: () => void;
-  /** 打开待办面板。 */
+  /** Open the to-do panel. */
   openTodo: () => void;
-  /** 上报点播回执。 */
+  /** Report playback request receipt. */
   report: (playbackId: string, status: 'failed', reason: string) => void;
-  /** 显示位置切换后，把宿主回的成品聚合交给容器重渲染。 */
+  /** After the display position is switched, the finished aggregate returned by the host is handed over to the container for re-rendering. */
   applyMerged: (merged: Record<string, Record<string, unknown>>) => void;
-  /** 动作失败时打一行告警（文案自带原因）。 */
+  /** A line of warning will be displayed when the action fails (text has its own reasons). */
   warn: (message: string) => void;
-  /** 是否在睡：睡着时任何「打扰类」动作只弹拒绝台词、不执行。缺省视为醒着。 */
+  /** Whether you are sleeping: Any "disturbing" actions while sleeping will only play the rejection line and will not be executed. The default is to be awake. */
   sleeping?: () => boolean;
-  /** 是否被占用锁冻结：锁的语义是把控制权交给第三方，此时睡觉闸门让路。缺省视为未持锁。 */
+  /** Whether it is frozen by the occupied lock: the semantics of the lock is to hand over control to a third party, and at this time the sleeping gate gives way. The default is that the lock is not held. */
   locked?: () => boolean;
-  /** 弹一句气泡（拒绝台词用，不换动画）。缺省 = 不弹。 */
+  /** Play a bubble (refuse to use lines, do not change animation). Default = no bomb. */
   say?: (text: string) => void;
-  /** 睡觉拒绝台词池（条目级配置）。缺省 = 静默拒绝，不弹文字。 */
+  /** Sleep rejection line pool (entry level configuration). Default = silently reject, no text will be played. */
   sleepRefuseTexts?: () => string[];
 }
 
-/** 睡着时仍然放行的菜单动作由 shared/menu 的 isSleepAllowedAction 判定（两端共用一份）。 */
+/** Menu actions that are still allowed while sleeping are determined by isSleepAllowedAction of shared/menu (shared by both ends). */
 
-/** 菜单动作派发器。 */
+/** Menu action dispatcher. */
 export interface MenuActions {
   /**
-   * 执行一个菜单叶子。
+   * Execute a menu leaf.
    *
-   * @param leaf - 菜单叶子：内置动作或一个待点播的动画。
-   * @param playbackId - 本次点播编号；自播动画不传。
-   * @param keepFacing - 跳过「文字类强制朝左」的镜像修正，显式朝向优先。
-   * @param hostInstruction - 这条是宿主写进 `pets.<id>.anim` 的显式指令（不是用户点菜单）：
-   *  渲染端不判睡觉，放不放行由宿主闸门按「锁优先」决定。
+   * @param leaf - Menu leaf: built-in action or an animation pending playback request.
+   * @param playbackId - This playback request number; self-broadcast animation will not be transmitted.
+   * @param keepFacing - Skip the mirroring correction of "text types are forced to face left", and the explicit
+   * orientation takes precedence.
+   * @param hostInstruction - This is the explicit command written by the host into `pets.<id>.anim` (not the user's
+   * menu click):
+   * The renderer is not judged to be sleeping, and whether it is released or not is determined by the host gate
+   * according to the "lock priority".
    */
   run: (leaf: MenuLeaf, playbackId?: string, keepFacing?: boolean, hostInstruction?: boolean) => void;
 }
 
-/** 显示位置：写配置后宿主回成品聚合，交给容器重渲染。 */
+/** Display position: After writing the configuration, the host returns the resolved configuration and hands it to the container for re-rendering. */
 async function switchDisplay(deps: MenuActionDeps, display: string): Promise<void> {
   try {
     const response = await fetch(ROUTE_PATH + '/pet-display', {
@@ -77,9 +81,9 @@ async function switchDisplay(deps: MenuActionDeps, display: string): Promise<voi
     });
     if (!response.ok) throw new Error('pet-display HTTP ' + response.status);
     const body = (await response.json()) as Record<string, unknown>;
-    // 业务失败是 HTTP 200 + {ok:false, reason}：只看状态码会把失败体当成成品聚合。
-    if (body.ok === false) throw new Error('pet-display 被拒：' + String(body.reason ?? ''));
-    // 响应体就是改动后的成品聚合，必须交给容器；否则会再拉一次 GET /config，可能拿到旧值。
+    // The business failure is HTTP 200 + { ok:false , reason }: Just looking at the status code will treat the failure body as the resolved configuration.
+    if (body.ok === false) throw new Error('pet-display rejected:' + String(body.reason ?? ''));
+    // The response body is the modified aggregate and must be handed to the container; otherwise GET /config will be pulled again, and the old value may be obtained.
     deps.applyMerged(body as Record<string, Record<string, unknown>>);
   } catch (error) {
     deps.warn('[dsh-pet] 显示位置切换失败 ' + (error instanceof Error ? error.message : String(error)));
@@ -87,15 +91,15 @@ async function switchDisplay(deps: MenuActionDeps, display: string): Promise<voi
 }
 
 /**
- * 造菜单派发器。
+ * Build a menu dispatcher.
  *
- * @param deps - 宠物标识、动画池与各种副作用回调。
- * @returns 单一入口 {@link MenuActions.run}。
+ * @param deps - Pet logo, animation pool and various side effect callbacks.
+ * @returns single entry point {@link MenuActions.run} .
  */
 export function createMenuActions(deps: MenuActionDeps): MenuActions {
   const { petId } = deps;
 
-  /** 动作端点：POST 一次，失败只留一行 warn——结果由 /state 送回，这里没有返回值可用。 */
+  /** Action endpoint: POST once, failure leaves only one line warn - the result is sent back by / state, no return value is available here. */
   const fireAction = (route: string, label: string): void => {
     postAction(route)
       .then((ok: boolean) => {
@@ -105,10 +109,12 @@ export function createMenuActions(deps: MenuActionDeps): MenuActions {
   };
 
   const run = (leaf: MenuLeaf, playbackId?: string, keepFacing = false, hostInstruction = false): void => {
-    // 睡觉：打扰类动作在点击这一刻就拒绝——弹一句台词，什么都不执行。
-    // 放在最前面是有意的：对话弹窗、待办面板、动作点播都是纯前端行为，宿主闸门拦不到它们。
-    // hostInstruction：宿主写进 pets.<id>.anim 的显式指令（第三方带锁点播 / 外部驱动）不在此判——
-    // 该不该放行由宿主闸门按「锁优先」决定；渲染端再拦一次会输给叶子到达的时序差。
+    // Sleep: Interruption actions will be rejected at the moment of clicking - play a line and nothing will be
+    // executed. Putting them at the front is intentional: dialogue pop-ups, to-do panels, and action playback requests
+    // are all pure front-end behaviors, and the host gate cannot stop them. hostInstruction: The host writes
+    // pets.<id>. The explicit command of anim (third-party locked playback request/external driver) is not judged here
+    // - whether it should be released or not is determined by the "lock priority" of the host gate; if the renderer
+    // blocks again, it will lose the timing difference of the leaf arrival.
     if (
       !hostInstruction &&
       deps.sleeping?.() === true &&
@@ -121,10 +127,10 @@ export function createMenuActions(deps: MenuActionDeps): MenuActions {
       return;
     }
     if (leaf.action === 'third-party') {
-      // 第三方菜单项只上报 owner、label 与当前宠物 id，具体动作由注册方查询。
+      // The third-party menu item only reports owner, label and the current pet id. The specific action is queried by the register party.
       const owner = leaf.owner ?? '';
       if (owner !== '') {
-        // 同页消费者（petApi7340.menuEvents）当场就能取到；HTTP 照旧上报，桌面端与老扩展仍读宿主那份。
+        // The consumer of the same page (petApi7340.menuEvents) can get it on the spot; HTTP is still reported, and the desktop and old extensions still read the host's copy.
         setMenuClick(owner, leaf.label, petId);
         postAction(ROUTE_PATH + '/menu/click', { owner, label: leaf.label, pet: petId }).catch((error: unknown) =>
           deps.warn('[dsh-pet] 第三方菜单点击上报失败 ' + String(error)),
@@ -133,23 +139,25 @@ export function createMenuActions(deps: MenuActionDeps): MenuActions {
       return;
     }
     if (leaf.action === 'sleep' || leaf.action === 'wake') {
-      // 睡觉/起来都由宿主定状态：渲染端只发意图，三段动画名与闸门都在宿主那一侧
+      // The state of sleeping/waking up is determined by the host: the renderer only sends the intention, and the three animation names and gates are on the host side.
       const route = leaf.action === 'sleep' ? '/sleep' : '/wake';
-      console.info('[dsh-pet] 菜单' + (leaf.action === 'sleep' ? '睡觉' : '起来') + ' pet=' + petId);
-      fireAction(ROUTE_PATH + route + '?pet=' + encodeURIComponent(petId), leaf.action === 'sleep' ? '睡觉' : '起来');
+      console.info('[dsh-pet] Menu ' + (leaf.action === 'sleep' ? 'Sleep' : 'Wake') + ' pet=' + petId);
+      fireAction(ROUTE_PATH + route + '?pet=' + encodeURIComponent(petId), leaf.action === 'sleep' ? 'Sleep' : 'Wake');
       return;
     }
     if (leaf.action === 'show-balance') {
-      // 动作端点让宿主刷新并写入 /state，页面什么都不用做。
-      console.info('[dsh-pet] 菜单查看余额 pet=' + petId);
+      // The action endpoint tells the host to refresh and write / state without the page doing anything.
+      console.info('[dsh-pet] Menu balance request pet=' + petId);
       fireAction(ROUTE_PATH + '/balance', '余额刷新动作');
       return;
     }
     if (leaf.action === 'whisper') {
-      // 手动碎碎念：文本随长轮询送达，不受 whisperEnabled 限制；surface 必填，本页面就是网页端。
-      console.info('[dsh-pet] 菜单触发碎碎念 pet=' + petId + (leaf.image ? ' image=' + leaf.image : ''));
-      // 「配图」菜单点的是具体某张 → 带名称让宿主用这张（不在池内宿主会回 unknown-image）；
-      // 其余入口不带，仍按配置随机抽图。名称可能含空格与中文，必须编码。
+      // Manual whisper: The text is delivered with long polling and is not restricted by whisperEnabled; surface is required and this page is the web page.
+      console.info('[dsh-pet] Menu whisper request pet=' + petId + (leaf.image ? ' image=' + leaf.image : ''));
+      // The "Picture" menu clicks on a specific picture → add a name to let the host use this picture (the host will
+      // return unknown-image if it is not in the pool); the other entry points do not include it, and pictures are
+      // still randomly selected according to the configuration. The name may contain spaces and Chinese characters and
+      // must be encoded.
       const pic = leaf.image ? '&image=' + encodeURIComponent(leaf.image) : '';
       fireAction(ROUTE_PATH + '/whisper?pet=' + encodeURIComponent(petId) + '&surface=web' + pic, '碎碎念手动触发');
       return;
@@ -165,12 +173,12 @@ export function createMenuActions(deps: MenuActionDeps): MenuActions {
     if (leaf.action === 'set-display') {
       const display = leaf.display;
       if (!display) return;
-      console.info('[dsh-pet] 菜单切换显示位置 pet=' + petId + ' display=' + display);
+      console.info('[dsh-pet] Menu display change pet=' + petId + ' display=' + display);
       void switchDisplay(deps, display);
       return;
     }
     if (leaf.action === 'home') {
-      // 回到初始位置：停漫游与抛掷，清掉会话位置，回配置角落。
+      // Return to the initial position: stop roaming and throwing, clear the session position, and return to the configuration corner.
       deps.stopThrow();
       deps.stopMove();
       deps.resetPosition();
@@ -178,18 +186,18 @@ export function createMenuActions(deps: MenuActionDeps): MenuActions {
     }
     if (!leaf.anim) return;
     const cuePlaybackId = playbackId ?? null;
-    // 文字类朝右站姿是镜像的，点播前强制朝左；keepFacing 时跳过，显式朝向优先。
+    // The text type's right-facing posture is mirrored, and it is forced to face left before the playback request; it is skipped when keepFacing is used, and the explicit orientation takes precedence.
     if (!keepFacing && isNoMirrorAnimation(deps.animations().categories, leaf.anim) && deps.isFacingRight()) {
       deps.faceLeft();
     }
-    // 点播移动动画：走真实位移，仅「选哪个动画」由菜单决定；边界内挪不动时退化为纯播放。
+    // playback request mobile animation: real displacement, only "which animation to choose" is determined by the menu; when it cannot move within the boundary, it degenerates into pure playback.
     const movies = deps.animations().moves.actions;
     if (movies.some((action) => action.name === leaf.anim)) {
       if (deps.tryMove(leaf.anim) === false) {
         deps.stopMove();
         deps.playOnce(leaf.anim, cuePlaybackId);
       } else if (cuePlaybackId !== null) {
-        // 移动系统接管，不换视频源，本段点播不会真的播起来，如实回 failed。
+        // The mobile system takes over and the video source is not changed. This playback request will not be played and will be returned to failed.
         deps.report(cuePlaybackId, 'failed', 'busy');
       }
       return;

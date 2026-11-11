@@ -1,26 +1,28 @@
 /**
- * 斜杠命令 /pet：按 id 或名字切换当前桌宠。
+ * Slash command / pet: Switch the current desktop pet by id or name.
  * @module dsh-pet/src/host/plugin/command-pet
  */
 import type { BalancePoll } from './balance-poll.ts';
 import type { ChatMemory } from './chat-memory.ts';
 import type { HostContext } from './context.ts';
 
-/** 桌宠选择命令的输入。 */
+/** Input for desktop pet selection command. */
 export type CommandPetInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<BalancePoll, 'effectivePetList'> &
   Pick<BalancePoll, 'petDisplayName'> &
   Pick<BalancePoll, 'resolveActivePetId'> &
   Pick<ChatMemory, 'setActivePetId'>;
 
-/** 注册桌宠选择命令；返回的清理函数由 ctx.effect 收集。 */
+/** register desktop pet select command; returned cleanup function collected by ctx.effect. */
 export function registerPetCommand(deps: CommandPetInput): void {
   const { ctx, effectivePetList, petDisplayName, resolveActivePetId, setActivePetId } = deps;
-  // /pet 斜杠命令：选择「当前桌宠」（/chat 对话的目标）。浏览器端另有 commandUi 装饰的选择框
-  // （裸输 /pet 回车或菜单点选时弹出，选中后提交 /pet <id> 走同一 handler）；手输参数认 id 或名字
-  // （name 可重复：唯一命中才认，重名报错列出候选 id）。
+  // /pet slash command: Select "current desktop pet" (the target of the /chat conversation). There is also a selection
+  // box decorated with commandUi on the browser side (naked input / pet pops up when you press Enter or click on the
+  // menu, select and submit / pet < id > go to the same handler); hand input parameters must be id or name (name can
+  // be repeated: only the only hit will be recognized, and if the same name is reported as an error, the candidate id
+  // will be listed ).
   ctx.effect(
     () =>
       ctx.commands.register({

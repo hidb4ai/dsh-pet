@@ -1,10 +1,10 @@
 /**
- * 对话弹窗里的三枚内联 SVG 图标。
- * 不用 emoji：同一个符号在不同字体回退链下会被渲染成异体字形（上传用的 🖼 在 Windows 上就是如此）。
+ * Three inline SVG icons in the dialog pop-up window. Do not use emoji: the same symbol will be rendered into a
+ * variant font under different font fallback chains (this is the case with 🖼 for uploading on Windows).
  * @module dsh-pet/src/shared/chat/icons
  */
 
-/** SVG 图标共用的描边属性：一条线宽、随文字颜色。 */
+/** Stroke properties shared by SVG icons: a line width and text color. */
 const ICON_ATTRS = {
   fill: 'none',
   stroke: 'currentColor',
@@ -14,14 +14,14 @@ const ICON_ATTRS = {
   'aria-hidden': 'true',
 };
 
-/** 造一个 SVG 子元素（属性原样写入，命名空间固定 SVG）。 */
+/** Create a SVG child element (the attributes are written as they are, and the namespace is fixed to SVG). */
 function svgNode(tag: string, attrs: Record<string, string>): SVGElement {
   const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
   return node as SVGElement;
 }
 
-/** 图片图标：外框 + 太阳 + 山脊。 */
+/** Picture icon: outer frame + sun + ridge. */
 export function pictureIcon(size = 16): SVGElement {
   const svg = svgNode('svg', {
     viewBox: '0 0 24 24',
@@ -37,7 +37,7 @@ export function pictureIcon(size = 16): SVGElement {
   return svg;
 }
 
-/** 话筒图标：话筒胶囊 + 拾音弧 + 支架。 */
+/** Microphone icon: microphone capsule + pickup arc + bracket. */
 export function micIcon(size = 16): SVGElement {
   const svg = svgNode('svg', {
     viewBox: '0 0 24 24',
@@ -54,7 +54,7 @@ export function micIcon(size = 16): SVGElement {
   return svg;
 }
 
-/** 相机图标：机身 + 镜头。 */
+/** Camera icon: body + lens. */
 export function cameraIcon(size = 16): SVGElement {
   const svg = svgNode('svg', {
     viewBox: '0 0 24 24',

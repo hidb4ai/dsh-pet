@@ -1,10 +1,12 @@
 /**
- * 落盘位置两张卡（src/client/settings/paths-cards.ts）的契约测试。
+ * Contract test of two cards (src/client/settings/paths-cards.ts) at persist to disk location.
  *
- * 三条契约：
- *   1. 默认收起，但正文仍挂在树上（只是高度被裁到 0）——收起不该丢内容；
- *   2. 标题按钮的 `aria-expanded` / `aria-controls` 与正文 id 成对，且点击是取反；
- *   3. 问号在按钮内部但自己拦掉冒泡：点它只出气泡，不连带开合。
+ * Three contracts:
+ * 1. It is collapsed by default, but the main text is still hanging on the tree (just the height is cut to 0) - the
+ * content should not be lost when collapsed;
+ * 2. `aria-expanded` / `aria-controls` of the title button is paired with id of the text, and the click is inverted;
+ * 3. The question mark is inside the button but the bubble is blocked by itself: clicking it only produces bubbles,
+ * without opening and closing.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,12 +22,12 @@ interface Node {
 
 const h = ((tag: unknown, props: Record<string, unknown>) => ({ tag, props })) as unknown as typeof jsx;
 
-/** 假 useState：折叠态由用例给定，setter 只记录回传值、不触发重渲染。 */
+/** False useState: The folded state is given by the use case. setter only records the return value and does not trigger re-rendering. */
 function fakeState(initial: boolean, seen: boolean[]) {
   return (() => [initial, (next: boolean) => seen.push(next)]) as never;
 }
 
-/** 造一对卡；`initial` 是两张卡共用的初始开合态。 */
+/** Create a pair of cards; `initial` is the initial opening and closing state shared by the two cards. */
 function make(initial: boolean, seen: boolean[] = []) {
   return makePathsCards({ h, t: (key: string) => key, useState: fakeState(initial, seen) } as never);
 }
@@ -55,14 +57,14 @@ const byClass = (tree: unknown, cls: string): Node | undefined =>
 
 const byId = (tree: unknown, id: string): Node | undefined => flatten(tree).find((node) => node.props?.id === id);
 
-describe('paths-cards —— 折叠卡', () => {
-  test('默认收起：按钮 aria-expanded 为 false，正文在树上但 aria-hidden', () => {
+describe('paths-cards —— Folding card', () => {
+  test('Default collapse: button aria-expanded is false, the text is on the tree but aria-hidden', () => {
     const tree = make(false).ConfigMetaCard({ paths: meta });
     const button = byClass(tree, 'dsh-pet-cfg__foldToggle');
     assert.ok(button);
     assert.equal(button.props['aria-expanded'], false);
     assert.equal(button.props['aria-controls'], 'pet-cfg-paths-meta');
-    // 正文内容照旧渲染：收起只是把高度裁到 0，不是不渲染。
+    // The text content is still rendered: folding it only cuts the height to 0, not rendering it un-rendered.
     const body = byId(tree, 'pet-cfg-paths-meta');
     assert.ok(body);
     assert.equal(body.props['aria-hidden'], 'true');
@@ -71,7 +73,7 @@ describe('paths-cards —— 折叠卡', () => {
     assert.ok(!String(card?.props.className).includes('is-open'));
   });
 
-  test('展开态：aria-expanded 为 true，去掉 aria-hidden 并挂上 is-open', () => {
+  test('Expanded state: aria-expanded is true, remove aria-hidden and mount is-open', () => {
     const tree = make(true).ConfigMetaCard({ paths: meta });
     const button = byClass(tree, 'dsh-pet-cfg__foldToggle');
     assert.equal(button?.props['aria-expanded'], true);
@@ -80,7 +82,7 @@ describe('paths-cards —— 折叠卡', () => {
     assert.ok(String(card?.props.className).includes('is-open'));
   });
 
-  test('点标题行回传取反后的状态', () => {
+  test('Click the title line to return the reversed state', () => {
     const closed: boolean[] = [];
     const closedButton = byClass(make(false, closed).ConfigMetaCard({ paths: meta }), 'dsh-pet-cfg__foldToggle');
     (closedButton?.props.onClick as () => void)();
@@ -92,7 +94,7 @@ describe('paths-cards —— 折叠卡', () => {
     assert.deepEqual(open, [false]);
   });
 
-  test('点问号只拦冒泡、不切换开合', () => {
+  test('Clicking the question mark only stops bubbling and does not switch the opening and closing of the question mark.', () => {
     const seen: boolean[] = [];
     const wrap = byClass(make(false, seen).ConfigMetaCard({ paths: meta }), 'dsh-pet-cfg__qWrap');
     assert.ok(wrap);
@@ -106,7 +108,7 @@ describe('paths-cards —— 折叠卡', () => {
     assert.deepEqual(seen, []);
   });
 
-  test('两张卡各用各的正文 id', () => {
+  test('Each of the two cards uses its own text id', () => {
     const cards = make(false);
     const metaTree = cards.ConfigMetaCard({ paths: meta });
     const storageTree = cards.StorageCard({ paths: meta });
@@ -115,15 +117,15 @@ describe('paths-cards —— 折叠卡', () => {
   });
 });
 
-describe('paths-cards —— 内容不因折叠而变', () => {
-  test('高级配置列出五条路径与日志说明', () => {
+describe('paths-cards ——The content does not change due to folding', () => {
+  test('Advanced configuration lists five paths and log descriptions', () => {
     const tree = make(false).ConfigMetaCard({ paths: meta });
     const rows = flatten(tree).filter((node) => String(node.props?.className ?? '').includes('dsh-pet-cfg__path'));
     assert.equal(rows.length, 5);
     assert.ok(flatten(tree).some((node) => node.props?.className === 'dsh-pet-cfg__note'));
   });
 
-  test('卸载与存储：两条路径、卸载命令与三步说明', () => {
+  test('unmount and storage: two paths, unmount command and three-step instructions', () => {
     const tree = make(false).StorageCard({ paths: meta });
     const rows = flatten(tree).filter((node) => String(node.props?.className ?? '').includes('dsh-pet-cfg__path'));
     assert.equal(rows.length, 2);
@@ -132,7 +134,7 @@ describe('paths-cards —— 内容不因折叠而变', () => {
     assert.equal(notes.length, 3);
   });
 
-  test('没有存储清单时整卡不渲染', () => {
+  test('The entire card does not render when there is no storage list', () => {
     const tree = make(false).StorageCard({ paths: { ...meta, storage: [] } });
     assert.equal(tree, null);
   });

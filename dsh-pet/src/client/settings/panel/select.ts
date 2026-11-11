@@ -1,8 +1,10 @@
 /**
- * 设置页的通用单选下拉：触发器 + fixed 浮层，替代原生 `<select>`。
- * 原生下拉的展开面板由操作系统绘制，字号、圆角与 hover 都不受 `--dsw-*` token 控制，与同排的输入框不同源；
- * 这里自绘一份：触发器复用 `INPUT_CLASS` 的外观，定位复用 `./placement`。
- * 不做搜索框与分组：选项数都在十以内，滚轮够用。本文件只管状态、键盘与装配。
+ * General radio selection drop-down on the settings page: trigger + fixed floating layer, replacing the native
+ * `<select>` . The native drop-down expanded panel is drawn by the operating system. The font size, rounded corners
+ * and hover are not controlled by `--dsw-*` token and have different origins from the input boxes in the same row.
+ * Here is a self-drawn copy: the appearance of the trigger reuse `INPUT_CLASS` and the positioning reuse `./placement`
+ * . There is no search box or grouping: the number of options is within ten, and the scroll wheel is enough. This
+ * document covers states, keyboards, and devices.
  * @module dsh-pet/src/client/settings/panel/select
  */
 import type * as ReactNS from 'react';
@@ -11,30 +13,30 @@ import { INPUT_CLASS } from '../ui.ts';
 import type { SettingsRuntime } from '../runtime.ts';
 import { computePanelPlacement, type PanelPosition } from './placement.ts';
 
-/** 一项候选；`id` 回传给 `onChange`，`label` 是已翻译的展示文案。 */
+/** A candidate: return `id` to `onChange`; `label` is already translated display text. */
 export interface SelectOption {
   id: string;
   label: string;
 }
 
-/** 下拉的对外契约：一个字段一个实例。 */
+/** Drop-down external contract: one instance per field. */
 export interface SelectProps {
-  /** 字段标签（已翻译），作触发器的无障碍名。 */
+  /** Field label (translated), used as the accessibility name of the trigger. */
   label: string;
-  /** 当前值；不在 `options` 里时触发器留空，绝不显示成别的选项。 */
+  /** Current value; when it is not in `options`, the trigger is left blank and will never be displayed as other options. */
   value: string;
   options: readonly SelectOption[];
   disabled: boolean;
-  /** 选定回调；只在值真正变化时触发，与原生 `<select>` 的 `change` 同语义。 */
+  /** Selected callback; only triggered when the value actually changes, has the same semantics as `change` of native `<select>`. */
   onChange: (id: string) => void;
 }
 
 /**
- * 造单选下拉。
- * 依赖只在调用时注入一次：组件类型必须跨渲染稳定，否则浮层状态（打开 / 高亮）每次渲染都会丢。
+ * Create a single-select drop-down. Dependencies are only injected once at call time: the component type must be
+ * stable across renders, otherwise the overlay state (open/highlighted) will be lost every render.
  *
- * @param rt - 注入的 react 能力；不需要翻译，文案由调用方传入。
- * @returns 下拉组件。
+ * @param rt - Injected react capability; no translation is required, the copy is passed in by the caller.
+ * @returns drop-down component.
  */
 export function makeSelect(
   rt: Pick<SettingsRuntime, 'h' | 'useState' | 'useEffect' | 'useRef'>,
@@ -43,9 +45,9 @@ export function makeSelect(
 
   return function Select(props: SelectProps) {
     const [open, setOpen] = useState(false);
-    // 高亮行：键盘 ↑↓ 走的就是它
+    // Highlighted row: Keyboard ↑↓ This is it.
     const [active, setActive] = useState(0);
-    // 浮层位置：打开时按触发器实测一次，空间不够就翻到上方
+    // Floating layer position: Press the trigger to measure once when opening. If there is not enough space, turn it to the top.
     const [pos, setPos] = useState<PanelPosition | null>(null);
     const rootRef = useRef<HTMLDivElement | null>(null);
     const panelRef = useRef<HTMLDivElement | null>(null);
@@ -53,7 +55,7 @@ export function makeSelect(
     const selectedAt = props.options.findIndex((option) => option.id === props.value);
     const currentLabel = selectedAt >= 0 ? props.options[selectedAt].label : '';
 
-    /** 打开并把高亮停到当前选中项上。 */
+    /** Open and stop the highlight on the currently selected item. */
     const openAt = (index: number): void => {
       setActive(index >= 0 ? index : 0);
       setOpen(true);
@@ -74,14 +76,14 @@ export function makeSelect(
     useEffect(() => {
       if (!open) return;
       const root = rootRef.current;
-      // 定位 + 关闭时机：浮层脱离文档流实测定位，滚动/缩放跟着走，点外面或 Esc 关。
+      // Positioning + closing timing: The floating layer breaks away from the document flow for actual positioning, scroll/zoom to follow, click outside or Esc to close.
       const place = (): void => {
         if (!root) return;
         setPos(
           computePanelPlacement(
             root.getBoundingClientRect(),
             { width: window.innerWidth, height: window.innerHeight },
-            // 与触发器等宽：240 的下限是给「服务商 + 模型」两段文字留的，单行下拉不该继承。
+            // The same width as the trigger: the lower limit of 240 is reserved for the two paragraphs of text "Service Provider + Model", and the single-line drop-down should not be inherited.
             { minWidthPx: 0 },
           ),
         );
@@ -109,7 +111,7 @@ export function makeSelect(
       };
     }, [open]);
 
-    // 保存中会被禁用：浮层还开着就点得到不该改的值，直接收起。
+    // It will be disabled during saving: if the overlay is still open, click on the value that should not be changed and close it directly.
     useEffect(() => {
       if (props.disabled) setOpen(false);
     }, [props.disabled]);
@@ -133,7 +135,7 @@ export function makeSelect(
         setActive(e.key === 'Home' || count === 0 ? 0 : count - 1);
         return;
       }
-      // 按钮的 Enter/Space 会合成一次 click：浮层开着时改成「选定高亮行」，否则会先关再开。
+      // The Enter/Space of the button will synthesize click once: when the floating layer is on, it will be changed to "select the highlighted row", otherwise it will be closed and then opened again.
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         if (open) commit(active);

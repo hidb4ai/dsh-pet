@@ -1,13 +1,16 @@
 /**
- * 设置页与宿主 HTTP 契约的契约测试。
+ * Contract test of the contract between the settings page and host HTTP.
  *
- * 三条契约：
- *   1. 失败不抛：读接口失败返回 `null`，写接口失败返回判别联合，调用方只管分支与文案；
- *   2. 写配置强制显式 `force`：只有严格 `true` 才拼 `?force=1`（事件对象绝不能冒充真值绕过损坏预检）；
- *   3. 失败看体里的 `reason`：`user-config-unparsable` = 损坏（带出宿主给的真实写入路径）、
- *      `bad-request` / `invalid-json` = 校验失败、其余否定实体与非 2xx = 通用错误。
+ * Three contracts:
+ * 1. Failure is not thrown: `null` is returned if the interface fails to be read, and discriminative union is returned
+ * if the interface fails to be written. The caller only handles branches and text;
+ * 2. Write configuration to force explicit `force` : Only strict `true` can be used to spell `?force=1` (event objects
+ * must not pretend to be true values to bypass the damage pre-check);
+ * 3. If failed, check `reason` in the body: `user-config-unparsable` = damaged (bring out the real write path given by
+ * the host), `bad-request` / `invalid-json` = verification failure, other negative entities and non-2 xx = general
+ * error.
  *
- * 每个用例都换掉 `globalThis.fetch`，结束时还原——不发真实请求。
+ * Replace `globalThis.fetch` in each use case and restore it at the end - no real requests are sent.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,13 +25,13 @@ import {
   type SaveFields,
 } from './http.ts';
 
-/** 一次请求的记录。 */
+/** A requested record. */
 interface Call {
   url: string;
   init?: RequestInit;
 }
 
-/** 换掉全局 fetch，跑一段用例，最后还原。 */
+/** Replace the global fetch, run a use case, and finally restore. */
 async function withFetch(
   handler: (url: string, init?: RequestInit) => Response,
   run: (calls: Call[]) => Promise<void>,
@@ -46,12 +49,12 @@ async function withFetch(
   }
 }
 
-/** JSON 响应。 */
+/** JSON response. */
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-describe('loadConfig —— 读成品配置', () => {
-  test('2xx 返回聚合；非 2xx 与网络错误都返回 null', async () => {
+describe('loadConfig - Read resolved configuration', () => {
+  test('2 xx returns aggregate; non-2 xx and network errors return null', async () => {
     await withFetch(
       () => json({ main: { pets: [] } }),
       async () => {
@@ -69,12 +72,12 @@ describe('loadConfig —— 读成品配置', () => {
         throw new Error('断网');
       },
       async () => {
-        assert.equal(await loadConfig(), null, '网络错误不能让设置页崩掉');
+        assert.equal(await loadConfig(), null, 'Network errors cannot cause the settings page to crash');
       },
     );
   });
 
-  test('把 AbortSignal 带进请求（卸载时能中断）', async () => {
+  test('Bring AbortSignal into the request (can be interrupted when unmounting)', async () => {
     const controller = new AbortController();
     await withFetch(json0, async (calls) => {
       await loadConfig(controller.signal);
@@ -83,13 +86,13 @@ describe('loadConfig —— 读成品配置', () => {
   });
 });
 
-/** 固定返回空对象。 */
+/** Fixed returning empty object. */
 function json0(): Response {
   return json({ main: { pets: [] } });
 }
 
-describe('loadMeta / loadModelCatalog —— 读元信息与候选清单', () => {
-  test('meta：2xx 返回原文，非 2xx 返回 null', async () => {
+describe('loadMeta / loadModelCatalog - Read meta information and candidate list', () => {
+  test('meta: 2 xx returns to the original text, not 2 xx returns to null', async () => {
     await withFetch(
       () => json({ user: 'u', default: 'd', animations: 'a' }),
       async () => {
@@ -104,7 +107,7 @@ describe('loadMeta / loadModelCatalog —— 读元信息与候选清单', () =>
     );
   });
 
-  test('候选清单：providers 是数组才认，否则返回 null（选择器显示拉取失败）', async () => {
+  test('Candidate list: providers is recognized only if it is an array, otherwise null is returned (the selector shows that the pull failed)', async () => {
     await withFetch(
       () => json({ providers: [{ id: 'a', name: 'A', models: [] }] }),
       async () => {
@@ -126,17 +129,17 @@ describe('loadMeta / loadModelCatalog —— 读元信息与候选清单', () =>
   });
 });
 
-describe('saveConfig —— 写配置', () => {
+describe('saveConfig ——Write configuration', () => {
   const body = { pets: [] };
 
-  test('成功：PUT + JSON 头，返回成品聚合；不带 force 参数', async () => {
+  test('Success: PUT + JSON header, return resolved configuration; without force parameter', async () => {
     await withFetch(
       () => json({ main: { pets: [] } }),
       async (calls) => {
         const outcome = await saveConfig(body, false);
         assert.equal(outcome.kind, 'ok');
         assert.deepEqual(outcome.kind === 'ok' ? outcome.merged : null, { main: { pets: [] } });
-        assert.equal(calls[0].url.endsWith('/config'), true, '不带参数时 URL 不能有 ?force=1');
+        assert.equal(calls[0].url.endsWith('/config'), true, 'URL cannot exist without parameters? force =1');
         assert.equal(calls[0].init?.method, 'PUT');
         assert.equal((calls[0].init?.headers as Record<string, string>)['content-type'], 'application/json');
         assert.equal(calls[0].init?.body, JSON.stringify(body));
@@ -144,7 +147,7 @@ describe('saveConfig —— 写配置', () => {
     );
   });
 
-  test('force 严格为 true 才拼 ?force=1（事件对象不算）', async () => {
+  test('force is strictly for true? force =1 (event objects are not counted)', async () => {
     await withFetch(
       () => json({ main: { pets: [] } }),
       async (calls) => {
@@ -155,14 +158,14 @@ describe('saveConfig —— 写配置', () => {
     await withFetch(
       () => json({ main: { pets: [] } }),
       async (calls) => {
-        // React 会把 MouseEvent 当第一实参传进 onClick，这里复现那种「真值但不是 true」的输入。
+        // React will pass MouseEvent as the first argument to onClick, which reproduces the input of "true value but not true".
         await saveConfig(body, { type: 'click' } as unknown as boolean);
-        assert.equal(calls[0].url.endsWith('/config'), true, '非严格 true 绝不能拼 force');
+        assert.equal(calls[0].url.endsWith('/config'), true, 'Non-strict true must not be spelled force');
       },
     );
   });
 
-  test('user-config-unparsable：返回损坏结果并带出宿主给的真实写入路径', async () => {
+  test('user-config-unparsable: Return corrupted results and bring out the real write path given by host', async () => {
     await withFetch(
       () => json({ ok: false, reason: 'user-config-unparsable', userFile: 'C:/x/main-config.jsonc' }),
       async () => {
@@ -172,12 +175,16 @@ describe('saveConfig —— 写配置', () => {
     await withFetch(
       () => json({ ok: false, reason: 'user-config-unparsable' }),
       async () => {
-        assert.deepEqual(await saveConfig(body, true), { kind: 'corrupt', userFile: null }, '没有 userFile 时也不能抛');
+        assert.deepEqual(
+          await saveConfig(body, true),
+          { kind: 'corrupt', userFile: null },
+          'Cannot throw when there is no userFile',
+        );
       },
     );
   });
 
-  test('bad-request 是校验失败、其余否定实体与非 2xx 是通用错误、网络错误也是通用错误', async () => {
+  test('bad-request is a verification failure, and the remaining negative entities are non-2. xx is a general error, and network errors are also general errors.', async () => {
     await withFetch(
       () => json({ ok: false, reason: 'bad-request' }),
       async () => {
@@ -201,8 +208,8 @@ describe('saveConfig —— 写配置', () => {
   });
 });
 
-describe('syncConfig —— 同步内置默认', () => {
-  test('成功返回成品聚合，失败返回 null', async () => {
+describe('syncConfig - synchronous built-in default', () => {
+  test('The resolved configuration is returned successfully, and null is returned if it fails.', async () => {
     await withFetch(
       () => json({ main: { pets: [] } }),
       async (calls) => {
@@ -219,8 +226,8 @@ describe('syncConfig —— 同步内置默认', () => {
   });
 });
 
-describe('buildSaveBody —— 请求体字段', () => {
-  test('键名与宿主校验的字段一一对应，一个不多一个不少', () => {
+describe('buildSaveBody ——Request body field', () => {
+  test('The key name corresponds to the host verification field one-to-one, one is no more and the other is less.', () => {
     const fields = {
       pets: [],
       notificationsEnabled: true,
@@ -265,7 +272,7 @@ describe('buildSaveBody —— 请求体字段', () => {
     ]);
   });
 
-  test('值原样带出，不做二次包装', () => {
+  test('Take out the value as it is without secondary packaging.', () => {
     const fields = {
       pets: [{ id: 'pet-1' }],
       notificationsEnabled: false,

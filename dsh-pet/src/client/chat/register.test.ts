@@ -1,10 +1,12 @@
 /**
- * 右侧栏标签的注册契约：注册了什么、服务缺失时如何降级、注销是否只是标签类型。
+ * The register contract of the right column label: what is registered, how to downgrade when the service is missing,
+ * and whether the deregistration is only the label type.
  *
- * 不渲染组件（组件行为属 UI 层），也不模拟插槽框架的完整生命周期——
- * 这里只钉注册顺序与「等插槽声明再注册」这一条路径。
+ * The component is not rendered (the component behavior belongs to the UI layer), nor is the complete lifecycle of the
+ * slot framework simulated - here only the register order and the path of "waiting for the slot declaration before
+ * registering" are nailed.
  *
- * 跑法：node --experimental-strip-types --test src/client/chat/register.test.ts
+ * Running method: node --experimental-strip-types --test src/client/chat/register.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +14,7 @@ import assert from 'node:assert/strict';
 import { registerPetChatTab, type PetChatTabHost } from './register.ts';
 import type { ChatPanelRuntime } from './panel.ts';
 
-/** 组件不会被调用，桩只需形状正确。 */
+/** The component will not be called, the stub just needs to be of the correct shape. */
 const RT: ChatPanelRuntime = {
   h: () => null,
   useState: <T>(init: T) => [init, () => {}] as unknown as [T, (next: T | ((prev: T) => T)) => void],
@@ -21,7 +23,7 @@ const RT: ChatPanelRuntime = {
   t: (key) => key,
 };
 
-/** 假上下文：记录调用顺序；inject 立即驱动生成器，模拟「插槽已声明」。 */
+/** Fake context: record the calling sequence; inject drives the generator immediately, simulating "slot declared". */
 function makeHost(hasService: boolean) {
   const calls: string[] = [];
   let typeDisposed = 0;
@@ -42,7 +44,7 @@ function makeHost(hasService: boolean) {
         calls.push('inject:' + name);
         const steps = generator();
         for (let step = steps.next(); !step.done; step = steps.next()) {
-          // 生成器 yield 的是正文注册的 disposer，真实框架会收集它
+          // The generator yield is disposer of the text register, and the real framework will collect it
         }
       },
       register: (registration: { name: string; key: string }) => {
@@ -54,8 +56,8 @@ function makeHost(hasService: boolean) {
   return { host, calls, disposed: () => typeDisposed };
 }
 
-describe('registerPetChatTab —— 右侧栏对话标签', () => {
-  test('服务可用 → 先注册标签类型，再在插槽作用域里注册正文', () => {
+describe('registerPetChatTab ——Right column dialogue label', () => {
+  test('The service is available → register the label type first, then register the body in the slot scope', () => {
     const fake = makeHost(true);
     registerPetChatTab(fake.host, RT);
     assert.deepEqual(fake.calls, [
@@ -65,13 +67,13 @@ describe('registerPetChatTab —— 右侧栏对话标签', () => {
     ]);
   });
 
-  test('注销只摘标签类型（正文插槽归 slots.inject 的作用域）', () => {
+  test('Unregister only the label type (the text slot belongs to the scope of slots.inject)', () => {
     const fake = makeHost(true);
     registerPetChatTab(fake.host, RT)();
     assert.equal(fake.disposed(), 1);
   });
 
-  test('没有 sidebarRightTabs 服务 → 不注册任何东西，返回可安全调用的空注销', () => {
+  test('No sidebarRightTabs service → does not register anything, returns an empty logout that is safe to call', () => {
     const fake = makeHost(false);
     const dispose = registerPetChatTab(fake.host, RT);
     assert.deepEqual(fake.calls, []);

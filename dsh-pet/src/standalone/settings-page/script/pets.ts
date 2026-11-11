@@ -1,22 +1,30 @@
 /**
- * 「桌宠配置」面板的草稿与保存：条目切换、实例列表的读入、面板装配与两个写接口。
+ * Drafting and saving of "desktop pet configuration" panel: item switching, reading of instance list, panel assembly
+ * and two write interfaces.
  *
- * 编辑的是一份草稿（state.pets），只有点保存才写盘：main 条目连同全局字段走 PUT /config，
- * 其余条目走 POST /pet-config。单只宠物的字段与增删见 ./pet-card，条目级全局字段见 ./globals。
+ * What you are editing is a draft (state.pets), and it is written to disk only when you click Save: main entries
+ * together with the global fields go to PUT /config, and the remaining entries go to POST /pet-config. See
+ * ./pet-card for fields, additions and deletions of a single pet, and ./globals for entry-level global fields.
  * @module dsh-pet/src/standalone/settings-page/script/pets
  */
 
-/** 生成宠物面板片段。 */
+/** Generate pet panel fragments. */
 export function petsScript(): string {
   return `
 function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-/** 原配置里的 physics 段，用来判断哪些可选键「本来就有」。 */
+/**
+ * The physics segment in the original configuration is used to determine which optional keys are
+ * "originally present".
+ */
 let physicsSource = null;
 
-/** 动作频率权重：缺字段或非法项回落到内置默认，三项各自独立判定。 */
+/**
+ * Action frequency weight: Missing fields or illegal items fallback to the built-in default, and the three
+ * items are determined independently.
+ */
 function pickWeights(raw) {
   const base = Object.assign({}, FALLBACK_WEIGHTS);
   if (!raw || typeof raw !== 'object') return base;
@@ -44,8 +52,10 @@ function pickGlobals(main) {
     voiceVolume: typeof source.voiceVolume === 'number' ? source.voiceVolume : 1,
     voiceWhisperEnabled: source.voiceWhisperEnabled !== false,
     voiceTodoEnabled: source.voiceTodoEnabled !== false,
-    // 与 voiceTodo/voiceWhisper 的 !== false 写法不同：本项默认关，字段缺失时不能显示成已勾选，
-    // 否则设置页显示「开」而播放端拿到 undefined 当成「关」，两边打架。
+    // Different from voiceTodo/voiceWhisper's !== false writing method: this item is off by default, and it
+    // cannot be displayed as checked when the field is missing.
+    // Otherwise, the setting page displays "On" and the player gets undefined as "Off", and there is a conflict
+    // between the two sides.
     voiceNotifyEnabled: source.voiceNotifyEnabled === true,
     physics: Object.assign({}, FALLBACK_PHYSICS, source.physics || {}),
     font: Object.assign({}, FALLBACK_FONT, source.font || {}),
@@ -108,7 +118,10 @@ function renderPetsPanel() {
   }
 }
 
-/** 提交用的 physics 段：原配置没写过的可选键不带出去，避免保存时凭空补键。 */
+/**
+ * physics section for submission: Optional keys that have not been written in the original configuration
+ * are not taken out to avoid filling in the keys out of thin air when saving.
+ */
 function physicsBody() {
   const out = Object.assign({}, state.globals.physics);
   for (const key of ['tiltGravity', 'shakeThrow', 'hapticEnabled']) {

@@ -1,30 +1,36 @@
 /**
- * 纯选择逻辑：随机抽取、事件档位取值、权重掷骰，可独立单测。
- * 两端共用同一份，随机链必须走这里，否则浏览器半侧与桌面 Helper 会分叉。
- * 不依赖 React / DOM。
+ * Pure selection logic: random selection, event state value, weighted dice roll, independent single test. Both ends
+ * share the same copy, and the random chain must go here, otherwise the browser side and desktop Helper will
+ * bifurcate. Does not depend on React / DOM.
  * @module dsh-pet/src/shared/pickers
  */
 import type { Category, EventSlot, Events, Weights } from './types.ts';
 
-/** 从池里等概率抽一个；exclude 避开某个名字（减少连续重复）。 */
+/** Draw one from the pool with equal probability; exclude avoids a certain name (reduces continuous repetition). */
 export const pick = <T>(pool: readonly T[], exclude?: T): T => {
   const entries = exclude ? pool.filter((n) => n !== exclude) : pool;
-  // 排除后池空（单元素池 + 排除自己）：退回原池抽，宁可重复也不返回 undefined
+  // The pool is empty after exclusion (single element pool + exclusion of self): return to the original pool, and would rather repeat than return undefined
   const src = entries.length ? entries : pool;
   return src[Math.floor(Math.random() * src.length)];
 };
 
 /**
- * 挑一套睡觉动作：整套随机，调用方拿到的三段必须来自同一套（否则会「蹲着入睡、趴着醒来」）。
+ * Choose a set of sleeping actions: the whole set is random, and the three steps the caller gets must be from the same
+ * set (otherwise it will "fall asleep squatting and wake up lying down").
  *
- * @param sets - 配置里的 sleep 套数组；段内多候选由调用方对选中的那套再 `pick` 一次。
- * @returns 选中的套；空数组返回 null，调用方据此隐藏「睡觉」入口。
+ * @param sets - sleep set array in the configuration; if there are multiple candidates in the segment, the caller will
+ * `pick` the selected set again.
+ * @returns The selected suit; the empty array returns null, and the caller hides the "sleeping" entry point
+ * accordingly.
  */
 export const pickSleepSet = <T>(sets: readonly T[]): T | null =>
   sets.length > 0 ? sets[Math.floor(Math.random() * sets.length)] : null;
 
-/** 事件档位取值：字符串槽位原样返回（固定播放）；数组槽位 = 档内候选，随机抽 1 并尽量避开 exclude。
- *  排除后池空（单候选且排除自己）退回原数组——宁可重复，也不返回 undefined。 */
+/**
+ * Event state value: Character string slot is returned as is (fixed playback); array slot = candidate in the file,
+ * randomly select 1 and try to avoid exclude. After exclusion, the pool is empty (single candidate and excludes
+ * itself) and the original array is returned - it is better to repeat than return undefined.
+ */
 export const pickSlot = (slot: EventSlot, exclude?: string): string => {
   if (typeof slot === 'string') return slot;
   const entries = exclude === undefined ? slot : slot.filter((n) => n !== exclude);
@@ -32,21 +38,25 @@ export const pickSlot = (slot: EventSlot, exclude?: string): string => {
   return src[Math.floor(Math.random() * src.length)];
 };
 
-/** 槽位是否包含某动画名：字符串按名比，数组查成员——直接 includes 会漏掉数组槽位。 */
+/** Whether the slot contains a certain animation name: compare the character string by name, and search the members in the array - direct includes will miss the array slot. */
 export const slotIncludes = (slot: EventSlot, anim: string): boolean =>
   typeof slot === 'string' ? slot === anim : slot.includes(anim);
 
-/** 事件池（档位槽位数组）是否包含某动画名。 */
+/** Does the event pool (state slot array) contain a certain animation name. */
 export const poolIncludes = (pool: readonly EventSlot[], anim: string): boolean =>
   pool.some((slot) => slotIncludes(slot, anim));
 
-/** 整个 events 段是否包含某动画名。 */
+/** Does the entire events segment contain an animation name. */
 export const isEventAnim = (events: Readonly<Events> | undefined, anim: string): boolean =>
   events ? Object.values(events).some((pool) => poolIncludes(pool, anim)) : false;
 
-/** 工作状态播完（ended）后的续播决策：找到包含 current 的档位，多候选档位则返回档内下一候选
- *  （排除 current，避免连抽），让长时间状态自动轮换；单候选档位或动画不属于该池则返回 null。
- *  两端共用同一份决策，轮换行为严格一致。 */
+/**
+ * Resume broadcast decision after the working state is finished (ended): find the state that contains current, if there
+ * are multiple candidate states, return to the next candidate in the state (excluding current to avoid continuous
+ * draws), and let the long-term status automatically rotate; if the single candidate state or animation does not belong
+ * to the pool, return to null. Both ends share the same decision-making, and the rotation behavior is strictly
+ * consistent.
+ */
 export const nextWorkStatusAnim = (pool: readonly EventSlot[], current: string): string | null => {
   const idx = pool.findIndex((slot) => slotIncludes(slot, current));
   if (idx === -1) return null;
@@ -55,10 +65,10 @@ export const nextWorkStatusAnim = (pool: readonly EventSlot[], current: string):
   return pickSlot(slot, current);
 };
 
-/** 生成 [min, max) 区间内的随机整数。 */
+/** Generate random integers in the range [ min , max ). */
 export const randomBetween = (min: number, max: number): number => Math.floor(min + Math.random() * (max - min));
 
-/** 按权重在分类池中选一个分类；镜像（朝右）时排除 noMirror 分类并归一化剩余权重，池空返回 null。 */
+/** Select a category in the category pool according to weight; when mirroring (to the right), exclude the noMirror category and normalize the remaining weights, and return null when the pool is empty. */
 export const pickWeightedCategory = (categories: Category[], facing: string): Category | null => {
   const cats = categories.filter((c) => c.actions.length > 0);
   if (!cats.length) return null;
@@ -73,20 +83,25 @@ export const pickWeightedCategory = (categories: Category[], facing: string): Ca
   return eligible[eligible.length - 1];
 };
 
-/** 掷骰结果类别。 */
+/** Type of die roll result. */
 export type RollKind = 'idle' | 'turn' | 'move' | 'action';
 
-/** 掷骰选项。 */
+/** Dice roll options. */
 export interface RollOptions {
-  /** 宠物固定（pets[].fixedEnabled）：turn 与 move 两档权重按 0 算，份额自然归入 action。
-   *  不做归一化——idle 的绝对概率原样不动，实现最简，idle=0 的退化配置也自然。 */
+  /**
+   * Pet fixed (pets []. fixedEnabled): The weights of turn and move are calculated as 0, and the shares are naturally
+   * classified into action. Without normalization - the absolute probability of idle remains unchanged, the simplest
+   * implementation, and the degenerate configuration of idle =0 is also natural.
+   */
   fixed?: boolean;
 }
 
-/** 按权重掷骰：roll ∈ [0,1) → 下一个动画类别。
- *  (idle + turn + move) / 100 是这三档的占比之和，剩余概率归入 action。
- *  opts.fixed 为真时 turn / move 权重按 0 算，只可能返回 idle 或 action。
- *  两端共用本函数，随机链行为严格一致。 */
+/**
+ * Roll with weight: roll ∈ [0,1) → next animation category. (idle + turn + move) / 100 is the sum of the proportions
+ * of these three levels, and the remaining probability is classified into action. When opts.fixed is true, the weight
+ * of turn / move is calculated as 0, and only idle or action can be returned. Both ends share this function, and the
+ * behavior of the random chain is strictly consistent.
+ */
 export const rollKind = (roll: number, w: Weights, opts?: RollOptions): RollKind => {
   const turn = opts?.fixed ? 0 : w.turn;
   const move = opts?.fixed ? 0 : w.move;
@@ -97,8 +112,10 @@ export const rollKind = (roll: number, w: Weights, opts?: RollOptions): RollKind
   return 'action';
 };
 
-/** 从分类池选一个动作；无可用分类时回退 idle 池。
- *  facing 用于 noMirror 过滤，current 用于避免连续重复。 */
+/**
+ * Select an action from the category pool; fall back to the idle pool when no category is available. facing is used
+ * for noMirror filtering and current is used to avoid consecutive repetitions.
+ */
 export const pickCategoryAction = (
   categories: Category[],
   idlePool: string[],

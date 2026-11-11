@@ -1,46 +1,51 @@
 /**
- * 点播动画（`POST /dsh-pet-7340/anim`）的纯决策层：判定该不该播、播哪一个，结论交给写入方。
+ * The pure decision-making layer of playback request animation (`POST /dsh-pet-7340/anim`): determine whether and
+ * which one should be played, and leave the conclusion to the writer.
  *
- * 不负责播放，也不写 S；与右键菜单「动作」树复用同一个动作处理函数。动画名必须落在允许集合里——
- * 播放端没有兜底（名字即文件名，404 表现为「点了没反应」），所以这条校验是硬要求，且必须能
- * 脱离 HTTP 单测。允许集合 = 菜单三级树叶里所有 anim 的并集 ∪ 玩法自带动画（`animations.baifan`）：
- * 前者的来源是 src/shared/menu.ts 的 buildMenuTree()（宿主不 import src/shared，故自包含一份），
- * 后者不进菜单、但同样是本插件自有素材（吃白饭按名字点播它）。只依赖成品配置，不碰文件系统。
- * 契约见 API.md 与 openapi.yaml。
+ * It is not responsible for playback, nor does it write S; it is the same action processing function as reuse in the
+ * right-click menu "Action" tree. The animation name must fall in the allowed set - there is no fallback on the
+ * playback end (the name is the file name, 404 means "no response after clicking"), so this verification is a hard
+ * requirement, and it must be able to break away from the HTTP single test. Allowed set = the union of all anim in the
+ * third-level leaves of the menu ∪ The gameplay comes with animation (`animations.baifan`): The source of the former
+ * is src/shared/menu.ts's buildMenuTree() (host is not import src/shared, so it contains one copy), the latter does
+ * not enter the menu, but it is also the plugin's own asset (playback request by name for free) it). Only relies on
+ * the finished configuration and does not touch the file system. See contracts API.md and openapi.yaml.
  * @module dsh-pet/src/host/anim
  */
 
 import { findPetInstance } from './config.ts';
 
-/** 点播失败的分类；路由原样透出给调用方。 */
+/** Playback failure categories, returned unchanged by the route. */
 export type AnimFailure = 'bad-request' | 'pet-required' | 'unknown-pet' | 'unknown-animation';
 
 /**
- * 朝向：`left` = 素材原样，`right` = 镜像（渲染端贴 `scaleX(-1)`）。
- * 与 shared/state.ts 的同名联合体是两份（宿主不 import src/shared），改动时两边要一起改。
+ * Orientation: `left` = asset as is, `right` = mirror (renderer pastes `scaleX(-1)` ). The union with the same name as
+ * shared/state.ts is two copies (host and import src/shared), and both sides must be changed together when changing.
  */
 export type PetFacing = 'left' | 'right';
 
 /**
- * 决策结论：通过则给出最终要写进 S 的内容（`name` 与 `url` 恰好一个），否则给出显式原因。
- * `facing` 缺席 = 调用方没指定，渲染端不动朝向（不是回落 left）。
+ * Decision conclusion: If passed, the content that will eventually be written into S (exactly one `name` and `url` )
+ * will be given, otherwise an explicit reason will be given. `facing` is absent = caller is not specified, renderer
+ * does not move (not fallback left).
  */
 export type AnimDecision =
   | { ok: true; petId: string; name?: string; url?: string; facing?: PetFacing }
   | { ok: false; reason: AnimFailure; message: string };
 
-/** 配置里的池子收窄：非数组、非字符串项一律丢弃。 */
+/** The pool in the configuration is narrowed: non-array and non-character string items are discarded. */
 function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : [];
 }
 
-/** 朝向收窄：只认两个字面量，其余（大小写、空白、非字符串）一律不算。 */
+/** Direction narrowing: only two literals are recognized, and the rest (uppercase and lowercase, blanks, non-character strings) are not counted. */
 const petFacing = (v: unknown): PetFacing | null => (v === 'left' || v === 'right' ? v : null);
 
 /**
- * 该条目的 animations 配置 → 可点播的动画名（去重，保持首次出现顺序）。
- * 池子与顺序对齐 src/shared/menu.ts 的 buildMenuTree()：待机 → 转向 → 拖拽 → 点击回应 →
- * 移动 → 随机动作分类 → 事件（数组槽位展平）；菜单池之后追加玩法池（`baifan`）。
+ * animations configuration of this entry → Animation name that can be playedback request (deduplicate, keeping the
+ * order of first appearance). The pool is aligned with the sequence buildMenuTree() of src/shared/menu.ts: standby →
+ * turn → drag → click to respond → move → random action classification → event (array slot flattening); add a gameplay
+ * pool (`baifan`) after the menu pool.
  */
 export function animationNames(animations: unknown): string[] {
   const a = (animations && typeof animations === 'object' ? animations : {}) as Record<string, unknown>;
@@ -54,7 +59,7 @@ export function animationNames(animations: unknown): string[] {
   push(strings(a.drag));
   push(strings(a.clicks));
 
-  // 移动：actions 是 { name, ... } 对象数组，只取 name
+  // Move: actions is { name, ... } object array, only take name
   const moves = (a.moves && typeof a.moves === 'object' ? a.moves : {}) as Record<string, unknown>;
   push(
     Array.isArray(moves.actions)
@@ -64,14 +69,14 @@ export function animationNames(animations: unknown): string[] {
       : [],
   );
 
-  // config 随机动作分类：每个分类一个 actions 池
+  // config random action classification: one actions pool for each classification
   if (Array.isArray(a.categories)) {
     for (const c of a.categories) {
       if (c && typeof c === 'object') push(strings((c as { actions?: unknown }).actions));
     }
   }
 
-  // 事件动画：值是「档位数组」，每档可能是单个名字或候选数组（展平）
+  // Event animation: value is "array of states", each state may be a single name or an array of candidates (flattened)
   const events = (a.events && typeof a.events === 'object' ? a.events : {}) as Record<string, unknown>;
   for (const key of Object.keys(events)) {
     const pool = events[key];
@@ -84,20 +89,24 @@ export function animationNames(animations: unknown): string[] {
     push(names);
   }
 
-  // 玩法自带动画（吃白饭）：不在菜单树上，但同样是本插件自有素材，按名字点播。
-  // 追加在最后：菜单池的顺序被菜单树口径与顺序测试钉住，新玩法不该插进菜单序列中间。
+  // The gameplay comes with animation (freeloader): it is not on the menu tree, but it is also the plugin’s own
+  // asset, named playback request. Appended at the end: The order of the menu pool is verified by menu tree
+  // conventions and order tests, and new gameplay should not be inserted in the middle of the menu sequence.
   push(strings(a.baifan));
 
   return out;
 }
 
 /**
- * 第三方资源地址规范化：只放行 http / https 的完整 URL，其余一律 null（调用方回 bad-request）。
+ * Standardization of third-party resource addresses: only the complete URL of http / https will be released, and the
+ * rest will be null (caller returns bad-request).
  *
- * 桌面端换源是 `el.src = url` 直连（不经 `/thumb`），`file:` 能让渲染端读本地任意文件，
- * `javascript:` / `data:` 更没有理由开这个口。跨域不在这里解决、也不该在这里解决：桌面素材走
- * fetch + blob，CORS 由浏览器强制，第三方只能自己配响应头或注册同源路由；宿主不做代理，因此也
- * 没有 SSRF 面。与 ./broadcast 共用这一条规则（两个「第三方投喂」端点的 url 参数同一口径）。
+ * The desktop source is directly connected to `el.src = url` (without going through `/thumb` ). `file:` allows the
+ * renderer to read any local file. `javascript:` / `data:` has no reason to open this port. Cross-domain issues are
+ * not solved here, nor should they be solved here: the desktop asset uses fetch + blob, and CORS is forced by the
+ * browser. The third party can only configure the response header or register the same-origin route; the host does not
+ * act as a proxy, so there is no SSRF interface. This rule is shared with ./broadcast (the url parameters of the two
+ * "third-party feeding" endpoints have the same conventions).
  */
 export function normalizeHttpUrl(v: unknown): string | null {
   if (typeof v !== 'string') return null;
@@ -114,13 +123,16 @@ export function normalizeHttpUrl(v: unknown): string | null {
 }
 
 /**
- * 把外部给的点播请求与当前配置核对成一个结论。
+ * Check the external playback request request with the current configuration to reach a conclusion.
  *
- * `name` 与 `url` 二选一：`url` 是第三方自带的素材地址，给了它就不查动画池——素材在别人手里，
- * 池里当然没有这个名字；两个都给 / 都不给都是意图不明，直接 bad-request，不替调用方猜一个。
+ * Choose one of `name` and `url` : `url` is the asset address provided by the third party. If you give it, you will
+ * not check the animation pool - the asset is in the hands of others, and of course there is no such name in the pool;
+ * giving them both/not giving them is unclear, just use bad-request instead of guessing one for the caller.
  *
- * @param args - 点播参数：`cfg` 为成品配置（字段已填满，不做兜底解析）；`requested` 是 `?pet=` 原值
- *   （空串 → `pet-required`）；`name` / `url` 未规范化且二选一；`facing` 可选，没给则不动朝向。
+ * @param args - playback request parameters: `cfg` is the resolved configuration (the field is filled in,
+ * fallback analysis is not performed); `requested` is the original value of `?pet=`
+ * (Empty string → `pet-required` ); `name` / `url` is not standardized and choose one of the two; `facing` is
+ * optional, and the orientation will not change if not given.
  */
 export function decideAnim(args: {
   cfg: Record<string, Record<string, unknown>>;
@@ -136,9 +148,11 @@ export function decideAnim(args: {
   if (name && rawUrl) return { ok: false, reason: 'bad-request', message: 'name 与 url 只能给一个' };
   if (!name && !rawUrl) return { ok: false, reason: 'bad-request', message: 'name 或 url 必须给一个' };
 
-  // facing 可选：没给（undefined / null 都算，复用 body 模板时两种都常见）→ 不动朝向，保持宠物
-  // 当前朝向，而不是回落 left。给了就必须合法：非法值不静默忽略（与 /position 的 mode 同一口径，
-  // 全插件没有「非法值当没传」的先例）。放在宠物解析之前——参数是调用方的错，先纠它。
+  // facing Optional: Not given (undefined / null are both counted, both are common when reusing the body template) →
+  // Do not move in the orientation, keep the pet's current orientation, instead of fallback left. If given, it must be
+  // valid: invalid values are not silently ignored (the same conventions as mode of / position, there is no precedent
+  // for "invalid values are not passed" in the whole plugin). Place it before pet parsing - the parameter is caller's
+  // fault, correct it first.
   let facing: PetFacing | undefined;
   if (args.facing !== undefined && args.facing !== null) {
     const f = petFacing(args.facing);
@@ -146,17 +160,20 @@ export function decideAnim(args: {
     facing = f;
   }
 
-  // pet 必填且必须真实存在（与 /broadcast、/position 同一口径）：绝不默认退到「当前桌宠」——
-  // 那是有效宠物列表第一只，落点随用户 /pet 操作而变，第三方无从预期。
+  // pet is required and must actually exist (same conventions as / broadcast and / position): It will never default to
+  // the "current desktop pet" - that is the first pet in the valid pet list. The placement point changes with the
+  // user's / pet operation, and third parties cannot predict it.
   const petId = String(requested ?? '').trim();
   if (!petId) return { ok: false, reason: 'pet-required', message: 'pet 必填：要指定操作哪只桌宠' };
-  // 一次查找同时给出「存在性」与「所属条目」（动画池按条目取）：校验与取值用同一份结果，
-  // 后面不必再查一次。
+  // A search gives both "existence" and "ownership entry" (the animation pool is taken by entry): the same result is
+  // used for verification and value acquisition, and there is no need to check again later.
   const found = findPetInstance(cfg, petId);
   if (!found) return { ok: false, reason: 'unknown-pet', message: '没有这只桌宠：' + petId };
 
-  // url 形态：地址合法即放行，不查动画池、也不要求素材真的取得到——播放端对取不到的地址没有
-  // 兜底（浏览器 fetch 失败 / 桌面 video error），会经回执如实报 failed，而不是在这里猜。
+  // url form: The address is released as soon as it is valid. It does not check the animation pool, nor does it
+  // require the asset to be actually obtained - the playback end has no fallback for the unobtainable address (browser
+  // fetch failure / desktop video error), and will report failed truthfully through the receipt, instead of guessing
+  // here.
   if (rawUrl) {
     const url = normalizeHttpUrl(rawUrl);
     if (url === null) {
@@ -165,8 +182,9 @@ export function decideAnim(args: {
     return { ok: true, petId, url, facing };
   }
 
-  // name 形态：名字必须是该宠物菜单里点得到的动画。播放端"名字即文件名"，播不存在的动画只会静默失败，
-  // 所以必须在这里拦住，而不是写进 S 让前端白跑一趟。
+  // name form: The name must be the animation clicked in the pet menu. On the playback side, "the name is the file
+  // name". Playing non-existent animations will only fail silently, so it must be stopped here instead of writing S
+  // and letting the front end run in vain.
   const allowed = animationNames(found.conf.animations);
   if (!allowed.includes(name)) {
     return { ok: false, reason: 'unknown-animation', message: '没有这个动画：' + name };

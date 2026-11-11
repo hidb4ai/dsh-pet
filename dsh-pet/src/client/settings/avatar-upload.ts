@@ -1,29 +1,34 @@
 /**
- * 设置页的头像上传：把选中的图片缩到长边 512、转 base64，POST 给宿主覆盖写入。
+ * Upload avatar on the settings page: shrink the selected image to the long side. 512. Convert base64 and POST to the
+ * host for overwriting and writing.
  *
- * 不复用对话附图的压缩链路：对话图按 640 KiB / 2048 长边压成 JPEG 省请求体，头像是方寸小图、
- * 还要保住透明背景，所以这里只缩边、统一编成 PNG，不套质量阶梯。
- * 编码与提交分成两个函数：编码要 canvas，测试环境没有，网络分支才能单独测。
+ * Do not reuse the compression link of the dialogue drawing: the long side of the dialogue drawing is compressed into
+ * JPEG according to 640 KiB / 2048 to save the request body. The avatar is a small square image, and the transparent
+ * background must be maintained, so here only the sides are reduced and unified into PNG, without a quality ladder.
+ * Encoding and submission are divided into two functions: encoding requires canvas, and if there is no test
+ * environment, the network branch can be tested alone.
  * @module dsh-pet/src/client/settings/avatar-upload
  */
 import { ROUTE_PATH } from '../../shared/constants.ts';
 import { bytesToBase64, loadImage } from '../../shared/chat/encode.ts';
 
-/** 头像长边上限（px）：聊天面板按 28px 显示，512 足够清晰，再大只是白占请求体。 */
+/** The upper limit of the long side of the avatar (px): The chat panel is displayed as 28 px, 512 is clear enough, and any larger size will just occupy the request body. */
 export const AVATAR_MAX_SIDE_PX = 512;
 
-/** 上传结果：成功，或可直接展示给用户的失败文案。 */
+/** Upload result: success, or failure copy that can be directly displayed to the user. */
 export type AvatarUpload = { ok: true } | { ok: false; message: string };
 
 /**
- * 把图片文件压进长边上限并转成规范 base64。
+ * Press the image file into the upper limit of the long side and convert it to the specification base64.
  *
- * 已在范围内就原样上传（不重编码：透明、动图、高 DPI 都不掉）；超限才缩边并统一编成 PNG——
- * 用 JPEG 会把透明区域填成黑底。动图超限时只剩第一帧，这是缩放的固有代价。
+ * If it is within the range, upload it as it is (no re-encoding: transparent, animated images, and high DPI will not
+ * be deleted); only if it exceeds the limit, the edges will be reduced and unified into PNG - using JPEG will fill the
+ * transparent area with a black background. When the animation exceeds the limit, only the first frame is left, which
+ * is the inherent cost of scaling.
  *
- * @param file - 用户选中的图片文件。
- * @returns 规范 base64 与媒体类型。
- * @throws 解不出图片，或浏览器拿不到 2D 画布时。
+ * @param file - the image file selected by the user.
+ * @returns specification base64 with media type.
+ * @throws cannot decode the picture, or the browser cannot get the 2 D canvas.
  */
 export async function encodeAvatarFile(file: File): Promise<{ base64: string; mediaType: string }> {
   const img = await loadImage(file);
@@ -37,19 +42,20 @@ export async function encodeAvatarFile(file: File): Promise<{ base64: string; me
   canvas.width = Math.max(1, Math.round(width * scale));
   canvas.height = Math.max(1, Math.round(height * scale));
   const ctx = canvas.getContext('2d');
-  if (ctx === null) throw new Error('浏览器不支持缩放这张图');
+  if (ctx === null) throw new Error('The browser cannot resize this image');
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL('image/png');
   return { base64: dataUrl.slice(dataUrl.indexOf(',') + 1), mediaType: 'image/png' };
 }
 
 /**
- * 把编码后的头像发给宿主（覆盖旧图）。
+ * Send the encoded avatar to the host (overwriting the old image).
  *
- * @param assetRoot - 宠物所属素材根；文件宠物用目录前缀，内置用 `main`（宿主会拒）。
- * @param base64 - 规范 base64（不带 `data:` 前缀）。
- * @param fetchImpl - 注入的 fetch，测试用替身；生产不传，取全局 fetch。
- * @returns 成功，或宿主 / 网络给出的失败文案。
+ * @param assetRoot - the asset root to which the pet belongs; the file pet uses the directory prefix, and the built-in
+ * one uses `main` (the host will reject it).
+ * @param base64 - Specification base64 (without the `data:` prefix).
+ * @param fetchImpl - Injected fetch, used as a stand-in for testing; not passed in production, take the global fetch.
+ * @returns success, or failure text given by host/network.
  */
 export async function postAvatar(
   assetRoot: string,
@@ -68,11 +74,11 @@ export async function postAvatar(
 }
 
 /**
- * 上传一只宠物的头像（编码 + 提交）。
+ * Upload a pet's avatar (encoding + submission).
  *
- * @param assetRoot - 宠物所属素材根。
- * @param file - 用户选中的图片文件。
- * @returns 成功，或编码 / 宿主 / 网络给出的失败文案。
+ * @param assetRoot - the asset root to which the pet belongs.
+ * @param file - the image file selected by the user.
+ * @returns on success, or failure text given by encoding /host/network.
  */
 export async function uploadPetAvatar(assetRoot: string, file: File): Promise<AvatarUpload> {
   const { base64 } = await encodeAvatarFile(file);

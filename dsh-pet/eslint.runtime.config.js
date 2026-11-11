@@ -1,17 +1,19 @@
 /**
- * 桌面 Helper 的门禁配置：只查 no-undef。
+ * Validation check configuration of desktop Helper: only check no-undef.
  *
- * 这批是经典脚本（非 ESM、非 TS），没有 tsc 也没有类型可依；它们靠 index.html 的加载顺序
- * 共享顶层全局（constants.js 提供配置与常量，sprite.js 提供 PetSprite，events.js 提供循环）。
- * 因此这里把**契约里真实存在的**共享全局显式声明，其余一律报错——三次「宠物不可见」事故
- * 都是拆分后某个名字不再有任何定义，只有 no-undef 能在启动前发现。
+ * This batch is a classic script (non-ESM, non-TS), without tsc and no type to rely on; they rely on the loading order
+ * of index.html to share top-level globals (constants.js provides configuration and constants, sprite.js provides
+ * PetSprite, and events.js provides loops). Therefore, the real ** sharing in the ** contract is explicitly declared
+ * globally, and the rest will report an error - the three "pets are not visible" incidents are all after splitting. A
+ * certain name no longer has any definition, and only no-undef can be discovered before startup.
  *
- * 新增共享全局时同时加到下面的 globals 里；不要用 `/* global *\/` 一类的兜底，那等于关掉门禁。
+ * When adding a new shared global, add it to globals below; do not use fallbacks such as `/* global *\/` , which is
+ * equivalent to turning off validation check.
  * @module dsh-pet/eslint.runtime.config
  */
 import { defineConfig } from 'eslint/config';
 
-/** 宿主与 Node 全局（主进程侧）。 */
+/** host and Node globally (main process side). */
 const nodeGlobals = {
   require: 'readonly',
   process: 'readonly',
@@ -27,14 +29,14 @@ const nodeGlobals = {
   clearInterval: 'readonly',
 };
 
-/** 浏览器全局（渲染端与 preload）。 */
+/** Browser global (renderer and preload). */
 const browserGlobals = {
   window: 'readonly',
   document: 'readonly',
   navigator: 'readonly',
   location: 'readonly',
   Audio: 'readonly',
-  // 语音输入：shared/hear 在渲染端开 16kHz 采集上下文（经 shared-core.js 进 bundle）
+  // Voice input: shared/hear Open 16 kHz collection context in renderer (enter bundle via shared-core.js)
   AudioContext: 'readonly',
   Image: 'readonly',
   getComputedStyle: 'readonly',
@@ -58,8 +60,9 @@ const browserGlobals = {
 };
 
 /**
- * 脚本之间共享的顶层全局：定义在 constants.js（配置与常量）、sprite.js（类与提示）、
- * events.js（轮询循环）。定义处见各文件；这里只登记名字，不重复它们的值。
+ * Top-level globals shared between scripts: defined in constants.js (configuration and constants), sprite.js (classes
+ * and prompts), events.js (polling loop). See each file for definition; only names are registered here, their values
+ * are not repeated.
  */
 const scriptGlobals = {
   // constants.js

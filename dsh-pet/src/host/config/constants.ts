@@ -1,52 +1,63 @@
 /**
- * 配置领域常量与共享类型：取值域（角落、显示档、字号）与配置路径集。
+ * Configuration field constants and shared types: value fields (corners, display files, font sizes) and configuration
+ * path sets.
  *
- * 不负责读写与校验；校验函数从这里取枚举集合，避免各写一份。
- * 必须始终成立：取值域与 shared/types 的联合类型一一对应，改一处必须同步另一处。
+ * It is not responsible for reading, writing and verification; the verification function takes the enumeration set
+ * from here to avoid writing one copy each. It must always be true: the value range corresponds to the union type of
+ * shared/types one-to-one, and changing one must synchronize the other.
  * @module dsh-pet/src/host/config/constants
  */
 import { FONT_PRESETS } from '../../shared/fonts.ts';
 import { PET_DISPLAYS } from '../../shared/config.ts';
 import { defaultLog } from '../log-file.ts';
 
-/** 位置角落白名单 */
+/** Location corner whitelist */
 const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 
 export const CORNER_SET: ReadonlySet<string> = new Set(CORNERS);
 
-/** display 白名单（导出：宿主路由 POST /pet-display 写单只宠物的显示位置时复用同一份枚举）。
- *  唯一来源是 shared/config 的 PET_DISPLAYS，读写两侧必须同一份规则，不在路由里另写一个 Set。 */
+/**
+ * display whitelist (export: host route POST /pet-display reuse the same enumeration when writing the display
+ * position of a single pet). The only source is PET_DISPLAYS of shared/config. The rules for reading and writing must
+ * be the same on both sides. Do not write another Set in the route.
+ */
 export const PET_DISPLAY_SET: ReadonlySet<string> = new Set(PET_DISPLAYS);
 
-/** font.family 白名单：唯一来源是 shared/fonts 的 FONT_PRESETS，宿主只取 id 做校验。 */
+/** font.family whitelist: The only source is FONT_PRESETS from shared/fonts, and the host only takes id for verification. */
 export const FONT_FAMILY_SET: ReadonlySet<string> = new Set(FONT_PRESETS.map((preset) => preset.id));
 
-/** id 禁用的字符（Windows 文件名保留符 + 控制字符，防配置值逃逸文件路径）。
- *  同时被 thumb 路由的 petId 校验复用：那里同样是「标识符不得当路径片段」。 */
-// eslint-disable-next-line no-control-regex -- 正则的用途就是拦 \x00-\x1f 控制字符（防配置值逃逸路径），去掉匹配等于放行
+/**
+ * id disabled character (Windows file name retention character + control character, to prevent configuration value
+ * escape file path). At the same time, the petId check of the thumb route reuse: there is also "the identifier is not
+ * suitable for the path fragment".
+ */
+// eslint-disable-next-line no-control-regex -- Reject ASCII control characters to prevent configuration values from escaping their paths.
 export const ID_FORBIDDEN = /[\\/:\x00-\x1f]/;
 
-/** 标识符的最大长度：id 与素材根都会落成目录名，超长在部分文件系统上直接建不出来。 */
+/** The maximum length of the identifier: id and the asset root will be completed as directory names. If the identifier is too long, it cannot be created directly on some file systems. */
 export const MAX_PET_ID_LENGTH = 64;
 
 /**
- * 标识符能不能当路径片段用：非空、≤{@link MAX_PET_ID_LENGTH} 字符、不含分隔符与保留字符。
+ * Can identifiers be used as path fragments: non-empty, ≤{@link MAX_PET_ID_LENGTH} character, no delimiter and
+ * reserved character.
  *
- * 宠物 id、表情包素材根、thumb 的 petId 共用这一条——三者最后都拼进文件路径，
- * 分开各写一份就会出现「一处拦、另一处放行」。合法名含中文照常（用非法字符类而非 ASCII 白名单）。
+ * Pet id, emoticon asset root, and thumb's petId share this one - all three are finally spelled into the file path. If
+ * you write one separately, "one block will be blocked and the other will be allowed." The valid name contains Chinese
+ * characters as usual (use invalid character class instead of ASCII whitelist).
  */
 export function isValidPetId(value: string): boolean {
-  // '.' 与 '..' 没有禁用字符，但作为目录名会把素材根顶到上一层：单列出来拦掉。
+  // '.' and '..' do not disable character , but as a directory name, the asset root will be pushed to the upper level: single listing will block it.
   if (value === '.' || value === '..') return false;
   return value !== '' && value.length <= MAX_PET_ID_LENGTH && !ID_FORBIDDEN.test(value);
 }
 
 /**
- * 「全局默认 + 种类可覆盖」的顶层字段白名单：这些是用户级成本 / 偏好 / 环境 / 节奏参数
- * （chatMemoryRounds、两个模型、两个配图开关、对话动作联动开关与张数上限、eventsRefreshSec、
- * physics、confineToScreen、font、animationWeights），
- * 不是「这个种类长什么样」，所以用户层写一次应对所有条目生效；种类文件仍可在自己顶层覆盖。
- * 人设是例外：实例级 pets[].whisperPrompt 优先，回落由消费端做（./persona 的 petPersona）。
+ * Top-level field whitelist of "Global Default + Type Overridable": These are user-level
+ * cost/preference/environment/pacing parameters (chatMemoryRounds, two models, two map switches, dialogue action
+ * linkage switch and upper limit of number of pictures, eventsRefreshSec, physics, confineToScreen, font,
+ * animationWeights), It's not "what does this category look like", so writing it once at the user level should take
+ * effect for all entries; the category file can still be overwritten at its own top level. Persona is the exception:
+ * instance-level pets[]. whisperPrompt takes precedence, fallback is done by consumer (./persona of petPersona).
  */
 export const GLOBAL_DEFAULT_KEYS = [
   'physics',
@@ -70,7 +81,7 @@ export const GLOBAL_DEFAULT_KEYS = [
   'eventsRefreshSec',
 ] as const;
 
-/** 已告警过的 文件:字段（进程内去重：同一问题只告警一次，避免每请求刷屏；重启重置） */
+/** Files that have been alerted: field (in-process deduplicate: only alert once for the same problem, to avoid refreshing the screen with each request; restart and reset) */
 const warnedKeys = new Set<string>();
 
 export function warnOnce(key: string, message: string): void {
@@ -79,14 +90,14 @@ export function warnOnce(key: string, message: string): void {
   defaultLog('warn', 'dsh-pet: ' + message);
 }
 
-/** 配置路径集（宿主组装好后传入，单一事实来源） */
+/** Configuration path set (host is passed in after assembly, single source of truth) */
 export interface ConfigPaths {
-  /** 包内 assets/config.jsonc（内置默认，绝对正确） */
+  /** assets/config.jsonc in the package (built-in default, absolutely correct) */
   defaultFile: string;
-  /** ~/.dsh/dsh-pet/main-config.jsonc（用户主配置，可编辑层；JSONC——允许注释） */
+  /** ~/. dsh/dsh-pet/main-config.jsonc (user main configuration, editable layer; JSONC - comments allowed) */
   userFile: string;
-  /** 旧路径 ~/.dsh/dsh-pet/main-config.json：读取回落 + 启动时迁移（见 migrateUserConfig） */
+  /** Old path ~/. dsh/dsh-pet/main-config.json: read fallback + migration at startup (see migrateUserConfig) */
   legacyUserFile?: string;
-  /** ~/.dsh/dsh-pet/pet（文件宠物目录） */
+  /** ~/.dsh/dsh-pet/pet (file pet directory) */
   petDir: string;
 }

@@ -1,9 +1,10 @@
 /**
- * 快捷键注册的契约：命令长什么样、默认键位、触发后是否真的打开、服务缺失怎么降级。
+ * The contract of shortcut key register: what the command looks like, the default key position, whether it is really
+ * opened after being triggered, and how to downgrade if the service is missing.
  *
- * 不渲染界面，也不依赖真实键盘服务。
+ * Does not render the interface and does not rely on real keyboard services.
  *
- * 跑法：node --experimental-strip-types --test src/client/chat/shortcut.test.ts
+ * Running method: node --experimental-strip-types --test src/client/chat/shortcut.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,10 +12,10 @@ import assert from 'node:assert/strict';
 import { keycapOf } from '../app-shortcut.ts';
 import { PET_CHAT_COMMAND_ID, petChatShortcutKeycap, registerPetChatShortcut } from './shortcut.ts';
 
-/** 标题的假翻译；测试只关心它是不是惰性调用。 */
+/** Fake translation of title; test only cares if it is a lazy call. */
 const LABEL = '打开桌宠对话';
 
-/** 一次注册的完整命令（断言用）。 */
+/** A complete command of register (for assertion). */
 interface Registered {
   id: string;
   label: () => string;
@@ -23,7 +24,7 @@ interface Registered {
   resolve: () => { status: string; run?: () => void };
 }
 
-/** 假上下文：记录注册与注销。 */
+/** False context: logging register and logout. */
 function makeHost(hasService: boolean) {
   const state: { command?: Registered; disposed: number } = { disposed: 0 };
   const ctx = {
@@ -42,8 +43,8 @@ function makeHost(hasService: boolean) {
   return { ctx, state };
 }
 
-describe('registerPetChatShortcut —— 打开对话的快捷键', () => {
-  test('服务可用 → 用固定 id 注册，默认 Ctrl+Shift+P（primary 在 macOS 展开为 Command）', () => {
+describe('registerPetChatShortcut - shortcut key to open a conversation', () => {
+  test('Service available → Use fixed id register, default Ctrl + Shift + P (primary expands to Command in macOS)', () => {
     const host = makeHost(true);
     const result = registerPetChatShortcut(
       host.ctx,
@@ -56,7 +57,7 @@ describe('registerPetChatShortcut —— 打开对话的快捷键', () => {
     assert.deepEqual(host.state.command?.defaults['desktop:macos'], { code: 'KeyP', modifiers: ['primary', 'shift'] });
   });
 
-  test('触发命令 → 调用传入的打开动作', () => {
+  test('Trigger command → call the incoming open action', () => {
     const host = makeHost(true);
     let opened = 0;
     registerPetChatShortcut(
@@ -72,7 +73,7 @@ describe('registerPetChatShortcut —— 打开对话的快捷键', () => {
     assert.equal(opened, 1);
   });
 
-  test('标题惰性求值：切语言后取到的是新文案', () => {
+  test('Lazy evaluation of title: after switching the language, the new copy is obtained', () => {
     const host = makeHost(true);
     let label = '打开桌宠对话';
     registerPetChatShortcut(
@@ -82,10 +83,10 @@ describe('registerPetChatShortcut —— 打开对话的快捷键', () => {
     );
     assert.equal(host.state.command?.label(), '打开桌宠对话');
     label = 'Open pet chat';
-    assert.equal(host.state.command?.label(), 'Open pet chat', '不能把第一次的结果缓存下来');
+    assert.equal(host.state.command?.label(), 'Open pet chat', 'The first result cannot be cached');
   });
 
-  test('注销透传给快捷键服务', () => {
+  test('Log out of transparent transmission shortcut key service', () => {
     const host = makeHost(true);
     registerPetChatShortcut(
       host.ctx,
@@ -95,7 +96,7 @@ describe('registerPetChatShortcut —— 打开对话的快捷键', () => {
     assert.equal(host.state.disposed, 1);
   });
 
-  test('服务缺失 → 不注册、不抛，回报 registered=false', () => {
+  test('Missing service → No register, no throw, return registered = false', () => {
     const host = makeHost(false);
     const result = registerPetChatShortcut(
       host.ctx,
@@ -107,7 +108,7 @@ describe('registerPetChatShortcut —— 打开对话的快捷键', () => {
     assert.doesNotThrow(() => result.dispose());
   });
 
-  test('注册被拒（抛错）→ 回报 registered=false，不向上抛', () => {
+  test('register rejected (wrong throw) → return registered = false, no upward throw', () => {
     const ctx = {
       get: () => ({
         register: () => {
@@ -125,8 +126,8 @@ describe('registerPetChatShortcut —— 打开对话的快捷键', () => {
   });
 });
 
-describe('petChatShortcutKeycap —— 侧栏对话的键帽', () => {
-  test('用户改绑后跟着变', () => {
+describe('petChatShortcutKeycap - Keycaps for sidebar dialogue', () => {
+  test('After the user changes the binding, the change will follow.', () => {
     const ctx = {
       get: () => ({
         catalog: {
@@ -138,7 +139,7 @@ describe('petChatShortcutKeycap —— 侧栏对话的键帽', () => {
     assert.equal(petChatShortcutKeycap(ctx), 'Ctrl+Alt+J');
   });
 
-  test('目录里没有这一条 / 服务缺失 → 退回默认组合', () => {
+  test('There is no such item in the directory/Service is missing → Return to the default combination', () => {
     const expected = keycapOf({ code: 'KeyP', modifiers: ['primary', 'shift'] });
     assert.equal(petChatShortcutKeycap({ get: () => ({ catalog: { getSnapshot: () => [] } }) }), expected);
     assert.equal(petChatShortcutKeycap({ get: () => undefined }), expected);

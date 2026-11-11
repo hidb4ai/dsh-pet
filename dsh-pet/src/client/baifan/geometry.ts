@@ -1,62 +1,65 @@
 /**
- * 「吃白饭」的几何换算：把实况中心点换成脚底、嘴与地面线（全部视口像素）。
+ * "Freeloader" geometric conversion: replace the live center point with the soles of the feet, mouth and ground line
+ * (all viewport pixels).
  *
- * 纯函数 + 一个量距缓存；不碰接口、不写 DOM，调用方给什么位置就按什么算。
+ * Pure function + a distance cache; no interfaces are touched, no DOM is written, and the position given by the caller
+ * is calculated.
  * @module dsh-pet/src/client/baifan/geometry
  */
 import { CFG } from './constants.ts';
 
-/** 量距缓存：上一次在 DOM 里量到的精灵盒子。 */
+/** Measuring distance cache: The last elf box measured in DOM. */
 export interface SpriteBox {
-  /** 精灵渲染宽（像素）。 */
+  /** Sprite rendering width (pixels). */
   w: number;
-  /** 精灵渲染高（像素）。 */
+  /** Sprite rendering high (pixels). */
   h: number;
 }
 
-/** 由实况算出的这一帧几何量（全部视口像素）。 */
+/** The geometry of this frame (all viewport pixels) calculated from the real scene. */
 export interface Geometry {
-  /** 中心点视口 x。 */
+  /** Center point viewport x. */
   cx: number;
-  /** 中心点视口 y。 */
+  /** Center point viewport y. */
   cy: number;
-  /** 精灵盒宽。 */
+  /** Width of elf box. */
   w: number;
-  /** 真正画出来的内容高（按 16:9 从盒子里裁出来）。 */
+  /** The actual drawn content is tall (cropped from the box at 16:9). */
   h: number;
-  /** 内容区顶边。 */
+  /** Top edge of content area. */
   top: number;
-  /** 脚底 y。 */
+  /** Sole of foot y. */
   feet: number;
-  /** 嘴 y。 */
+  /** Mouth y. */
   mouthY: number;
-  /** 相对基准宽的缩放。 */
+  /** Scaling relative to base width. */
   scale: number;
 }
 
-/** 实况：归一化中心点与朝向。 */
+/** Live: Normalized center point and orientation. */
 export interface Pose {
-  /** 归一化中心 x（0–1）。 */
+  /** Normalized center x (0–1). */
   x: number;
-  /** 归一化中心 y（0–1）。 */
+  /** Normalized center y (0–1). */
   y: number;
-  /** 朝向。 */
+  /** Orientation. */
   facing: 'left' | 'right';
 }
 
-/** 归一化坐标夹到 0–1（窗口极小时算出来的值会越界）。 */
+/** The normalized coordinates are clamped to 0–1 (the calculated value will be out of bounds when the window is extremely small). */
 export const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 /**
- * 量精灵盒子。
+ * Measure the elf box.
  *
- * 优先找**正压在实况中心点上的那段 `<video>`**（渲染端把宠物画成 video），它的 rect
- * 就是角色真实占位——这样不必猜 size 是宽还是高。找不到就退回上次量到的值，再不行按 16:9 兜底。
+ * First look for the `<video>` that is pressing on the center point of the live scene (the renderer draws the pet as
+ * video), and its rect is the real position of the character - so you don't have to guess whether size is wide or
+ * high. If it cannot be found, return to the last measured value. If it still fails, press 16:9 fallback.
  *
- * @param cx - 中心点视口 x。
- * @param cy - 中心点视口 y。
- * @param last - 上一次量到的盒子（可能还没量过）。
- * @returns 本次量到的盒子。
+ * @param cx - center point viewport x.
+ * @param cy - center point viewport y.
+ * @param last - The last measured box (may not have been measured yet).
+ * @returns The box measured this time.
  */
 export function spriteBox(cx: number, cy: number, last: SpriteBox): SpriteBox {
   let best: DOMRect | null = null;
@@ -76,14 +79,16 @@ export function spriteBox(cx: number, cy: number, last: SpriteBox): SpriteBox {
 }
 
 /**
- * 由实况算出这一帧的几何量。
+ * Calculate the geometric quantity of this frame from the real situation.
  *
- * 素材是 16:9，但渲染端容器不一定也是 16:9（可能正方形、也可能带内边距），那时角色在容器里
- * 是**带黑边的**。所以先按 16:9 裁出真正画出来的那块，再算脚底和嘴——否则脚底会算低，角色被下沿切掉半截。
+ * The asset is 16:9, but the renderer container is not necessarily 16:9 (it may be square, or it may have inner
+ * margins). At that time, the character in the container will be **with black borders**. So first cut out the actual
+ * drawn piece at 16:9, and then count the soles of the feet and the mouth - otherwise the soles of the feet will be
+ * counted low and half of the character will be cut off by the lower edge.
  *
- * @param pose - 实况。
- * @param box - 精灵盒子。
- * @returns 这一帧的几何量。
+ * @param pose - Live.
+ * @param box - Elf Box.
+ * @returns The geometric quantity of this frame.
  */
 export function geometry(pose: Pose, box: SpriteBox): Geometry {
   const cx = pose.x * window.innerWidth;
@@ -103,14 +108,14 @@ export function geometry(pose: Pose, box: SpriteBox): Geometry {
   };
 }
 
-/** 地面线（视口像素，米饭底边落在这儿）。 */
+/** Ground line (viewport pixels, where the bottom edge of the rice falls). */
 export const groundLine = (): number => window.innerHeight - CFG.groundOffset;
 
 /**
- * 让脚底落在地面线时，中心点该在哪个归一化 y。
+ * When the sole of the foot falls on the ground line, where should the center point be at the normalized y.
  *
- * @param geom - 当前几何量。
- * @returns 归一化 y。
+ * @param geom - Current geometric quantity.
+ * @returns normalized y.
  */
 export function bottomNormY(geom: Geometry): number {
   return clamp01((groundLine() - (geom.feet - geom.cy)) / window.innerHeight);

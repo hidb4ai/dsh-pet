@@ -1,5 +1,5 @@
 /**
- * 宠物页的共享类型：注入的 react 能力与拍平后的成品宠物实例。
+ * The sharing type of the pet page: the injected react ability and the finished pet instance after being flattened.
  * @module dsh-pet/src/client/pet/types
  */
 import type { Animations, Pet, PhysicsParams, Weights } from '../../shared/types.ts';
@@ -7,7 +7,7 @@ import type * as ReactNS from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { jsx } from 'react/jsx-runtime';
 
-/** 运行期宠物：拍平后的成品实例，条目级字段已补齐且必填。 */
+/** Runtime pet: the resolved value instance after being flattened, the entry-level fields have been completed and are required. */
 export type RuntimePet = Pet & {
   animations: Animations;
   animationWeights: Weights;
@@ -15,14 +15,14 @@ export type RuntimePet = Pet & {
   physics: PhysicsParams;
 };
 
-/** 注入的 react 能力：由模块工厂提供，本目录不直接 import react 运行时。 */
+/** Injected react capabilities: Provided by the module factory, this directory does not directly import react runtime. */
 export interface PetRuntime {
-  /** 创建元素。 */
+  /** Create element. */
   h: typeof jsx;
-  /** 状态。 */
+  /** Status. */
   useState: <T>(init: T) => [T, Dispatch<SetStateAction<T>>];
-  /** 副作用。 */
+  /** side effect. */
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
-  /** 引用。 */
+  /** Quote. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }

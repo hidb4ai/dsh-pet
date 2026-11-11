@@ -1,18 +1,20 @@
 /**
- * 语音输入的纯逻辑契约：WAV 头逐字节、PCM 转换、静音判定、base64 与失败归类。
+ * Pure logical contract for voice input: WAV header by bytes, PCM conversion, silence determination, base64 and
+ * failure classification.
  *
- * 为什么钉这么细：宿主 provider 对 WAV 的校验是逐字段的（`fmt ` 长度、PCM=1、单声道、
- * 16kHz、byteRate 自洽），错一个字段就整段音频被拒；而这类错误在界面上只表现为「没听清」，
- * 根本看不出是头写错了。录音本身（getUserMedia）没法在 Node 里跑，见文件末尾说明。
+ * Why is the nail so thin: host provider checks WAV field by field (`fmt ` length, PCM =1, mono, 16 kHz, byteRate
+ * self-consistent). If one field is wrong, the entire audio will be rejected; and this type of error only appears as
+ * "didn't hear clearly" on the interface, and it is impossible to tell that the header is written incorrectly. The
+ * recording itself (getUserMedia) cannot be run in Node, please see the instructions at the end of the file.
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { HEAR_SAMPLE_RATE, encodeWave, floatToPcm16, hearAudio, peakOf, toBase64 } from './hear.ts';
 
-/** 从字节里取一段 ASCII 标记，按 WAV 头的 4 字节块比对。 */
+/** Take a ASCII mark from bytes and compare it according to the 4 bytes block of the WAV header. */
 function tag(bytes: Uint8Array, offset: number): string {
   let text = '';
   for (let i = offset; i < offset + 4; i++) text += String.fromCharCode(bytes[i]);
@@ -20,7 +22,7 @@ function tag(bytes: Uint8Array, offset: number): string {
 }
 
 describe('encodeWave', () => {
-  test('44 字节头逐字段符合宿主校验口径', () => {
+  test('44 bytes header field by field conforms to host verification conventions', () => {
     const pcm = Int16Array.from([0, 1000, -1000]);
     const wave = encodeWave(pcm);
     const view = new DataView(wave.buffer);
@@ -29,33 +31,33 @@ describe('encodeWave', () => {
     assert.equal(tag(wave, 8), 'WAVE');
     assert.equal(tag(wave, 12), 'fmt ');
     assert.equal(tag(wave, 36), 'data');
-    assert.equal(view.getUint32(16, true), 16, 'fmt 块长度必须是 16');
-    assert.equal(view.getUint16(20, true), 1, '格式必须是 PCM');
-    assert.equal(view.getUint16(22, true), 1, '必须单声道');
-    assert.equal(view.getUint32(24, true), HEAR_SAMPLE_RATE, '必须 16kHz');
-    assert.equal(view.getUint32(28, true), HEAR_SAMPLE_RATE * 2, 'byteRate 必须与采样率自洽');
-    assert.equal(view.getUint16(32, true), 2, 'blockAlign = 声道 × 位深/8');
-    assert.equal(view.getUint16(34, true), 16, '必须 16bit');
+    assert.equal(view.getUint32(16, true), 16, 'fmt block length must be 16');
+    assert.equal(view.getUint16(20, true), 1, 'The format must be PCM');
+    assert.equal(view.getUint16(22, true), 1, 'Must be mono');
+    assert.equal(view.getUint32(24, true), HEAR_SAMPLE_RATE, 'Required 16 kHz');
+    assert.equal(view.getUint32(28, true), HEAR_SAMPLE_RATE * 2, 'byteRate must be consistent with the sampling rate');
+    assert.equal(view.getUint16(32, true), 2, 'blockAlign = channel × bit depth/8');
+    assert.equal(view.getUint16(34, true), 16, 'Required 16 bit');
   });
 
-  test('两处长度自洽，且样本原样写回', () => {
+  test('The two lengths are self-consistent, and the sample is written back as it is.', () => {
     const pcm = Int16Array.from([0, 1, -1, 32767, -32768]);
     const wave = encodeWave(pcm);
     const view = new DataView(wave.buffer);
 
-    assert.equal(view.getUint32(4, true), 36 + pcm.length * 2, 'RIFF 长度 = 36 + 数据长度');
+    assert.equal(view.getUint32(4, true), 36 + pcm.length * 2, 'RIFF length = 36 + data length');
     assert.equal(view.getUint32(40, true), pcm.length * 2);
     assert.equal(wave.byteLength, 44 + pcm.length * 2);
     for (let i = 0; i < pcm.length; i++) {
-      assert.equal(view.getInt16(44 + i * 2, true), pcm[i], `第 ${i} 个样本`);
+      assert.equal(view.getInt16(44 + i * 2, true), pcm[i], `${i} sample`);
     }
   });
 
-  test('一个样本时也有 46 字节（宿主要求最短 46，空音频会被拒）', () => {
+  test('One sample also has 46 bytes (the host requires a minimum of 46, and empty audio will be rejected)', () => {
     assert.equal(encodeWave(Int16Array.from([0])).byteLength, 46);
   });
 
-  test('采样率可换，byteRate 跟着变', () => {
+  test('The sampling rate can be changed, byteRate changes accordingly', () => {
     const wave = encodeWave(Int16Array.from([0]), 8000);
     assert.equal(new DataView(wave.buffer).getUint32(24, true), 8000);
     assert.equal(new DataView(wave.buffer).getUint32(28, true), 16000);
@@ -63,20 +65,20 @@ describe('encodeWave', () => {
 });
 
 describe('floatToPcm16', () => {
-  test('正负半轴分别按 32767 / 32768 缩放，超范围夹紧', () => {
+  test('The positive and negative half axes are scaled by 32767 / 32768 respectively, and the clamping is out of range.', () => {
     const out = floatToPcm16(Float32Array.from([0, 1, -1, 0.5, -0.5, 2, -2]));
     assert.equal(out[0], 0);
     assert.equal(out[1], 32767);
     assert.equal(out[2], -32768);
     assert.equal(out[3], 16383);
     assert.equal(out[4], -16384);
-    assert.equal(out[5], 32767, '大于 1 夹到 1');
-    assert.equal(out[6], -32768, '小于 -1 夹到 -1');
+    assert.equal(out[5], 32767, 'Greater than 1 clipped to 1');
+    assert.equal(out[6], -32768, 'Less than -1 Clamped to -1');
   });
 });
 
 describe('peakOf', () => {
-  test('全零是 0，满幅是 1，负数取绝对值', () => {
+  test('All zeros are 0, full width is 1, negative numbers take the absolute value', () => {
     assert.equal(peakOf(new Int16Array(128)), 0);
     assert.equal(peakOf(Int16Array.from([-32768, 0, 1])), 1);
     assert.equal(peakOf(Int16Array.from([0, 16384, -16384])), 0.5);
@@ -84,18 +86,18 @@ describe('peakOf', () => {
 });
 
 describe('toBase64', () => {
-  test('与 Buffer 逐字节一致（跨过分段边界）', () => {
+  test('Consistent bytes with Buffer (across segment boundaries)', () => {
     const bytes = new Uint8Array(8192 * 2 + 3);
     for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 37) % 256;
     assert.equal(toBase64(bytes), Buffer.from(bytes).toString('base64'));
   });
 
-  test('空字节给空串', () => {
+  test('Empty bytes gives empty string', () => {
     assert.equal(toBase64(new Uint8Array(0)), '');
   });
 });
 
-/** 用桩替换全局 fetch，收集请求体。 */
+/** Replace the global fetch with a stub and collect the request body. */
 function stubFetch(make: () => Response): { bodies: string[]; urls: string[]; restore: () => void } {
   const bodies: string[] = [];
   const urls: string[] = [];
@@ -114,25 +116,25 @@ function stubFetch(make: () => Response): { bodies: string[]; urls: string[]; re
   };
 }
 
-/** 造一个 JSON 响应。 */
+/** Create a JSON response. */
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
 describe('hearAudio', () => {
-  test('成功：请求体只有 audio，文字原样返回（含空串）', async () => {
+  test('Success: The request body is only audio, and the text is returned as is (including the empty string)', async () => {
     const stub = stubFetch(() => json({ ok: true, text: '你好' }));
     try {
       const outcome = await hearAudio('http://127.0.0.1/dsh-pet-7340/voice/hear', 'AAAA');
       assert.deepEqual(outcome, { ok: true, text: '你好' });
       assert.equal(stub.urls[0], 'http://127.0.0.1/dsh-pet-7340/voice/hear');
-      assert.deepEqual(JSON.parse(stub.bodies[0]), { audio: 'AAAA' }, '不许顺手多发 language 之类字段');
+      assert.deepEqual(JSON.parse(stub.bodies[0]), { audio: 'AAAA' }, 'Do not send fields such as language easily');
     } finally {
       stub.restore();
     }
   });
 
-  test('空串也算成功（这段里没人说话是合法结论，不是错误）', async () => {
+  test('An empty string is also considered a success (no one speaks in this paragraph, which is a valid conclusion, not an error)', async () => {
     const stub = stubFetch(() => json({ ok: true, text: '' }));
     try {
       assert.deepEqual(await hearAudio('http://x/voice/hear', 'AAAA'), { ok: true, text: '' });
@@ -141,7 +143,7 @@ describe('hearAudio', () => {
     }
   });
 
-  test('宿主说 unsupported / bad-request 时原样带回', async () => {
+  test('When the host says unsupported / bad-request, it is brought back as it is', async () => {
     for (const reason of ['unsupported', 'bad-request']) {
       const stub = stubFetch(() => json({ ok: false, reason, message: '原因' }));
       try {
@@ -153,7 +155,7 @@ describe('hearAudio', () => {
     }
   });
 
-  test('不认识的 reason 收敛成 generate-error，message 缺失给空串', async () => {
+  test('Unknown reason converges to generate-error, and message is missing to the empty string', async () => {
     const stub = stubFetch(() => json({ ok: false, reason: 'locked' }));
     try {
       assert.deepEqual(await hearAudio('http://x/voice/hear', 'AAAA'), {
@@ -166,7 +168,7 @@ describe('hearAudio', () => {
     }
   });
 
-  test('响应不是 JSON 时算网络失败，不抛异常', async () => {
+  test('When the response is not JSON, it is considered a network failure and no exception is thrown.', async () => {
     const stub = stubFetch(() => new Response('<html>502</html>', { status: 502 }));
     try {
       const outcome = await hearAudio('http://x/voice/hear', 'AAAA');
@@ -177,7 +179,7 @@ describe('hearAudio', () => {
     }
   });
 
-  test('fetch 自己抛错也收敛成网络失败', async () => {
+  test('fetch even throws an error and converges to a network failure.', async () => {
     const original = globalThis.fetch;
     globalThis.fetch = (async () => {
       throw new Error('ECONNREFUSED');
@@ -191,6 +193,6 @@ describe('hearAudio', () => {
   });
 });
 
-// startRecording / canRecord 不在这里测：它们只做 getUserMedia + AudioContext 的接线，
-// 在 Node 里没有对应实现，mock 出来也只是在测 mock。真实链路由桌面端的一次性探针跑
-// （加载 shared-core.js → 按住 → 录 → 打到宿主 /voice/hear），见提交说明。
+// startRecording / canRecord are not tested here: they only do the wiring of getUserMedia + AudioContext, and there is
+// no corresponding implementation in Node. mock is only tested for mock. A one-time probe run of the real link route
+// on the desktop (load shared-core.js → press and hold → record → hit host / voice/hear), see submission instructions.

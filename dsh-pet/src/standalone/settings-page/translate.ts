@@ -1,16 +1,19 @@
 /**
- * 独立模式设置页的文案翻译：按与宿主相同的 `{name}` 规则替换占位符。
+ * Copy translation for standalone mode settings page: replace placeholders by the same `{name}` rules as host.
  *
- * 宿主侧由 `ctx.locale.bind(NS)` 提供翻译，独立环境没有 locale 服务，
- * 这里用包内字典自建；页面固定中文（见 chrome.ts 的 `lang="zh-CN"`），字典取 `zh`。
+ * `ctx.locale.bind(NS)` provides translation on the host side. There is no locale service in the independent
+ * environment. Here, a self-built dictionary is used in the package; the page is fixed in Chinese (see `lang="zh-CN"`
+ * of chrome.ts), and the dictionary is `zh` .
  * @module dsh-pet/src/standalone/settings-page/translate
  */
 
 /**
- * 造翻译函数。
+ * Create a translation function.
  *
- * @param dict - 键到文案的字典；键集由传入字典决定，调用方传 `zh` 时即为面板的完整键集。
- * @returns 按键取文案的翻译函数；缺省参数时原样返回，缺失的参数替换为空串。
+ * @param dict - a dictionary of keys to copy; the key set is determined by the incoming dictionary. When the caller
+ * passes `zh` , it is the complete key set of the panel.
+ * @returns is a translation function that retrieves text by pressing a key; it returns the default parameters as they
+ * are, and replaces missing parameters with empty strings.
  */
 export function createTranslator<K extends string>(
   dict: Readonly<Record<K, string>>,

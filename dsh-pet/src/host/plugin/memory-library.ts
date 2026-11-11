@@ -1,4 +1,4 @@
-/** 宠物记忆管理：只使用本机保存的服务与 scope，禁止浏览器指定远端地址。 */
+/** Pet memory management: Only use locally saved services and scope, and prohibit the browser from specifying remote addresses. */
 import { findPetInstance, readAllConfig, type ConfigPaths } from '../config.ts';
 import { chatMemoryConfigValid } from '../../shared/chat-memory-config.ts';
 import { PowerContextClient, memoryTarget, type MemoryEntryState } from '../powercontext.ts';
@@ -13,7 +13,7 @@ export function createPetMemoryLibrary(deps: {
     const found = findPetInstance(readAllConfig(deps.configPaths), petId);
     if (!found || !chatMemoryConfigValid(found.conf.chatMemory)) throw new Error('memory_disabled');
     const config = found.conf.chatMemory;
-    // 暂停采集后仍能管理同一服务已保存的记忆。
+    // Saved memories of the same service can still be managed after pausing collection.
     const state = (await deps.readMemory())[found.entry]?.[petId]?.powercontext?.[memoryTarget(config)];
     return { client: new PowerContextClient(config), scope: state?.scopeId };
   };
@@ -28,7 +28,7 @@ export function createPetMemoryLibrary(deps: {
       return client.inspectMemory(scope, id);
     },
     async changeMemory(petId: string, change: MemoryChange): Promise<void> {
-      // 结束当前对话后再更正/遗忘，避免仍在生成中的旧召回晚于成功提示出现。
+      // End the current conversation before correcting/forgetting to avoid the old recall that is still being generated from appearing later than the success prompt.
       await deps.withLock(async () => {
         const { client, scope } = await resolve(petId);
         if (!scope) throw new Error('memory_not_found');

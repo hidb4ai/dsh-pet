@@ -1,39 +1,41 @@
 /**
- * 操作区：保存、同步、测试通知三个按钮，以及两处反馈（保存 / 同步结果与测试通知结果分开）。
- * 「同步」会把内置默认整份覆盖用户层，副作用说明收进问号；反馈只在有内容时出现，不占位。
+ * Operation area: three buttons for save, sync, and test notification, as well as two places of feedback (save/sync
+ * results and test notification results are separate). "Synchronization" will cover the entire built-in default in the
+ * user layer, and the side effect description will be included in the question mark; feedback will only appear when
+ * there is content and will not occupy space.
  * @module dsh-pet/src/client/settings/actions
  */
 import type { FunctionComponent } from 'react';
 import type { SettingsRuntime } from './runtime.ts';
 import { makeUiKit } from './ui.ts';
 
-/** 一处反馈：文案与是否错误。 */
+/** One piece of feedback: the text and whether it is wrong. */
 export interface Feedback {
   kind: 'ok' | 'err' | '';
   text: string;
 }
 
-/** 操作区的输入。 */
+/** Input in the operating area. */
 export interface ActionsProps {
-  /** 保存中或配置未就绪时禁用保存与同步。 */
+  /** Saving and synchronization are disabled while saving or the configuration is not ready. */
   busy: boolean;
-  /** 保存 / 同步的结果。 */
+  /** Save/synchronize results. */
   msg: Feedback;
-  /** 测试通知的结果。 */
+  /** Test notification results. */
   permMsg: Feedback;
-  /** 保存全部配置。 */
+  /** Save all configurations. */
   onSave: () => void;
-  /** 请求同步（会先弹确认）。 */
+  /** Request synchronization (will confirm first). */
   onSync: () => void;
-  /** 发一条测试系统通知。 */
+  /** Send a test system notification. */
   onTestNotification: () => void;
 }
 
 /**
- * 造操作区。
+ * Build operating area.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 操作区组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns operating area component.
  */
 export function makeActions(rt: SettingsRuntime): FunctionComponent<ActionsProps> {
   const { h, t } = rt;
@@ -49,7 +51,7 @@ export function makeActions(rt: SettingsRuntime): FunctionComponent<ActionsProps
           disabled: busy,
           onClick: props.onSave,
           className: 'dsh-pet-cfg__btn is-primary',
-          // 悬浮按钮即出快捷键气泡。
+          // The shortcut key bubble pops up from the floating button.
           ...tip(t('saveHotkey')),
           children: t('save'),
         }),
@@ -67,7 +69,7 @@ export function makeActions(rt: SettingsRuntime): FunctionComponent<ActionsProps
           children: t('notifyTest'),
         }),
         q(t('syncHint')),
-        // 两个反馈各归各的：msg 是保存 / 同步结果，permMsg 是测试通知结果。
+        // The two feedbacks belong to their respective fields: msg is the save/synchronization result, and permMsg is the test notification result.
         msg.text
           ? h('span', {
               className: 'dsh-pet-cfg__msg' + (msg.kind === 'err' ? ' is-err' : ''),

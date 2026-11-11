@@ -1,15 +1,18 @@
 /**
- * 宿主半侧的 HTTP 管道：素材路径校验、文件/JSON/文本应答、请求体收集、MIME 映射与图片类型判定。
+ * Host side's HTTP pipeline: asset path verification, file/JSON/text response, request body collection, MIME mapping
+ * and image type determination.
  *
- * 只做协议层的事：不判断业务、不读配置、不碰状态；路由层（./routes）决定应答什么，这里决定怎么落盘。
- * 必须始终成立：素材路径一律经 resolveAsset 限定在给定根目录内，任何拼接都不得逃出该根。
+ * It only does things at the protocol layer: it does not judge the business, does not read the configuration, and does
+ * not touch the status; the route layer (./routes) decides what to respond, and here it is decided how to persist to
+ * disk. Must always be true: asset paths are always restricted to a given root directory via resolveAsset, and no
+ * concatenates are allowed to escape from this root.
  * @module dsh-pet/src/host/http
  */
 import { createReadStream, existsSync, fstatSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join, normalize, sep } from 'node:path';
 
-/** 不同扩展名对应的 Content-Type 映射 */
+/** Content-Type mapping corresponding to different extensions */
 export const MIME: Record<string, string> = {
   '.webm': 'video/webm',
   '.mov': 'video/quicktime',
@@ -27,18 +30,19 @@ export const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-/** 图片魔数判定需要读到的最大字节数：WebP 要看到第 12 字节。 */
+/** The maximum number of bytes that needs to be read for image magic number determination: WebP needs to see the 12th bytes. */
 export const IMAGE_HEAD_BYTES = 16;
 
 /**
- * 按文件头魔数判定图片类型。
+ * Determine the image type according to the magic number of the file header.
  *
- * 只看前 {@link IMAGE_HEAD_BYTES} 字节，不解析完整图片：调用方要么刚写完校验过的字节，
- * 要么手里没有扩展名可信的文件（附件对象按哈希命名、头像可被用户换成任意格式）。
+ * Only look at the first {@link IMAGE_HEAD_BYTES} bytes, without parsing the complete picture: the caller has either
+ * just finished writing the verified bytes, or does not have a file with a trusted extension (the attachment object is
+ * named according to a hash, and the avatar can be changed to any format by the user).
  *
- * @param header - 文件头缓冲（可能不满 {@link IMAGE_HEAD_BYTES}）。
- * @param size - header 里实际读到的字节数。
- * @returns 图片的 Content-Type；不是 PNG / JPEG / GIF / WebP 之一时返回 undefined。
+ * @param header - File header buffer (may be full of {@link IMAGE_HEAD_BYTES} ).
+ * @param size - The number of bytes actually read in header.
+ * @returns is the Content-Type of the picture; returns undefined if it is not one of PNG / JPEG / GIF / WebP.
  */
 export function imageTypeOf(header: Buffer, size: number): string | undefined {
   if (size >= 8 && header.readUInt32BE(0) === 0x89504e47 && header.readUInt32BE(4) === 0x0d0a1a0a) {
@@ -56,10 +60,10 @@ export function imageTypeOf(header: Buffer, size: number): string | undefined {
 }
 
 /**
- * 图片 Content-Type → 落盘扩展名。
+ * Image Content-Type → persist to disk extension.
  *
- * @param contentType - {@link imageTypeOf} 的返回值。
- * @returns 带点的扩展名；不在支持范围内返回 undefined。
+ * @param contentType - the return value of {@link imageTypeOf} .
+ * @returns Dotted extension; returns undefined if not supported.
  */
 export function imageExtOf(contentType: string): string | undefined {
   if (contentType === 'image/png') return '.png';
@@ -70,8 +74,8 @@ export function imageExtOf(contentType: string): string | undefined {
 }
 
 /**
- * 规范化并校验请求路径，确保它在 assets 根目录内（防路径穿越）。
- * @returns 规范化后的绝对文件路径；非法（穿越）时返回 undefined。
+ * Normalize and verify the request path to ensure it is within the assets root directory (to prevent path traversal).
+ * @returns is the normalized absolute file path; if it is invalid (traveling), undefined is returned.
  */
 export function resolveAsset(root: string, rel: string): string | undefined {
   if (rel.length === 0) return undefined;
@@ -81,26 +85,27 @@ export function resolveAsset(root: string, rel: string): string | undefined {
   return candidate;
 }
 
-/** 在 root 下解析并确认实体存在；非法（穿越）或不存在时返回 undefined */
+/** Parse and confirm the existence of the entity under root; return undefined when it is invalid (travel) or does not exist */
 export function resolveExisting(root: string, rel: string): string | undefined {
   const candidate = resolveAsset(root, rel);
   return candidate && existsSync(candidate) ? candidate : undefined;
 }
 
-/** 单段字节区间（闭区间）。 */
+/** Single segment bytes interval (closed interval). */
 export type ByteRange = { readonly start: number; readonly end: number };
 
-/** Range 判定：命中区间、越界（回 416）、忽略（回整份 200）。 */
+/** Range Judgment: hit range, out of bounds (return to 416), ignore (return to full 200). */
 export type RangeDecision = ByteRange | 'unsatisfiable' | null;
 
 /**
- * 解析单段 `Range` 头。
+ * Parsing single segment `Range` header.
  *
- * 只接受 `bytes=<start>-<end>`、`bytes=<start>-`、`bytes=-<suffix>` 三种单段形式。多段、单位不符、
- * 语法非法返回 null（回整份）；起点越界或 start > end 返回 'unsatisfiable'（回 416）。
- * @param header - 请求头原值，可能为 undefined。
- * @param totalBytes - 文件总字节数；非正数时一律忽略 Range。
- * @returns 闭区间、'unsatisfiable' 或 null。
+ * Only three single-segment forms, `bytes=<start>-<end>` , `bytes=<start>-` and `bytes=-<suffix>` , are accepted. If
+ * there are multiple segments, units do not match, or the syntax is invalid, null (return to the whole copy) will be
+ * returned; if the starting point is out of bounds or start > end, ' unsatisfiable ' (return to 416) will be returned.
+ * @param header - The original value of the request header, which may be undefined.
+ * @param totalBytes - the total number of bytes in the file; Range is ignored if it is not a positive number.
+ * @returns closed interval, ' unsatisfiable ' or null.
  */
 export function parseRange(header: string | undefined, totalBytes: number): RangeDecision {
   if (!header || totalBytes <= 0) return null;
@@ -111,7 +116,7 @@ export function parseRange(header: string | undefined, totalBytes: number): Rang
   if (startText === '' && endText === '') return null;
 
   if (startText === '') {
-    // 后缀形式：bytes=-N，取末尾 N 字节
+    // Suffix form: bytes =- N, take the last N bytes
     const suffixLength = Number(endText);
     if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null;
     return { start: Math.max(0, totalBytes - suffixLength), end: totalBytes - 1 };
@@ -125,27 +130,29 @@ export function parseRange(header: string | undefined, totalBytes: number): Rang
 }
 
 /**
- * 流式返回一个文件（带 Content-Type / 长度 / 缓存头）。
+ * Streaming returns a file (with Content-Type/length/cache headers).
  *
- * Content-Length 必须取自正在读的那个 fd（open 事件里 fstat）：先 stat 再另开流，会在素材被覆盖/
- * 截断时声明长度大于实际字节，响应永远不结束也不报错（浏览器 stalled、视频 loadeddata 永不触发）。
- * 同一个 fd 的 fstat 拿到的大小与随后读出的字节天然一致。
+ * Content-Length must be taken from the fd being read (fstat in the open event): first stat and then open another
+ * stream, the length will be declared to be greater than the actual bytes when the asset is overwritten/truncated, and
+ * the response will never end and no error will be reported (browser stalled, video loadeddata will never trigger).
+ * The size obtained by fstat of the same fd is naturally consistent with the bytes read subsequently.
  *
- * 支持单段 Range：视频会中途按 `Range: bytes=N-` 补数据，回整份会让播放器把整份当后半段拼，
- * 解到错位处提前 ended（动作被截断）。
+ * Supports single segment Range: the video will be filled in by pressing `Range: bytes=N-` in the middle, and the
+ * player will play the whole segment as the second half of the video, and ended will be advanced to the wrong position
+ * (the action is cut off).
  */
 export function sendFile(req: IncomingMessage, res: ServerResponse, file: string, contentType: string): void {
   const stream = createReadStream(file);
   stream.once('open', (fd) => {
     if (res.destroyed || res.writableEnded) {
-      stream.destroy(); // 客户端在开流前就放弃了
+      stream.destroy(); // The client gave up before starting the stream.
       return;
     }
     let totalBytes: number;
     try {
       totalBytes = fstatSync(fd).size;
     } catch {
-      // 极端情况下 fstat 拿不到：不发长度头，交给 Node 用 chunked 收尾（长度天然一致，只是没声明）
+      // In extreme cases, fstat cannot get it: the length will not be sent, and it will be given to Node for chunked cleanup (the length is naturally the same, but it is not declared)
       res.writeHead(200, { 'content-type': contentType, 'cache-control': 'public, max-age=3600' });
       stream.pipe(res);
       return;
@@ -163,7 +170,7 @@ export function sendFile(req: IncomingMessage, res: ServerResponse, file: string
       return;
     }
     if (decision !== null) {
-      // 命中区间：createReadStream 不能从中途开始，所以按 start/end 重开；长度用 fstat 的总长算，与切片一致
+      // Hit interval: createReadStream cannot start from the middle, so press start/end to restart; the length is calculated by the total length of fstat, which is consistent with the slice
       stream.destroy();
       const ranged = createReadStream(file, { start: decision.start, end: decision.end });
       res.writeHead(206, {
@@ -186,13 +193,13 @@ export function sendFile(req: IncomingMessage, res: ServerResponse, file: string
     });
     stream.pipe(res);
   });
-  // 读失败（文件被删/权限/被占用）：直接断连，让客户端立刻看到失败，而不是无限等待
+  // Read failure (file deleted/permissions/occupied): Disconnect directly so that the client can see the failure immediately instead of waiting indefinitely.
   stream.on('error', () => res.destroy());
-  // 客户端提前断开（快速切动画时高频发生）→ 停读，别把整个文件读完
+  // The client disconnects early (happens frequently when switching animations quickly) → Stop reading, don’t read the entire file
   res.on('close', () => stream.destroy());
 }
 
-/** 发送 JSON 响应（headers 可选：如 no-cache 触发计数） */
+/** Send JSON response (headers optional: such as no-cache trigger count) */
 export function sendJson(
   res: ServerResponse,
   status: number,
@@ -208,31 +215,33 @@ export function sendJson(
   res.end(body);
 }
 
-/** 发送纯文本响应（素材 404/400 等显式错误文案） */
+/** Send plain text response (explicit error text such as asset 404/400) */
 export function sendText(res: ServerResponse, status: number, body: string): void {
   res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' });
   res.end(body);
 }
 
-/** 单次业务路由的应答（WebServer 注册与桌面 Helper 管道共用的同一契约；消费方各自落盘） */
+/** Response to a single service route (WebServer register shares the same contract with the desktop Helper pipe; each consumer persists to disk) */
 export type RouteResult =
   | { kind: 'json'; status: number; obj: unknown; headers?: Record<string, string> }
   | { kind: 'text'; status: number; body: string }
   | { kind: 'file'; file: string; contentType: string }
-  /** 无需应答：调用方在挂起等待期间已断开（见 /playback 的等待分支）——消费方直接收尾，不写 */
+  /** No response required: caller has been disconnected during pending waiting (see the waiting branch of / playback) - the consumer cleanup directly without writing */
   | { kind: 'none' };
 
-/** 请求体上限（字节）：写端点只收 JSON 配置与指令，1MiB 足够，超限直接 413。 */
+/** Upper limit of request body (bytes): The write endpoint only accepts JSON configuration and instructions. 1 MiB is enough. If the limit is exceeded, 413 will be sent directly. */
 export const MAX_BODY_BYTES = 1024 * 1024;
 
 /**
- * 收集请求体（文本）。
+ * Collect request body (text).
  *
- * 带上限与断连处理：客户端半途断开时必须让 Promise 落地，否则处理器永远挂着、内存只增不减。
+ * Upper limit and disconnection processing: Promise must be allowed to land when the client is disconnected halfway,
+ * otherwise the processor will always hang and the memory will only increase but not decrease.
  *
- * @param req - 请求对象。
- * @returns 请求体文本。
- * @throws {Error} 超过 {@link MAX_BODY_BYTES} 时带 `code: 'body-too-large'`；连接提前断开时带 `code: 'client-aborted'`。
+ * @param req - Request object.
+ * @returns request body text.
+ * When @throws { Error } exceeds {@link MAX_BODY_BYTES} , it takes `code: 'body-too-large'` ; when the connection is
+ * disconnected early, it takes `code: 'client-aborted'` .
  */
 export function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve2, reject) => {
@@ -241,8 +250,9 @@ export function readBody(req: IncomingMessage): Promise<string> {
     let settled = false;
 
     /**
-     * 落地一次：'close' 在正常应答后也会触发，靠标志位拒绝二次落地。
-     * 不摘监听——请求对象随连接回收，摘监听反而要求调用方提供完整的 on/off 对（测试桩通常只有 on）。
+     * Landing once: 'close' will also be triggered after normal response, and the second landing will be rejected by
+     * the flag bit. No listening - the request object is recycled along with the connection. Instead, listening
+     * requires the caller to provide a complete on/off pair (test stubs usually only have on).
      */
     const settle = (finish: () => void): void => {
       if (settled) return;

@@ -1,20 +1,22 @@
 /**
- * 点播动画（`POST /dsh-pet-7340/anim`）的决策层单测。
+ * Single test of the decision-making layer of the playback request animation (`POST /dsh-pet-7340/anim`).
  *
- * 契约核心有两条（issue #122 第 1 条后是两种形态）：
- *   name = 名字必须在该宠物的允许集合里（菜单可点动画 ∪ 玩法自带动画）——播放端"名字即文件名"，
- *     播不存在的动画只会静默失败（404 → 加载失败 → 表现为"点了没反应"），所以这条校验必须钉死；
- *   url  = 第三方自带的素材地址，不查池，但必须是 http/https 的完整 URL。
- * 两者二选一，由本模块判定。本模块只依赖配置，可完全离线测。
+ * There are two core parts of the contract (issue #122, after Article 1, there are two forms):
+ * name = The name must be in the allowed set of the pet (the menu can be clicked on animation ∪ the gameplay has its
+ * own animation) - "The name is the file name" on the playback side. Playing non-existent animations will only fail
+ * silently (404 → Loading failure → Showed as "no response when clicked"), so this check must be nailed;
+ * url = The asset address provided by the third party. The pool is not checked, but it must be the complete URL of
+ * http/https. Choose one of the two and it will be determined by this module. This module only relies on configuration
+ * and can be completely tested offline.
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { animationNames, decideAnim } from './anim.ts';
 
-/** 与 assets/config.jsonc 同形状的动画配置：覆盖菜单树的 7 个池 + 玩法池 baifan */
+/** Animation configuration with the same shape as assets/config.jsonc: 7 pools covering the menu tree + gameplay pool baifan */
 const ANIMATIONS = {
   idle: ['待机呼吸休闲'],
   turn: ['东张西望'],
@@ -32,8 +34,8 @@ const ANIMATIONS = {
     balance: ['看钱包'],
     whisper: ['深度思考碎碎念'],
     workStatus: [
-      ['档位0-A', '档位0-B'], // 数组槽位：候选多个
-      '档位1', // 单候选
+      ['档位0-A', '档位0-B'], // Array slot: multiple candidates
+      '档位1', // Single candidate
     ],
   },
   baifan: ['开心小跑', '侧身急躁跑', '期待开饭', '吃饭·碗饭', '吃饭团'],
@@ -49,12 +51,12 @@ const cfg = {
   },
 };
 
-/** 决策的便捷调用：只覆盖本次关心的参数 */
+/** Convenient call for decision-making: only cover the parameters of concern this time */
 const decide = (over: Partial<Parameters<typeof decideAnim>[0]> = {}) =>
   decideAnim({ cfg, requested: 'main', name: '东张西望', url: undefined, ...over });
 
-describe('animationNames —— 菜单可点动画 + 玩法自带动画', () => {
-  test('菜单的七个池全部收到（菜单树取的就是这些）', () => {
+describe('animationNames —— Clickable animation in the menu + built-in animation in the gameplay', () => {
+  test('All seven pools of the menu have been received (these are what the menu tree takes)', () => {
     const names = animationNames(ANIMATIONS);
     for (const n of [
       '待机呼吸休闲', // idle
@@ -63,26 +65,26 @@ describe('animationNames —— 菜单可点动画 + 玩法自带动画', () => 
       '点击回应-开心跃动', // clicks
       '原地漂浮踏步', // moves.actions[].name
       '原地专心玩魔方', // categories[].actions
-      '举牌文字', // noMirror 分类照样可点播
+      '举牌文字', // noMirror classification is still available playback request
       '看钱包', // events.balance
       '深度思考碎碎念', // events.whisper
-      '档位0-A', // events.workStatus 数组槽位展平
+      '档位0-A', // events.workStatus array slot flattening
       '档位0-B',
       '档位1',
     ]) {
-      assert.ok(names.includes(n), `缺少 ${n}`);
+      assert.ok(names.includes(n), `Missing ${n}`);
     }
   });
 
-  test('玩法池（animations.baifan）也进白名单，排在菜单池之后', () => {
+  test('The gameplay pool (animations.baifan) is also in the whitelist, ranking behind the menu pool', () => {
     const names = animationNames(ANIMATIONS);
     for (const n of ['开心小跑', '侧身急躁跑', '期待开饭', '吃饭·碗饭', '吃饭团']) {
-      assert.ok(names.includes(n), `缺少玩法动画 ${n}`);
+      assert.ok(names.includes(n), `Missing gameplay animation ${n}`);
     }
-    assert.ok(names.indexOf('开心小跑') > names.indexOf('看钱包'), '玩法池排在菜单池之后');
+    assert.ok(names.indexOf('开心小跑') > names.indexOf('看钱包'), 'The gameplay pool is ranked after the menu pool');
   });
 
-  test('顺序对齐菜单树：idle → turn → drag → clicks → moves → categories → events', () => {
+  test('Sequentially align the menu tree: idle → turn → drag → clicks → moves → categories → events', () => {
     assert.deepEqual(animationNames(ANIMATIONS).slice(0, 5), [
       '待机呼吸休闲',
       '东张西望',
@@ -92,25 +94,25 @@ describe('animationNames —— 菜单可点动画 + 玩法自带动画', () => 
     ]);
   });
 
-  test('去重：同一个动画出现在多个池里只留一次', () => {
+  test('deduplicate: The same animation appears in multiple pools only once', () => {
     const dup = { idle: ['A', 'A'], clicks: ['A'], events: { whisper: [['A', 'B']] } };
     assert.deepEqual(animationNames(dup), ['A', 'B']);
   });
 
-  test('形状非法一律当空池（不抛）', () => {
+  test('If the shape is invalid, the pool will be empty (no throwing)', () => {
     for (const bad of [undefined, null, 42, 'x', [], { idle: 'not-array' }, { moves: { actions: 'x' } }]) {
       assert.deepEqual(animationNames(bad), []);
     }
   });
 
-  test('过滤非字符串与空串（配置里混进脏值不至于让它变成合法动画名）', () => {
+  test('Filter non-character strings and empty strings (mixing dirty values into the configuration will not make it a valid animation name)', () => {
     const dirty = { idle: ['A', '', null, 3, undefined, 'B'] };
     assert.deepEqual(animationNames(dirty), ['A', 'B']);
   });
 });
 
-describe('decideAnim —— 名字校验', () => {
-  test('空 / 纯空白 / 非字符串 → bad-request', () => {
+describe('decideAnim - Name verification', () => {
+  test('empty / pure blank / non-character string → bad-request', () => {
     for (const name of ['', '   ', undefined, null, 42, {}]) {
       const d = decide({ name });
       assert.equal(d.ok, false);
@@ -118,35 +120,35 @@ describe('decideAnim —— 名字校验', () => {
     }
   });
 
-  test('名字前后空白 → trim 后判定并通过', () => {
+  test('Blank space before and after the name → trim followed by judgment and passed', () => {
     const d = decide({ name: '  东张西望  ' });
     assert.equal(d.ok, true);
     assert.equal(d.ok === true && d.name, '东张西望');
   });
 
-  test('池外的名字 → unknown-animation（播放端没有兜底，必须在这里拦）', () => {
+  test('Name outside the pool → unknown-animation (there is no fallback on the playback end, so it must be stopped here)', () => {
     for (const name of ['根本不存在的动画', '东张西望.webm', '../../etc/passwd', '待机呼吸']) {
       const d = decide({ name });
-      assert.equal(d.ok, false, `${name} 不应通过`);
+      assert.equal(d.ok, false, `${name} should not pass`);
       assert.equal(d.ok === false && d.reason, 'unknown-animation');
     }
   });
 
-  test('全部池（菜单 + 玩法）的名字都能点播', () => {
+  test('The names of all pools (menu + gameplay) can playback request', () => {
     for (const name of animationNames(ANIMATIONS)) {
-      assert.equal(decide({ name }).ok, true, `${name} 应可点播`);
+      assert.equal(decide({ name }).ok, true, `${name} must be available for on-demand playback`);
     }
   });
 });
 
-describe('decideAnim —— 宠物选择', () => {
-  test('指定存在的宠物 → 用它', () => {
+describe('decideAnim ——Pet selection', () => {
+  test('Specify an existing pet → use it', () => {
     const d = decide({ requested: 'test1' });
     assert.equal(d.ok, true);
     assert.equal(d.ok === true && d.petId, 'test1');
   });
 
-  test('不指定 pet → pet-required（缺省链已删除：绝不退到"当前桌宠"/列表第一只）', () => {
+  test('Do not specify pet → pet-required (the default chain has been deleted: never fall back to the "current desktop pet"/the first one in the list)', () => {
     for (const empty of ['', '   ']) {
       const d = decide({ requested: empty });
       assert.equal(d.ok, false);
@@ -154,21 +156,21 @@ describe('decideAnim —— 宠物选择', () => {
     }
   });
 
-  test('指定不存在的宠物 → unknown-pet', () => {
+  test('Specified pet that does not exist → unknown-pet', () => {
     const d = decide({ requested: 'ghost' });
     assert.equal(d.ok, false);
     assert.equal(d.ok === false && d.reason, 'unknown-pet');
     assert.match(d.ok === false ? d.message : '', /ghost/);
   });
 
-  test('宠物 id 含点号照常（不按点号切分 id）', () => {
+  test('Pet id contains dot number as usual (id is not divided according to dot number)', () => {
     const dotted = { main: { ...cfg.main, pets: [{ id: 'a.b', name: '点号宠' }] } };
     const d = decide({ cfg: dotted, requested: 'a.b' });
     assert.equal(d.ok, true);
     assert.equal(d.ok === true && d.petId, 'a.b');
   });
 
-  test('动画池按所属条目判定，不跨条目串池', () => {
+  test('The animation pool is determined by the entry it belongs to, and the pool does not cross entries.', () => {
     const two = {
       main: { animations: { idle: ['主池动画'] }, pets: [{ id: 'main', name: 'A' }] },
       pack1: { animations: { idle: ['包池动画'] }, pets: [{ id: 'pack1', name: 'B' }] },
@@ -180,41 +182,41 @@ describe('decideAnim —— 宠物选择', () => {
   });
 });
 
-describe('decideAnim —— url 形态（第三方自带素材，issue #122 第 1 条）', () => {
+describe('decideAnim —— url form (third party’s own asset, issue #122 Article 1)', () => {
   const URL_OK = 'https://cdn.example.com/拉侧栏.webm';
 
-  test('给 url → 通过，且**不查动画池**：池里当然没有别人手里的素材名', () => {
+  test('Give url → Pass, and **do not check the animation pool**: of course there is no asset name in the pool held by others.', () => {
     const d = decide({ name: undefined, url: URL_OK });
     assert.equal(d.ok, true);
     assert.equal(d.ok === true && d.url, URL_OK);
-    assert.equal(d.ok === true && d.name, undefined, 'url 形态不应同时给出 name');
+    assert.equal(d.ok === true && d.name, undefined, 'The url pattern should not be given simultaneously with name');
   });
 
-  test('同源相对地址不行——必须是完整 URL（`new URL` 对相对路径会抛）', () => {
+  test('Relative addresses from the same origin are not acceptable - they must be complete URL (`new URL` will be thrown for relative paths)', () => {
     const d = decide({ name: undefined, url: '/dsh-pet-wallpaper/asset/x.webm' });
     assert.equal(d.ok, false);
     assert.equal(d.ok === false && d.reason, 'bad-request');
   });
 
-  test('url 前后空白 → trim 后判定', () => {
+  test('url before and after blank → trim after judgment', () => {
     const d = decide({ name: undefined, url: '  ' + URL_OK + '  ' });
     assert.equal(d.ok === true && d.url, URL_OK);
   });
 
-  test('只放行 http / https：其余 scheme 一律 bad-request', () => {
+  test('Only http / https are released: all other scheme are bad-request', () => {
     for (const url of [
-      'file:///C:/secret.webm', // 桌面端 el.src 是直连，file: 会让渲染端读本地任意文件
+      'file:///C:/secret.webm', // el.src on the desktop is a direct connection, file: will let the renderer read any local file
       'ftp://example.com/x.webm',
       'javascript:alert(1)',
       'data:video/webm;base64,AAAA',
     ]) {
       const d = decide({ name: undefined, url });
-      assert.equal(d.ok, false, `${url} 不应通过`);
+      assert.equal(d.ok, false, `${url} should not pass`);
       assert.equal(d.ok === false && d.reason, 'bad-request');
     }
   });
 
-  test('name 与 url 同时给 / 都不给 → bad-request（意图不明，不替调用方猜）', () => {
+  test('name and url are given at the same time / neither is given → bad-request (unknown intention, do not guess for the caller)', () => {
     for (const over of [
       { name: '东张西望', url: URL_OK },
       { name: undefined, url: undefined },
@@ -227,20 +229,20 @@ describe('decideAnim —— url 形态（第三方自带素材，issue #122 第 
     }
   });
 
-  test('url 形态下宠物校验照旧：指定不存在的宠物 → unknown-pet', () => {
+  test('Pet verification in url mode is as usual: specify a pet that does not exist → unknown-pet', () => {
     const d = decide({ name: undefined, url: URL_OK, requested: 'ghost' });
     assert.equal(d.ok, false);
     assert.equal(d.ok === false && d.reason, 'unknown-pet');
   });
 
-  test('url 形态不看名字：地址里带什么名字都照样放行（不查池、也不查文件名）', () => {
+  test('The url form does not look at the name: any name in the address will still be allowed (no pool or file name check)', () => {
     const d = decide({ name: undefined, url: 'http://127.0.0.1:8080/dsh-pet-wallpaper/a/根本不在池里.webm' });
     assert.equal(d.ok, true);
   });
 });
 
-describe('decideAnim —— facing（朝向，可选）', () => {
-  test('不传 / null → 通过且 facing 缺席（= 渲染端**不动朝向**，不是回落 left）', () => {
+describe('decideAnim —— facing (orientation, optional)', () => {
+  test('Not passed / null → passed and facing is absent (= renderer **immobile orientation**, not fallback left)', () => {
     for (const over of [{}, { facing: undefined }, { facing: null }]) {
       const d = decide(over);
       assert.equal(d.ok, true, JSON.stringify(over) + ' 应通过');
@@ -248,7 +250,7 @@ describe('decideAnim —— facing（朝向，可选）', () => {
     }
   });
 
-  test('left / right 原样透出', () => {
+  test('left / right exposed as is', () => {
     for (const f of ['left', 'right'] as const) {
       const d = decide({ facing: f });
       assert.equal(d.ok, true);
@@ -256,7 +258,7 @@ describe('decideAnim —— facing（朝向，可选）', () => {
     }
   });
 
-  test('非法值 → bad-request（不静默忽略，与 /position 的 mode 同一口径）', () => {
+  test('Invalid value → bad-request (not silently ignored, same conventions as mode / position)', () => {
     for (const bad of ['LEFT', 'Right', 'up', '', '   ', 42, true, {}, []]) {
       const d = decide({ facing: bad });
       assert.equal(d.ok, false, JSON.stringify(bad) + ' 不应通过');
@@ -265,20 +267,20 @@ describe('decideAnim —— facing（朝向，可选）', () => {
     }
   });
 
-  test('url 形态一样带 facing', () => {
+  test('url has the same form with facing', () => {
     const d = decide({ name: undefined, url: 'https://cdn.example.com/x.webm', facing: 'right' });
     assert.equal(d.ok, true);
     assert.equal(d.ok === true && d.url, 'https://cdn.example.com/x.webm');
     assert.equal(d.ok === true && d.facing, 'right');
   });
 
-  test('facing 非法先于宠物解析报错（参数是调用方的错，先纠它）', () => {
+  test("facing invalid parsing error before pet (the parameter is the caller's fault, correct it first)", () => {
     const d = decide({ facing: 'up', requested: 'ghost' });
     assert.equal(d.ok, false);
     assert.equal(d.ok === false && d.reason, 'bad-request');
   });
 
-  test('facing 不影响 name / url 二选一那条校验', () => {
+  test('facing does not affect the verification of name / url', () => {
     assert.equal(decide({ name: '东张西望', url: 'https://x/y.webm', facing: 'left' }).ok, false);
     assert.equal(decide({ name: undefined, url: undefined, facing: 'left' }).ok, false);
   });

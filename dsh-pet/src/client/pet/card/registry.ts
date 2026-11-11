@@ -1,40 +1,41 @@
 /**
- * 浮动对话的全局入口表：每张宠物卡挂载时登记，卸载时摘掉。
+ * Global entry point table of floating dialogue: each pet card is registered when mounted and removed when unmounted.
  *
- * 快捷键是全局的一个，而对话弹窗是每只宠物各一份，两者之间需要一张「现在能对谁动手」的表。
- * 取目标时优先主条目（配置里 main.pets[0]），它不在网页端就退到第一个登记过的。
- * 只存句柄、不存状态机：录音状态仍在 chat/hear-control 里。
+ * The shortcut key is the global one, and the dialogue pop-up window is one for each pet. A table of "who can be
+ * attacked now" is needed between the two. When fetching the target, the main entry (main.pets [0] in the
+ * configuration) is given priority. If it is not on the web page, it will return to the first registered one. Only the
+ * handle is saved and the state machine is not saved: the recording status is still in chat/hear-control.
  * @module dsh-pet/src/client/pet/card/registry
  */
 import { petBridge } from '../../settings/bridge.ts';
 
-/** 一张卡对外能做的七个动作：开、关、问开没开、开录、收尾、问在不在录、截图。 */
+/** There are seven actions that a card can perform externally: open, close, ask whether it is open or not, start recording, cleanup, ask if it is recording, and take a screenshot. */
 export interface PetChatHandle {
-  /** 打开（或聚焦）这只宠物的浮动对话弹窗。 */
+  /** Open (or focus) this pet's floating dialogue popup. */
   readonly open: () => void;
-  /** 关掉弹窗；没开时是空操作。 */
+  /** Close the pop-up window; it is a no-op when it is not open. */
   readonly close: () => void;
-  /** 弹窗此刻是否开着；快捷键据此决定这次是开还是关。 */
+  /** Whether the pop-up window is open at the moment; the shortcut key determines whether it is open or closed this time. */
   readonly isOpen: () => boolean;
-  /** 开录；没有弹窗时先开一个。 */
+  /** Open recording; if there is no pop-up window, open one first. */
   readonly startHear: () => void;
-  /** 收尾。 */
+  /** cleanup. */
   readonly stopHear: () => void;
-  /** 此刻是否在采集。 */
+  /** Are you collecting data at this moment? */
   readonly isHearing: () => boolean;
-  /** 截一帧：弹窗开着就塞进当前弹窗，没开就带着图打开；截不到时什么都不做。 */
+  /** Cut a frame: If the pop-up window is open, it will be inserted into the current pop-up window. If it is not open, it will be opened with the image; if the pop-up window cannot be cut, nothing will be done. */
   readonly screenshot: () => void;
 }
 
-/** 按宠物 id 登记；Map 的插入序就是渲染序，「第一只」的兜底直接靠它。 */
+/** Register according to pet id; the insertion order of Map is the rendering order, and the fallback of the "first one" depends directly on it. */
 const handles = new Map<string, PetChatHandle>();
 
 /**
- * 登记一只宠物的浮动对话入口。
+ * Register a pet's floating dialogue entry point.
  *
- * @param id - 宠物 id（配置里的键）。
- * @param handle - 四个动作。
- * @returns 注销函数；卡片卸载时必须调用，且只摘自己那一次。
+ * @param id - pet id (key in configuration).
+ * @param handle - Four moves.
+ * @returns unregister function; it must be called when the card is unmounted, and it can only be picked up once.
  */
 export function registerPetChatHandle(id: string, handle: PetChatHandle): () => void {
   handles.set(id, handle);
@@ -44,9 +45,10 @@ export function registerPetChatHandle(id: string, handle: PetChatHandle): () => 
 }
 
 /**
- * 取快捷键要操作的那一只：主配置第一只，其次第一个登记过的。
+ * Select the one to be operated by the shortcut key: the first one in the main configuration, followed by the first
+ * registered one.
  *
- * @returns 对话句柄；网页端一只宠物都没有时 undefined。
+ * @returns conversation handle; undefined when there is no pet on the web page.
  */
 export function pickPetChatHandle(): PetChatHandle | undefined {
   const mainId = petBridge.template?.id;
@@ -58,11 +60,11 @@ export function pickPetChatHandle(): PetChatHandle | undefined {
 }
 
 /**
- * 开关录音：已经在采就收尾，否则开录。
+ * Switch recording: cleanup if recording is already in progress, otherwise start recording.
  *
- * 快捷键只收到 keydown（没有抬手事件），所以「按住说话」在这里只能是开关。
+ * The shortcut key only receives keydown (no hand-raising event), so "press and hold" can only be a switch here.
  *
- * @param handle - 目标宠物；undefined 时什么都不做。
+ * @param handle - target pet; undefined does nothing.
  */
 export function togglePetChatHear(handle: PetChatHandle | undefined): void {
   if (handle === undefined) return;
@@ -71,11 +73,11 @@ export function togglePetChatHear(handle: PetChatHandle | undefined): void {
 }
 
 /**
- * 开关浮动对话：开着就关，没开就开。
+ * Switch floating dialogue: turn it off when it is on, turn it on when it is not on.
  *
- * 同一个键按第二次必须是关——用户把它当开关用，不是当「重新打开」用。
+ * The second press of the same key must be off - the user uses it as a switch, not as a "re-on".
  *
- * @param handle - 目标宠物；undefined 时什么都不做。
+ * @param handle - Target pet; undefined does nothing.
  */
 export function togglePetChat(handle: PetChatHandle | undefined): void {
   if (handle === undefined) return;

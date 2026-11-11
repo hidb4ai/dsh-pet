@@ -1,7 +1,9 @@
 /**
- * 多开容器：拉一次成品配置、长轮询 /state 叶子，再把指令分发给对应的宠物卡。
- * 只做「配置 → 渲染列表」与「叶子 → 每只宠物」的分发，不解释叶子语义、不画 DOM。
- * 必须始终成立：首拉只记基线，之后 counter 变化才分发；配置形状异常时显式报错，绝不用空列表清空。
+ * Open multiple containers: pull the resolved configuration once, grow polling / state leaves, and then
+ * distribute the instructions to the corresponding pet cards. It only distributes "Configuration → Rendering List" and
+ * "Leaf → Each Pet". It does not explain the leaf semantics and does not draw DOM. It must always be true: only the
+ * baseline is remembered in the first pull, and counter changes are distributed after that; an error is explicitly
+ * reported when the configuration shape is abnormal, and the empty list clear is never used.
  * @module dsh-pet/src/client/pet/multi
  */
 import type { FunctionComponent, ReactNode } from 'react';
@@ -54,11 +56,11 @@ import { speakWorkStatus } from '../voice-notify.ts';
 import { STATE_FALLBACK_MS, STATE_WAIT_MS } from './timings.ts';
 
 /**
- * 造多开容器。
+ * Create multiple open containers.
  *
- * @param rt - 注入的 react 能力。
- * @param Card - 单只宠物的卡片组件。
- * @returns 容器组件。
+ * @param rt - Injected react capability.
+ * @param Card - Card assembly for a single pet.
+ * @returns container component.
  */
 export function createPetMulti(
   rt: Pick<PetRuntime, 'h' | 'useState' | 'useEffect' | 'useRef'>,
@@ -69,40 +71,42 @@ export function createPetMulti(
   return function PetMulti() {
     const [pets, setPets] = useState<Pet[]>([]);
     const [ready, setReady] = useState(false);
-    // 碰撞站场：每只 PetCard 注册槽位，纯 ref 同步，不触发重渲染。
+    // Collision site: Each PetCard register slot, pure ref synchronization, does not trigger re-rendering.
     const arenaRef = useRef<{ slots: Record<string, PetCollisionSlot> }>({ slots: {} });
-    // 余额状态：容器统一拉取，PetCard 共享；两个 tick 分别驱动动画与文字说明。
+    // Balance status: The container is pulled uniformly, and PetCard is shared; the two tick drive animation and text description respectively.
     const [balance, setBalance] = useState<BalanceState | null>(null);
     const [balanceTick, setBalanceTick] = useState(0);
     const [balanceNoticeTick, setBalanceNoticeTick] = useState(0);
-    // 本次余额是否由用户手动请求；手动请求无条件弹，开关只关自动。
+    // Is the current balance requested manually by the user? If the manual request is unconditional, the switch can only be turned off automatically.
     const [balanceManual, setBalanceManual] = useState(false);
-    // 上次已提示的不可用原因，自动轮询只在原因变化时再弹。
+    // The last reason for unavailability has been prompted. Automatic polling will only be done when the reason changes.
     const noticeKeyRef = useRef<string | null>(null);
-    // 余额结果统一入口；存 ref 是为了让 /state effect 的依赖保持 [ready]。
-    // explicit 表示本次是否手动触发。
+    // The balance results are unified entry point; ref is saved to keep the dependency of / state effect [ ready ].
+    // explicit indicates whether to trigger manually this time.
     const applyBalanceRef = useRef<(state: BalanceState, explicit: boolean) => void>(() => {});
     applyBalanceRef.current = (state, explicit) => {
       setBalance(state);
-      setBalanceManual(explicit); // 手动标记随本次数据一起下发，每次到达都覆盖。
+      setBalanceManual(explicit); // Manual marking is delivered together with this data and will be overwritten every time it arrives.
       if (state.ok) {
-        setBalanceTick((t) => t + 1); // 成功：播档位动画并弹余额气泡。
+        setBalanceTick((t) => t + 1); // Success: Play the state animation and pop the balance bubble.
         return;
       }
       const { show, key } = decideBalanceNotice(state, noticeKeyRef.current, explicit);
       noticeKeyRef.current = key;
-      if (show) setBalanceNoticeTick((t) => t + 1); // 弹文字说明气泡（不播动画）
-      // 未登记服务商是配置事实，已由气泡说明；其余原因照旧显式报错。
+      if (show) setBalanceNoticeTick((t) => t + 1); // Pop up text description bubble (no animation played) The unregistered service provider is a configuration fact,
+      // which has been explained by bubble; other reasons are still reported explicitly as usual.
       if (state.reason !== 'unsupported') {
-        console.error('[dsh-pet] 余额查询失败 reason=' + state.reason + (state.message ? ' ' + state.message : ''));
+        console.error(
+          '[dsh-pet] Balance query failed reason=' + state.reason + (state.message ? ' ' + state.message : ''),
+        );
       }
     };
-    // 工作状态：容器统一轮询 sections.workStatus，快照与 tick 驱动各宠物播档位动画。
+    // Working status: The container is uniformly polling sections.workStatus, and the snapshot and tick drive each pet to play the state animation.
     const [workStatus, setWorkStatus] = useState<WorkStatusSnapshot | null>(null);
     const [workStatusTick, setWorkStatusTick] = useState(0);
-    // 说话：容器把 pets.<id>.say 按宠物分发给对应 PetCard。
+    // Talk: The container distributes pets .< id >. say by pet to the corresponding PetCard .
 
-    // 字体族写到 documentElement：对话窗与得分弹窗挂在 body 下，继承不到宠物根容器。
+    // The font family is written as documentElement: the dialog window and score pop-up window are hung under body and cannot be inherited from the pet root container.
     useEffect(() => {
       const family = pets[0]?.font?.family;
       if (family === undefined) return;
@@ -111,33 +115,33 @@ export function createPetMulti(
 
     useEffect(() => {
       let alive = true;
-      /** 唯一填充点：成品聚合 → 渲染列表；条目级字段只由 flattenConfigPets 吹入。 */
+      /** Unique fill point: finished aggregate → renderlist; entry-level fields are only blown in by flattenConfigPets. */
       const applyMerged = (merged: Record<string, Record<string, unknown>>): void => {
         const main = (merged as { main?: Record<string, unknown> } | null)?.main;
-        // 形状校验：响应异常时显式抛错，绝不用空列表清空已有宠物。
+        // Shape verification: Explicitly throw an error when responding to an exception. Never use an empty list to clear existing pets.
         if (typeof main !== 'object' || main === null) {
-          throw new Error('配置响应不是成品聚合（host 版本不匹配？）');
+          throw new Error('The configuration response is not a merged aggregate; check host version compatibility');
         }
-        // 点击音效开关只读 main 条目，非 true 一律静音。
+        // Click the sound effect switch read-only main entry, non-true will be muted.
         setClickSoundEnabled(main.clickSoundEnabled === true);
-        // 本页就是网页端：按叶子播放时只认 voiceTo='web' 的那一句。
+        // This page is the web page: when you press the leaf to play, only the sentence voiceTo =' web ' will be recognized.
         setSurface('web');
-        // 音色与音量同源：缺字段即「用默认音色 / 最大音量」，不在端上兜默认值。
+        // The voice and volume have the same source: the missing field is "use default voice/maximum volume", which is not the default value on the terminal.
         setVoiceConfig(main.voiceName, main.voiceVolume);
         setVoiceNotifyEnabled(main.voiceNotifyEnabled);
         const flattened = flattenConfigPets(merged);
         petBridge.current = flattened;
-        // 「添加宠物」模板取 main 条目的 pets[0]。
+        // The "Add Pet" template takes pets[0] of the main entry.
         petBridge.template = Array.isArray(main.pets) ? ((main.pets as Pet[])[0] ?? undefined) : undefined;
         setPets(flattened);
       };
-      /** 拉取成品聚合：host readAllConfig 的输出，客户端零校验零兜底。 */
+      /** Pull the resolved configuration: the output of host readAllConfig, client zero check zero fallback. */
       const loadMerged = async (): Promise<Record<string, Record<string, unknown>>> => {
-        // cache:'no-store' 与 fetchState 同口径，避免「版本变化后重拉」拿到旧值。
+        // cache: ' no-store ' has the same conventions as fetchState to avoid "repulling after version change" to get the old value.
         const r = await fetch(ROUTE_PATH + '/config', { cache: 'no-store' });
         if (!r.ok) throw new Error('config HTTP ' + r.status);
         const body = (await r.json()) as Record<string, unknown>;
-        // 业务失败也是 200：ok:false 的体不是成品配置，别拿它去拍平（会静默退化成默认配置）
+        // Business failure is also 200: The body of ok:false is not a finished configuration, do not use it to flatten it (it will silently degrade to the default configuration)
         if (body.ok === false) throw new Error('config: ' + String(body.reason ?? 'failed'));
         return body as Record<string, Record<string, unknown>>;
       };
@@ -148,10 +152,10 @@ export function createPetMulti(
           applyMerged(merged);
           setReady(true);
         } catch (e) {
-          console.error('[dsh-pet] 配置加载失败', e); // 成品拉取失败要显式报错，不静默隐藏。
+          console.error('[dsh-pet] Configuration loading failed', e); // If the resolved value fails to be pulled, an error must be reported explicitly and not hidden silently.
         }
       })();
-      // 设置页保存或同步后，用权威成品重新拍平；传入 merged 时直接用写接口的响应体。
+      // After saving or synchronizing the settings page, re-flatten it with the authoritative resolved value; directly use the response body of the write interface when passing in merged.
       petBridge.reload = (merged) => {
         void (async () => {
           try {
@@ -159,7 +163,7 @@ export function createPetMulti(
             if (!alive) return;
             applyMerged(next);
           } catch (e) {
-            console.error('[dsh-pet] 配置重载失败，保留当前渲染列表', e); // 显式报错，不清空已有宠物。
+            console.error('[dsh-pet] Configuration reload failed; retaining the current render list', e); // Explicit error, no clear existing pet.
           }
         })();
       };
@@ -169,11 +173,12 @@ export function createPetMulti(
       };
     }, []);
 
-    // overlay 只渲染 display 为 web 或 both 的宠物。
+    // overlay only renders display as pets of web or both.
     const visiblePets = pets.filter((p) => isWebVisible(p.display));
 
-    // 统一轮询 /state：每个叶子 = { counter, data }，首拉只记基线，之后 counter 变化才分发。
-    // 说话等命令与宠物开关无关，所以不为功能开关裁剪轮询。
+    // Unified polling / state: Each leaf = { counter , data }, the first pull only remembers the baseline, and then
+    // the counter changes are distributed. Commands such as speaking have nothing to do with pet switches, so polling
+    // is not clipped for function switches.
     const [sayTick, setSayTick] = useState(0);
     const sayRef = useRef<Record<string, SayCue & { seq: number }>>({});
     const [animCueTick, setAnimCueTick] = useState(0);
@@ -186,33 +191,33 @@ export function createPetMulti(
     >({});
     const [throwCueTick, setThrowCueTick] = useState(0);
     const throwCueRef = useRef<Record<string, { angle: number; power: number; seq: number }>>({});
-    // 占用锁是状态而不是指令：PetCard 读它决定冻结，并按 expiresAt 自行解除。
+    // The occupied lock is a state rather than an instruction: PetCard reads it to decide to freeze, and press expiresAt to release it automatically.
     const [lockTick, setLockTick] = useState(0);
     const lockRef = useRef<Record<string, LockState>>({});
-    // 睡觉同样是状态：三段名字由宿主挑定，卡片据此播开始→循环→起来。
+    // Sleeping is the same state: the three-segment name is selected by the host, and the card starts playing → looping → up accordingly.
     const [sleepTick, setSleepTick] = useState(0);
     const sleepRef = useRef<Record<string, SleepState>>({});
-    // 第三方菜单项只在打开右键菜单时读一次，不参与渲染。
+    // Third-party menu items are only read once when the right-click menu is opened and do not participate in rendering.
     const menuItemsRef = useRef<MenuMoreItem[]>([]);
-    /** 已处理过的跳会话时刻：首拉补跳与后续增量可能指向同一条信号，靠它只跳一次。 */
+    /** Processed jump session time: the first pull and the subsequent increment may point to the same signal, which only jumps once. */
     const lastFocusTsRef = useRef(0);
     useEffect(() => {
       if (!ready) return;
       let alive = true;
       let baseline: Record<string, number> | null = null;
-      /** 跳会话是一次性信号：判重与重放窗口都在 shared 的纯函数里（见 focus-session.ts）。 */
+      /** Jumping the session is a one-time signal: the replay and replay windows are both in the pure function of shared (see focus-session.ts). */
       const applyFocusSession = (data: unknown): void => {
         const cue = readFocusSession(data, Date.now(), lastFocusTsRef.current);
         if (cue === null) return;
         lastFocusTsRef.current = cue.ts;
         jumpToSession(cue.sessionId);
       };
-      /** 分段叶子 → 消费端副作用；不认识的名字已被 resolveLeafPath 挡在外面。 */
+      /** Segmented leaf → consumer side effect; the unknown name has been blocked by resolveLeafPath. */
       const applySection = (name: SectionLeafName, leaf: StateLeaf): void => {
         switch (name) {
           case 'config':
-            // 配置被别处改过（唯一写方是 POST /pet-display），重新拉取并拍平。
-            // 叶子 data 只是信号，配置本体太大，不能塞进 /state。
+            // The configuration has been changed elsewhere (the only writing party is POST /pet-display), pull it
+            // again and flatten it. Leaf data is just a signal, the configuration body is too big to fit into /state.
             petBridge.reload();
             return;
           case 'balance': {
@@ -224,29 +229,29 @@ export function createPetMulti(
             const snap = readWorkStatus(leaf);
             if (snap) {
               setWorkStatus(snap);
-              setWorkStatusTick((t) => t + 1); // 任何变化都触发，含回到空闲。
-              // 工作状态播报：与系统通知同级、同样只在网页端出声；不写 say 叶子。
+              setWorkStatusTick((t) => t + 1); // Triggered by any change, including returning to idle. Work status report: same level as system notification, also
+              // only sounds on the web page; do not write say leaf.
               speakWorkStatus(snap);
             }
             return;
           }
           case 'notify':
-            // 系统通知：单槽，由 host 决定保留哪一条，内部有开关与权限门。
+            // System notification: Single slot, host decides which one to keep, there are switches and permission gates inside.
             notifyFromFrame(leaf.data);
             return;
           case 'menu':
-            // 第三方菜单快照只更新 ref，不触发渲染；同一份交给页面内菜单镜像，供 petApi7340.menuEvents 读取。
+            // The third-party menu snapshot only updates ref and does not trigger rendering; the same copy is given to the menu image on the page for petApi7340.menuEvents to read.
             menuItemsRef.current = readMenuItems(leaf.data, 'web');
             setMenuItems(menuItemsRef.current);
             return;
           case 'focusSession':
-            // 桌面宠物点了会话气泡：宿主把意图写在这个叶子里，页面据此切会话。
+            // The desktop pet clicks on the session bubble: the host writes the intention in this leaf, and the page switches to the session accordingly.
             applyFocusSession(leaf.data);
             return;
         }
       };
 
-      /** 宠物叶子 → 该宠物的指令槽；序号自增，卡片据此知道「又写了一次」。 */
+      /** Pet Leaf → The command slot of this pet; the serial number is incremented, and the card knows "Written again" accordingly. */
       const applyPetLeaf = (name: PetLeafName, petId: string, leaf: StateLeaf): void => {
         switch (name) {
           case 'say': {
@@ -257,7 +262,7 @@ export function createPetMulti(
             return;
           }
           case 'anim': {
-            // 每次写入都会递增 counter，连点两次也会分发两次。
+            // counter will be incremented every time it is written, and even clicking twice will distribute it twice.
             const hit = readAnim(leaf);
             if (!hit) return;
             animCueRef.current[petId] = {
@@ -285,7 +290,7 @@ export function createPetMulti(
             return;
           }
           case 'lock': {
-            // 占用锁是状态而不是指令：卡片按 expiresAt 自行解除。
+            // The occupation lock is a state rather than a command: the card releases itself by pressing expiresAt.
             const hit = readLock(leaf);
             if (!hit) return;
             lockRef.current[petId] = hit;
@@ -293,7 +298,7 @@ export function createPetMulti(
             return;
           }
           case 'sleep': {
-            // 睡觉也是状态：卡片按三段名字播「开始→循环→起来」，醒来后回随机链。
+            // Sleeping is also a state: the card plays "Start→Loop→Get Up" according to three names, and returns to a random chain after waking up.
             const hit = readSleep(leaf);
             if (!hit) return;
             sleepRef.current[petId] = hit;
@@ -303,19 +308,21 @@ export function createPetMulti(
         }
       };
 
-      /** 应用一份轮询状态：首拉只记基线，之后按 counter 变化逐个分发。 */
+      /** Apply a polling state: only the baseline is recorded in the first pull, and then distributed one by one according to counter changes. */
       const applyState = (s: PollState) => {
-        // 最近一拍先留给同页消费者（petApi7340.getState）：它读的是同一个对象，不占连接。
+        // The latest shot is reserved for the same page consumer (petApi7340.getState): it reads the same object and does not occupy the connection.
         setStateSnapshot(s);
         if (baseline === null) {
-          baseline = flattenCounters(s); // 首拉只记基线，不渲染。
-          // 跳会话是一次性信号：页面没开时写下的那条会被首拉基线吞掉，这里按写入时刻补一次。
+          baseline = flattenCounters(s); // The first pull only remembers the baseline and does not render. Jumping a session is a one-time signal: the entry
+          // written when the page is not open will be swallowed up by the first pull baseline. Here, it will be filled in
+          // according to the writing time.
           applyFocusSession(s.sections.focusSession?.data);
-          // 菜单项是当前状态而不是事件，首拉也必须装上，否则刷新后第三方菜单会一直为空。
+          // The menu item is the current state rather than the event. The first pull must also be installed, otherwise the third-party menu will remain empty after refreshing.
           menuItemsRef.current = readMenuItems(s.sections.menu?.data, 'web');
           setMenuItems(menuItemsRef.current);
-          // 睡觉同样是状态而不是事件：刷新页面时宿主仍记着它在睡，首拉必须补一次；
-          // 否则页面显示醒着，而宿主对「已在睡」不回写叶子，只能等宿主重启才恢复。
+          // Sleeping is also a state rather than an event: when refreshing the page, the host still remembers that it
+          // is sleeping, and the first pull must be made up once; otherwise, the page shows that it is awake, and the
+          // host does not write back the "already sleeping" leaf, and can only be restored after the host restarts.
           for (const [petId, entry] of Object.entries(s.pets)) {
             const hit = entry?.sleep?.data == null ? null : readSleep(entry.sleep);
             if (hit) sleepRef.current[petId] = hit;
@@ -326,13 +333,13 @@ export function createPetMulti(
         for (const { path, leaf } of takeChanged(s, baseline)) {
           if (leaf.data === null) continue;
           const target = resolveLeafPath(path);
-          // 不认识的路径（新增的叶子、别处写坏的键）静默跳过。
+          // Unrecognized paths (new leaves, keys written incorrectly elsewhere) are silently skipped.
           if (target === null) continue;
           if (target.where === 'section') applySection(target.name, leaf);
           else applyPetLeaf(target.name, target.petId, leaf);
         }
       };
-      // 自调度轮询在 pet/state-poll.ts：这里只提供拉取与分发。
+      // Self-scheduling polling in pet/state-poll.ts: Only pulling and distribution are provided here.
       void runStatePoll({
         fetch: (options) =>
           fetchState(
@@ -351,7 +358,7 @@ export function createPetMulti(
 
     return ready
       ? visiblePets.map((p) => {
-          // 未启用工作状态联动：在分发处就断掉，下游（动画恢复、播完判定、气泡）不必各判一次。
+          // Working status linkage is not enabled: it is disconnected at the distribution point, and the downstream (animation recovery, playback determination, bubble) does not need to be judged once each.
           const workOn = p.workStatusEnabled;
           return h(Card, {
             key: p.id,

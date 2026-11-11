@@ -1,12 +1,13 @@
 /**
- * 存储位置清单单元测试 —— 钉住设置页「卸载与存储」展示的每一条路径：
- * 必须与真实写入方（index.ts 的 userRoot、helper-process.ts 的 Electron 落地目录、
- * main.js 的 app.setName、@electron/get 的 env-paths cacheRoot）逐平台一致。
+ * Storage location list unit test - verify that each path displayed in the "unmount and storage" setting page: must be
+ * consistent with the real writing party (userRoot of index.ts, Electron landing directory of helper-process.ts,
+ * app.setName of main.js, @electron / get env-paths cacheRoot ) are consistent on a platform-by-platform basis.
  *
- * 其中 DESKTOP_APP_NAME 直接读 runtime/electron-helper/main.js 校验——两边改名不同步时
- * 设置页会显示一个永远不存在的目录，这里必须红。
+ * Among them, DESKTOP_APP_NAME directly reads runtime/electron-helper/main.js. Verification - when the name changes on
+ * both sides are not synchronized, the settings page will display a directory that never exists, and it must be red
+ * here.
  *
- * 跑法：node --experimental-strip-types --test src/host/storage-paths.test.ts
+ * Running method: node --experimental-strip-types --test src/host/storage-paths.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +17,7 @@ import { tmpdir } from 'node:os';
 
 import { DESKTOP_APP_NAME, profileNameFrom, storageEntries } from './storage-paths.ts';
 
-/** 各平台的注入输入（基准目录全部写死，避免用到真实环境） */
+/** Injection input for each platform (the benchmark directories are all hard-coded to avoid using the real environment) */
 const base = {
   userDataRoot: '/dsh-home/dsh-pet',
   electronDir: '/dsh-home/electron',
@@ -24,16 +25,16 @@ const base = {
   packageRoot: '/dsh-home/profiles/web/node_modules/dsh-pet',
 };
 
-/** 取出某条目的路径 */
+/** Get the path of an entry */
 function pathOf(entries: ReturnType<typeof storageEntries>, key: string): string {
   const hit = entries.find((e) => e.key === key);
   assert.ok(hit, '缺少条目 ' + key);
   return hit.path;
 }
 
-describe('storageEntries —— 写入方路径原样透传（不自己拼目录名）', () => {
-  test('userData 与 electron 就是调用方给的路径，一个字符都不改', () => {
-    // 故意给一个不符合任何默认约定的路径：若本模块偷偷拼 'dsh-pet' / 'electron'，这里必红
+describe('storageEntries - The writing path is transparently transmitted as it is (without spelling the directory name yourself)', () => {
+  test('userData and electron are the paths given by the caller, and none of the characters will be changed.', () => {
+    // Deliberately give a path that does not comply with any default convention: if this module secretly spells 'dsh-pet' / 'electron', it will be red here
     const entries = storageEntries({
       userDataRoot: 'Z:\\weird\\place',
       electronDir: 'Z:\\another\\runtime',
@@ -47,8 +48,8 @@ describe('storageEntries —— 写入方路径原样透传（不自己拼目录
   });
 });
 
-describe('storageEntries —— 逐平台路径推导', () => {
-  test('win32：系统级目录走 APPDATA/LOCALAPPDATA', () => {
+describe('storageEntries ——Platform-by-platform path derivation', () => {
+  test('win32: System-level directory goes to APPDATA/LOCALAPPDATA', () => {
     const entries = storageEntries({
       ...base,
       platform: 'win32',
@@ -57,12 +58,12 @@ describe('storageEntries —— 逐平台路径推导', () => {
     assert.equal(pathOf(entries, 'userData'), base.userDataRoot);
     assert.equal(pathOf(entries, 'electron'), base.electronDir);
     assert.equal(pathOf(entries, 'desktopCache'), join('C:\\AppData\\Roaming', DESKTOP_APP_NAME));
-    // env-paths 在 Windows 下多一层 Cache
+    // env-paths has one more layer of Cache under Windows
     assert.equal(pathOf(entries, 'electronCache'), join('C:\\AppData\\Local', 'electron', 'Cache'));
     assert.equal(pathOf(entries, 'package'), base.packageRoot);
   });
 
-  test('win32：APPDATA/LOCALAPPDATA 缺失 → 回落到 home 下的 AppData', () => {
+  test('win32: APPDATA/LOCALAPPDATA is missing → fallback to AppData under home', () => {
     const entries = storageEntries({ ...base, platform: 'win32', env: {} });
     assert.equal(pathOf(entries, 'desktopCache'), join('/home/u', 'AppData', 'Roaming', DESKTOP_APP_NAME));
     assert.equal(pathOf(entries, 'electronCache'), join('/home/u', 'AppData', 'Local', 'electron', 'Cache'));
@@ -74,7 +75,7 @@ describe('storageEntries —— 逐平台路径推导', () => {
     assert.equal(pathOf(entries, 'electronCache'), join('/home/u', 'Library', 'Caches', 'electron'));
   });
 
-  test('linux：XDG 变量优先，未设则回落到 ~/.config 与 ~/.cache', () => {
+  test('linux: XDG variable takes precedence. If not set, fallback to ~/.config and ~/.cache', () => {
     const xdg = storageEntries({
       ...base,
       platform: 'linux',
@@ -88,12 +89,12 @@ describe('storageEntries —— 逐平台路径推导', () => {
     assert.equal(pathOf(fallback, 'electronCache'), join('/home/u', '.cache', 'electron'));
   });
 
-  test('条目顺序固定：用户数据 → 运行时 → 缓存 → 插件本体', () => {
+  test('The order of entries is fixed: user data → runtime → cache → plugin body', () => {
     const keys = storageEntries({ ...base, platform: 'win32', env: {} }).map((e) => e.key);
     assert.deepEqual(keys, ['userData', 'electron', 'desktopCache', 'electronCache', 'package']);
   });
 
-  test('exists 由磁盘即时判定（真实存在的目录为 true，未创建的为 false）', () => {
+  test('exists is determined immediately from the disk (the real existing directory is true, the uncreated directory is false)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-storage-test-'));
     try {
       const mk = () =>
@@ -105,7 +106,7 @@ describe('storageEntries —— 逐平台路径推导', () => {
           platform: 'win32',
           env: {},
         });
-      // packageRoot = dir 本身存在 → true；dsh-pet/ 尚未创建 → false
+      // packageRoot = dir itself exists → true; dsh-pet / has not been created yet → false
       assert.equal(mk().find((e) => e.key === 'package')?.exists, true);
       assert.equal(mk().find((e) => e.key === 'userData')?.exists, false);
 
@@ -117,24 +118,24 @@ describe('storageEntries —— 逐平台路径推导', () => {
   });
 });
 
-describe('profileNameFrom —— 卸载命令里的 profile 名', () => {
-  test('从 <DSH_HOME>/profiles/<name>/node_modules/<pkg> 反推', () => {
+describe('profileNameFrom —— profile name in unmount command', () => {
+  test('Reverse from < DSH_HOME >/ profiles /< name >/ node_modules /< pkg >', () => {
     assert.equal(profileNameFrom("C:\\Users\\p'c\\.dsh\\profiles\\web\\node_modules\\dsh-pet"), 'web');
     assert.equal(profileNameFrom('/home/u/.dsh/profiles/custom/node_modules/dsh-pet'), 'custom');
   });
 
-  test('反推不出来 → undefined（宁可退回占位符，也不猜一个错的）', () => {
+  test('Unable to infer → undefined (I would rather return the placeholder than guess the wrong one)', () => {
     assert.equal(profileNameFrom('/dsh-home/profiles/node_modules/dsh-pet'), undefined);
     assert.equal(profileNameFrom('/some/link/dsh-pet'), undefined);
     assert.equal(profileNameFrom(''), undefined);
   });
 });
 
-describe('DESKTOP_APP_NAME —— 与桌面端实际应用名防漂移', () => {
-  test('与 runtime/electron-helper/main.js 的 app.setName 一致', () => {
+describe('DESKTOP_APP_NAME ——Anti-drift with practical application on desktop', () => {
+  test('Consistent with app.setName of runtime/electron-helper/main.js', () => {
     const src = readFileSync(new URL('../../runtime/electron-helper/main.js', import.meta.url), 'utf8');
     const m = /app\.setName\(\s*['"]([^'"]+)['"]\s*\)/.exec(src);
-    assert.ok(m, 'main.js 里没有找到 app.setName');
+    assert.ok(m, 'app.setName not found in main.js');
     assert.equal(m[1], DESKTOP_APP_NAME);
   });
 });

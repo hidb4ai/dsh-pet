@@ -1,25 +1,24 @@
-"""Generate animated GIF previews from the playing assets (dsh-pet/assets/webm -> dsh-pet/assets/preview).
+"""Generate animated GIF previews from the playing assets ( dsh-pet/assets/webm -> dsh-pet/assets/preview ).
 
-素材处理链的附属步骤：把插件实际播放的透明 WebM（dsh-pet/assets/webm/）转成 GIF 预览
-（dsh-pet/assets/preview/），供 GitHub README 等 Markdown 页面展示。
+ Ancillary steps of the asset processing chain: Convert the transparent WebM (dsh-pet/assets/webm/) actually played by the plug-in into GIF preview
+(dsh-pet/assets/preview/), for GitHub README and other Markdown pages to display.
 
-为什么需要这一步：
-- GitHub 的 Markdown 渲染器只为「网页端上传的附件」生成内联视频播放器；
-  仓库内通过 <video> 引用的 webm 不会播放（raw 返回 audio/webm MIME）。
-- 仓库内图片（含 GIF）用 Markdown 图片语法可以正常内联显示。
-- 故 README 预览区用 GIF 演示，完整透明视频仍以 webm 形式保留在 assets/webm/。
+Why this step is needed:
+- The Markdown renderer of GitHub only generates an inline video player for "attachments uploaded on the web page";
+  webm referenced by < video > in the warehouse will not play (raw returns audio/webm MIME).
+- Pictures in the warehouse (including GIF) can be displayed normally inline using the Markdown picture syntax.
+- Therefore, the README preview area is demonstrated with GIF, and the complete transparent video is still retained in assets/webm / in the form of webm.
 
-透明处理：GIF 支持 1bit 透明。源 webm 是透明背景，直接转 GIF 会把透明区域
-转成黑色；本脚本用 palettegen/paletteuse 保留 alpha，透明部分在页面上显示为底色。
+Transparent processing: GIF supports 1 bit transparent. The source webm has a transparent background. Directly converting it to GIF will remove the transparent area.
+Convert to black; this script uses palettegen/paletteuse to retain alpha, and the transparent part is displayed as the background color on the page.
 
-输出命名：按仓库约定输出拼音文件名（README 效果预览的
-<img src="dsh-pet/assets/preview/<拼音>.gif"> 与 PINYIN 表一一对应）；
-表中没有的动画名回退用中文名。
+Output naming: Output the pinyin file name according to the warehouse convention (README effect preview
+< img src =" dsh-pet/assets/preview /<Pinyin>. gif "> corresponds one-to-one with the PINYIN table);
+Animation names that are not in the table fall back to Chinese names.
 
-用法：
-  python scripts/encode_preview_gifs.py          # 全部（按名称排序）
-  python scripts/encode_preview_gifs.py 工作状态-雀跃庆祝  # 指定一个/多个
-"""
+Usage:
+   python scripts/encode_preview_gifs.py # All (sorted by name)
+   python scripts/encode_preview_gifs.py working status-jubilation celebration # Specify one/more"""
 
 from __future__ import annotations
 
@@ -30,14 +29,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "dsh-pet" / "assets" / "webm"
 OUT = ROOT / "dsh-pet" / "assets" / "preview"
-# 统一使用工作区自带的 ffmpeg（素材处理链零第三方依赖）
+# Uniformly use ffmpeg that comes with the workspace (the asset processing chain has zero third-party dependencies)
 FFMPEG = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffmpeg.exe")
 
-# GIF 参数（GIF 体积大，预览用低帧率 + 中等尺寸即可）
-WIDTH = 220    # 预览宽度（保持宽高比）
-FPS = 12       # 预览帧率（webm 24fps → 12fps，体积减半且足够流畅）
+# GIF parameters (GIF is large, just use low frame rate + medium size for preview)
+WIDTH = 220    # Preview width (maintain aspect ratio)
+FPS = 12       # Preview frame rate (webm 24 fps → 12 fps, the size is halved and smooth enough)
 
-# 动画名 → 拼音输出文件名（与 README 效果预览的 img src 一致）
+# Animation name → Pinyin output file name (consistent with img src of README effect preview)
 PINYIN = {
     "待机呼吸休闲": "daiji-huxi-xiuxian",
     "东张西望": "dongzhangxiwang",
@@ -154,10 +153,10 @@ PINYIN = {
 def convert_gif(name: str) -> Path:
     src = SRC / f"{name}.webm"
     if not src.exists():
-        raise FileNotFoundError(f"{src} 不存在")
+        raise FileNotFoundError(f"{src} does not exist")
     out_name = PINYIN.get(name, name)
     dst = OUT / f"{out_name}.gif"
-    # 调色板两遍法：先生成全局调色板，再按调色板转 GIF，保留 alpha
+    # Palette two-pass method: first generate the global palette, then convert the palette to GIF and retain alpha
     cmd = [
         FFMPEG,
         "-y",
@@ -165,7 +164,7 @@ def convert_gif(name: str) -> Path:
         "-loglevel",
         "error",
         "-c:v",
-        "libvpx-vp9",  # 与 encode_thumbs.py 一致：libvpx 解码保留 VP9 alpha
+        "libvpx-vp9",  # Consistent with encode_thumbs.py: libvpx decoding reserved VP9 alpha
         "-i",
         str(src),
         "-vf",

@@ -1,25 +1,24 @@
-"""Transcode step03 masters into 360x360 playback thumbnails (step04).
+"""Transcode step03 masters into 360 x360 playback thumbnails ( step04 ).
 
-素材处理链的第 4 步（转码）：把归一化后的 1200x1200 透明母版（step03/）
-转成 360x360 播放变体（step04/），供 dsh-pet 插件运行时使用。
+ Step 4 of the asset processing chain (transcoding): convert the normalized 1200 x1200 transparent master (step03 /)
+Convert to 360 x360 playback variant (step04/) for use by dsh-pet plug-in runtime.
 
-完整处理链（与 crop_step01.py / chroma_step02.py / normalize_step03.py 同级）：
-  step01（原始视频）→ crop_step01.py → chroma_step02.py（绿幕抠像）
-  → step02（透明 810x720）→ normalize_step03.py（归一化 1200x1200 统一站立）
-  → step03（母版）→ 本脚本 → step04（360x360 播放变体）
+Complete processing chain (same level as crop_step01.py / chroma_step02.py / normalize_step03.py):
+   step01 (original video) → crop_step01.py → chroma_step02.py (green screen background removal)
+  → step02 (transparent 810 x720) → normalize_step03.py (normalized 1200 x1200 unified standing)
+  → step03 (master) → this script → step04 (360 x360 playback variant)
 
-step04 是素材处理链的最终产物。发布/安装插件时把 step04 的内容
-同步到 dsh-pet/assets/thumb/（npm 包需要自包含的播放资源）。
+ step04 is the final product of the asset processing chain. Put the content of step04 when publishing/installing the plug-in
+Sync to dsh-pet/assets/thumb/(npm package requires self-contained playback resources).
 
-为什么需要转码：
-- 播放时宠物只显示约 260px，360 分辨率已足够清晰，1200 是 4.6 倍冗余
-- 1200 全量 172MB 超过 npm 包体积上限；转码后仅 ~10MB，可以发布
-- 播放更省内存、切换更快
+Why transcoding is needed:
+- Pet only displays about 260 px during playback, 360 resolution is clear enough, 1200 is 4.6 times redundant
+- 1200 Full volume 172 MB exceeds the upper limit of npm package size; after transcoding, only ~10 MB can be released
+- Playback saves memory and switches faster
 
-双轨设计：
-- thumb（本脚本产物，360x360，step04）→ 同步进 npm 包 assets/thumb/，运行时播放
-- full（step03 原始 1200x1200）→ 不进 npm 包，发布到 GitHub Releases 存档
-"""
+Dual track design:
+- thumb (product of this script, 360 x360, step04) → synchronize into npm package assets/thumb /, play during runtime
+- full (step03 original 1200 x1200) → Not included in npm package, published to GitHub Releases archive"""
 
 from __future__ import annotations
 
@@ -30,25 +29,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "step03"
 OUT = ROOT / "step04"
-# 统一使用工作区自带的 ffmpeg（素材处理链零第三方依赖）
+# Uniformly use ffmpeg that comes with the workspace (the asset processing chain has zero third-party dependencies)
 FFMPEG = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffmpeg.exe")
 FFPROBE = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffprobe.exe")
 
 PARALLEL = 4
-# 转码参数（调这里改画质/分辨率）
-TARGET_W = 640    # thumb 宽度（与 2160x1215 母版同 16:9 比例）
-TARGET_H = 360    # thumb 高度
-CRF = 40       # VP9 质量参数（0-63，越小越清晰越大；40 偏轻，透明区域省码）
-FPS = 24       # 帧率（与母版一致，保持动作节奏）
+# Transcoding parameters (adjust here to change image quality/resolution)
+TARGET_W = 640    # thumb width (same 16:9 ratio as 2160 x1215 master)
+TARGET_H = 360    # thumb height
+CRF = 40       # VP9 quality parameters (0-63, the smaller, the clearer and the larger; 40 is lighter, saving code in transparent areas)
+FPS = 24       # Frame rate (consistent with master, maintain action rhythm)
 
 
 def convert_video(src: Path, dst: Path) -> None:
-    """转码单个视频。
+    """Transcode one video.
 
-    注意：
-    - 解码端必须指定 -c:v libvpx-vp9（libvpx 解码才能保留 VP9 alpha，与
-      normalize_step03.py 一致）；ffmpeg 自动选解码器会丢 alpha 导致黑底。
-    - scale 滤镜默认也会丢 alpha，需 format=yuva420p 强制保留。
+    Decode with -c:v libvpx-vp9 to retain VP9 alpha, matching normalize_step03.py.
+    ffmpeg's automatically selected decoder may discard alpha and produce a black background.
+    The scale filter also requires format=yuva420p to preserve alpha.
     """
     cmd = [
         FFMPEG,
@@ -57,22 +55,22 @@ def convert_video(src: Path, dst: Path) -> None:
         "-loglevel",
         "error",
         "-c:v",
-        "libvpx-vp9",  # 关键：libvpx 解码才能保留 VP9 alpha
+        "libvpx-vp9",  # Key: libvpx must be decoded to retain VP9 alpha
         "-i",
         str(src),
         "-vf",
         f"scale={TARGET_W}:{TARGET_H},format=yuva420p",
         "-c:v",
-        "libvpx-vp9",  # VP9 编码（WebM 标准）
+        "libvpx-vp9",  # VP9 encoding (WebM standard)
         "-crf",
         str(CRF),
         "-b:v",
-        "0",  # 恒定质量模式（CRF）
+        "0",  # Constant mass mode (CRF)
         "-row-mt",
-        "1",  # 多行并行（加速编码）
+        "1",  # Multi-line parallelization (accelerated encoding)
         "-r",
         str(FPS),
-        "-an",  # 丢弃音轨（动画无声音，省体积）
+        "-an",  # Discard the audio track (the animation has no sound, saving size)
         str(dst),
     ]
     result = subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
@@ -81,7 +79,7 @@ def convert_video(src: Path, dst: Path) -> None:
 
 
 def _is_valid(dst: Path, src: Path, min_size: int = 20_000) -> bool:
-    """断点续跑完整性检查：存在、够大、不比源旧、且能被 ffprobe 读到视频流。"""
+    """Breakpoint resume integrity check: exists, is large enough, is not older than the source, and can be read by ffprobe into the video stream."""
     if not dst.exists() or dst.stat().st_size <= min_size:
         return False
     if dst.stat().st_mtime < src.stat().st_mtime:
@@ -92,7 +90,7 @@ def _is_valid(dst: Path, src: Path, min_size: int = 20_000) -> bool:
 
 
 def _process_one(video: Path) -> tuple[str, int, int, bool]:
-    """处理单个视频（worker 函数），返回 (名字, 源大小, 输出大小, 是否跳过)。"""
+    """Process a single video (worker function), return (name, source size, output size, whether to skip)."""
     src_size = video.stat().st_size
     dst = OUT / video.name
     if _is_valid(dst, video):

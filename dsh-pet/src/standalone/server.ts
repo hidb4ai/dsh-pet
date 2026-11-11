@@ -1,8 +1,9 @@
 /**
- * 独立模式 HTTP 服务的公开出口：创建监听器与四条内置路由。
+ * Public exit of standalone mode HTTP service: create listener and four built-in routes.
  *
- * 只做再导出；应答工具在 ./server/respond，处理器在 ./server/handlers。
- * 必须始终成立：默认只监听回环地址，请求体与响应体都有上限。
+ * Only re-export is done; the response tool is in ./server/respond and the processor is in ./server/handlers. This
+ * must always be true: by default, only the loopback address is listened to, and the request body and response body
+ * have upper limits.
  * @module dsh-pet/src/standalone/server
  */
 export { DEFAULT_STANDALONE_PORT, PORT_SCAN_LIMIT } from './server/options.ts';

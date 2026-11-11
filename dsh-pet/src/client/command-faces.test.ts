@@ -1,33 +1,36 @@
 /**
- * 宿主命令面孔补丁的契约测试 —— 钉住「包装 `commandUi.candidates`」的全部前提。
- * DSH 没有给第三方宿主命令配图标的官方入口（`CommandDefinition` 无 icon 字段、
- * `CommandDecoration` 只有 ui、`candidates()` 只认 6 个第一方包的白名单），本插件只能靠
- * 「自有属性遮蔽原型方法」补面孔；失效表现是菜单没图标而不是报错，升级后容易无声退化。
- * 每条前提都要有断言兜住：
- * - 包装后 DSH 的闭包（`(s, r) => this.candidates(s, r)`）能取到加工过的行；
- * - 没有面孔的命令、非数组返回、非对象元素，一律原样放行；
- * - DSH 自己给了 icon 的行不被覆盖；label 每次现取（语言切换下一轮生效）；
- * - 映射逻辑抛错时退回原始行，但 original 自己的错误不吞；
- * - `candidates` 缺失时完全不装；dispose 能还原。
- * 跑法：node --experimental-strip-types --test src/client/command-faces.test.ts
+ * Contract test of host command face patch - verify all prerequisites of "package `commandUi.candidates` ". DSH does
+ * not have an official entry point for assigning icons to the third-party host command (`CommandDefinition` has no
+ * icon field, `CommandDecoration` only recognizes ui, and `candidates()` only recognizes the whitelist of 6
+ * first-party packages). This plugin can only rely on the "own attribute masking prototype method" to make up for the
+ * problem. The failure is manifested in the menu having no icon instead of an error, and it is prone to silent
+ * degradation after upgrading. Each premise must have an assertion handle:
+ * - After packaging, the closure of DSH ( `(s, r) => this.candidates(s, r)` ) can get the processed rows;
+ * - Commands without faces, non-array returns, and non-object elements will be released as they are;
+ * - The rows DSH gave to icon will not be overwritten; label will be taken every time (the language switch will take
+ * effect in the next round);
+ * - When the mapping logic throws an error, the original row will be returned, but original's own errors will not be
+ * swallowed;
+ * - If `candidates` is missing, it will not be installed at all; dispose can be restored. Running method: node --
+ * experimental-strip-types --test src/client/command-faces.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installCommandFaces, type CommandFace, type CommandUiLike } from './command-faces.ts';
 
-/** 菜单候选行（测试里只关心这几个字段）。 */
+/** Menu candidate rows (only these fields are concerned in the test). */
 type Row = Record<string, unknown>;
 
 /**
- * 复刻 dsh-client-ui-commands 的 `CommandUiRuntime` 关键形态：
- * `candidates` 是原型方法（不是实例字段），所以自有属性可以遮蔽它。
+ * Key form of `CommandUiRuntime` that replicates dsh-client-ui-commands: `candidates` is a prototype method (not an
+ * instance field), so its own attributes can obscure it.
  */
 class FakeCommandUi {
   rows: unknown[];
-  /** original 被真正调用的次数（验证包装确实转发了）。 */
+  /** The number of times original was actually called (verifying that the wrapper was indeed forwarded). */
   calls = 0;
-  /** original 收到的实参（验证包装原样透传 session / req）。 */
+  /** The actual parameters received by original (verify that the package is transparently transmitted to session / req). */
   lastArgs: unknown[] = [];
 
   constructor(rows: unknown[]) {
@@ -41,27 +44,28 @@ class FakeCommandUi {
   }
 }
 
-/** 复刻 DSH 注册 source 的写法：闭包在运行时从实例上取 `candidates`。 */
+/** Rewrite the writing method of DSH register source: the closure takes `candidates` from the instance at runtime. */
 function sourceOf(ui: FakeCommandUi): { candidates: (s: unknown, r: unknown) => Promise<unknown> } {
   return { candidates: (session: unknown, req: unknown) => ui.candidates(session, req) };
 }
 
-/** 走一遍 DSH 的闭包路径，把行取回来。 */
+/** Walk through the closure path of DSH and get back the rows. */
 async function rowsOf(source: { candidates: (s: unknown, r: unknown) => Promise<unknown> }): Promise<Row[]> {
   return (await source.candidates({}, {})) as Row[];
 }
 
-/** 假图标组件：类型上就是 `ComponentType<IconProps>`，测试不渲染它。 */
+/** Fake icon component: the type is `ComponentType<IconProps>`, the test does not render it. */
 const ICON: CommandFace['icon'] = () => null;
 
-/** 固定标题的面孔。 */
+/** Fixed title faces. */
 function face(label: string): CommandFace {
   return { label: () => label, icon: ICON };
 }
 
 /**
- * 临时接管 `console.warn`，返回收集到的消息与还原函数。
- * 降级路径的告警既要断言（否则「静默失效」这条就没人守），又不该污染测试输出。
+ * Temporarily take over `console.warn` and return the collected messages and restore function. Warnings on the downgrade
+ * path must be assertions (otherwise the "silent failure" section will not be guarded) and should not pollute the test
+ * output.
  */
 function captureWarn(): { messages: string[]; restore: () => void } {
   const messages: string[] = [];
@@ -77,8 +81,8 @@ function captureWarn(): { messages: string[]; restore: () => void } {
   };
 }
 
-describe('installCommandFaces —— 包装 commandUi.candidates', () => {
-  test('装补丁后，DSH 的闭包取到的行带上了 label 与 icon', async () => {
+describe('installCommandFaces —— Packaging commandUi.candidates', () => {
+  test('After installing the patch, the line obtained by the closure of DSH contains label and icon', async () => {
     const ui = new FakeCommandUi([{ name: 'chat' }, { name: 'other' }]);
     const source = sourceOf(ui);
     const dispose = installCommandFaces(ui, new Map([['chat', face('对话')]]));
@@ -86,17 +90,17 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     const rows = await rowsOf(source);
     assert.equal(rows[0].label, '对话');
     assert.equal(rows[0].icon, ICON);
-    // 没配面孔的命令原样不动
+    // Commands without faces remain unchanged.
     assert.equal(rows[1].label, undefined);
     assert.equal(rows[1].icon, undefined);
-    // 包装确实转发到了原始方法，且原样透传参数
+    // The package is indeed forwarded to the original method, and the parameters are transparently transmitted as they are.
     assert.equal(ui.calls, 1);
     assert.deepEqual(ui.lastArgs, [{}, {}]);
 
     dispose();
   });
 
-  test('装的是自有属性，因此遮蔽了原型方法（这就是整套机制的前提）', () => {
+  test('It installs its own attributes, thus covering the prototype method (this is the premise of the entire mechanism)', () => {
     const ui = new FakeCommandUi([]);
     const before = ui.candidates;
     assert.equal(Object.prototype.hasOwnProperty.call(ui, 'candidates'), false);
@@ -108,7 +112,7 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     dispose();
   });
 
-  test('label 每次候选轮询现取 —— 语言切换在下一轮菜单打开时生效', async () => {
+  test('label Each candidate polling is taken now - the language switch takes effect when the next round of menu is opened', async () => {
     const ui = new FakeCommandUi([{ name: 'chat' }]);
     const source = sourceOf(ui);
     let lang = 'zh';
@@ -124,7 +128,7 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     dispose();
   });
 
-  test('DSH 自己已经给了 icon 的行不被覆盖（将来官方支持后自动让位）', async () => {
+  test('The row DSH has already given to icon will not be overwritten (it will automatically give way after official support in the future)', async () => {
     const official = () => null;
     const ui = new FakeCommandUi([{ name: 'chat', icon: official, label: '官方标题' }]);
     const source = sourceOf(ui);
@@ -137,7 +141,7 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     dispose();
   });
 
-  test('映射逻辑抛错时退回原始行（菜单不会坏）', async () => {
+  test('Return to the original row when the mapping logic throws an error (the menu will not be broken)', async () => {
     const ui = new FakeCommandUi([{ name: 'chat', description: '来自宿主' }]);
     const source = sourceOf(ui);
     const boom: CommandFace = {
@@ -154,16 +158,16 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     assert.equal(rows[0].name, 'chat');
     assert.equal(rows[0].label, undefined);
     assert.equal(rows[0].description, '来自宿主');
-    // 降级必须留痕，否则「静默失效」没人守
+    // The downgrade must leave traces, otherwise the "silent failure" will be left unattended.
     assert.equal(warn.messages.length, 1);
-    assert.match(warn.messages[0], /退回原始菜单行/);
+    assert.match(warn.messages[0], /using the original menu item/);
     assert.match(warn.messages[0], /label 炸了/);
 
     dispose();
     warn.restore();
   });
 
-  test('不吞 original 自己的错误（DSH 已有 source-failed 兜底）', async () => {
+  test("Do not swallow original's own error (DSH already has source-failed fallback)", async () => {
     const ui = new FakeCommandUi([]);
     (ui as unknown as { candidates: () => Promise<unknown> }).candidates = async () => {
       throw new Error('DSH 自己的错');
@@ -174,7 +178,7 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     await assert.rejects(() => source.candidates({}, {}), /DSH 自己的错/);
   });
 
-  test('非数组返回值原样放行（不猜 DSH 的返回形状）', async () => {
+  test('Non-array return values are released as they are (don’t guess the return shape of DSH)', async () => {
     const ui = new FakeCommandUi([]);
     (ui as unknown as { candidates: () => Promise<unknown> }).candidates = async () => 'nope';
     const source = sourceOf(ui);
@@ -183,7 +187,7 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     assert.equal(await source.candidates({}, {}), 'nope');
   });
 
-  test('数组里的非对象元素原样放行', async () => {
+  test('Non-object elements in the array are released as they are', async () => {
     const ui = new FakeCommandUi([null, 42, 'x', { name: 'chat' }]);
     const source = sourceOf(ui);
     const dispose = installCommandFaces(ui, new Map([['chat', face('对话')]]));
@@ -195,7 +199,7 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     dispose();
   });
 
-  test('candidates 缺失 → 完全不装，只告警', () => {
+  test('candidates is missing → not installed at all, only warning', () => {
     const ui: CommandUiLike = {};
     const warn = captureWarn();
     const dispose = installCommandFaces(ui, new Map([['chat', face('对话')]]));
@@ -203,13 +207,13 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     assert.equal(ui.candidates, undefined);
     assert.equal(typeof dispose, 'function');
     assert.equal(warn.messages.length, 1);
-    assert.match(warn.messages[0], /commandUi\.candidates 缺失/);
+    assert.match(warn.messages[0], /commandUi\.candidates missing/);
 
     dispose();
     warn.restore();
   });
 
-  test('dispose 还原原方法（闭包重新取到未加工的行）', async () => {
+  test('dispose restores the original method (the closure re-fetches the unprocessed rows)', async () => {
     const ui = new FakeCommandUi([{ name: 'chat' }]);
     const source = sourceOf(ui);
     const dispose = installCommandFaces(ui, new Map([['chat', face('对话')]]));
@@ -219,29 +223,29 @@ describe('installCommandFaces —— 包装 commandUi.candidates', () => {
     assert.equal((await rowsOf(source))[0].label, undefined);
   });
 
-  test('dispose 只还原自己那一份 —— 后来者的包装不被抹掉', () => {
+  test('dispose only restores its own share - the packaging of latecomers will not be erased', () => {
     const ui = new FakeCommandUi([{ name: 'chat' }]);
     const first = installCommandFaces(ui, new Map([['chat', face('第一层')]]));
     const patchedFirst = ui.candidates;
     const second = installCommandFaces(ui, new Map([['chat', face('第二层')]]));
     const patchedSecond = ui.candidates;
 
-    // 第一层先 dispose：此时实例上是第二层，不该被抹成原型方法
+    // First layer first dispose: At this time, the instance is the second layer and should not be wiped as a prototype method
     first();
     assert.equal(ui.candidates, patchedSecond);
 
-    // 第二层 dispose：还原成第一层（而不是原型方法）；第一层再 dispose 才回到原型
+    // The second layer dispose: restore to the first layer (not the prototype method); the first layer then dispose before returning to the prototype
     second();
     assert.equal(ui.candidates, patchedFirst);
     first();
   });
 
-  test('两层包装叠加时，外层不覆盖内层已设的面孔（icon 短路同样生效）', async () => {
+  test('When two layers of packaging are superimposed, the outer layer does not cover the faces that have been set in the inner layer (icon short-circuit also takes effect)', async () => {
     const ui = new FakeCommandUi([{ name: 'chat' }]);
     const first = installCommandFaces(ui, new Map([['chat', face('第一层')]]));
     const second = installCommandFaces(ui, new Map([['chat', face('第二层')]]));
 
-    // 内层先跑，行上已有 icon → 外层的短路规则让它原样放行，于是标题保持内层的
+    // The inner layer runs first, and there is already icon on the line → the short-circuit rule of the outer layer allows it to be passed as it is, so the title remains the inner layer.
     assert.equal((await rowsOf(sourceOf(ui)))[0].label, '第一层');
 
     second();

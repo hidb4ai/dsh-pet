@@ -1,32 +1,33 @@
 /**
- * 「测试弹窗」按钮的动作：借这次用户手势申请系统通知权限，成功后直接发一条测试通知。
- * 一个按钮兼做「拿权限」与「验链路」：失败把理由与引导回给调用方就地显示，绝不静默。
- * 不持有状态，反馈通过回调交给设置页（它才知道把红字放哪）。
+ * The action of the "Test pop-up window" button: Use this user gesture to apply for system notification permission,
+ * and directly send a test notification after success. One button serves as both "get permission" and "verify link":
+ * if it fails, the reason and guidance will be returned to the caller and displayed locally, never silently. No state
+ * is held, and feedback is given to the settings page through callback (it only knows where to put the red text).
  * @module dsh-pet/src/client/settings/notify-test
  */
 import { NOTIFY_ICONS, requestNotificationPermission, wireNotificationClick } from '../notify.ts';
 import type { Feedback } from './actions.ts';
 
-/** {@link runNotificationTest} 的依赖。 */
+/** Dependence of {@link runNotificationTest}. */
 export interface NotificationTestDeps {
-  /** 文案翻译。 */
+  /** Copy translation. */
   t: (key: string) => string;
-  /** 把结果交给设置页显示；空文案表示清掉上一次的红字。 */
+  /** Send the results to the settings page for display; empty text means clearing the last red text. */
   report: (feedback: Feedback) => void;
 }
 
 /**
- * 跑一次「测试弹窗」。
+ * Run the "test pop-up window" once.
  *
- * @param deps - 翻译与反馈回调。
- * @returns 无返回值；结果全部经 `report` 回传。
+ * @param deps - Translation and feedback callback.
+ * @returns has no return value; all results are returned via `report` .
  */
 export async function runNotificationTest(deps: NotificationTestDeps): Promise<void> {
   const { t, report } = deps;
   report({ kind: '', text: '' });
   const result = await requestNotificationPermission();
   if (!result.ok) {
-    // 失败理由 + 引导；unsupported 没有引导（改环境才有意义）。
+    // Reason for failure + boot; unsupported has no boot (it only makes sense to change the environment).
     const reason =
       result.reason === 'unsupported'
         ? t('notifyDenyUnsupported')
@@ -39,12 +40,12 @@ export async function runNotificationTest(deps: NotificationTestDeps): Promise<v
     return;
   }
   try {
-    // 绕过聚焦门直接发一条测试通知；点击行为与真实事件通知共用 wireNotificationClick。
+    // Send a test notification directly, bypassing the focus gate; click behavior and real event notification share wireNotificationClick.
     wireNotificationClick(
       new Notification('测试通知', { body: '【dsh-pet】系统通知已就绪。', icon: NOTIFY_ICONS.test }),
     );
   } catch {
-    /* 个别环境构造失败：仍按已授权提示。 */
+    /* Some environment construction failed: still press the authorized prompt. */
   }
   report({ kind: 'ok', text: t('notifyTestOk') });
 }

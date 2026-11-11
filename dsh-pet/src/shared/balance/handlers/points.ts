@@ -1,8 +1,9 @@
 /**
- * points 形态：积分或点数余额（非货币）的已用百分比与气泡文案。
+ * points Form: Used percentage of points or points balance (non-monetary) with bubble copy.
  *
- * 与 money 的区别只在语义：单位是数据带出的后缀，绝不套货币符号；数学是同一套，单位在比值里
- * 被约掉，同样没有汇率问题。
+ * The difference from money is only in semantics: the unit is the suffix brought out by the data, and there is no
+ * currency symbol; the mathematics is the same, the unit is eliminated in the ratio, and there is no exchange rate
+ * issue.
  *
  * @module dsh-pet/src/shared/balance/handlers/points
  */
@@ -11,9 +12,10 @@ import type { BalanceBubbleRow, BalanceView } from '../types.ts';
 import type { ShapeHandler } from './shape.ts';
 
 /**
- * 与 money 同一套「按基准折算」的数学，数据来自 points 而非 wallets。
+ * The same set of "base conversion" mathematics as money, the data comes from points instead of wallets.
  *
- * 没有基准或基准非法则返回 undefined，不播档位动画，也不替服务商猜一个。
+ * If there is no benchmark or the benchmark is invalid, undefined will be returned, the state animation will not be
+ * played, and the state will not be guessed for the service provider.
  */
 function pointsPercent(v: BalanceView): number | undefined {
   const total = Number(v.points?.total);
@@ -23,9 +25,10 @@ function pointsPercent(v: BalanceView): number | undefined {
 }
 
 /**
- * 一行「余额 800 积分」。
+ * One line "Balance 800 points".
  *
- * 单位是数据带出的后缀，绝不套货币符号——$/¥ 那套判断只属于 money；0 也照常显示，0 积分是真实读数。
+ * The unit is the suffix brought out by the data, and does not include currency symbols - $ /¥ That set of judgments
+ * only belongs to money; 0 is also displayed as usual, and 0 points are the real readings.
  */
 function pointsRows(v: BalanceView): BalanceBubbleRow[] {
   const p = v.points;
@@ -33,7 +36,7 @@ function pointsRows(v: BalanceView): BalanceBubbleRow[] {
   return [{ role: 'label', text: '余额 ' + p.total + ' ' + p.unit }];
 }
 
-/** points 形态的展示规则：百分比按积分基准折算，气泡只拼数字与单位。 */
+/** Display rules for the points form: percentages are converted based on points, bubbles only spell numbers and units. */
 export const pointsHandler: ShapeHandler = {
   percent: pointsPercent,
   rows: pointsRows,

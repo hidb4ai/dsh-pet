@@ -1,14 +1,15 @@
 /**
- * 触屏长按（src/client/pet/motion/touch-press.ts）的契约测试：到点触发一次，
- * 计时期间移动超容差或松手都取消，鼠标与笔不起表。
- * 用 node 的假计时器驱动，回调参数按现场对象断言。
+ * Contract test of touch screen long press (src/client/pet/motion/touch-press.ts): trigger once when the point is
+ * reached, and it will be canceled if the movement exceeds the tolerance or is released during the timing, and the
+ * mouse and pen cannot function. Use node's fake timer driver, and the callback parameter is based on the live object
+ * assertion.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createTouchPress, type TouchPressTarget } from './touch-press.ts';
 
-/** 假元素：只留释放捕获与派发。 */
+/** False element: only release capture and dispatch are left. */
 function fakeEl() {
   const released: number[] = [];
   const dispatched: string[] = [];
@@ -23,14 +24,14 @@ function fakeEl() {
   };
 }
 
-/** 造一次按下的现场。 */
+/** Create a pressed scene. */
 function target(pointerType = 'touch'): { value: TouchPressTarget; fake: ReturnType<typeof fakeEl> } {
   const fake = fakeEl();
   return { fake, value: { el: fake.el, pointerId: 7, pointerType, x: 120, y: 240 } };
 }
 
-describe('createTouchPress —— 到点触发', () => {
-  test('触屏按满时长：回调一次，带上按下的现场', (t) => {
+describe('createTouchPress——point trigger', () => {
+  test('Touch screen full press time: callback once, with the pressed scene', (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const seen: TouchPressTarget[] = [];
     const press = createTouchPress({ stillHolding: () => true, onMenu: (value) => seen.push(value) });
@@ -38,14 +39,14 @@ describe('createTouchPress —— 到点触发', () => {
     press.arm(value);
     assert.equal(press.isArmed(), true);
     t.mock.timers.tick(499);
-    assert.equal(seen.length, 0, '未满时长不应触发');
+    assert.equal(seen.length, 0, 'It should not be triggered if the duration is not full.');
     t.mock.timers.tick(1);
     assert.equal(seen.length, 1);
     assert.deepEqual(seen[0], value);
     assert.equal(press.isArmed(), false);
   });
 
-  test('鼠标与笔：不起表', (t) => {
+  test('Mouse and pen: can’t afford the watch', (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const seen: TouchPressTarget[] = [];
     const press = createTouchPress({ stillHolding: () => true, onMenu: (value) => seen.push(value) });
@@ -56,7 +57,7 @@ describe('createTouchPress —— 到点触发', () => {
     assert.equal(seen.length, 0);
   });
 
-  test('到点时按压已结束：回调自弃', (t) => {
+  test('Pressing has ended when the point is reached: callback abandons itself', (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     let holding = true;
     const seen: TouchPressTarget[] = [];
@@ -67,7 +68,7 @@ describe('createTouchPress —— 到点触发', () => {
     assert.equal(seen.length, 0);
   });
 
-  test('重复起表：只保留最后一次，到点只触发一次', (t) => {
+  test('Repeat the table: only keep the last time, and only trigger once when the point is reached.', (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const seen: TouchPressTarget[] = [];
     const press = createTouchPress({ stillHolding: () => true, onMenu: (value) => seen.push(value) });
@@ -79,21 +80,21 @@ describe('createTouchPress —— 到点触发', () => {
   });
 });
 
-describe('createTouchPress —— 取消', () => {
-  test('移动超过容差：取消，到点不触发', (t) => {
+describe('createTouchPress - Cancel', () => {
+  test('Movement exceeds tolerance: Cancel, not triggered when reaching the point', (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const seen: TouchPressTarget[] = [];
     const press = createTouchPress({ stillHolding: () => true, onMenu: (value) => seen.push(value) });
     press.arm(target().value);
     press.move(8);
-    assert.equal(press.isArmed(), true, '正好等于容差时还不取消');
+    assert.equal(press.isArmed(), true, 'It is not canceled when it is exactly equal to the tolerance.');
     press.move(9);
     assert.equal(press.isArmed(), false);
     t.mock.timers.tick(500);
     assert.equal(seen.length, 0);
   });
 
-  test('松手取消：到点不触发', (t) => {
+  test('Let go and cancel: not triggered when the point is reached', (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const seen: TouchPressTarget[] = [];
     const press = createTouchPress({ stillHolding: () => true, onMenu: (value) => seen.push(value) });
@@ -104,7 +105,7 @@ describe('createTouchPress —— 取消', () => {
     assert.equal(seen.length, 0);
   });
 
-  test('没起表时移动与取消都是空操作', () => {
+  test('When the table is not started, moving and canceling are no-ops.', () => {
     const press = createTouchPress({ stillHolding: () => true, onMenu: () => {} });
     press.move(100);
     press.cancel();

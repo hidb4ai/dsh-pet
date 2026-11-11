@@ -1,9 +1,11 @@
 /**
- * 种类归纳（petKinds）的契约测试。
+ * Contract test for type induction (petKinds).
  *
- * 两条契约：
- *   1. 按首次出现顺序去重，并统计每种有多少只实例（标签上的括注）；
- *   2. 没有 `assetRoot` 的实例算 main —— 老数据 / 容器拍平缺字段时不能凭空造出一个种类。
+ * Two contracts:
+ * 1. Deduplicate in order of first appearance, and count how many instances of each type there are (brackets on the
+ * label);
+ * 2. An instance without `assetRoot` is counted as main - old data/containers cannot create a category out of thin air
+ * when flattening missing fields.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +13,7 @@ import assert from 'node:assert/strict';
 import { mainPetsOf, petKinds } from './use-pet-list.ts';
 import type { Pet } from '../../shared/types.ts';
 
-/** 一只最小实例；`assetRoot` 省略时模拟「没打标的实例」。 */
+/** A minimal instance; when `assetRoot` is omitted, "unmarked instance" is simulated. */
 const pet = (id: string, assetRoot?: string): Pet => ({
   id,
   name: id,
@@ -25,8 +27,8 @@ const pet = (id: string, assetRoot?: string): Pet => ({
   ...(assetRoot === undefined ? {} : { assetRoot }),
 });
 
-describe('petKinds —— 实例列表 → 种类条', () => {
-  test('按首次出现顺序去重，并统计每种的实例数', () => {
+describe('petKinds ——Instance list → Category bar', () => {
+  test('Deduplicate in the order of first appearance, and count the number of instances of each type', () => {
     assert.deepEqual(petKinds([pet('m1', 'main'), pet('d1', 'daily'), pet('d2', 'daily'), pet('f1', 'festival')]), [
       { entry: 'main', kind: 'main', count: 1 },
       { entry: 'daily', kind: 'pack', count: 2 },
@@ -34,22 +36,22 @@ describe('petKinds —— 实例列表 → 种类条', () => {
     ]);
   });
 
-  test('没有 assetRoot 的实例归到 main', () => {
+  test('No instance of assetRoot is assigned to main', () => {
     assert.deepEqual(petKinds([pet('x1')]), [{ entry: 'main', kind: 'main', count: 1 }]);
   });
 
-  test('空列表：没有种类', () => {
+  test('Empty list: no category', () => {
     assert.deepEqual(petKinds([]), []);
   });
 });
 
-describe('mainPetsOf —— PUT /config 的提交内容', () => {
-  test('只留 main 层实例：pack 实例不得进用户主配置', () => {
+describe('mainPetsOf —— Submission content of PUT /config', () => {
+  test('Only main layer instances are left: pack instances are not allowed to enter the user main configuration', () => {
     const pets = [pet('m1', 'main'), pet('d1', 'daily'), pet('f1', 'festival'), pet('x1')];
     assert.deepEqual(
       mainPetsOf(pets).map((item) => item.id),
       ['m1', 'x1'],
-      '没有 assetRoot 的老实例算 main，pack 实例必须排除',
+      'Old instances without assetRoot are counted as main, and pack instances must be excluded.',
     );
   });
 });

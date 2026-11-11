@@ -1,25 +1,26 @@
 /**
- * 加载态条：配置还在拉或拉失败时显示一行状态，失败时给「重试」。
- * 就绪后整块不出现，也不占位——它就是设置页顶部那条临时提示。
+ * Loading status bar: The configuration also displays a line of status when the pull or pull fails, and gives "Retry"
+ * when it fails. When ready, the entire block does not appear and does not take up space - it is just the temporary
+ * prompt at the top of the settings page.
  * @module dsh-pet/src/client/settings/load-status
  */
 import type { FunctionComponent } from 'react';
 import type { SettingsRuntime } from './runtime.ts';
 import type { LoadState } from './config/index.ts';
 
-/** 加载态条的输入。 */
+/** Load status bar input. */
 export interface LoadStatusProps {
-  /** 当前加载状态；`ready` 时不渲染。 */
+  /** Current loading status; no rendering when `ready`. */
   loadState: LoadState;
-  /** 重新拉一次配置。 */
+  /** Pull the configuration again. */
   onRetry: () => void;
 }
 
 /**
- * 造加载态条。
+ * Create a status bar.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 状态条组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns status bar component.
  */
 export function makeLoadStatus(rt: Pick<SettingsRuntime, 'h' | 't'>): FunctionComponent<LoadStatusProps> {
   const { h, t } = rt;

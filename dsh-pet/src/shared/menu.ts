@@ -1,8 +1,8 @@
 /**
- * 右键菜单的公开出口：树构建、样式与 DOM 挂载。
+ * Public exit from right-click menu: tree construction, styles and DOM mount.
  *
- * 只做再导出；判据在 ./menu/tree，挂载在 ./menu/mount。
- * 必须始终成立：数据与判据是纯函数，浏览器与桌面两端共用同一份。
+ * Only re-export; criterion is in ./menu/tree and mounted in ./menu/mount. It must always be true: data and criteria
+ * are pure functions, shared by both browser and desktop.
  * @module dsh-pet/src/shared/menu
  */
 export type { ContextMenuMount, MenuBranch, MenuLeaf, MenuMoreItem, MenuNode } from './menu/types.ts';

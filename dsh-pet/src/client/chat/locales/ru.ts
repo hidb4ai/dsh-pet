@@ -1,5 +1,5 @@
 /**
- * 对话面板俄语文案；键集必须与 zh 一致。
+ * Dialog panel Russian copy; keyset must be consistent with zh.
  */
 import type { Key } from './zh.ts';
 

@@ -1,8 +1,10 @@
 /**
- * 宠物定位与访问守卫：按 ?pet= 找实例、按 surface 判占用锁，并给出可直接返回的失败应答。
+ * Pet positioning and access guard: Press ? pet = to find the instance, press surface to determine if the lock is
+ * occupied, and give a failure response that can be returned directly.
  *
- * 不读配置以外的介质，只经 onChange 同步锁状态到 S。
- * 依赖由 apply 显式传入（见输入类型），模块内不读全局、不建单例。
+ * Does not read media outside the configuration, only passes the onChange synchronization lock status to S.
+ * Dependencies are explicitly passed in by apply (see input type), and the module does not read globals or create
+ * singletons.
  * @module dsh-pet/src/host/plugin/pet-lookup
  */
 import { LockStore } from '../lock.ts';
@@ -14,49 +16,59 @@ import { findPetInstance, readAllConfig } from '../config.ts';
 import { pickSleepText, SleepStore, sleepTextsOf } from '../sleep.ts';
 import type { HostSetup } from './setup.ts';
 
-/** 宠物定位与访问守卫的输入：装配期对象与更早的工厂。 */
+/** Input for pet positioning and access guards: assembly period objects and earlier factories. */
 export type PetLookupInput = {} & Pick<HostSetup, 'state' | 'configPaths'>;
 
 /**
- * 创建宠物定位与访问守卫。
+ * Create pet location and access guards.
  */
 export function createPetLookup(deps: PetLookupInput) {
   const { configPaths, state } = deps;
-  // 占用锁（issue #122 第 4 项）：内存态一把锁 + TTL，第三方联动期间独占这只宠物——除持锁者外
-  // 随机链、碎碎念、余额、工作状态一概让路。
-  // 它自己不带定时器：过期是懒判的，叶子里的 `expiresAt` 是唯一真相，渲染端据此自己解除静止；
-  // 这里只负责把状态变化同步进 S 的 `pets.<id>.lock`。
+  // Occupied lock (Item 4 of issue #122): One lock in the memory state + TTL, this pet is exclusive during the
+  // third-party linkage period - except for the lock holder, the random chain, whisper, balance, and working status
+  // will all give way. It does not have a timer of its own: expiration is lazy, and the `expiresAt` in the leaf is the
+  // only truth. The renderer releases the static state accordingly; here it is only responsible for synchronizing the
+  // state changes into the `pets.<id>.lock` of S.
   const lock = new LockStore({
     onChange: (petId, data) => state.writePet(petId, 'lock', data),
   });
 
-  // 实况快照（issue #122 第 1 条）：桌面渲染端变化时上报，第三方用 GET /pose 读。
-  // 网页端不走这里——它的位置天生每个页面一份，走页面内的 Cordis 服务 `petApi7340`。
+  // Live snapshot (issue #122 Article 1): Report when the desktop renderer changes, and third parties can use GET /
+  // pose to read it. The web page does not go here - its location is generated for each page, and the Cordis service
+  // `petApi7340` within the page is used.
   const pose = new PoseStore();
 
-  // 睡觉状态：与占用锁同层的内存会话状态，状态变化同步进 S 的 `pets.<id>.sleep`。
-  // 三段动画名由宿主挑好放进叶子，渲染端照此播放；宿主自己用它拦自动来源与手动触发。
+  // Sleeping state: The memory session state of the same layer as the occupied lock. The state changes are
+  // synchronized into S and `pets.<id>.sleep` . The three animation names are selected by the host and put into the
+  // leaves, and the renderer plays them accordingly; the host uses them to block automatic sources and manual
+  // triggers.
   const sleep = new SleepStore({
     onChange: (petId, data) => state.writePet(petId, 'sleep', data),
   });
 
-  /** 该条目的睡觉拒绝台词。台词只有配置一个来源（默认值在 assets/config.jsonc，合并层负责回落）；
-   *  池为空说明配置损坏，这时返回 undefined，宁可不说话也不在代码里另抄一份文案。 */
+  /**
+   * This entry's sleeping refusal line. The lines can only be configured with one source (the default value is
+   * assets/config.jsonc, and the merge layer is responsible for fallback); an empty pool indicates that the
+   * configuration is damaged, and undefined is returned at this time. It is better not to speak than to copy another
+   * copy in the code.
+   */
   const refuseText = (petId: string): string | undefined => {
     try {
       const found = findPetInstance(readAllConfig(configPaths), petId);
       return pickSleepText(sleepTextsOf(found?.conf ?? {}).refuse);
     } catch {
-      return undefined; // 配置不可读（安装损坏）：拒绝照做，只是没有台词
+      return undefined; // Unreadable configuration (corrupted installation): Refuse to follow instructions, just no lines
     }
   };
 
   /**
-   * 睡觉闸门（手动触发与第三方调用共用）：在睡 → 弹一句拒绝台词并返回 `sleeping`；否则放行回 null。
+   * Sleep gate (manual trigger shared with third-party calls): While sleeping → play a rejection line and return
+   * `sleeping` ; otherwise, release and return to null.
    *
-   * 持锁时让路：取锁时会先把宠物叫醒，正常情况下走不到这里；留着它是「锁叶子回到渲染端之前」
-   * 那一小段竞态的兜底（宿主已受理锁、渲染端状态还没跟上）。
-   * 拒绝台词写进 `say` 且 `anim: false`——睡觉期间不换动画，只弹气泡。
+   * Give way when the lock is held: When taking the lock, the pet will be woken up first, and it cannot go here under
+   * normal circumstances; leaving it is the short fallback of the race state "before the lock leaf returns to the
+   * renderer" (the host has accepted the lock, and the renderer status has not caught up yet). Refuse to write lines
+   * into `say` and `anim: false` - the animation will not be changed during sleep, only bubbles will be played.
    */
   const sleepBlocked = (petId: string): RouteResult | null => {
     if (!sleep.sleeping(petId)) return null;
@@ -67,8 +79,8 @@ export function createPetLookup(deps: PetLookupInput) {
   };
 
   /**
-   * `?surface=` 的参数级校验（缺省 / 非法 → `bad-request`）。放在读盘之前：必然失败的请求不碰磁盘；
-   * 通过则给出收窄后的取值。
+   * Parameter level verification of `?surface=` (default/invalid → `bad-request` ). Place it before reading the disk:
+   * the request that must fail will not touch the disk; if it passes, the narrowed value will be given.
    */
   const surfaceParam = (params: URLSearchParams): { ok: true; want: Surface } | { ok: false; res: RouteResult } => {
     const want = normalizeSurface(params.get('surface'));
@@ -77,9 +89,10 @@ export function createPetLookup(deps: PetLookupInput) {
   };
 
   /**
-   * `?surface=` 与该宠物 `display` 的对齐校验：不满足 → `pet-not-displayed`，并把实际 display
-   * 原样回给调用方；放行回 null。
-   * 这是前置校验，不是按面分发——指令照旧写进同一个叶子、两端内容完全一致。
+   * The alignment check between `?surface=` and the pet `display` : does not satisfy → `pet-not-displayed` , and the
+   * actual display is returned to the caller as it is; released back to null. This is pre-verification, not
+   * face-to-face distribution - the instructions are still written into the same leaf, and the content at both ends is
+   * exactly the same.
    */
   const surfaceMismatch = (pet: Record<string, unknown>, petId: string, want: Surface): RouteResult | null => {
     const display = String(pet.display ?? '');
@@ -90,9 +103,10 @@ export function createPetLookup(deps: PetLookupInput) {
   };
 
   /**
-   * 决策函数之后的 surface 校验（/anim、/broadcast、/bubble/clear、/position、/throw 共用）：
-   * 这几条的 pet 解析住在各自决策模块里，所以按 petId 再查一次实例取 display。
-   * 位置与 lockBlocked 一致——都在决策函数之后、任何副作用之前，顺序是「body → pet → surface → 锁」。
+   * surface verification after the decision function (shared by / anim, / broadcast, / bubble/clear, / position, /
+   * throw): The pet parsing of these items lives in their respective decision modules, so press petId to check again
+   * and get the instance display . The position is consistent with lockBlocked - after the decision function and
+   * before any side effect, the order is "body → pet → surface → lock".
    */
   const surfaceBlocked = (
     cfg: Record<string, Record<string, unknown>>,
@@ -105,15 +119,18 @@ export function createPetLookup(deps: PetLookupInput) {
   };
 
   /**
-   * 路由层的 pet 参数解析（/lock、/lock/release、/whisper、/chat 用；其余动作端点的同一套校验
-   * 住在各自决策模块里，口径一致）：必填且必须真实存在。
+   * pet parameter analysis at the route layer (for / lock, / lock/release, / whisper, / chat; the same set of
+   * verification for other action endpoints is in their respective decision-making modules, and the conventions are
+   * consistent): required and must actually exist.
    *
-   * 两种失败分开报：没给 / 空串 → `pet-required`；给了但配置里没有 → `unknown-pet`。
-   * 绝不默认退到列表第一只——落点会随用户 /pet 操作漂移，失败也不报，第三方无从预期。
+   * Two types of failures are reported separately: not given / empty string → `pet-required` ; given but not in the
+   * configuration → `unknown-pet` . Never return to the first one in the list by default - the placement point will
+   * drift with the user/pet operation, failure will not be reported, and third parties have no way of predicting it.
    *
-   * `cfg` 传惰性读取：pet 空串时不必碰磁盘（routes.test.ts 的「配置不可达」断言靠这个顺序钉住）。
-   * `opts.surface` 只对会产生渲染端可见效果的端点开；/lock/release 与 /chat 的 GET 不开——
-   * 释放必须永远能成功，读记忆与显示在哪一端无关。
+   * `cfg` passes lazy reading: pet does not need to touch the disk when the string is empty (the "configuration
+   * unreachable" assertion of routes.test.ts relies on this sequence to verify). `opts.surface` is only enabled for
+   * endpoints that will produce renderer visible effects; GET of /lock/release and /chat is not enabled - the release
+   * must always be successful, and the read memory has nothing to do with which end it is displayed on.
    */
   const requirePet = (
     params: URLSearchParams,
@@ -128,15 +145,16 @@ export function createPetLookup(deps: PetLookupInput) {
     });
     const petId = String(params.get('pet') ?? '').trim();
     if (!petId) return fail('pet-required', 'pet 必填：要指定操作哪只桌宠');
-    // surface 分两步：参数级校验在读盘之前（必然失败的请求不碰磁盘），显示模式校验在找到宠物之后。
+    // surface is divided into two steps: parameter level verification before reading the disk (requests that must fail do not touch the disk), and display mode verification after the pet is found.
     let want: Surface | null = null;
     if (opts?.surface === true) {
       const p = surfaceParam(params);
       if (!p.ok) return { ok: false, res: p.res };
       want = p.want;
     }
-    // 一次查找同时给出「存在性」与「所属条目」（entry 即素材根，/chat 读记忆分桶要用）+ 条目配置
-    // （/chat 取 chatMemoryRounds 要用）——调用方拿到的就是校验时那份快照里的值，不必再查一次。
+    // A search gives both "existence" and "ownership entry" (entry is the asset root, / chat is used to read the
+    // memory bucket) + entry configuration (/ chat is used to get chatMemoryRounds) - what the caller gets is the
+    // value in the snapshot during verification, and there is no need to check it again.
     const found = findPetInstance(cfg(), petId);
     if (!found) return fail('unknown-pet', '没有这只桌宠：' + petId);
     if (want !== null) {
@@ -147,9 +165,10 @@ export function createPetLookup(deps: PetLookupInput) {
   };
 
   /**
-   * 动作端点的占用门禁（/anim、/broadcast、/position、/throw、/bubble/clear 共用）：放行回 null。
-   * 无锁时按「有没有带 lock」分流：没带 → 放行（既有调用方零改动）；带了但查不到 → `lock-lost`。
-   * 位置在决策函数之后：petId 要先解析出来才知道问哪只宠物的锁，而那时还没有任何副作用。
+   * Action endpoint occupation validation check (shared by / anim, / broadcast, / position, / throw, / bubble/clear):
+   * Release back to null. When there is no lock, press "lock is brought or not" to shunt: not brought → released
+   * (existing caller has zero changes); brought but not found → `lock-lost` . The position is after the decision
+   * function: petId needs to be parsed first to know which pet lock to ask, and there is no side effect at that time.
    */
   const lockBlocked = (petId: string, params: URLSearchParams): RouteResult | null => {
     const g = lock.gate(petId, String(params.get('lock') ?? ''));
@@ -158,5 +177,5 @@ export function createPetLookup(deps: PetLookupInput) {
   };
   return { lock, pose, sleep, sleepBlocked, sleepRefusalText: refuseText, surfaceBlocked, requirePet, lockBlocked };
 }
-/** 宠物定位与访问守卫的产出（供下游工厂按需 Pick）。 */
+/** Pet positioning and access guard output (for downstream factories on demand Pick). */
 export type PetLookup = ReturnType<typeof createPetLookup>;

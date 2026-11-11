@@ -1,32 +1,33 @@
 /**
- * 独立模式设置页翻译：键查找、占位符替换、缺参数回落空串。
+ * Translation of standalone mode settings page: key search, placeholder replacement, missing parameter fallback empty
+ * string.
  *
- * 跑法：node --experimental-strip-types --test src/standalone/settings-page/translate.test.ts
+ * Running method: node --experimental-strip-types --test src/standalone/settings-page/translate.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createTranslator } from './translate.ts';
 
-/** 只含测试用键的最小字典，不依赖面板完整键集。 */
+/** Minimal dictionary containing only keys for testing, does not rely on the complete key set of the panel. */
 const dict = {
   greeting: '你好，{name}',
   pair: '{pets} 只宠物，{messages} 条消息',
   plain: '纯文本',
 };
 
-describe('createTranslator —— 独立页文案翻译', () => {
-  test('不带参数 → 原样返回字典文案', () => {
+describe('createTranslator —— Independent page text translation', () => {
+  test('Without parameters → return the dictionary text as is', () => {
     const t = createTranslator(dict);
     assert.equal(t('plain'), '纯文本');
   });
 
-  test('带参数 → 替换全部 `{name}` 占位符', () => {
+  test('With parameters → Replace all `{name}` placeholders', () => {
     const t = createTranslator(dict);
     assert.equal(t('pair', { pets: 2, messages: 7 }), '2 只宠物，7 条消息');
   });
 
-  test('参数缺失 → 该占位符替换为空串，不残留原文', () => {
+  test('Missing parameter → replace the placeholder with an empty string, leaving no original text', () => {
     const t = createTranslator(dict);
     assert.equal(t('greeting', {}), '你好，');
   });

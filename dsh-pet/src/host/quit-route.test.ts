@@ -1,18 +1,20 @@
 /**
- * 托盘「退出」契约测试（issue #178）：GET /quit 探能力 → POST /quit 交给宿主停机。
+ * system tray "exits" contract test (issue #178): GET /quit detection capability → POST /quit is handed over to the
+ * host for shutdown.
  *
- * 为什么必须由宿主退：BRIDGE 模式下 Helper 由宿主拉起，它自己 `app.quit()` 会被当成崩溃按指数
- * 退避重启（点了只是闪一下）；真正退出要走宿主收尾（停 Helper → 关服务 → exit 0）。这条能力
- * 只有独立模式提供（standalone 伪 ctx 的 `shutdownApp`）——DSH 宿主没有该字段，关掉整个 DSH
- * 不该由一只宠物的托盘决定，所以菜单项在那边不出现。
+ * Why it must be exited by the host: In BRIDGE mode, Helper is pulled up by the host. `app.quit()` itself will be
+ * regarded as a crash and will be restarted according to the index (it just flashes when clicked); the real exit
+ * requires host cleanup (stop Helper → turn off the service → exit 0). This capability is only provided in standalone
+ * mode (standalone pseudo ctx's `shutdownApp` ) - DSH host does not have this field, turning off the entire DSH should
+ * not be determined by a pet's system tray, so the menu item does not appear there.
  *
- * 这里钉住三件事：
- *   ① 能力按请求时判定：ctx 上没有 shutdownApp → canQuit:false，且 POST 不触发任何停机；
- *   ② 有该能力 → canQuit:true，POST 触发且 reason 正确；
- *   ③ 桌面端接线（源码守卫）：BRIDGE 下不得自己退，必须 POST /quit；退出不得调 syncDesktop。
+ * Verify three things here: ① The capability is determined upon request: there is no shutdownApp → canQuit:false on
+ * ctx, and POST does not trigger any shutdown; ② There is the capability → canQuit:true, POST triggers and reason is
+ * correct; ③ Desktop terminal wiring (source code guard): BRIDGE cannot be withdrawn by oneself, it must be POST /
+ * quit; withdrawal cannot be adjusted to syncDesktop.
  *
- * 用 `DSH_PET_IN_PROCESS=1` 让 `launchHelper` 短路：本测试只关心路由，绝不真的拉起 Electron。
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * Use `DSH_PET_IN_PROCESS=1` to make `launchHelper` short-circuit: This test only cares about route and will never
+ * actually pull up Electron. Use Node to build test runner (node:test) without introducing any npm dependencies.
  */
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,7 +26,7 @@ import { Writable } from 'node:stream';
 
 import { apply } from './index.ts';
 
-/** 包内文件源码（守卫用；相对 src/host/ 解析） */
+/** Source code of files in the package (for guarding; relative to src/host / parsing) */
 const readSource = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 const hostSource = readSource('./index.ts') + '\n' + readSource('./routes/desktop.ts');
@@ -37,17 +39,17 @@ let call: (url: string, method?: string, body?: string) => Promise<Result> = () 
 let savedHome: string | undefined;
 let savedElectron: string | undefined;
 let savedInProcess: string | undefined;
-/** apply() 注册的全部 effect 释放函数（after 里调用：常驻定时器否则会让测试进程不退出） */
+/** All effect release functions of apply() register (called in after: resident timer otherwise the test process will not exit) */
 const disposers: Array<() => void> = [];
-/** 伪 ctx：shutdownApp 在用例之间删掉/挂回，用来验证「请求时判定」而不是「apply 时判定」 */
+/** False ctx: shutdownApp is deleted/hanged back between use cases to verify "decision at request time" instead of "decision at apply time" */
 const hostCtx: Record<string, unknown> = {};
-/** 每次 shutdownApp 被调用的原因（"没被误触发"也靠它断言） */
+/** The reason why shutdownApp is called every time ("it was not triggered by mistake" also depends on its assertion) */
 const quitReasons: string[] = [];
 const shutdownSpy = (reason: string): void => {
   quitReasons.push(reason);
 };
 
-/** 最小响应桩：writeHead 记状态码，Writable 收集 body */
+/** Minimum response pile: writeHead records status code, Writable collects body */
 class FakeRes extends Writable {
   declare status: number;
   declare chunks: Buffer[];
@@ -72,15 +74,16 @@ before(() => {
   savedElectron = process.env.DSH_PET_ELECTRON_PATH;
   savedInProcess = process.env.DSH_PET_IN_PROCESS;
   process.env.DSH_HOME = join(dir, 'home');
-  // 命中一个已存在的文件；再加下面的 IN_PROCESS 双保险 —— 本测试绝不 spawn
+  // Hit an existing file; add the following IN_PROCESS double insurance - this test will never spawn
   process.env.DSH_PET_ELECTRON_PATH = process.execPath;
   process.env.DSH_PET_IN_PROCESS = '1';
 
   let handler: ((req: unknown, res: unknown) => Promise<void>) | undefined;
   const noop = (): void => {};
   hostCtx.shutdownApp = shutdownSpy;
-  // 必须与 hostCtx 是同一个引用（不能展开成新对象）：用例之间要 delete 掉 shutdownApp，
-  // 验证 /quit 是「请求时判定」而不是 apply 时就把能力固定死。
+  // Must be the same reference as hostCtx (cannot be expanded into a new object): delete must be replaced by
+  // shutdownApp between use cases, and the capability should be fixed when verifying that quit is "determined on
+  // request" instead of apply.
   Object.assign(hostCtx, {
     effect: (fn: () => unknown) => {
       try {
@@ -88,7 +91,7 @@ before(() => {
         if (typeof dispose === 'function') disposers.push(dispose as () => void);
         return dispose;
       } catch {
-        /* 源码形态下内置配置不可达，refreshDesktop 会抛——吞掉，不影响路由注册 */
+        /* The built-in configuration is unreachable in source code form. refreshDesktop will be thrown and swallowed without affecting the route register. */
       }
     },
     provide: () => noop,
@@ -103,7 +106,7 @@ before(() => {
     llm: { listProviders: () => [], listModels: async () => [] },
   });
   apply(hostCtx);
-  assert.ok(handler, 'apply() 应注册 /dsh-pet-7340 prefix handler');
+  assert.ok(handler, 'apply () should register / dsh-pet-7340 prefix handler');
 
   call = (url, method = 'GET', body) =>
     new Promise<Result>((done) => {
@@ -129,7 +132,7 @@ after(() => {
     try {
       dispose();
     } catch {
-      /* 释放失败不影响其余清理 */
+      /* Failure to release does not affect the rest of the cleanup */
     }
   }
   if (savedHome === undefined) delete process.env.DSH_HOME;
@@ -141,14 +144,14 @@ after(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('GET /quit —— 探「宿主是否允许退出」', () => {
-  test('宿主提供 shutdownApp → canQuit:true', async () => {
+describe('GET /quit - Check "whether the host is allowed to exit"', () => {
+  test('host provides shutdownApp → canQuit:true', async () => {
     const r = await call('/dsh-pet-7340/quit');
     assert.equal(r.status, 200);
     assert.deepEqual(JSON.parse(r.body), { canQuit: true });
   });
 
-  test('DSH 宿主没有该能力 → canQuit:false（桌面端因此不显示退出项）', async () => {
+  test('DSH host does not have this capability → canQuit:false (the desktop side therefore does not display the exit item)', async () => {
     delete hostCtx.shutdownApp;
     try {
       const r = await call('/dsh-pet-7340/quit');
@@ -160,53 +163,55 @@ describe('GET /quit —— 探「宿主是否允许退出」', () => {
   });
 });
 
-describe('POST /quit —— 把退出交给宿主停机', () => {
-  test('有能力的宿主 → ok:true，原因记为「托盘退出」', async () => {
+describe('POST /quit - hand over the exit to the host for shutdown', () => {
+  test('Capable host → ok:true, the reason is recorded as "system tray exit"', async () => {
     quitReasons.length = 0;
     const r = await call('/dsh-pet-7340/quit', 'POST');
     assert.equal(r.status, 200);
     assert.deepEqual(JSON.parse(r.body), { ok: true });
-    // setImmediate 里才真正调停机（先让 200 写出去）
+    // Only in setImmediate can the machine be truly debugged (let 200 be written out first)
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(quitReasons, ['托盘退出']);
   });
 
-  test('没有能力 → 结构化失败，绝不误关宿主', async () => {
+  test('No ability → Structure failure, never shut down the host by mistake', async () => {
     delete hostCtx.shutdownApp;
     quitReasons.length = 0;
     try {
       const r = await call('/dsh-pet-7340/quit', 'POST');
       const body = JSON.parse(r.body) as { ok: boolean; reason: string };
-      assert.equal(r.status, 200, '不支持退出是业务结论，不是协议层错误');
+      assert.equal(r.status, 200, 'Exiting is not supported is a business conclusion, not a protocol layer error.');
       assert.equal(body.ok, false);
       assert.equal(body.reason, 'unsupported');
       await new Promise((resolve) => setImmediate(resolve));
-      assert.deepEqual(quitReasons, [], '没有能力时连一次停机都不许触发');
+      assert.deepEqual(quitReasons, [], 'Even a shutdown is not allowed to be triggered when there is no ability.');
     } finally {
       hostCtx.shutdownApp = shutdownSpy;
     }
   });
 
-  test('PUT → 405（退出是动作端点，不是可保存的资源）', async () => {
+  test('PUT → 405 (Exit is an action endpoint, not a saveable resource)', async () => {
     const r = await call('/dsh-pet-7340/quit', 'PUT');
     assert.equal(r.status, 405);
   });
 });
 
-describe('桌面端与独立模式的接线（源码守卫：两半各自构建，无法互相 import）', () => {
-  // 托盘的退出项与点击行为改成行为测试了（见 desktop-tray.test.ts）：源码守卫一改缩进就红，
-  // 守不住真正的契约。这里只留独立模式那条无法用行为覆盖的接线。
+describe('Wiring between desktop and standalone mode (source code guard: the two halves are built separately and cannot mutually import)', () => {
+  // The exit item and click behavior of the system tray have been changed to behavior testing (see
+  // desktop-tray.test.ts): the source code guard will turn red as soon as the indentation is changed, and the real
+  // contract cannot be maintained. Only the standalone mode wiring that cannot be overridden by behavior is left
+  // here.
   const cli = readSource('../standalone/cli.ts');
   const context = readSource('../standalone/context.ts');
 
-  test('独立模式：停机能力挂到伪 ctx，并复用 /shutdown 的 forwardShutdown', () => {
+  test('Standalone mode: shutdown capability hooked to pseudo ctx, and reuse / shutdown of forwardShutdown', () => {
     assert.match(context, /options\.shutdown \? \{ shutdownApp: options\.shutdown \} : \{\}/);
     assert.match(cli, /shutdown: \(reason\) => forwardShutdown\(reason\)/);
   });
 
-  test('退出不是重启：/quit 路由块内不得调用 syncDesktop()', () => {
+  test('Exit is not a restart: / quit call syncDesktop() must not be called within the route block', () => {
     const block = /if \(rest === 'quit'\) \{([\s\S]*?)\n {2}\}/.exec(hostSource);
-    assert.ok(block, '宿主必须有 /quit 路由');
-    assert.ok(!/syncDesktop/.test(block[1]), '退出不是重启：reload 守卫要求 syncDesktop 恰好 4 次');
+    assert.ok(block, 'host must have / quit route');
+    assert.ok(!/syncDesktop/.test(block[1]), 'Exit not restart: reload guard requested syncDesktop exactly 4 times');
   });
 });

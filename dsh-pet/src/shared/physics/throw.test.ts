@@ -1,10 +1,11 @@
 /**
- * 抛体单步的边界撞击上报与四向接触：钉住「撞哪条边」「撞前速度」以及墙 / 顶也带摩擦。
+ * Boundary collision reporting and four-way contact of projectile single step: verify "which side it hits", "speed
+ * before collision", and the wall/top also has friction.
  *
- * hit 只服务触觉与强度换算；contacts 与 atRest 决定何时停帧。
- * 新用例统一关掉重力或取整数值，避免浮点噪声干扰断言。
+ * hit only serves touch and intensity conversion; contacts and atRest determine when to freeze the frame. New use
+ * cases uniformly turn off gravity or take integer values to avoid floating point noise interfering with assertions.
  *
- * 跑法：node --experimental-strip-types --test src/shared/physics/throw.test.ts
+ * Running method: node --experimental-strip-types --test src/shared/physics/throw.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,89 +13,89 @@ import assert from 'node:assert/strict';
 import { throwBounds, throwStep } from './throw.ts';
 import { DEFAULT_PHYSICS } from './constants.ts';
 
-/** 800×600 视口、100px 宽的宠物：maxX = 700，maxY = 600 - 56.25。 */
+/** 800×600 viewport, 100 px wide pet: maxX = 700, maxY = 600 - 56.25. */
 const BOUNDS = throwBounds({ W: 800, H: 600, size: 100, sideAllow: 0 });
 
-/** 无重力：只验接触求解本身，不让重力增量混进期望值。 */
+/** No gravity: Only the contact solution itself is tested, and the gravity increment is not allowed to be mixed into the expected value. */
 const NO_GRAVITY = { gx: 0, gy: 0 };
 
-/** 浮点近似断言：逐位相等会把 0.78 的二进制误差变成假红。 */
+/** Floating point approximation assertion: Bitwise equality turns a binary error of 0.78 into false red. */
 const near = (actual: number, expected: number, message: string): void => {
-  assert.ok(Math.abs(actual - expected) < 1e-6, `${message}（期望 ${expected}，实际 ${actual}）`);
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${message} (expected ${expected}, actual ${actual})`);
 };
 
-describe('throwStep —— hit 上报', () => {
-  test('没撞边：hit 为 null', () => {
+describe('throwStep —— hit reported', () => {
+  test('No edge collision: hit is null', () => {
     const res = throwStep({ x: 300, y: 300, vx: 0, vy: 0 }, 1 / 60, BOUNDS, DEFAULT_PHYSICS);
     assert.equal(res.hit, null);
   });
 
-  test('撞左墙：edge=left，speed = 撞击前的水平速度', () => {
+  test('Hitting the left wall: edge = left, speed = horizontal velocity before impact', () => {
     const res = throwStep({ x: 1, y: 100, vx: -500, vy: 0 }, 0.01, BOUNDS, DEFAULT_PHYSICS);
     assert.deepEqual(res.hit, { edge: 'left', speed: 500 });
   });
 
-  test('撞右墙：edge=right', () => {
+  test('Hitting the right wall: edge = right', () => {
     const res = throwStep({ x: 699, y: 100, vx: 500, vy: 0 }, 0.01, BOUNDS, DEFAULT_PHYSICS);
     assert.deepEqual(res.hit, { edge: 'right', speed: 500 });
   });
 
-  test('落地：edge=floor，speed 是撞地前的竖直速度（含本步重力）', () => {
+  test('Landing: edge = floor, speed is the vertical speed before hitting the ground (including the gravity of this step)', () => {
     const res = throwStep({ x: 100, y: 540, vx: 0, vy: 600 }, 0.02, BOUNDS, DEFAULT_PHYSICS);
     assert.equal(res.hit?.edge, 'floor');
-    assert.ok((res.hit?.speed ?? 0) > 600, `应含重力增量，实际 ${res.hit?.speed}`);
+    assert.ok((res.hit?.speed ?? 0) > 600, `Gravity increment should be included, actual ${res.hit?.speed}`);
   });
 
-  test('撞顶：ceilingBounce 开启时上报 ceiling（速度已含本步重力）', () => {
+  test('Ceiling collision: report ceiling when ceilingBounce is enabled, including gravity from this step', () => {
     const res = throwStep({ x: 100, y: 1, vx: 0, vy: -500 }, 0.01, BOUNDS, DEFAULT_PHYSICS);
-    // 先积分重力再判边界：-500 + 1400×0.01 = -486
+    // Integrate gravity first and then determine the boundary: -500 + 1400×0.01 = -486
     assert.deepEqual(res.hit, { edge: 'ceiling', speed: 486 });
   });
 
-  test('撞顶：ceilingBounce 关闭时无边界，不上报', () => {
+  test('Top hit: ceilingBounce has no boundary when closed and will not be reported.', () => {
     const physics = { ...DEFAULT_PHYSICS, ceilingBounce: false };
     const res = throwStep({ x: 100, y: 1, vx: 0, vy: -500 }, 0.01, BOUNDS, physics);
     assert.equal(res.hit, null);
   });
 
-  test('角落同时撞两条边：取速度更大的那条', () => {
+  test('A corner hits two sides at the same time: take the one with greater speed', () => {
     const res = throwStep({ x: 1, y: 540, vx: -5000, vy: 600 }, 0.01, BOUNDS, DEFAULT_PHYSICS);
     assert.equal(res.hit?.edge, 'left');
     assert.equal(res.hit?.speed, 5000);
   });
 });
 
-describe('throwStep —— 四向摩擦与贴面静止', () => {
-  test('撞左墙：竖直速度按切向摩擦衰减', () => {
+describe('throwStep —— Four-way friction and veneer stationary', () => {
+  test('Hitting the left wall: vertical velocity is attenuated by tangential friction', () => {
     const res = throwStep({ x: 1, y: 100, vx: -500, vy: 300 }, 0.01, BOUNDS, DEFAULT_PHYSICS, NO_GRAVITY);
     near(res.vx, 390, '水平速度应只按恢复系数反弹');
     near(res.vy, 292.5, '竖直速度应按摩擦衰减');
   });
 
-  test('撞天花板：水平速度按切向摩擦衰减', () => {
+  test('Hitting the ceiling: Horizontal velocity is attenuated by tangential friction', () => {
     const res = throwStep({ x: 100, y: 1, vx: 300, vy: -500 }, 0.01, BOUNDS, DEFAULT_PHYSICS, NO_GRAVITY);
     near(res.vx, 292.5, '水平速度应按摩擦衰减');
     near(res.vy, 390, '竖直速度应只按恢复系数反弹');
   });
 
-  test('重力朝上贴天花板：法向归零后 atRest 成立', () => {
+  test('Gravity points upward against the ceiling: atRest is established after the normal direction returns to zero.', () => {
     const res = throwStep({ x: 100, y: 0, vx: 0, vy: 0 }, 1 / 60, BOUNDS, DEFAULT_PHYSICS, { gx: 0, gy: -1400 });
     assert.deepEqual(res.contacts, ['ceiling']);
     assert.equal(res.atRest, true);
   });
 
-  test('贴墙但沿墙仍有速度：atRest 不成立', () => {
+  test('Sticking to the wall but still having speed along the wall: atRest is not true', () => {
     const res = throwStep({ x: 0, y: 100, vx: -500, vy: 300 }, 0.01, BOUNDS, DEFAULT_PHYSICS, NO_GRAVITY);
     assert.deepEqual(res.contacts, ['left']);
     assert.equal(res.atRest, false);
   });
 
-  test('角落同时接触两面：contacts 保留全部接触边', () => {
+  test('Corner touches two sides at the same time: contacts retains all touching edges', () => {
     const res = throwStep({ x: 1, y: 540, vx: -5000, vy: 600 }, 0.01, BOUNDS, DEFAULT_PHYSICS, NO_GRAVITY);
     assert.deepEqual(res.contacts, ['left', 'floor']);
   });
 
-  test('贴地低速：atRest 与改动前的落地静止一致', () => {
+  test('Low speed close to the ground: atRest is consistent with the ground static state before the change', () => {
     const res = throwStep({ x: 300, y: 543.75, vx: 10, vy: 0 }, 1 / 60, BOUNDS, DEFAULT_PHYSICS);
     assert.deepEqual(res.contacts, ['floor']);
     assert.equal(res.atRest, true);

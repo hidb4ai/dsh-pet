@@ -1,11 +1,13 @@
 /**
- * 桌面 Helper 自测用的 mock 宿主，只实现 /dsh-pet-7340 前缀下的四条只读端点：
- * 成品配置、按 petId 取动画、余额、余额触发计数。开发自测工具，不入 npm 包。
- * 不模拟用户层与文件宠物（配置只回内置默认一条），也不提供写操作、鉴权与系统通知
- * （系统通知是浏览器半侧的独立能力，走 DSH 网页自身事件流，与桌面模式无关）。
- * 素材一律从包内 assets/webm 读，petId 只作归属标识、不映射到独立素材目录。
- * 必须始终：thumb 解析出的路径要留在素材根内，越界即 400。
- * 端口取第一个参数，默认 8231；入口是 npm run dev:mock。
+ * The mock host used for desktop Helper self-test only implements four read-only endpoints under the / dsh-pet-7340
+ * prefix: resolved configuration, pressing petId to get animation, balance, and balance trigger count. Develop
+ * self-test tools, not included in npm package. It does not simulate the user layer and file pets (the configuration
+ * only returns the built-in default one), and it does not provide write operations, authentication and system
+ * notifications (system notifications are independent capabilities of the browser side and follow the DSH web page's
+ * own event flow and have nothing to do with desktop mode). Assets are always read from assets/webm in the package.
+ * petId is only used as an attribution identifier and is not mapped to an independent asset directory. Must always:
+ * The path parsed by thumb should stay within the asset root, and if it exceeds the limit, it will be 400. The port
+ * takes the first parameter, the default is 8231; the entry point is npm run dev:mock.
  * @module dsh-pet/scripts/dev/mock-server
  */
 import { createServer } from 'node:http';
@@ -19,7 +21,7 @@ const PACKAGE_ROOT = resolve(here, '..', '..');
 const WEBM_ROOT = join(PACKAGE_ROOT, 'assets', 'webm');
 const CONFIG_FILE = join(PACKAGE_ROOT, 'assets', 'config.jsonc');
 
-/** 剥除 JSONC 注释（与真实宿主 readAllConfig 的 stripJsonc 同规则），返回纯 JSON。 */
+/** Strip JSONC annotation (same rules as stripJsonc of real host readAllConfig), return pure JSON. */
 const stripJsonc = (src) =>
   src
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -41,7 +43,7 @@ const server = createServer((req, res) => {
   const pathname = decodeURIComponent(url.pathname);
 
   if (pathname === '/dsh-pet-7340/balance') {
-    // 模拟 DeepSeek 余额：固定 11.06 元，按已用比例落在钱袋档位，便于对照余额动画。
+    // Simulate a DeepSeek balance of CNY 11.06 and vary the used ratio to exercise wallet animations.
     sendJson(res, 200, {
       ok: true,
       provider: 'deepseek',
@@ -56,8 +58,9 @@ const server = createServer((req, res) => {
     return;
   }
 
-  // 成品配置：mock 环境无用户层与文件宠物，故只有 main 条目（等于内置默认，字段原样保留），
-  // 消费端按成品配置的结构读取，不校验。
+  // Finished product configuration: The mock environment has no user layer and file pets, so there is only the main
+  // entry (equal to the built-in default, and the fields are retained as they are). The consumer reads according to
+  // the structure of the resolved configuration without verification.
   if (pathname === '/dsh-pet-7340/config') {
     if (!existsSync(CONFIG_FILE)) {
       res.writeHead(404);
@@ -68,9 +71,10 @@ const server = createServer((req, res) => {
     return;
   }
 
-  // 动画文件：/dsh-pet-7340/thumb/<petId>/<name>.webm，与宿主路由同一形态。
-  // petId 仅作归属标识，mock 从统一素材根读（开发环境不模拟独立素材目录）；
-  // 先剥掉 petId 段再按文件名解析，必须确认目标仍在 WEBM_ROOT 内才放行。
+  // Animation file: / dsh-pet-7340/thumb /< petId >/< name >. webm, the same form as host route. petId is only used as
+  // an ownership identifier, and mock is read from the unified asset root (the development environment does not
+  // simulate independent asset directories); first peel off the petId segment and then parse it according to the file
+  // name. You must confirm that the target is still within WEBM_ROOT before releasing it.
   if (pathname.startsWith('/dsh-pet-7340/thumb/')) {
     let rel = pathname.slice('/dsh-pet-7340/thumb/'.length);
     const slash = rel.indexOf('/');

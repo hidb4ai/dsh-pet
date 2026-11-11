@@ -1,8 +1,9 @@
 /**
- * 对话面板的动作：记忆删除、发送、附图、确认分发与「加载更早」。
+ * Dialog panel actions: memory delete, send, attach pictures, confirm distribution and "load earlier".
  *
- * 由 ./state 用当前状态装配；这里不持有状态，只把一次用户动作翻译成「调接口 → 补丁」。
- * 每个动作自己兜住异常并交给 fail 端口，调用方拿到的永远是同步的空返回。
+ * It is assembled with the current state by ./state; no state is held here, and only a user action is translated into
+ * "Debug interface → patch". Each action handles the exception by itself and hands it to the fail port. What the
+ * caller gets is always a synchronous empty return.
  * @module dsh-pet/src/client/chat/actions
  */
 import { encodeImageFile } from '../../shared/chat/encode.ts';
@@ -17,24 +18,24 @@ import {
 } from './api.ts';
 import type { ConfirmKind, PanelData } from './types.ts';
 
-/** 动作需要的最小端口。 */
+/** The minimum port required for the action. */
 export interface ActionPorts {
-  /** 读写当前状态快照（每次渲染重建，取到的就是最新值）。 */
+  /** Read and write the current state snapshot (each time rendering and reconstruction, the latest value is obtained). */
   readonly read: () => PanelData;
-  /** 合并一次状态补丁。 */
+  /** Merge status patch once. */
   readonly patch: (next: Partial<PanelData>) => void;
-  /** 把任何异常归一成可展示文案。 */
+  /** Convert any exceptions into displayable copy. */
   readonly fail: (error: unknown) => void;
-  /** 重新拉取某只宠物的历史。 */
+  /** Retrieve the history of a certain pet. */
   readonly reload: (petId: string) => Promise<void>;
 }
 
-/** 记忆动作：按轮删除与清空整只。 */
+/** Memory action: press wheel to delete and clear the whole thing. */
 export function createHistoryActions(ports: ActionPorts): {
   deleteSelected: () => void;
   clearAll: () => void;
 } {
-  /** 跑一次删除：失败只报错；成功后清勾选并以服务端为准重读。 */
+  /** Run once to delete: only error will be reported if failed; clear the check box after success and re-read based on the server. */
   const apply = async (run: () => Promise<DeleteResult>): Promise<void> => {
     try {
       const result = await run();
@@ -63,7 +64,7 @@ export function createHistoryActions(ports: ActionPorts): {
   };
 }
 
-/** 发送动作：附图压缩、发送、成功后重读。 */
+/** Send action: compress the image, send it, and reread it after success. */
 export function createSendActions(ports: ActionPorts): {
   send: () => void;
   pickFile: (file: File) => void;
@@ -106,18 +107,18 @@ export function createSendActions(ports: ActionPorts): {
   };
 }
 
-/** 外壳动作需要的额外句柄。 */
+/** Additional handle required for shell actions. */
 export interface ShellDeps {
   readonly ports: ActionPorts;
-  /** 记忆删除动作（确认后要分发到它们）。 */
+  /** Amnestic action (to be distributed to them after confirmation). */
   readonly history: { deleteSelected: () => void; clearAll: () => void };
-  /** 消息列表容器：展开更早的轮时要按高度差补偿滚动。 */
+  /** Message List Container: Compensate scrolling by height difference when expanding earlier wheels. */
   readonly listRef: { current: HTMLDivElement | null };
-  /** 每次「加载更早」放出的轮数。 */
+  /** The number of rounds released each time "load earlier". */
   readonly pageRounds: number;
 }
 
-/** 外壳动作：孤儿清理、确认条分发、刷新与「加载更早」。 */
+/** Shell actions: orphan cleanup, confirmation bar distribution, refresh and "load earlier". */
 export function createShellActions(deps: ShellDeps): {
   clearOrphans: () => void;
   ask: (kind: ConfirmKind) => void;
@@ -128,7 +129,7 @@ export function createShellActions(deps: ShellDeps): {
 } {
   const { ports, history, listRef, pageRounds } = deps;
 
-  /** 清掉已删宠物残留的历史。 */
+  /** Clear the remaining history of deleted pets. */
   const clearOrphans = (): void => {
     void (async () => {
       try {
@@ -144,7 +145,7 @@ export function createShellActions(deps: ShellDeps): {
     })();
   };
 
-  /** 确认条点「确定」后按待办类型分发；先清 pending，避免重复触发。 */
+  /** Distribute according to to-do type after confirming "OK"; clear pending first to avoid repeated triggering. */
   const confirmAsk = (): void => {
     const kind = ports.read().pending;
     ports.patch({ pending: null });
@@ -153,7 +154,7 @@ export function createShellActions(deps: ShellDeps): {
     else if (kind === 'clear-orphans') clearOrphans();
   };
 
-  /** 多放一批更早的轮；按高度差补偿滚动位置，视线不跳。 */
+  /** Put in a batch of earlier wheels; compensate the rolling position according to the height difference, and the line of sight does not jump. */
   const showOlder = (): void => {
     const el = listRef.current;
     const before = el?.scrollHeight ?? 0;
@@ -164,8 +165,11 @@ export function createShellActions(deps: ShellDeps): {
     });
   };
 
-  /** 重读配置、孤儿提示与当前宠物的历史：改完对话配置不必刷新整个页面。
-   *  当前宠物可能已被删（配置是重新拉的）→ 回落到第一只，否则面板会停在一只不存在的宠物上。 */
+  /**
+   * Reread configuration, orphan prompts, and current pet history: There is no need to refresh the entire page after
+   * changing the conversation configuration. The current pet may have been deleted (the configuration was re-pulled) →
+   * fallback to the first pet, otherwise the panel will stop on a non-existent pet.
+   */
   const refresh = (): void => {
     void (async () => {
       try {
@@ -178,7 +182,7 @@ export function createShellActions(deps: ShellDeps): {
           personas: config.personaByPet,
           orphans,
           petId: nextPetId,
-          // 刷新是「以磁盘为准重读」：头像也换一版，否则刚上传的图还挂在浏览器缓存里。
+          // Reload from disk and advance the avatar version so a recently uploaded image bypasses the browser cache.
           avatarVersion: Date.now(),
           error: '',
         });

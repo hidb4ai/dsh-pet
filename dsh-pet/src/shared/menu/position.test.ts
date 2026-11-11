@@ -1,17 +1,18 @@
 /**
- * 面板落点（`pickPanelPosition`）的几何测试。
+ * Geometric test of panel drop point (`pickPanelPosition`).
  *
- * 钉住一条不变量：新面板不与任何已展开面板相交；窗口太窄时退化为夹取，不越界。
+ * verify an invariant: the new panel does not intersect with any expanded panel; when the window is too narrow, it
+ * degenerates into pinching and does not cross the boundary.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { type PanelBox, pickPanelPosition } from './position.ts';
 
-/** 视口坐标里的夹取范围（窗口 ∩ 工作区）。 */
+/** Clamping range in viewport coordinates (Window ∩ Workspace). */
 const CLAMP = { x: 0, y: 0, w: 900, h: 520 };
 
-/** 由左上角与尺寸造矩形。 */
+/** Create a rectangle from the upper left corner and dimensions. */
 const box = (left: number, top: number, w: number, h: number): PanelBox => ({
   left,
   top,
@@ -19,14 +20,14 @@ const box = (left: number, top: number, w: number, h: number): PanelBox => ({
   bottom: top + h,
 });
 
-/** 两个矩形是否严格相交（边贴边不算）。 */
+/** Whether two rectangles strictly intersect (edges are not counted). */
 const overlaps = (a: PanelBox, b: PanelBox): boolean =>
   a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 
-describe('pickPanelPosition —— 级联面板不重叠', () => {
+describe('pickPanelPosition - Cascaded panels do not overlap', () => {
   const panel = { w: 220, h: 320 };
 
-  test('二级：父面板右侧放得下 → 贴父面板右边，且不相交', () => {
+  test('Level 2: The right side of the parent panel can be placed → it is attached to the right side of the parent panel and does not intersect.', () => {
     const parent = box(100, 100, 220, 320);
     const p = pickPanelPosition({
       panel,
@@ -35,11 +36,18 @@ describe('pickPanelPosition —— 级联面板不重叠', () => {
       others: [parent],
       clamp: CLAMP,
     });
-    assert.ok(!overlaps(box(p.left, p.top, panel.w, panel.h), parent), '子面板不应压住父面板');
-    assert.equal(p.left, parent.right + 4, '右侧放得下时应贴父面板右侧');
+    assert.ok(
+      !overlaps(box(p.left, p.top, panel.w, panel.h), parent),
+      'Child panels should not suppress the parent panel',
+    );
+    assert.equal(
+      p.left,
+      parent.right + 4,
+      'When the right side can be placed, it should be attached to the right side of the parent panel',
+    );
   });
 
-  test('二级：右侧放不下 → 翻到父面板左侧（不是触发项左侧）', () => {
+  test('Level 2: Can’t fit on the right side → turn to the left side of the parent panel (not the left side of the trigger item)', () => {
     const parent = box(560, 100, 220, 320);
     const p = pickPanelPosition({
       panel,
@@ -48,11 +56,18 @@ describe('pickPanelPosition —— 级联面板不重叠', () => {
       others: [parent],
       clamp: CLAMP,
     });
-    assert.ok(!overlaps(box(p.left, p.top, panel.w, panel.h), parent), '翻左后不应压住父面板');
-    assert.equal(p.left, parent.left - 4 - panel.w, '应贴父面板左侧，而不是触发项左侧');
+    assert.ok(
+      !overlaps(box(p.left, p.top, panel.w, panel.h), parent),
+      'The parent panel should not be pressed after turning left',
+    );
+    assert.equal(
+      p.left,
+      parent.left - 4 - panel.w,
+      'Should be attached to the left side of the parent panel, not the left side of the trigger item',
+    );
   });
 
-  test('三级：右侧放不下时不得压到二级或一级', () => {
+  test('Level 3: Do not push it to Level 2 or Level 1 when the right side cannot be placed.', () => {
     const l1 = box(0, 100, 220, 320);
     const l2 = box(224, 120, 220, 320);
     const p = pickPanelPosition({
@@ -63,11 +78,11 @@ describe('pickPanelPosition —— 级联面板不重叠', () => {
       clamp: CLAMP,
     });
     const rect = box(p.left, p.top, panel.w, panel.h);
-    assert.ok(!overlaps(rect, l1), '三级不应压住一级');
-    assert.ok(!overlaps(rect, l2), '三级不应压住二级');
+    assert.ok(!overlaps(rect, l1), 'Level 3 should not overwhelm level 1');
+    assert.ok(!overlaps(rect, l2), 'The third level should not suppress the second level');
   });
 
-  test('候选全被占用时，优先选不重叠的位置（即使脱离紧贴父面板）', () => {
+  test('When all candidates are occupied, priority is given to non-overlapping positions (even if they are separated from the parent panel)', () => {
     const l1 = box(0, 0, 220, 520);
     const l2 = box(224, 0, 220, 520);
     const p = pickPanelPosition({
@@ -78,10 +93,10 @@ describe('pickPanelPosition —— 级联面板不重叠', () => {
       clamp: CLAMP,
     });
     const rect = box(p.left, p.top, 220, 200);
-    assert.ok(!overlaps(rect, l1) && !overlaps(rect, l2), '仍有重叠');
+    assert.ok(!overlaps(rect, l1) && !overlaps(rect, l2), 'There is still overlap');
   });
 
-  test('落点始终完整落在 clamp 内（含四个边界的极端父面板位置）', () => {
+  test('The drop point always falls completely within clamp (extreme parent panel position including four boundaries)', () => {
     const cases = [
       box(0, 0, 220, 320),
       box(680, 0, 220, 320),
@@ -104,7 +119,7 @@ describe('pickPanelPosition —— 级联面板不重叠', () => {
     }
   });
 
-  test('窗口很窄（任何位置都会重叠）时退化为夹取，而不是返回越界坐标', () => {
+  test('When the window is very narrow (any position will overlap), it degenerates into clamping instead of returning out-of-bounds coordinates.', () => {
     const narrow = { x: 0, y: 0, w: 260, h: 200 };
     const parent = box(0, 0, 220, 180);
     const p = pickPanelPosition({
@@ -114,11 +129,11 @@ describe('pickPanelPosition —— 级联面板不重叠', () => {
       others: [parent],
       clamp: narrow,
     });
-    assert.ok(p.left >= 4 - 0.5 && p.left + 220 <= 260 - 4 + 0.5, 'left 越界');
-    assert.ok(p.top >= 4 - 0.5 && p.top + 120 <= 200 - 4 + 0.5, 'top 越界');
+    assert.ok(p.left >= 4 - 0.5 && p.left + 220 <= 260 - 4 + 0.5, 'left out of bounds');
+    assert.ok(p.top >= 4 - 0.5 && p.top + 120 <= 200 - 4 + 0.5, 'top out of bounds');
   });
 
-  test('没有其它面板时与旧行为一致（右侧展开、顶对齐触发项）', () => {
+  test('Consistent with the old behavior when there are no other panels (right-side expansion, top-aligned trigger items)', () => {
     const p = pickPanelPosition({
       panel: { w: 220, h: 320 },
       item: { left: 100, right: 320, top: 150 },

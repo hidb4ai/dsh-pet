@@ -1,13 +1,13 @@
 /**
- * `@deepseek-ai/dsh-credentials` 的独立模式替身。
+ * Standalone mode stand-in for `@deepseek-ai/dsh-credentials` .
  *
- * 插件只用 credentialRef 构造引用，而独立模式的凭证解析恒为空，
- * 因此引用本身无需结构，原样返回即可；余额路由会走明确失败分支。
- * 只在独立模式构建里生效，由 alias 指向本文件。
+ * The plugin only uses credentialRef to construct the reference, and the certificate parsing in standalone mode is
+ * always empty, so the reference itself does not need a structure and can be returned as is; the remaining route will
+ * take the clear failure branch. Only effective in standalone mode builds, pointed to by alias.
  * @module dsh-pet/src/standalone/shims/dsh-credentials
  */
 
-/** 原样返回引用：独立模式不解析凭证，只保证模块图能加载。 */
+/** Return the reference as is: standalone mode does not parse credentials and only ensures that the module graph can be loaded. */
 export function credentialRef(ref: unknown): unknown {
   return ref;
 }

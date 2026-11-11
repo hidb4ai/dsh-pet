@@ -1,21 +1,23 @@
 /**
- * 设置页的写回计划：比较「加载时的快照」与「当前编辑列表」，算出哪些种类层需要写回。
+ * Set the writeback plan of the page: Compare the "loading snapshot" and the "current edit list" to calculate which
+ * types of layers need to be written back.
  *
- * 纯函数，不发请求也不碰状态；main 不在计划里——它连同全局字段每次保存都整包写 PUT /config。
+ * It is a pure function, does not send requests and does not touch the state; main is not in the plan - it and the
+ * global fields are written in the entire package PUT /config every time it is saved.
  * @module dsh-pet/src/client/settings/config/pack-writes
  */
 import type { Pet } from '../../../shared/types.ts';
 import type { ConfigEntry } from './read.ts';
 
-/** 一次要写回的种类层。 */
+/** Type layers to be written back at one time. */
 export interface PackWrite {
-  /** 条目名（= 素材根）。 */
+  /** Entry name (= asset root). */
   readonly entry: string;
-  /** 该条目的全部实例；漏传一只等于删除它。 */
+  /** All instances of this entry; missing one is equivalent to deleting it. */
   readonly pets: readonly Pet[];
 }
 
-/** 提交形状的指纹：只含会被宿主持久化的字段，位置逐子字段取。 */
+/** The fingerprint of the submitted shape: only contains fields that will be persisted by the host, and the position is taken from subfield to subfield. */
 function fingerprint(pet: Pet): string {
   return JSON.stringify([
     pet.id,
@@ -35,17 +37,18 @@ function fingerprint(pet: Pet): string {
 }
 
 /**
- * 算出要写回的种类层。
+ * Calculate the type layer to be written back.
  *
- * @param loaded - 加载时的条目快照。
- * @param current - 当前编辑列表（全条目拍平，每只带 `assetRoot`）。
- * @returns 有改动的种类层，顺序即条目在编辑列表里首次出现的顺序；没有改动时为空数组。
+ * @param loaded - Snapshot of the entry at load time.
+ * @param current - Current edit list (all entries flat, each with `assetRoot` ).
+ * @returns If there are changes to the category layer, the order is the order in which the items first appear in the
+ * edit list; if there are no changes, it will be an empty array.
  */
 export function diffPackWrites(loaded: readonly ConfigEntry[], current: readonly Pet[]): PackWrite[] {
   const groups = new Map<string, Pet[]>();
   for (const pet of current) {
     const entry = pet.assetRoot ?? '';
-    // main 走 PUT /config（还要带全局字段），没有 assetRoot 的实例不属于任何层。
+    // main goes to PUT /config (also with global fields), and instances without assetRoot do not belong to any layer.
     if (entry === '' || entry === 'main') continue;
     const list = groups.get(entry);
     if (list) list.push(pet);
@@ -54,7 +57,7 @@ export function diffPackWrites(loaded: readonly ConfigEntry[], current: readonly
   const out: PackWrite[] = [];
   for (const [entry, pets] of groups) {
     const before = loaded.find((item) => item.key === entry)?.pets ?? [];
-    // 顺序也参与比较：调换顺序同样是改动，写回后读侧按数组顺序渲染。
+    // The order also participates in the comparison: changing the order is also a change. After writing back, the reading side is rendered in array order.
     const unchanged =
       before.length === pets.length && before.every((pet, i) => fingerprint(pet) === fingerprint(pets[i]));
     if (!unchanged) out.push({ entry, pets });

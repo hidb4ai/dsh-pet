@@ -1,18 +1,20 @@
 /**
- * 回执路径与等待查询的解析：/playback/<id>、/playback/<id>/report、?wait=&timeout=。
+ * Analysis of receipt path and waiting query: / playback /< id >, / playback /< id >/ report, ? wait =& timeout =.
  *
- * 不读 store、不判状态；非法输入返回 undefined，由路由层回 400。
- * 必须始终成立：解析结果只依赖入参，不依赖调用时序。
+ * store is not read, and the status is not judged; invalid input returns undefined, and the route layer returns 400.
+ * This must always be true: the parsing result only depends on the input parameters and does not depend on the calling
+ * timing.
  * @module dsh-pet/src/host/playback/parse
  */
 import { MAX_PLAYBACK_WAIT_MS, isPlaybackStatus } from './status.ts';
 import type { PlaybackStatus } from './status.ts';
 
 /**
- * 路径解析：`playback/<id>`（查询）与 `playback/<id>/report`（上报）。
+ * Path analysis: `playback/<id>` (query) and `playback/<id>/report` (report).
  *
- * 正则两端锚定，只认这两种形状：其余（`playback/`、`playback/a/b`、`playbackx/a`）一律返回
- * undefined，交给下游分支按各自口径报错，绝不在这里「尽力猜一个 id」。
+ * Regularly anchored at both ends, only these two shapes are recognized: the rest (`playback/`, `playback/a/b` ,
+ * `playbackx/a` ) will all return undefined, and will be handed over to the downstream branches to report errors
+ * according to their respective conventions. Never "try your best to guess a id" here.
  */
 export function parsePlaybackPath(rest: string): { playbackId: string; isReport: boolean } | undefined {
   const m = /^playback\/([^/]+)(\/report)?$/.exec(rest);
@@ -20,20 +22,21 @@ export function parsePlaybackPath(rest: string): { playbackId: string; isReport:
   return { playbackId: m[1] ?? '', isReport: m[2] === '/report' };
 }
 
-/** `?wait=&timeout=` 的解析结论。 */
+/** Analytical conclusion of `?wait=&timeout=`. */
 export type WaitParse =
-  /** 两者都没传 → 立刻返回（兜底 / 调试 / 只想知道当下状态）。 */
+  /** Neither is passed → return immediately (fallback / debugging / just want to know the current status). */
   | { kind: 'none' }
-  /** 挂起等待。 */
+  /** Pending waiting. */
   | { kind: 'ok'; wait: PlaybackStatus[]; timeoutMs: number }
-  /** 参数非法 → 路由回 400（附明确原因，不静默兜底）。 */
+  /** Invalid parameter → route returns 400 (with clear reason, no silent fallback). */
   | { kind: 'error'; error: string };
 
 /**
- * 解析 `?wait=<状态[,状态]>` 与 `?timeout=<ms>`（成对必填，规则见 openapi.yaml）。
+ * Parse `?wait=<state[,state]>` and `?timeout=<ms>` (required in pairs, see openapi.yaml for rules).
  *
- * wait 支持逗号列表：终态有三个，只等 ended 会在失败时白等一整个 timeout，所以让调用方自己
- * 说清在等哪些。timeout 只接受 0..MAX_PLAYBACK_WAIT_MS 的非负整数，`0` 合法（下一拍立刻返回）。
+ * wait supports comma lists: there are three final states. Just waiting for ended will wait for the entire timeout in
+ * vain, so let the caller tell itself which ones it is waiting for. timeout only accepts non-negative integers from
+ * 0.. MAX_PLAYBACK_WAIT_MS, `0` is valid (next tick returns immediately).
  */
 export function parseWaitQuery(waitRaw: string | null, timeoutRaw: string | null): WaitParse {
   if (waitRaw === null && timeoutRaw === null) return { kind: 'none' };
@@ -55,6 +58,6 @@ export function parseWaitQuery(waitRaw: string | null, timeoutRaw: string | null
   if (!Number.isFinite(timeoutMs) || timeoutMs > MAX_PLAYBACK_WAIT_MS) {
     return { kind: 'error', error: `invalid timeout (expect 0..${MAX_PLAYBACK_WAIT_MS})` };
   }
-  // 逐项过 isPlaybackStatus 之后才收窄：wait 是外部输入，不能靠调用方守规矩
+  // Go through isPlaybackStatus item by item before narrowing it down: wait is an external input and cannot rely on the caller to follow the rules.
   return { kind: 'ok', wait: wait as PlaybackStatus[], timeoutMs };
 }

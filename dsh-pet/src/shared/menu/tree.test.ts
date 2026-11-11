@@ -1,37 +1,37 @@
 /**
- * 菜单放行判定与第三方菜单层级的单元测试。
+ * Menu release determination and third-party menu level unit testing.
  *
- * 这两份判据被浏览器与桌面两端共用（桌面经 shared-core 拿到同一份），所以钉在这里，
- * 免得一端改了另一端跟着漂移。
- * 跑法：node --experimental-strip-types --test src/shared/menu/tree.test.ts
+ * These two criteria are shared by both the browser and the desktop (the desktop gets the same copy via shared-core),
+ * so they are nailed here to prevent one end from changing and the other end to drift. Running method: node --
+ * experimental-strip-types --test src/shared/menu/tree.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildMoreBranch, isSleepAllowedAction, readMenuItems } from './tree.ts';
 
-describe('isSleepAllowedAction —— 睡着时仍然放行的动作', () => {
-  test('睡觉 / 起来 / 维护类 / 第三方菜单项放行', () => {
+describe('isSleepAllowedAction——The action of letting go even when sleeping', () => {
+  test('Sleep/wake/maintenance/third-party menu items are allowed', () => {
     for (const action of ['sleep', 'wake', 'home', 'set-display', 'reload', 'third-party']) {
       assert.equal(isSleepAllowedAction(action), true, action + ' 应放行');
     }
   });
 
-  test('打扰类一律不放行（对话 / 碎碎念 / 余额 / 待办 / 动作点播）', () => {
+  test('Interruptions will not be allowed (dialogue/whisper/balance/to-do/action playback request)', () => {
     for (const action of ['chat', 'whisper', 'show-balance', 'todo']) {
       assert.equal(isSleepAllowedAction(action), false, action + ' 应被拒');
     }
-    // 点播动画的叶子只有 anim、没有 action
+    // The leaves of the playback request animation are only anim and not action.
     assert.equal(isSleepAllowedAction(undefined), false);
   });
 });
 
-describe('buildMoreBranch —— 「更多」：label 唯一平铺，重名收进 owner 子菜单', () => {
-  test('没有第三方项 → null（菜单里不出现空的「更多」）', () => {
+describe('buildMoreBranch —— "More": label is the only tile, and the same name is included in the owner submenu', () => {
+  test('No third-party items → null (the empty "More" does not appear in the menu)', () => {
     assert.equal(buildMoreBranch([]), null);
   });
 
-  test('label 全局唯一 → 直接平铺在「更多」下，顺序 = 注册顺序', () => {
+  test('label globally unique → directly tiled under "More", order = register order', () => {
     const items = [
       { owner: '状态桥', label: '今日积分' },
       { owner: '小游戏', label: '弹弓' },
@@ -45,7 +45,7 @@ describe('buildMoreBranch —— 「更多」：label 唯一平铺，重名收�
     });
   });
 
-  test('label 重名 → 每个 owner 在「更多」下各占一个子菜单，子项仍是原 label', () => {
+  test('label has the same name → Each owner occupies a submenu under "More", and the subitem is still the original label', () => {
     const items = [
       { owner: '插件A', label: '签到' },
       { owner: '插件B', label: '签到' },
@@ -59,7 +59,7 @@ describe('buildMoreBranch —— 「更多」：label 唯一平铺，重名收�
     });
   });
 
-  test('同一 owner 的多个重名项收进同一个子菜单，组内保持注册顺序', () => {
+  test('Multiple items with the same owner name are included in the same submenu, and the register order is maintained within the group.', () => {
     const items = [
       { owner: '插件A', label: '签到' },
       { owner: '插件B', label: '签到' },
@@ -87,7 +87,7 @@ describe('buildMoreBranch —— 「更多」：label 唯一平铺，重名收�
     });
   });
 
-  test('唯一项与重名项混合：唯一项平铺，重名项才进 owner 子菜单', () => {
+  test('Unique items and items with duplicate names are mixed: Unique items are tiled, and items with duplicate names enter the owner submenu.', () => {
     const items = [
       { owner: '插件A', label: '签到' },
       { owner: '小游戏', label: '弹弓' },
@@ -103,7 +103,7 @@ describe('buildMoreBranch —— 「更多」：label 唯一平铺，重名收�
     });
   });
 
-  test('重名判定用端过滤之后的结果：本端只有一条时不该被另一端拖进子菜单', () => {
+  test('The result of duplicate name determination after end-user filtering: When there is only one entry on the current end, it should not be dragged into the submenu by the other end.', () => {
     const data = {
       items: [
         { owner: '插件A', label: '签到', target: 'web' },

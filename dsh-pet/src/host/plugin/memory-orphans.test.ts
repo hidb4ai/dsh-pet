@@ -1,10 +1,11 @@
 /**
- * 孤儿历史（已删宠物残留分桶）的判定与清理。
+ * Judgment and cleanup of orphan history (deleted pet residue buckets).
  *
- * 配置走真实文件（仓库内的 assets/config.jsonc），记忆文件用内存替身——
- * 这样既能验证「配置里有/没有」的判定，又不需要真的写盘。
+ * The real file (assets/config.jsonc in the warehouse) is used for configuration, and the memory file is replaced by
+ * the memory - this can not only verify the judgment of "there is/is not in the configuration", but also does not
+ * require actual disk writing.
  *
- * 跑法：node --experimental-strip-types --test src/host/plugin/memory-orphans.test.ts
+ * Running method: node --experimental-strip-types --test src/host/plugin/memory-orphans.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,7 +20,7 @@ import type { ConfigPaths } from '../config.ts';
 type Messages = { role: 'user' | 'assistant'; content: string; ts: number }[];
 type MemoryFile = Record<string, Record<string, { messages: Messages }>>;
 
-/** 临时工作区：默认配置指回仓库，用户层为空。 */
+/** Temporary workspace: The default configuration points back to the warehouse, and the user layer is empty. */
 function tempConfig(): { configPaths: ConfigPaths; clean: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-pet-orphans-test-'));
   const configPaths: ConfigPaths = {
@@ -31,7 +32,7 @@ function tempConfig(): { configPaths: ConfigPaths; clean: () => void } {
   return { configPaths, clean: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-/** 造一份带记忆替身的孤儿模块：读写都落在同一个对象上。 */
+/** Create an orphan module with a memory double: both reading and writing fall on the same object. */
 function makeOrphans(initial: MemoryFile) {
   const config = tempConfig();
   const mem = structuredClone(initial);
@@ -39,7 +40,7 @@ function makeOrphans(initial: MemoryFile) {
     configPaths: config.configPaths,
     readMemory: async () => mem,
     writeMemory: async (next) => {
-      // next 与 mem 是同一个对象（被测代码原地修改后写回）：先克隆再清空，否则会把自己抹掉
+      // next and mem are the same object (the tested code is modified in place and written back): clone first and then clear, otherwise it will erase itself
       const copy = structuredClone(next);
       for (const key of Object.keys(mem)) delete mem[key];
       Object.assign(mem, copy);
@@ -50,8 +51,8 @@ function makeOrphans(initial: MemoryFile) {
   return { orphans, mem, clean: config.clean };
 }
 
-describe('createMemoryOrphans —— 已删宠物的残留历史', () => {
-  test('配置里已没有的宠物 → 列出来（条数 + 最后时间）', async () => {
+describe('createMemoryOrphans - The remaining history of deleted pets', () => {
+  test('Pets that are no longer in the configuration → list (number + last time)', async () => {
     const suite = makeOrphans({
       main: {
         main: { messages: [{ role: 'user', content: '在吗', ts: 1 }] },
@@ -71,7 +72,7 @@ describe('createMemoryOrphans —— 已删宠物的残留历史', () => {
     }
   });
 
-  test('全部宠物都还在 → 空列表（不误报）', async () => {
+  test('All pets are still there → empty list (not false positive)', async () => {
     const suite = makeOrphans({ main: { main: { messages: [] } } });
     try {
       assert.deepEqual(await suite.orphans.orphanHistory(), []);
@@ -80,7 +81,7 @@ describe('createMemoryOrphans —— 已删宠物的残留历史', () => {
     }
   });
 
-  test('清理只删孤儿：现有宠物原样保留，空条目一并摘掉', async () => {
+  test('Only orphans will be deleted during cleaning: existing pets will be retained as they are, and empty entries will be removed as well.', async () => {
     const suite = makeOrphans({
       main: {
         main: { messages: [{ role: 'user', content: '留着', ts: 1 }] },
@@ -91,14 +92,14 @@ describe('createMemoryOrphans —— 已删宠物的残留历史', () => {
     try {
       const result = await suite.orphans.deleteOrphans();
       assert.deepEqual(result, { ok: true, pets: 2, messages: 2 });
-      assert.deepEqual(Object.keys(suite.mem), ['main'], '空条目应被摘掉');
-      assert.deepEqual(Object.keys(suite.mem.main ?? {}), ['main'], '现有宠物不能被误删');
+      assert.deepEqual(Object.keys(suite.mem), ['main'], 'Empty entries should be removed');
+      assert.deepEqual(Object.keys(suite.mem.main ?? {}), ['main'], 'Existing pets cannot be deleted by mistake');
     } finally {
       suite.clean();
     }
   });
 
-  test('没有孤儿 → 不写文件，计数全 0', async () => {
+  test('No orphan → No file written, count all 0', async () => {
     let writes = 0;
     const config = tempConfig();
     const orphans = createMemoryOrphans({
@@ -112,7 +113,7 @@ describe('createMemoryOrphans —— 已删宠物的残留历史', () => {
     });
     try {
       assert.deepEqual(await orphans.deleteOrphans(), { ok: true, pets: 0, messages: 0 });
-      assert.equal(writes, 0, '没有可删的东西时不该重写记忆文件');
+      assert.equal(writes, 0, 'Memory files should not be overwritten when there is nothing to delete');
     } finally {
       config.clean();
     }

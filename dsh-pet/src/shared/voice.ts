@@ -1,71 +1,74 @@
 /**
- * 端侧语音播报：按 `say` 叶子决定这一句要不要念，以及合成请求与播放。
+ * End-side voice broadcast: Press `say` to decide whether to read this sentence, and synthesis request and playback.
  *
- * 两端各判各的：叶子里的 `voiceTo` 指向哪一端，就只有那一端出声；缺省 = 谁都不念。
- * 网页端另加一道「页面可见」——被切到后台的页面没人看，出声只是打扰。
- * 每句的开始与结束经 {@link subscribeVoiceUtterance} 广播出去：说话气泡靠它决定何时收起。
- * 不负责合成与缓存：那些在宿主侧（`/voice/speak`）。
+ * Both ends have their own decisions: whichever end the `voiceTo` in the leaf points to, only that end will make a
+ * sound; default = no one reads it. On the web page, there is an additional "page visible" - the page that is cut to
+ * the background is not viewed by anyone, and the sound is just an interruption. The beginning and end of each
+ * sentence are {@link subscribeVoiceUtterance} broadcasted: the speaking bubble determines when to close it. Not
+ * responsible for synthesis and caching: those on the host side (`/voice/speak`).
  * @module dsh-pet/src/shared/voice
  */
 import { ROUTE_PATH } from './constants.ts';
 import type { VoiceTarget } from './state.ts';
 
-/** 当前音色；空串 = 不指定，由宿主用默认音色。 */
+/** Current voice; empty string = not specified, the host uses the default voice. */
 let voiceName = '';
-/** 播放音量系数（0–1，1 = 最大音量）；两端共用，只作用于播放，不影响已合成好的音频。 */
+/** Playback volume coefficient (0–1, 1 = maximum volume); shared by both ends, only affects playback and does not affect the synthesized audio. */
 let voiceVolume = 1;
-/** 工作状态播报开关；只有成品配置明确为 true 才念。 */
+/** Working status broadcast switch; this is read only when the resolved configuration is clearly true. */
 let notifyEnabled = false;
-/** 本端是网页端还是桌面端；`null` = 还没声明，此时不按叶子播放。 */
+/** Is this terminal a web page or a desktop terminal? `null` = It has not been declared yet, and it will not be played at this time. */
 let surface: VoiceTarget | null = null;
-/** 接口基址：网页端是同源前缀，桌面端由 `setVoiceBase` 换成 bridge 地址。 */
+/** Interface base address: The web page has the same origin prefix, and the desktop side has changed from `setVoiceBase` to bridge address. */
 let voiceBase = ROUTE_PATH;
-/** 配置是否已就绪；网页端由 `setVoiceConfig` 置位，桌面端首次播放时懒加载。 */
+/** Whether the configuration is ready; the web page is set by `setVoiceConfig`, and the desktop is lazy loaded when playing for the first time. */
 let configLoaded = false;
-/** 当前播报状态；气泡据此显示图标。 */
+/** Current broadcast status; bubble displays icon accordingly. */
 let voiceState: VoiceState = 'idle';
-/** 状态订阅者：两端的说话气泡据此渲染图标。 */
+/** Status subscriber: The speech bubbles at both ends render icons accordingly. */
 const stateListeners = new Set<(state: VoiceState) => void>();
-/** 播报开始/结束的订阅者：说话气泡据此挂起与收尾。 */
+/** The subscriber who announces the start/end of the broadcast: the talk bubble hangs accordingly with cleanup. */
 const utteranceListeners = new Set<(event: VoiceUtteranceEvent) => void>();
-/** 播报序号；每次决定要念一句就自增，用来让气泡丢掉迟到的「上一句播完了」。 */
+/** Broadcast sequence number; it will be incremented every time it is decided to read a sentence. It is used to let bubble discard the late "previous sentence has been played". */
 let utteranceSeq = 0;
 
-/** 语音播报对外的四种状态；只用于展示，不接受外部驱动。`failed` = 这次合成没成功。 */
+/** There are four states of voice broadcast to the outside world; it is only used for display and does not accept external drivers. `failed` = This synthesis failed. */
 export type VoiceState = 'idle' | 'loading' | 'ready' | 'failed';
 
 /**
- * 一句播报的开始与结束事件。
+ * The start and end events of a sentence broadcast.
  *
- * `text` 是气泡上的原文，不是送合成的截断文本——气泡要按它认句：同一页面上的多只宠物
- * 共用这份模块单例状态，不认句就会把别人那一句算到自己头上。
+ * `text` is the original text on bubble, not the truncated text sent to synthesis - bubble needs to click it to
+ * recognize the sentence: multiple pets on the same page share the singleton state of this module. If you don't
+ * recognize the sentence, the other person's sentence will be counted on yourself.
  */
 export type VoiceUtteranceEvent =
   | { readonly kind: 'start'; readonly seq: number; readonly text: string }
   | { readonly kind: 'end'; readonly seq: number; readonly text: string };
 
 /**
- * 客户端等合成结果的上限（ms）。
+ * The upper limit of the synthesis result of the client (ms).
  *
- * 比宿主侧的总超时（28s）再宽一点：让宿主先超时并回结构化失败，
- * 客户端这道只是兜底，避免上游挂住时气泡上的转圈永远停不下来。
+ * A little wider than the total timeout on the host side (28 s): Let the host timeout first and report structural
+ * failure. The client is just a fallback to prevent the bubble from never stopping when the upstream hangs.
  */
 const SPEAK_TIMEOUT_MS = 30_000;
 
 /**
- * 等一句播完的上限（ms）。
+ * The upper limit of waiting for a sentence to be played (ms).
  *
- * 比气泡自身的挂起上限（50s）再宽一点：正常单句远小于它，到点还没收尾说明播放这条线
- * 已经断了，此时按收尾处理，气泡不至于跟着永久挂住。
+ * A little wider than the bubble's own upper limit of suspension (50 s): a normal single sentence is much smaller than
+ * it. If it has not yet been cleaned up, it means that the playback line has been broken. At this time, press cleanup
+ * to handle it, so that the bubble will not hang permanently.
  */
 export const PLAYBACK_WAIT_MAX_MS = 60_000;
 
-/** 合成请求的超时信号；自动播报与手动点播共用同一份口径。 */
+/** Timeout signal of synthesis request; automatic broadcast and manual playback request share the same conventions. */
 function speakSignal(): AbortSignal {
   return AbortSignal.timeout(SPEAK_TIMEOUT_MS);
 }
 
-/** 切换状态并通知订阅者；同值不重复通知。 */
+/** Switch the status and notify the subscriber; no repeated notifications with the same value. */
 function setVoiceState(next: VoiceState): void {
   if (voiceState === next) return;
   voiceState = next;
@@ -73,17 +76,18 @@ function setVoiceState(next: VoiceState): void {
 }
 
 /**
- * 读当前播报状态；桌面端在重绘气泡时直接取（它没有 react 的订阅机制）。
- * @returns `idle` / `loading` / `ready`。
+ * Read the current broadcast status; the desktop side gets it directly when redrawing the bubble (it does not have the
+ * subscribe mechanism of react).
+ * @returns `idle` / `loading` / `ready` .
  */
 export function getVoiceState(): VoiceState {
   return voiceState;
 }
 
 /**
- * 订阅播报状态；订阅时会立刻收到当前值。
- * @param listener - 状态变化回调。
- * @returns 取消订阅；组件卸载/气泡关闭时必须调用。
+ * subscribe broadcast status; when subscribe, the current value will be received immediately.
+ * @param listener - status change callback.
+ * @returns unsubscribe; must be called when component unmount/bubble is closed.
  */
 export function subscribeVoiceState(listener: (state: VoiceState) => void): () => void {
   stateListeners.add(listener);
@@ -94,11 +98,13 @@ export function subscribeVoiceState(listener: (state: VoiceState) => void): () =
 }
 
 /**
- * 订阅每句播报的开始与结束；不补发历史状态，只报后续事件。
+ * subscribe The beginning and end of each sentence broadcast; historical status is not reissued, only subsequent
+ * events are reported.
  *
- * @param listener - 事件回调：`start` 表示已经决定要念这一句（合成开始），
- *   `end` 表示播完、合成失败或超时——三种结局都会报一次，气泡不必自己判超时。
- * @returns 取消订阅；卡片卸载或气泡关闭时必须调用。
+ * @param listener - event callback: `start` means that you have decided to read this sentence (synthesis starts),
+ * `end` means that the playback is completed, synthesis failed or timed out - all three endings will be reported once,
+ * and bubble does not need to determine the timeout by itself.
+ * @returns unsubscribe; must be called when the card is unmounted or the bubble is closed.
  */
 export function subscribeVoiceUtterance(listener: (event: VoiceUtteranceEvent) => void): () => void {
   utteranceListeners.add(listener);
@@ -107,34 +113,37 @@ export function subscribeVoiceUtterance(listener: (event: VoiceUtteranceEvent) =
   };
 }
 
-/** 广播一次播报事件；单个订阅者抛错不能挡住其余订阅者。 */
+/** Broadcast a reporting event; a single subscriber throwing an error cannot block other subscribers. */
 function emitUtterance(event: VoiceUtteranceEvent): void {
   for (const listener of utteranceListeners) listener(event);
 }
 
 /**
- * 换掉接口基址；桌面端在模块加载时调一次（`file://` 页面不能用相对路径）。
- * @param base - 已含前缀的地址，如 `dsh-pet-bridge://dsh-pet/dsh-pet-7340`。
+ * Replace the interface base address; the desktop side adjusts it once when loading the module (the `file://` page
+ * cannot use relative paths).
+ * @param base - Address with prefix, such as `dsh-pet-bridge://dsh-pet/dsh-pet-7340` .
  */
 export function setVoiceBase(base: unknown): void {
   if (typeof base === 'string' && base) voiceBase = base;
 }
 
 /**
- * 声明本端是网页端还是桌面端；两端各自在启动时调一次。
- * 没声明时不按 `say` 叶子播放——宁可没声音，也不替另一端出声。
- * @param next - `web` / `desktop`；其余值忽略。
+ * Declare whether this end is the web page or the desktop end; each end should be adjusted once at startup. Do not
+ * press the `say` leaf to play when there is no announcement - I would rather have no sound than speak for the other
+ * end.
+ * @param next - `web` / `desktop` ; other values are ignored.
  */
 export function setSurface(next: unknown): void {
   if (next === 'web' || next === 'desktop') surface = next;
 }
 
 /**
- * 记录成品配置里的音色与音量；网页端在读到 `/config` 时调一次。
- * 调用即视为配置已就绪，后续播放不再自己去拉。
+ * Record the voice and volume in the resolved configuration; adjust it once when the web page reads `/config`
+ * . Once called, the configuration is deemed to be ready, and subsequent playback will no longer need to be done by
+ * yourself.
  *
- * @param name - 音色 id（非字符串按未指定处理）。
- * @param volume - 音量系数（0–1）；缺省或非数值按最大音量播放。
+ * @param name - voice id (non-character strings are not specified).
+ * @param volume - Volume coefficient (0–1); default or non-numeric value plays at maximum volume.
  */
 export function setVoiceConfig(name: unknown, volume?: unknown): void {
   voiceName = typeof name === 'string' ? name : '';
@@ -143,26 +152,26 @@ export function setVoiceConfig(name: unknown, volume?: unknown): void {
 }
 
 /**
- * 记录工作状态播报开关；网页端在读到 `/config` 时调一次。
+ * Record working status broadcast switch; adjust it once when the web page reads `/config` .
  *
- * @param on - 成品配置的 `main.voiceNotifyEnabled`；只有严格 `true` 才算开启。
+ * @param on - `main.voiceNotifyEnabled` in off-the-shelf configuration; only strictly `true` is considered enabled.
  */
 export function setVoiceNotifyEnabled(on: unknown): void {
   notifyEnabled = on === true;
 }
 
-/** 工作状态播报是否开启。 */
+/** Whether the working status broadcast is turned on. */
 export function isVoiceNotifyEnabled(): boolean {
   return notifyEnabled;
 }
 
-/** 把音量收敛到 0–1；非数值按最大音量（1）处理——脏配置不该把声音悄悄变成 0。 */
+/** Converg the volume to 0–1; non-numeric values are treated as maximum volume (1) - dirty configuration should not quietly change the sound to 0. */
 function clampVolume(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
 }
 
-/** 懒加载成品配置；失败按「不播」处理，且只试一次（避免每句都发请求）。 */
+/** Lazy loading of resolved configuration; failure will be handled as "no broadcast", and only tried once (to avoid sending requests for each sentence). */
 async function loadConfigOnce(): Promise<void> {
   if (configLoaded) return;
   try {
@@ -172,20 +181,21 @@ async function loadConfigOnce(): Promise<void> {
     voiceName = typeof main?.voiceName === 'string' ? main.voiceName : '';
     voiceVolume = clampVolume(main?.voiceVolume);
     setVoiceNotifyEnabled(main?.voiceNotifyEnabled);
-    // 只有成功才置位：拉不到（bridge 还没就绪 / 瞬时故障）留给下一句重试——
-    // 否则一次失败就把这一端永久静音了。
+    // Set only if successful: Unable to pull (bridge is not ready/momentary failure), leave it to the next sentence to
+    // try again - otherwise, one failure will permanently mute this end.
     configLoaded = true;
   } catch {
-    /* 拉不到就保持关闭：宁可没声音，也不乱播 */
+    /* If it cannot be pulled, keep it closed: I would rather have no sound than random broadcast. */
   }
 }
 
 /**
- * 按 `say` 叶子播放：叶子点名了本端就念。
+ * Press `say` to play the leaf: the player will read the name after the leaf is called.
  *
- * 两道门：叶子有没有点名本端 → 网页端页面是否可见。念不念由宿主在写叶子时决定。
+ * Two doors: whether the leaf has named the local page → whether the page on the web page is visible. Whether to read
+ * or not is decided by the host when writing the leaf.
  *
- * @param say - 要念的那一句：`text` 正文，`voiceTo` 该由哪一端念。
+ * @param say - Which sentence should be read: `text` text, `voiceTo` which end should be read.
  */
 export function playSayVoice(say: { readonly text: string; readonly voiceTo?: VoiceTarget }): void {
   const isMine = say.voiceTo !== undefined && say.voiceTo === surface;
@@ -197,98 +207,101 @@ export function playSayVoice(say: { readonly text: string; readonly voiceTo?: Vo
     setVoiceState('idle');
     return;
   }
-  void speakWhenReady(say.text); // 不 await：播放是旁路，不能挡住气泡与动画
+  void speakWhenReady(say.text); // No await: Playback is bypass and cannot block bubbles and animations
 }
 
 /**
- * 配置就绪后开播；桌面端首次调用会顺手拉一次 `/config`。
+ * Start broadcasting after the configuration is ready; the first call on the desktop will pull `/config` .
  *
- * @param text - 要念的整句。
- * @param canPlayHidden - 页面隐藏时是否继续播；缺省 `false`（藏起来就静音）。
+ * @param text - the entire sentence to be read.
+ * @param canPlayHidden - Whether to continue playing when the page is hidden; the default is `false` (muted when
+ * hidden).
  */
 async function speakWhenReady(text: string, canPlayHidden = false): Promise<void> {
   await loadConfigOnce();
   const seq = ++utteranceSeq;
-  // 先报开始再置 loading：气泡要靠这条事件挂起收起计时，晚一步它就可能已经收了。
+  // Report first and then set loading: The bubble depends on this event to suspend and close the timing. If it is a step later, it may have closed.
   emitUtterance({ kind: 'start', seq, text });
   setVoiceState('loading');
   try {
     await speak(text, canPlayHidden);
   } finally {
-    // 成功、失败、超时都走这里：气泡在等这个收尾，漏一次就永远挂着。
+    // Success, failure, and timeout all go here: bubble is waiting for this cleanup. If it fails once, it will hang forever.
     emitUtterance({ kind: 'end', seq, text });
   }
 }
 
 /**
- * 念一句与气泡无关的系统提示（工作状态播报）。
+ * Read a system prompt that has nothing to do with bubbles (working status broadcast).
  *
- * 念不念由调用方判定。与其它自动播报共用同一个单槽——后一句掐掉前一句。
+ * Whether to read or not is determined by the caller. It shares the same single slot with other automatic
+ * announcements - the next sentence cuts out the previous one.
  *
- * @param text - 要念的整句；空串直接跳过。
+ * @param text - the entire sentence to be read; empty string is skipped directly.
  */
 export function speakNotice(text: string): void {
   if (text === '') return;
-  // 允许后台播：用户正在别的应用里，正是需要它出声的时候。
+  // Allow background playback: The user is in other applications when it needs to make a sound.
   void speakWhenReady(text, true);
 }
 
 /**
- * 等到这一句真正播完。
+ * Wait until this sentence is actually finished.
  *
- * `play()` 的 Promise 在「开播」时就 resolve，而气泡要的是「播完」：两者的差就是气泡提前
- * 收起的全部原因。所以这里另等收尾信号，并用 {@link PLAYBACK_WAIT_MAX_MS} 兜底。
+ * `play()` 's Promise is resolve when it "starts broadcasting", while bubble wants to "end broadcasting": the
+ * difference between the two is the whole reason why bubble is closed in advance. So here we wait for the cleanup
+ * signal and use {@link PLAYBACK_WAIT_MAX_MS} fallback.
  *
- * @param audio - 正在播的元素。
- * @param objectUrl - 收尾时要释放的 blob 地址。
+ * @param audio - The element being played.
+ * @param objectUrl - blob address to be released during cleanup.
  */
 function waitForPlaybackEnd(audio: HTMLAudioElement, objectUrl: string): Promise<void> {
   return new Promise<void>((resolve) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const finish = (): void => {
-      if (settled) return; // ended 与 pause 会先后到达，只收一次尾
+      if (settled) return; // ended and pause will arrive one after another and only end once
       settled = true;
       if (timer !== null) clearTimeout(timer);
       URL.revokeObjectURL(objectUrl);
       resolve();
     };
     timer = setTimeout(finish, PLAYBACK_WAIT_MAX_MS);
-    timer.unref?.(); // 与宿主侧定时器同一策略：别把这个等待钉进事件循环
+    timer.unref?.(); // Same strategy as host-side timer: don’t nail this wait into the event loop
     audio.onended = finish;
     audio.onerror = finish;
-    audio.onpause = finish; // 被下一句顶掉或用户暂停：同样算收尾，气泡不该再等一个不会响的音频
+    audio.onpause = finish; // Upvoted by the next sentence or paused by the user: it is also counted as cleanup, bubble should not wait for an audio that will not sound.
   });
 }
 
-/** 自动播报当前正在响的那个音频：新的一句进来先掐掉旧的，熄屏醒来后攒下的一串才不会叠着响。 */
+/** Automatically broadcast the audio that is currently ringing: when a new sentence comes in, cut off the old one first, so that the saved string after turning off the screen and waking up will not sound overlapping. */
 let autoAudio: HTMLAudioElement | null = null;
-/** 自动播报世代号：合成期间可能被更新的一句顶掉，回来的旧结果直接丢弃。 */
+/** Automatically broadcast generation number: During synthesis, it may be overridden by an updated sentence, and the old result returned is discarded directly. */
 let autoSeq = 0;
 
-/** 当前这句是否允许页面隐藏时继续播；跟随 autoAudio 一起换，不做成全局开关。 */
+/** Whether the current sentence is allowed to continue playing when the page is hidden; change it with autoAudio and not make it a global switch. */
 let autoAudioCanPlayHidden = false;
 
 /**
- * 掐掉当前自动播报。
+ * Turn off the current automatic broadcast.
  *
- * 用 pause 而不是直接丢掉引用：`waitForPlaybackEnd` 已经挂了 `onpause` 收尾，
- * 气泡能照常收起，不会等一个已经不会响的音频。
+ * Use pause instead of directly discarding the reference: `waitForPlaybackEnd` has been hung up. `onpause` cleanup,
+ * the bubble can be closed as usual, and it will not wait for an audio that has stopped ringing.
  */
 function stopAutoAudio(): void {
   const audio = autoAudio;
-  // 标记无条件清掉：没有音频时也要清，否则下一句会被上一句的许可值带偏。
+  // The mark must be cleared unconditionally: it must be cleared even when there is no audio, otherwise the next sentence will be biased by the allowed value of the previous sentence.
   autoAudio = null;
   autoAudioCanPlayHidden = false;
   if (audio === null) return;
   try {
     audio.pause();
   } catch {
-    /* 播放器已销毁：忽略 */
+    /* Player destroyed: ignore */
   }
 }
 
-// 页面被藏起来（切后台 / 息屏）就静音：回来时不补播。通知类播报自带后台许可，不受这条影响。
+// The page is muted when it is hidden (switch to background/screen off): it will not be replayed when it comes back. Notification broadcasts have their own background permission and are not affected by this article.
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && !autoAudioCanPlayHidden) stopAutoAudio();
@@ -296,10 +309,11 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 }
 
 /**
- * 请求合成并播放；任何一步失败都落到 `failed`（气泡上留一个静音喇叭，而不是干脆没图标）。
+ * Request synthesis and playback; if any step fails, it will fall to `failed` (leave a mute speaker on the bubble
+ * instead of no icon at all).
  *
- * @param text - 要念的整句。
- * @param canPlayHidden - 页面隐藏时是否继续播；缺省 `false`。
+ * @param text - the entire sentence to be read.
+ * @param canPlayHidden - Whether to continue playing when the page is hidden; default `false` .
  */
 async function speak(text: string, canPlayHidden = false): Promise<void> {
   const token = ++autoSeq;
@@ -323,18 +337,18 @@ async function speak(text: string, canPlayHidden = false): Promise<void> {
     }
     const audio = new Audio(objectUrl);
     audio.volume = voiceVolume;
-    // 合成期间页面被藏起来：这一句不补播，直接丢掉——除非这句自带后台许可（通知类）。
+    // The page is hidden during synthesis: this sentence is not replayed and is discarded directly - unless this sentence comes with background permission (notification class).
     if (!canPlayHidden && typeof document !== 'undefined' && document.hidden) {
       URL.revokeObjectURL(objectUrl);
       setVoiceState('idle');
       return;
     }
-    // 音频就绪即置 ready：喇叭表示「这句有语音」，不跟播放进度绑定
+    // The audio is ready. ready: The speaker indicates "This sentence has voice" and is not bound to the playback progress.
     setVoiceState('ready');
     autoAudioCanPlayHidden = canPlayHidden;
     autoAudio = audio;
     try {
-      await audio.play(); // 只代表开播：开播就失败要落到 failed，也不必再等收尾
+      await audio.play(); // It only means the start of broadcast: If the broadcast fails, it will fall into failed, and there is no need to wait for cleanup.
     } catch {
       URL.revokeObjectURL(objectUrl);
       if (autoAudio === audio) {
@@ -344,39 +358,41 @@ async function speak(text: string, canPlayHidden = false): Promise<void> {
       setVoiceState('failed');
       return;
     }
-    // 气泡靠 end 事件收起，所以必须等播完：停在「已经开播」会让气泡提早 1.5 秒消失
+    // The bubble is closed by the end event, so it must wait until the broadcast is finished: stopping at "already broadcast" will cause the bubble to disappear 1.5 seconds earlier.
     await waitForPlaybackEnd(audio, objectUrl);
     if (autoAudio === audio) autoAudio = null;
   } catch {
-    /* 含超时：气泡已经显示，失败也不能反过来打断渲染，只把图标换成静音喇叭 */
-    // 旧请求的失败晚到不能覆盖新句状态：世代号已变就说明这句已经被顶掉。
+    /* Including timeout: the bubble has been displayed. If it fails, the rendering cannot be interrupted. Only the icon is changed to a silent speaker. */
+    // The failure of the old request is too late to overwrite the new sentence status: the generation number has changed, which means that this sentence has been rejected.
     if (token === autoSeq) setVoiceState('failed');
   }
 }
 
-/** 手动点播时正在响的那个音频；新的一句先掐掉旧的，避免两句话叠在一起。 */
+/** Manually playback the audio that is ringing during the request; cut out the old one before the new one to avoid overlapping the two sentences. */
 let manualAudio: HTMLAudioElement | null = null;
 
-/** 手动点播对外暴露的阶段；`idle` = 没在放（含被打断），`failed` = 合成没成功。 */
+/** Manual playback request is exposed to the outside world; `idle` = not playing (including interrupted), `failed` = synthesis failed. */
 export type SpeakPhase = 'idle' | 'loading' | 'playing' | 'failed';
 
-/** 手动点播的世代号：新的点播会作废旧请求的阶段回调，避免旧回调清掉新状态。 */
+/** Generation number of manual playback request: The new playback request will invalidate the phase callback of the old request to prevent the old callback from clearing the new state. */
 let manualSeq = 0;
 
 /**
- * 手动播报一句（对话面板的喇叭按钮用）。
+ * Manually announce a sentence (for the speaker button on the dialogue panel).
  *
- * 用户明确点播，拿到正文就合成播放；音色与音量取配置值。
+ * The user specifies the playback request, and plays the synthesis after getting the text; the voice and volume take
+ * the configured values.
  *
- * @param text - 要念的正文。
- * @param onPhase - 阶段回调：请求合成时 `loading`、音频就绪开始播时 `playing`、播完 `idle`、失败或超时 `failed`。
+ * @param text - the text to be read.
+ * @param onPhase - Stage callback: `loading` when requesting synthesis, `playing` when the audio is ready to start
+ * playing, `idle` after playing, `failed` when it fails or times out.
  */
 export function speakText(text: string, onPhase?: (phase: SpeakPhase) => void): void {
   if (!text) return;
   void playManual(text, onPhase);
 }
 
-/** 请求合成并播放手动点播；失败静默，不打断面板交互。 */
+/** Request synthesis and play manual playback request; failure is silent and does not interrupt panel interaction. */
 async function playManual(text: string, onPhase?: (phase: SpeakPhase) => void): Promise<void> {
   const token = ++manualSeq;
   await loadConfigOnce();
@@ -384,7 +400,7 @@ async function playManual(text: string, onPhase?: (phase: SpeakPhase) => void): 
     manualAudio.pause();
     manualAudio = null;
   }
-  if (token !== manualSeq) return; // 等配置期间又被点了一次：这次直接让位
+  if (token !== manualSeq) return; // I was clicked again while waiting for configuration: this time I gave way directly.
   onPhase?.('loading');
   try {
     const response = await fetch(voiceBase + '/voice/speak', {
@@ -414,7 +430,7 @@ async function playManual(text: string, onPhase?: (phase: SpeakPhase) => void): 
     onPhase?.('playing');
     await audio.play();
   } catch {
-    /* 含超时：面板里还有文字，不弹错误打断阅读，只把按钮换成失败态 */
+    /* Including timeout: There is still text in the panel, no error is played to interrupt reading, and the button is only changed to a failed state. */
     if (token === manualSeq) onPhase?.('failed');
   }
 }

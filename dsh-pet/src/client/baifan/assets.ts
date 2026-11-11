@@ -1,31 +1,35 @@
 /**
- * 「吃白饭」要用的五段动画名：从配置 animations.baifan 按槽位取出。
+ * The five-segment animation names used for "Eating Rice": taken out from the configuration animations.baifan
+ * according to the slot.
  *
- * 只取名字，不拼地址——点播走 `/anim` 的 name 形态，地址由各端渲染器按宠物素材根拼
- * （网页端相对路径、桌面端用宿主下发的 BASE），因此不依赖页面 origin（桌面壳的 origin 不是 http）。
- * 槽位顺序是玩法契约：跑向屏幕底部 / 追饭侧身跑 / 期待 / 吃碗饭 / 吃饭团。
+ * Just take the name, not spell the address - the playback request takes the form of name of `/anim` . The address is
+ * spelled by the renderer of each end according to the pet asset root (relative path on the web page, BASE issued by
+ * the host on the desktop), so it does not depend on the page origin (origin on the desktop shell is not http). The
+ * order of the slots is the gameplay contract: run to the bottom of the screen/run sideways after the rice/expect/eat
+ * a bowl of rice/eat a ball.
  * @module dsh-pet/src/client/baifan/assets
  */
 
-/** 一场演出要用的五段动画名。 */
+/** The five animation titles used for a show. */
 export interface ActivityAssets {
-  /** 跑向屏幕底部（一次性）。 */
+  /** Run to the bottom of the screen (one-shot). */
   descend: string;
-  /** 追饭时的侧身跑（循环）。 */
+  /** Sideways running when chasing food (loop). */
   chase: string;
-  /** 到位后等开饭（一次性）。 */
+  /** Wait for the meal to be served after arriving (one-time use). */
   expect: string;
-  /** 吃到碗饭。 */
+  /** Get a bowl of rice. */
   eatBowl: string;
-  /** 吃饭团。 */
+  /** Eat rice balls. */
   eatBall: string;
 }
 
 /**
- * 按配置取五段动画名。
+ * Get five animation names according to configuration.
  *
- * @param names - `animations.baifan` 的 5 个动画名（顺序即槽位）。
- * @returns 五段动画名；配置缺项时为空串（调用方照旧点播，由宿主按名字校验）。
+ * @param names - 5 animation names of `animations.baifan` (the order is the slot).
+ * @returns five-segment animation name; when the configuration is missing, it is an empty string (caller is still
+ * playback request, and is verified by the host by name).
  */
 export function activityAssets(names: readonly string[]): ActivityAssets {
   return {

@@ -1,40 +1,43 @@
 /**
- * 桌面端「实况」（位置 + 朝向）的内存快照。
+ * Memory snapshot of desktop "live" (position + orientation).
  *
- * 负责收窄渲染端上报，并按宠物存一份最近的位置供外部读取：桌面端一窗一只，位置全局只有一份。
- * 上报是变化时推 + 节流，不是轮询；宿主只存内存，不写 /state。
- * 不负责网页端：网页宠物的位置天生每页一份，走页面内的只读服务 petApi7340。
- * 依赖无（纯内存态，宿主重启即空），字段名与坐标口径与网页端一致。
- * 始终成立：快照没有 TTL，updatedAt 是调用方判断这份实况有多新的唯一依据。
- * 契约见 API.md 与 openapi.yaml。
+ * Responsible for narrowing the renderer report and saving a copy of the latest location according to the pet for
+ * external reading: one for each window on the desktop, and only one copy for the global location. Reporting is
+ * pushing + throttling when changes occur, not polling; the host only stores memory and does not write / state. Not
+ * responsible for the web page: The location of the web pet is generated one copy per page, and the read-only service
+ * petApi7340 in the page is used. There are no dependencies (pure memory state, empty when the host is restarted), and
+ * the field names and coordinate conventions are consistent with the web page. It is always true: there is no TTL in
+ * the snapshot, and updatedAt is the only basis for the caller to judge how recent the live stream is. See contracts
+ * API.md and openapi.yaml.
  *
  * @module dsh-pet/src/host/pose
  */
 
-/** 朝向（与 POST /anim 的 facing、shared/state.ts 的 PetFacing 同词）。 */
+/** Orientation (the same word as POST /anim’s facing, shared/state.ts’s PetFacing). */
 export type PoseFacing = 'left' | 'right';
 
-/** 一份实况快照（GET /pose 的响应体即它的浅拷贝 + ok / petId）。 */
+/** A live snapshot (the response body of GET /pose is its shallow copy + ok / petId). */
 export interface PoseSnapshot {
-  /** 宠物中心的归一化横坐标（与 POST /position 同口径，贴边时可能略出界）。 */
+  /** The normalized abscissa of the pet center (same conventions as POST /position, may be slightly out of bounds when welting). */
   x: number;
-  /** 宠物中心的归一化纵坐标，口径同 x。 */
+  /** The normalized vertical coordinate of the pet center, the conventions are the same as x. */
   y: number;
-  /** 朝向。 */
+  /** Orientation. */
   facing: PoseFacing;
-  /** 渲染端上报的时刻（epoch 毫秒），调用方据此判断这份实况有多新。 */
+  /** The time reported by the renderer (epoch milliseconds), based on which the caller determines how new the live stream is. */
   updatedAt: number;
 }
 
-/** 可写入快照的三元组（收窄之后）。 */
+/** Writable snapshot triples (after narrowing). */
 export type PoseInput = { x: number; y: number; facing: PoseFacing };
 
 /**
- * 收窄渲染端上报的 { x, y, facing }。
+ * Narrow the { x , y , facing } reported by the renderer.
  *
- * 与 /position 的越界夹取不同，这里不做范围夹取：宠物被拖到屏幕边缘时中心点本来就可能略微出界，
- * 夹取会让读回来的值对不上眼睛；但非有限数字（NaN / Infinity）一律拒，那种值喂回去只会把渲染端
- * 的位置算坏。
+ * Different from the out-of-bounds clamping of / position, there is no range clamping here: when the pet is dragged to
+ * the edge of the screen, the center point may be slightly out of bounds, and clamping will make the value read back
+ * out of sight; but non-limited numbers (NaN / Infinity) are all rejected, and feeding that kind of value back will
+ * only miscalculate the position of the renderer.
  */
 export function normalizePoseInput(
   raw: unknown,
@@ -53,13 +56,14 @@ export function normalizePoseInput(
   return { ok: true, pose: { x: o.x, y: o.y, facing: o.facing } };
 }
 
-/** 实况快照表（一个插件实例一个；进程内内存态，宿主重启即空）。 */
+/** Live snapshot table (one for each plugin instance; in-process memory state, empty when host restarts). */
 export class PoseStore {
-  // 用 declare + 构造器赋值：类字段初始化器会降级出 @oxc-project/runtime 外部 helper，
-  // 而它是未声明的依赖，会被 prepack 门禁拦下（同 ./state、./playback、./lock）。
-  /** petId → 最近一次实况。 */
+  // Using declare + constructor assignment: The class field initializer will downgrade @oxc - project/runtime external
+  // helper, and it is an undeclared dependency and will be blocked by prepack validation check (same as ./state, ./
+  // playback, ./lock).
+  /** petId → Last live broadcast. */
   declare private readonly byPet: Map<string, PoseSnapshot>;
-  /** 取当前时刻（可注入：单测不用真等时间）。 */
+  /** Get the current time (can be injected: single test does not require true waiting time). */
   declare private readonly now: () => number;
 
   constructor(opts?: { now?: () => number }) {
@@ -67,19 +71,19 @@ export class PoseStore {
     this.now = opts?.now ?? Date.now;
   }
 
-  /** 覆盖一只宠物的实况，返回落定的快照。 */
+  /** Overlay the live view of a pet and return the specified snapshot. */
   set(petId: string, pose: PoseInput): PoseSnapshot {
     const snap: PoseSnapshot = { x: pose.x, y: pose.y, facing: pose.facing, updatedAt: this.now() };
     this.byPet.set(petId, snap);
     return snap;
   }
 
-  /** 读最近一次实况；从没上报过返回 undefined（路由回 pose-unavailable）。 */
+  /** Read the latest live broadcast; it has never been reported and returns undefined (route returns pose-unavailable). */
   get(petId: string): PoseSnapshot | undefined {
     return this.byPet.get(petId);
   }
 
-  /** 当前快照数（测试 / 观测用）。 */
+  /** Current snapshot number (for testing/observation). */
   count(): number {
     return this.byPet.size;
   }

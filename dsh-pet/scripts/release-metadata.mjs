@@ -1,9 +1,9 @@
-/** 校验发布包身份与标签，输出供打包和发布步骤共用的版本元数据。 */
+/** Verify the identity and label of the release package, and output version metadata shared by the packaging and release steps. */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** 根据包版本选择 npm 标签；推送版本标签时要求它与包版本完全相同。 */
+/** Select the npm tag based on the package version; pushing the version tag requires it to be exactly the same as the package version. */
 export function releaseMetadata({ name, version, eventName, ref }) {
   if (name !== 'dsh-pet-powercontext') throw new Error(`Unexpected package name: ${name}`);
   const match = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(alpha|beta|rc)\.(?:0|[1-9]\d*))?$/.exec(version);

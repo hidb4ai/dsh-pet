@@ -1,8 +1,9 @@
 /**
- * 语音卡：四个播报开关与音色、音量。
+ * Voice card: four broadcast switches, tone and volume.
  *
- * 切换只改本地状态、随「保存」整包写入——即时写盘会重启桌面 Helper、重建全部桌面宠物窗口。
- * 音色选择器由外壳注入（与模型卡注入 picker 同构），卡片本身不硬编码任何音色 id。
+ * Switch to only change the local state and write the entire package with "Save" - instant disk writing will restart
+ * the desktop Helper and rebuild all desktop pet windows. The tone selector is shell-injected (isomorphic to the model
+ * card injecting picker), and the card itself does not hardcode any tone id.
  * @module dsh-pet/src/client/settings/voice-card
  */
 import type { FunctionComponent } from 'react';
@@ -12,44 +13,45 @@ import { makeUiKit, numberInputProps } from './ui.ts';
 
 export type { VoiceOption } from './picker/voice-picker.ts';
 
-/** 语音卡的输入。 */
+/** Voice card input. */
 export interface VoiceCardProps {
-  /** 保存中或配置未就绪时禁用全部控件。 */
+  /** All controls are disabled while saving or configuration is not ready. */
   readonly busy: boolean;
-  /** 手动播报开关的当前值：手动触发的碎碎念与对话回复。 */
+  /** Current value of manual broadcast switch: manually triggered whisper and conversation reply. */
   readonly enabled: boolean;
-  /** 当前音色 id。 */
+  /** Current tone id. */
   readonly voiceName: string;
-  /** 播放音量系数：0–1 的小数，1 = 最大音量。 */
+  /** Playback volume coefficient: decimal of 0–1, 1 = maximum volume. */
   readonly volume: number;
-  /** 可选音色；为空时选择器只显示当前值（列表还没拉回来或拉取失败）。 */
+  /** Optional voice; when empty, the selector only displays the current value (the list has not been pulled back or the pull failed). */
   readonly voices: readonly VoiceOption[];
-  /** 周期碎碎念要不要念出来。 */
+  /** Do you want to read the cycle whisper? */
   readonly whisperEnabled: boolean;
-  /** 待办提醒要不要念出来。 */
+  /** Do you want to read out the to-do reminder? */
   readonly todoEnabled: boolean;
-  /** 工作状态播报要不要念出来。 */
+  /** Do you need to read out the work status report? */
   readonly notifyEnabled: boolean;
-  /** 切换手动播报开关。 */
+  /** Switch the manual broadcast switch. */
   readonly onToggle: (value: boolean) => void;
-  /** 选择音色。 */
+  /** Select tone. */
   readonly onVoiceChange: (voiceName: string) => void;
-  /** 调整播放音量。 */
+  /** Adjust playback volume. */
   readonly onVolumeChange: (volume: number) => void;
-  /** 切换周期碎碎念的播报。 */
+  /** Switch the periodic whisper broadcast. */
   readonly onWhisperToggle: (value: boolean) => void;
-  /** 切换待办提醒的播报。 */
+  /** Switch the broadcast of to-do reminders. */
   readonly onTodoToggle: (value: boolean) => void;
-  /** 切换工作状态播报。 */
+  /** Switch working status broadcast. */
   readonly onNotifyToggle: (value: boolean) => void;
 }
 
 /**
- * 造语音卡。
+ * Make a voice card.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @param picker - 音色选择器组件；与模型卡一样由装配根造一次后注入，保证组件类型跨渲染稳定。
- * @returns 卡片组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @param picker - Tone selector component; like the model card, it is created once and then injected by the assembly
+ * root to ensure the stability of component types across renderings.
+ * @returns card assembly.
  */
 export function makeVoiceCard(
   rt: SettingsRuntime,
@@ -63,8 +65,10 @@ export function makeVoiceCard(
       className: 'dsh-pet-cfg__card',
       children: [
         cardHead(t('voiceTitle'), t('voiceHint')),
-        // 第一行四个开关：四类语音各一个，必须相邻，读得出是「同一类」；第二行两个输入：音色与音量。
-        // 音色不挂文字标签也不挂问号：下拉当前值「晓伊（女·活泼）」自己就说明了它是什么。
+        // Four switches in the first row: one for each of the four types of voices, which must be adjacent and read as
+        // "the same type"; two inputs in the second row: voice and volume. There is no text label or question mark
+        // attached to the voice: pulling down the current value "Xiao Yi (female, lively)" itself explains what it
+        // is.
         h('div', {
           className: 'dsh-pet-cfg__grid4',
           children: [

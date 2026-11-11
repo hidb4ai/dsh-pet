@@ -1,23 +1,25 @@
 /**
- * Command Code（provider id commandcode）：三窗口用量，走未文档化的控制面 /alpha/*。
+ * Command Code (provider id commandcode): three-window usage, using the undocumented control plane / alpha /*.
  *
- * 用量在官方 CLI 使用的控制面上，与推理数据面不同：先 whoami 取 orgId，再串行取额度、
- * 订阅与当期消耗。订阅接口可选，失败只缺重置时间，不因此整体失败。
- * summary 同时给出本期 token 与请求数，作为 windows 形态的第三页；给不全就整页不出。
- * 展示形态同 opencode（windows）；不负责展示层选择最紧迫窗口。
+ * The usage control plane used by the official CLI is different from the inference data plane: whoami first obtains
+ * orgId, and then serially obtains the quota, subscribe and current consumption. The subscribe interface is optional.
+ * Failure only lacks the reset time and does not result in overall failure. summary also gives the token of this issue
+ * and the number of requests, as the third page of the windows form; if not given, the entire page will not be
+ * published. The display form is the same as opencode (windows); it is not responsible for selecting the most urgent
+ * window for the display layer.
  *
  * @module dsh-pet/src/host/balance/providers/commandcode
  */
 import { fetchWithRetry, looseNum, num, obj, queryString, readWindow } from '../internal.ts';
 import type { BalanceProvider, BalanceSuccess, BalanceUsage, WindowsUsage } from '../types.ts';
 
-/** 控制面基址（/alpha/* 固定在根域名）。 */
+/** Control plane base address (/alpha/* fixed in the root domain name). */
 const API_BASE = 'https://api.commandcode.ai';
 
-/** 滚动窗的展示名：本服务商的 5h 窗口即 windowLimits.fiveHour。 */
+/** The display name of the rolling window: The 5 h window of this service provider is windowLimits.fiveHour. */
 const ROLLING_LABEL = '5h';
 
-/** 抓一次 JSON，HTTP 非 2xx 抛错；label 是接口路径，只用于错误信息。 */
+/** Catch JSON once, HTTP is not 2 xx and throw an error; label is the interface path and is only used for error information. */
 async function fetchJson(url: string, key: string, label: string): Promise<unknown> {
   const res = await fetchWithRetry(url, key);
   if (!res.ok) throw new Error('commandcode ' + label + ' HTTP ' + res.status);
@@ -25,9 +27,11 @@ async function fetchJson(url: string, key: string, label: string): Promise<unkno
 }
 
 /**
- * 从 usage 响应读区间用量（本期累计）；五个字段齐全才返回，缺一个即视为没有这项数据。
+ * Response from usage to read the interval usage (accumulated in this period); it will be returned only if all five
+ * fields are complete. If one is missing, it will be deemed that there is no such data.
  *
- * 这些字段来自批量聚合（窗口百分比才是实时的），所以宁可整页不出，也不拿半份数字拼一张会漂的卡片。
+ * These fields come from batch aggregate (the window percentage is real-time), so it is better not to display the
+ * entire page than to use half the numbers to make a card that will look blurry.
  */
 function readUsage(summary: Record<string, unknown> | undefined): BalanceUsage | undefined {
   const totalTokens = looseNum(summary?.totalTokens);
@@ -48,10 +52,10 @@ function readUsage(summary: Record<string, unknown> | undefined): BalanceUsage |
 }
 
 /**
- * 解析额度、订阅与用量三份响应（纯函数，测试直接喂真实报文）。
- * 月度百分比 = 当期消耗 /（消耗 + 剩余）；剩余 = monthlyCredits + purchasedCredits + freeCredits。
- * 窗口只在 limited 为真时读取；订阅只提供月度重置时间。
- * @throws 必填字段缺失或非法时，不伪造 0 余额
+ * Parse three responses for quota, subscribe and usage (pure function, test feed real messages directly). Monthly
+ * percentage = current consumption / (consumption + remaining); remaining = monthlyCredits + purchasedCredits +
+ * freeCredits. The window is only read when limited is true; subscribe only provides monthly reset times.
+ * @throws When the required fields are missing or invalid, no forgery will occur. 0 balance
  */
 export function parseCommandCode(
   creditsBody: unknown,
@@ -61,18 +65,19 @@ export function parseCommandCode(
 ): BalanceSuccess {
   const root = obj(creditsBody);
   const credits = obj(root?.credits);
-  if (!credits) throw new Error('dsh-pet: commandcode 响应缺少 credits');
+  if (!credits) throw new Error('dsh-pet: commandcode response is missing credits');
 
-  // 三个额度字段全缺即认不出响应形态：宁可报错，也不把分母当 0 算出「已用 100%」。
+  // If all three quota fields are missing, the response form cannot be recognized: it is better to report an error than to calculate "100% used" by treating the denominator as 0.
   const creditFields = [credits.monthlyCredits, credits.purchasedCredits, credits.freeCredits];
   if (creditFields.every((v) => looseNum(v) === undefined)) {
-    throw new Error('dsh-pet: commandcode credits 响应缺少额度字段');
+    throw new Error('dsh-pet: commandcode credits response is missing quota fields');
   }
   const remaining = creditFields.reduce<number>((sum, v) => sum + Math.max(0, looseNum(v) ?? 0), 0);
 
   const summary = obj(summaryBody);
   const spentRaw = summary?.totalCost;
-  if (spentRaw === undefined || spentRaw === null) throw new Error('dsh-pet: commandcode usage 响应缺少 totalCost');
+  if (spentRaw === undefined || spentRaw === null)
+    throw new Error('dsh-pet: commandcode usage response is missing totalCost');
   const spent = Math.max(0, num(spentRaw, 'totalCost'));
 
   const pool = spent + remaining;
@@ -85,7 +90,7 @@ export function parseCommandCode(
   const periodEnd = subscription?.currentPeriodEnd;
   if (typeof periodEnd === 'string' && periodEnd.length > 0) data.monthlyResetsAt = periodEnd;
 
-  // 实际报文把 windowLimits 放在 credits 同级，同时兼容嵌在 credits 内的变体。
+  // The actual message places windowLimits at the same level as credits and is compatible with the variant embedded in credits.
   const limits = obj(root?.windowLimits) ?? obj(credits.windowLimits);
   if (limits?.limited === true) {
     const fiveHour = readWindow(limits.fiveHour);
@@ -106,7 +111,7 @@ export function parseCommandCode(
   return { ok: true, provider, shape: 'windows', data };
 }
 
-/** Command Code 的内置定义。 */
+/** Built-in definition of Command Code. */
 export const commandCode: BalanceProvider = {
   id: 'commandcode',
   credential: { mode: 'ref', ref: 'COMMANDCODE_API_KEY' },
@@ -123,8 +128,9 @@ export const commandCode: BalanceProvider = {
       '/alpha/billing/credits',
     );
 
-    // 订阅可选：按量付费账号没有订阅时该接口非 2xx，只缺月度重置时间，
-    // 三个窗口的百分比不受影响，不因此整体失败，也不编造重置时间。
+    // subscribe is optional: when the pay-as-you-go account does not subscribe, the interface is not 2 xx, only the
+    // monthly reset time is missing. The percentages of the three windows are not affected, so the overall failure
+    // will not occur, and the reset time will not be fabricated.
     let subscription: unknown;
     try {
       subscription = await fetchJson(
@@ -136,8 +142,9 @@ export const commandCode: BalanceProvider = {
       subscription = undefined;
     }
 
-    // 不带 since：服务端默认区间就是计费周期；实测带 since 会把本期请求数与花费算少一截
-    // （两个响应的 periodStart 相同），所以以服务端默认区间为准。
+    // Without since: The default range of the server is the billing cycle; in actual measurement, with since, the
+    // number of requests and the cost of this period will be calculated as one less (the periodStart of the two
+    // responses are the same), so the default range of the server shall prevail.
     const summary = await fetchJson(
       API_BASE + '/alpha/usage/summary' + queryString({ orgId }),
       key,

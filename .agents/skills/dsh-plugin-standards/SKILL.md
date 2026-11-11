@@ -574,7 +574,7 @@ export function createXxx(rt: XxxRuntime) {
 
 ### 16.3 写法
 
-- `describe('<模块/函数>')`；`test('<行为>：<条件> → <结果>')`，中文。
+- `describe('<模块/函数>')`；`test('<behavior>: <condition> -> <result>')`，英文。中文本地化和用于验证中文行为的测试数据保留。
 - AAA：准备、执行、断言；一个 test 只验证一个行为。
 - 断言消息写“应该是什么”，失败时能直接定位。
 - 每个 test 自建 ctx / store / 临时目录；测试之间不共享可变状态、不依赖执行顺序。

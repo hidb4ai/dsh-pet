@@ -1,29 +1,32 @@
 /**
- * Q 弹挤压：前台视频贴地压扁再回弹。曲线在 `shared/physics`（`squashScale`），本模块只管 rAF 与 token。
- * 同一时刻只跑一条：新的一次会取消上一条，并用世代号丢掉迟到的帧，避免两次挤压互相抢 `transform`。
- * 尊重系统的「减少动效」：命中时不挤压，但界面照常。
+ * Q elastic squeeze: the front video is flattened to the ground and then rebounds. The curve is at `shared/physics`
+ * (`squashScale`), and this module only deals with rAF and token. Only run one at the same time: the new one will
+ * cancel the previous one and discard the late frames using the generation number to avoid two squeezes and grabbing
+ * `transform` from each other. Respect the system's "reduce motion effect": no squeezing when hitting, but the
+ * interface remains normal.
  * @module dsh-pet/src/client/pet/motion/squash
  */
 import { SQ_DURATION_MS, SQ_SQUASH, squashScale } from '../../../shared/physics.ts';
 
-/** 挤压驱动：一个宠物一个实例。 */
+/** Squeeze driver: one instance per pet. */
 export interface SquashDriver {
-  /** 挤压一次；`depth` 缺省为共享常量（落地冲击会按落速给更深的值）。 */
+  /** squeeze once; `depth` defaults to a shared constant (the landing impact will give a deeper value according to the falling speed). */
   start: (el: HTMLVideoElement, depth?: number) => void;
-  /** 立刻复位并放弃进行中的一次。 */
+  /** Immediately reset and abandon the ongoing session. */
   stop: () => void;
 }
 
 /**
- * 造挤压驱动。
+ * Create extrusion drive.
  *
- * @param o - 取值函数集合：`facing` 给当前朝向，镜像要保留，所以挤压后按它复原 `transform`。
- * @returns 可反复调用的挤压驱动。
+ * @param o - Collection of value functions: `facing` gives the current orientation, and the mirror image should be
+ * retained, so press it after squeezing to restore `transform` .
+ * @returns Extrusion driver that can be called repeatedly.
  */
 export function createSquashDriver(o: { facing: () => 'left' | 'right' }): SquashDriver {
-  /** 进行中的 rAF；`null` = 没有挤压在跑。 */
+  /** rAF in progress; `null` = no squeeze running. */
   let frame: number | null = null;
-  /** 世代号：每次开始或停止都 +1，迟到的帧据此自弃。 */
+  /** Generation number: +1 for each start or stop, and late frames are discarded accordingly. */
   let token = 0;
 
   const stop = (): void => {
@@ -53,7 +56,7 @@ export function createSquashDriver(o: { facing: () => 'left' | 'right' }): Squas
       }
       frame = null;
       el.style.transformOrigin = origin;
-      // 恢复纯镜像；若期间换源重置过 transform，也以镜像为准。
+      // Restore pure mirroring; if transform was reset during the source change, the mirroring shall prevail.
       el.style.transform = o.facing() === 'right' ? 'scaleX(-1)' : '';
     };
     frame = requestAnimationFrame(step);

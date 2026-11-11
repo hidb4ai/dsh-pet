@@ -1,37 +1,39 @@
 /**
- * 拖拽文件的归属：认领落在我们界面上的 drop，避免同一张图被 DSH 与桌宠各处理一次。
+ * Ownership of dragged files: Claim drop that falls on our interface to prevent the same picture from being processed
+ * once by DSH and desktop pet.
  */
 import { dragHasFiles, firstImageFile } from '../shared/chat/image-pick.ts';
 
-/** 落点自己的高亮类名；具体样式由各落点自己写。 */
+/** The highlighted class name of the landing point; the specific style is written by each landing point. */
 export const DROP_TARGET_CLASS = 'is-drop-target';
 
-/** 拖拽事件的结构子集：原生 DragEvent 与注入 react 的合成事件都满足。 */
+/** The structural subset of drag events: both the native DragEvent and the synthesis event injected into react are satisfied. */
 export interface DragLike {
-  /** 拖拽携带的数据；非 HTML 拖拽来源可能为空。 */
+  /** Data carried by drag and drop; non-HTML drag source may be empty. */
   readonly dataTransfer: DataTransfer | null;
-  /** 拦掉默认行为：否则浏览器会把拖进去的文件当导航打开，页面直接被换掉。 */
+  /** Block the default behavior: otherwise the browser will open the dragged file as a navigation and the page will be replaced directly. */
   preventDefault: () => void;
-  /** 阻断冒泡：DSH 的拖拽监听就在同一棵树的祖先上，不拦会被它再处理一遍。 */
+  /** Block bubbling: DSH’s drag monitoring is on the ancestor of the same tree, and will be processed again by it if not blocked. */
   stopPropagation: () => void;
 }
 
-/** 落点事件额外带的信息。 */
+/** Additional information for drop point events. */
 export interface DropTargetLike extends DragLike {
-  /** 监听器当前绑定的元素；原生事件里可能为空。 */
+  /** The element that the listener is currently bound to; it may be empty in native events. */
   readonly currentTarget: EventTarget | null;
-  /** 离开时指针进入的目标；用来区分「离开落点」与「在落点子元素之间移动」。 */
+  /** The target the pointer enters when leaving; used to distinguish between "leaving the drop point" and "moving between drop point sub-elements". */
   readonly relatedTarget: EventTarget | null;
 }
 
 /**
- * 认领「指针刚进入落点」：阻断冒泡，并收起宿主的整页遮罩。
+ * Claim "the pointer has just entered the landing point": block bubbling and close the host's full page mask.
  *
- * 宿主的遮罩由 document 上的 dragenter 驱动，指针进到我们的区域后它不该再压着整个页面；
- * 它的计数早在指针进入我们区域前就加上去了，所以这里要连带替它收一次尾。
+ * The host's mask is driven by dragenter on document. After the pointer enters our area, it should no longer press the
+ * entire page; its count was added long before the pointer entered our area, so it needs to be finished here.
  *
- * @param event - 落点收到的 dragenter。
- * @returns 带文件时为 true 且已阻断冒泡；其它拖拽返回 false 且不碰事件与遮罩。
+ * @param event - dragenter received by the drop point.
+ * @returns with files is true and bubbling has been blocked; other dragging returns false without touching events and
+ * masks.
  */
 export function claimFileDragEnter(event: DragLike): boolean {
   if (!dragHasFiles(event)) return false;
@@ -41,10 +43,11 @@ export function claimFileDragEnter(event: DragLike): boolean {
 }
 
 /**
- * 认领「有文件经过」的拖拽。
+ * Claim the drag of "File passed".
  *
- * @param event - 我们的界面收到的 dragover。
- * @returns 带文件时为 true，且已拦默认行为与冒泡；纯文本等其它拖拽返回 false 且不碰事件。
+ * @param event - dragover received by our interface.
+ * @returns with files is true, and the default behavior and bubbling have been blocked; plain text and other drag and
+ * drop return false without touching events.
  */
 export function claimFileDragOver(event: DragLike): boolean {
   if (!dragHasFiles(event)) return false;
@@ -54,10 +57,11 @@ export function claimFileDragOver(event: DragLike): boolean {
 }
 
 /**
- * 认领落在我们界面上的文件拖放。
+ * Drag and drop files dropped on our interface.
  *
- * @param event - 我们的界面收到的 drop。
- * @returns 第一张可发送的图片；不是文件拖放时一律不碰事件，是文件但认不出图片时吞下并返回 undefined。
+ * @param event - drop received by our interface.
+ * @returns is the first sendable picture; when it is not a file, the event will not be touched. When it is a file but
+ * the picture cannot be recognized, it will be swallowed and returned to undefined.
  */
 export function claimFileDrop(event: DragLike): File | undefined {
   if (!dragHasFiles(event)) return undefined;
@@ -68,10 +72,11 @@ export function claimFileDrop(event: DragLike): File | undefined {
 }
 
 /**
- * 收起宿主（DSH）的整页拖拽遮罩。
+ * Collapse the full page drag mask of host (DSH).
  *
- * 它用 document 上的 dragenter/dragleave 计数维护遮罩，只有 drop 与 window 的 dragend 会清零。
- * 我们的 drop 截住冒泡后它收不到收尾信号，遮罩会一直挂着；补这一次不带文件，不会触发上传。
+ * It maintains the mask with the dragenter/dragleave count on document, and only dragend on drop and window will be
+ * cleared. After our drop intercepts the bubbling, it cannot receive the cleanup signal, and the mask will remain
+ * hanging; if the file is not included this time, the upload will not be triggered.
  */
 function hideHostDropOverlay(): void {
   if (typeof window === 'undefined') return;
@@ -79,9 +84,9 @@ function hideHostDropOverlay(): void {
 }
 
 /**
- * 把落点标记成可放置状态。
+ * Mark the drop point as placeable.
  *
- * @param event - 落点上的 dragenter。
+ * @param event - dragenter on drop point.
  */
 export function markDropTarget(event: DropTargetLike): void {
   const el = event.currentTarget;
@@ -91,12 +96,13 @@ export function markDropTarget(event: DropTargetLike): void {
 }
 
 /**
- * 撤掉落点的高亮。
+ * Remove the highlighting of drop points.
  *
- * 指针在落点的子元素之间移动也会触发 dragleave，此时 relatedTarget 仍在区域内，不算离开；
- * 不区分的话，高亮会随着指针在输入框、按钮之间移动而闪。
+ * dragleave will also be triggered when the pointer moves between the sub-elements of the landing point. At this time,
+ * relatedTarget is still in the area and does not count as leaving; otherwise, the highlight will flash as the pointer
+ * moves between the input box and the button.
  *
- * @param event - 落点上的 dragleave，或落点上的 drop。
+ * @param event - dragleave on drop point, or drop on drop point.
  */
 export function unmarkDropTarget(event: DropTargetLike): void {
   const el = event.currentTarget;

@@ -1,8 +1,9 @@
 /**
- * 待办的展示格式化：到期时间、相对剩余与紧迫度。
+ * To-do display formatting: expiration time, relative remaining and urgency.
  *
- * 纯函数，当前时刻由调用方传入；面板渲染、排序后的副标题与测试共用这一份口径。
- * 不负责取数与时区换算：`datetime-local` 的读写都按浏览器本地时区，与用户看到的一致。
+ * Pure function, the current moment is passed in by caller; panel rendering, sorted subtitles and tests share this
+ * convention. We are not responsible for data retrieval and time zone conversion: `datetime-local` is read and written
+ * according to the browser's local time zone, which is consistent with what the user sees.
  * @module dsh-pet/src/shared/todo/format
  */
 import type { TodoItem } from './types.ts';
@@ -11,32 +12,33 @@ const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
-/** 紧迫度：面板据此染色，overdue 最红、undated 最淡。 */
+/** Urgency: The panel is dyed accordingly, with overdue being the reddest and undated being the lightest. */
 export type TodoUrgency = 'overdue' | 'soon' | 'today' | 'later' | 'undated';
 
-/** 星期名，索引与 Date.getDay() 对齐。 */
+/** Weekday name, index aligned with Date.getDay(). */
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const;
 
-/** 两位补零。 */
+/** Two digits are padded with zeros. */
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
 
-/** 当天零点的时间戳：跨日比较用它，避开夏令时造成的 23/25 小时日。 */
+/** Timestamp of zero o'clock of the day: Use it for cross-day comparison to avoid the 23/25 hour day caused by daylight saving time. */
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-/** 两个时刻相差几个自然日（按本地日历，向前为负）。 */
+/** How many natural days are the difference between the two times (according to the local calendar, forward is negative). */
 function dayDiff(target: Date, base: Date): number {
   return Math.round((startOfDay(target) - startOfDay(base)) / DAY_MS);
 }
 
 /**
- * 把毫秒差写成人话。
+ * Write the millisecond difference in human language.
  *
- * @param ms - 时长（非负；负数先取绝对值），不足一分钟按一分钟算。
- * @returns 例如「25分钟」「3小时」「2天」。
+ * @param ms - Duration (non-negative; take the absolute value first for negative numbers). If it is less than one
+ * minute, it will be counted as one minute.
+ * @returns For example, "25 minutes", "3 hours", and "2 days".
  */
 export function spanText(ms: number): string {
   const minutes = Math.max(1, Math.round(Math.abs(ms) / MINUTE_MS));
@@ -47,11 +49,11 @@ export function spanText(ms: number): string {
 }
 
 /**
- * 到期时刻的绝对说法（不含「还剩多久」）。
+ * Absolute statement of expiration time (excluding "how long is left").
  *
- * @param dueAt - 到期时刻；null 表示没有期限。
- * @param now - 当前时刻。
- * @returns 「今天 18:00」「明天 09:00」「周五 20:00」「11月3日 09:00」「无期限」。
+ * @param dueAt - Expiration time; null means no expiration date.
+ * @param now - the current moment.
+ * @returns "Today 18:00" "Tomorrow 09:00" "Friday 20:00" "November 3 09:00" "No deadline".
  */
 export function dueLabel(dueAt: number | null, now: number): string {
   if (dueAt === null) return '无期限';
@@ -66,11 +68,11 @@ export function dueLabel(dueAt: number | null, now: number): string {
 }
 
 /**
- * 相对说法：还剩多久 / 已逾期多久。
+ * Relative: How long is left / how long is overdue.
  *
- * @param dueAt - 到期时刻；null（无期限）时返回空串。
- * @param now - 当前时刻。
- * @returns 「还剩2小时」「已逾期3天」或 `''`。
+ * @param dueAt - Expiration time; null (no expiry) returns an empty string.
+ * @param now - the current moment.
+ * @returns "2 hours left" "3 days overdue" or `''` .
  */
 export function remainingLabel(dueAt: number | null, now: number): string {
   if (dueAt === null) return '';
@@ -79,11 +81,11 @@ export function remainingLabel(dueAt: number | null, now: number): string {
 }
 
 /**
- * 紧迫度：只有「未完成」的待办才有意义。
+ * Urgency: Only "unfinished" to-dos are meaningful.
  *
- * @param dueAt - 到期时刻；null = 无期限。
- * @param now - 当前时刻。
- * @returns 6 小时内为 soon，24 小时内为 today，更远为 later。
+ * @param dueAt - Expiration time; null = No expiration date.
+ * @param now - the current moment.
+ * @returns within 6 hours is soon , within 24 hours is today , and further away is later .
  */
 export function todoUrgency(dueAt: number | null, now: number): TodoUrgency {
   if (dueAt === null) return 'undated';
@@ -95,11 +97,11 @@ export function todoUrgency(dueAt: number | null, now: number): TodoUrgency {
 }
 
 /**
- * 一条待办在列表里的副标题。
+ * A subtitle of a to-do list.
  *
- * @param todo - 待办本体。
- * @param now - 当前时刻。
- * @returns 已完成 → 「已完成」/「已完成 · 今天 18:00」；未完成 → 「今天 18:00 · 还剩2小时」。
+ * @param todo - To-do body.
+ * @param now - the current moment.
+ * @returns Completed → "Completed"/"Completed · Today 18:00"; Unfinished → "Today 18:00 · 2 hours left".
  */
 export function metaLabel(todo: TodoItem, now: number): string {
   if (todo.done) {
@@ -112,10 +114,10 @@ export function metaLabel(todo: TodoItem, now: number): string {
 }
 
 /**
- * 把时间戳写成 `datetime-local` 输入框认的本地字符串。
+ * Write the timestamp as the local character string recognized by the `datetime-local` input box.
  *
- * @param ms - epoch 毫秒。
- * @returns `YYYY-MM-DDTHH:mm`（本地时区）。
+ * @param ms - epoch milliseconds.
+ * @returns `YYYY-MM-DDTHH:mm` (local time zone).
  */
 export function formatDateTimeLocal(ms: number): string {
   const date = new Date(ms);
@@ -126,10 +128,11 @@ export function formatDateTimeLocal(ms: number): string {
 }
 
 /**
- * 读 `datetime-local` 的值；空串表示「没有期限」。
+ * Read the value of `datetime-local` ; the empty string means "no expiration".
  *
- * @param value - 输入框的值，形如 `YYYY-MM-DDTHH:mm`。
- * @returns epoch 毫秒；空串、格式非法或日期不存在（如 2 月 30 日）时返回 null。
+ * @param value - the value of the input box, in the shape of `YYYY-MM-DDTHH:mm` .
+ * @returns epoch milliseconds; null is returned when the string is empty, the format is invalid, or the date does not
+ * exist (such as February 30).
  */
 export function parseDateTimeLocal(value: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value.trim());
@@ -141,7 +144,7 @@ export function parseDateTimeLocal(value: string): number | null {
   const minute = Number(match[5]);
   if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
   const date = new Date(year, month - 1, day, hour, minute, 0, 0);
-  // 组件回读校验：2 月 30 日会被 Date 滚到 3 月，这里把它判成非法而不是悄悄改期。
+  // Component readback verification: February 30th will be rolled to March by Date. Here it is judged as invalid rather than quietly rescheduled.
   if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
   return date.getTime();
 }

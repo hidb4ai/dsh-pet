@@ -1,9 +1,11 @@
 /**
- * 宠物互撞结算：每帧把自己和站场里撞上的那一只做一次弹性分离。
+ * Settlement of pets colliding with each other: elastically separate yourself from the one you collided with in the
+ * station every frame.
  *
- * 不负责积分、重力与 DOM 写入，只回答「结算之后我该在哪、速度多少」。
- * 不变量：速度一次算定、双方都写绝对速度，绝不按增量叠加——重叠会持续好几帧，
- * 叠加会让同一对碰撞每帧重复注入动量，速度按帧指数增长。
+ * I am not responsible for points, gravity and DOM writing. I only answer "Where should I be and what speed should I
+ * be after settlement?" Invariant: The speed is calculated once, both sides write absolute speeds, and never
+ * superimpose incrementally - the overlap will last for several frames. Superposition will cause the same pair of
+ * collisions to repeatedly inject momentum every frame, and the speed will increase exponentially by frame.
  * @module dsh-pet/src/client/pet/motion/pet-collision
  */
 import {
@@ -15,43 +17,45 @@ import {
   type ThrowState,
 } from '../../../shared/physics.ts';
 
-/** 结算需要的当帧几何。 */
+/** Current frame geometry required for settlement. */
 export interface CollisionMetrics {
-  /** 宠物宽度（px，质量 ∝ size²）。 */
+  /** Pet width ( px , mass ∝ size² ). */
   size: number;
-  /** 舞台脚底垫高：身体框按它上移。 */
+  /** The stage foot is raised: the body frame moves up according to it. */
   bottomPad: number;
 }
 
-/** 结算依赖。 */
+/** Settlement dependency. */
 export interface PetCollisionDeps {
-  /** 碰撞站场。 */
+  /** Collision site. */
   arena(): { slots: Record<string, PetCollisionSlot> };
-  /** 本宠物 id：跳过自己。 */
+  /** This pet id: jumps over itself. */
   petId: string;
-  /** 撞到别的宠物：入参是法向相对速度（px/s），供触觉反馈换算强度。 */
+  /** Colliding into other pets: The input parameter is the normal relative velocity (px/s), which is used to convert the intensity of tactile feedback. */
   onPetImpact(speed: number): void;
 }
 
-/** 结算函数：入参是本帧积分后的状态，返回结算后的状态。 */
+/** Settlement function: The input parameter is the state after integration in this frame, and the state after settlement is returned. */
 export type PetCollisionResolver = (state: ThrowState, metrics: CollisionMetrics) => ThrowState;
 
 /**
- * 把重叠推开：{@link overlapPush} 给的是「各让一半」，这里取整段——
- * 对方若也在跑，它下一帧会从自己那侧再推一次，两边各推一次正好分开。
+ * Push the overlap away: {@link overlapPush} What is given is "each gives half", here is the whole paragraph - if the
+ * opponent is also running, it will push again from its own side in the next frame, and push once on each side to
+ * separate them.
  *
- * @param state - 当前状态。
- * @param push - 半程位移；`null` = 没有重叠。
- * @returns 推开后的状态（速度不动）。
+ * @param state - Current status.
+ * @param push - half displacement; `null` = no overlap.
+ * @returns The state after pushing away (the speed does not change).
  */
 const separate = (state: ThrowState, push: { dx: number; dy: number } | null): ThrowState =>
   push === null ? state : { ...state, x: state.x + push.dx * 2, y: state.y + push.dy * 2 };
 
 /**
- * 造互撞结算器。
+ * Build a collision settler.
  *
- * @param deps - 站场、自身 id 与撞击回调。
- * @returns 一帧最多结算一对的结算函数；没撞上时原样返回入参。
+ * @param deps - station, self id and impact callback.
+ * @returns The settlement function can settle at most one pair in one frame; if there is no collision, the input
+ * parameters will be returned as they are.
  */
 export function createPetCollision(deps: PetCollisionDeps): PetCollisionResolver {
   return (state, metrics) => {
@@ -70,7 +74,7 @@ export function createPetCollision(deps: PetCollisionDeps): PetCollisionResolver
         { x: state.x, y: state.y, vx: state.vx, vy: state.vy, size: metrics.size },
         { x: otherBox.x, y: otherBox.y, vx: vel.vx, vy: vel.vy, size: slot.size },
       );
-      // 正在分离（重叠之后的那几帧）只推位置、不改速度，否则同一对碰撞会被反复注入动量。
+      // When separating (those frames after overlapping), only the position is pushed and the speed is not changed. Otherwise, the same pair of collisions will be repeatedly injected with momentum.
       if (hit === null) return separated;
       deps.onPetImpact(hit.impactSpeed);
       slot.applyVelocity(hit.hvx, hit.hvy);

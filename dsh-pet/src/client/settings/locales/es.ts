@@ -1,5 +1,5 @@
 /**
- * 设置页西班牙语文案；键集与 zh 完全一致。
+ * Spanish copy of settings page; key set is exactly the same as zh.
  */
 import type { Key } from './zh.ts';
 
@@ -28,7 +28,7 @@ export const es: Record<Key, string> = {
   nav: 'Configuración de mascotas',
   intro:
     'Gestiona varias mascotas: cada una tiene su propio tamaño y posición (se aplica al instante después de guardar).',
-  // 卡片标题与卡片级说明；说明统一进问号气泡。
+  // Card title and card-level description; descriptions are unified into question mark bubble.
   petCardTitle: 'Mascota',
   avatarLabel: 'Avatar',
   avatarHint:
@@ -46,7 +46,7 @@ export const es: Record<Key, string> = {
     'En qué esquina de la pantalla se pega la mascota (en escritorio se calcula por el área de trabajo de cada monitor).',
   marginXHint: 'Distancia horizontal desde la esquina elegida (px); puede ser cualquier número.',
   marginYHint: 'Distancia vertical desde la esquina elegida (px); puede ser cualquier número.',
-  // 「/」命令菜单的行标题（图标由 app.ts 经 command-faces.ts 补上）。
+  // The row title of the "/" command menu (the icon is added by app.ts via command-faces.ts).
   'cmd.chat': 'Chat',
   'cmd.pet': 'Mascota',
   'cmd.balance': 'Saldo',

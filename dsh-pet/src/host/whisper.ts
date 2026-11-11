@@ -1,11 +1,12 @@
 /**
- * 碎碎念生成（host 半侧）：用 DSH 的 LLM 统一抽象层（ctx.llm）生成一句话。
+ * whisper generation (host side): Use DSH’s LLM unified abstraction layer (ctx.llm) to generate a sentence.
  *
- * 负责拼一次极简的「说句话」请求并收集流式正文；不自己拼服务商端点、不碰凭证。
- * 不负责编排与写气泡——周期调度与落盘都由宿主半侧的其他模块负责。
- * 依赖 ctx.llm、agentDefaultModel（与对话同源）与调用方随机抽出的配图。
- * 始终成立：候选模型失败要显式回落并留痕；生成失败返回结构化原因，不伪造文案。
- * 契约见 API.md 与 openapi.yaml。
+ * Responsible for putting together a minimalist "say a word" request and collecting the streaming text; not putting
+ * together the service provider's endpoints or touching the credentials. It is not responsible for orchestrating and
+ * writing bubbles - periodic scheduling and persist to disk are all handled by other modules on the host side. Rely on
+ * ctx.llm, agentDefaultModel (same origin as the dialogue) and caller randomly selected pictures. This is always true:
+ * if the candidate model fails, an explicit fallback must be left and traces must be left; if the generation fails, a
+ * structured reason will be returned and no text will be falsified. See contracts API.md and openapi.yaml.
  *
  * @module dsh-pet/src/host/whisper
  */
@@ -16,29 +17,30 @@ import { supportsReasoningOff } from './llm-reasoning.ts';
 import { defaultLog } from './log-file.ts';
 import { modelCandidates, modelLabel, type ModelRef } from './model-selection.ts';
 
-/** 生成失败原因（与 shared/whisper.ts 的 WhisperState 失败分支同构）。 */
+/** Generate failure reason (identical to the WhisperState failure branch of shared/whisper.ts). */
 export type WhisperGenerateResult =
   | { ok: true; text: string; image?: string }
   | { ok: false; reason: 'provider-missing' | 'generate-error'; message?: string };
 
-/** 单次生成超时（ms）：碎碎念不需要长输出，30s 足够。 */
+/** Single generation timeout (ms): whisper does not need long output, 30 s is enough. */
 const TIMEOUT_MS = 30_000;
 
-/** 碎碎念指令：纯文本（没有配图时的原样请求）。 */
+/** whisper command: plain text (as-is request without pictures). */
 const USER_TEXT = '随便说一句日常碎碎念，一句就好，20 字以内。';
 
-/** 梦话指令：睡觉期间嘟囔一句。与碎碎念指令同属「功能指令」，不进配置（配置里只有人设）。 */
+/** Sleep talking command: mumble something while sleeping. It belongs to the same "functional command" as the whisper command and does not enter the configuration (there is only persona in the configuration). */
 const SLEEP_TALK_TEXT = '你正在睡觉，随便嘟囔一句梦话，一句就好，20 字以内；含糊、半梦半醒，不要清醒地回应任何人。';
 
-/** 梦话指令的对外出口：调用方传进 generateWhisper 的 instruction，避免再抄一份文案。 */
+/** External export of sleep talking instructions: caller passes in instruction of generateWhisper to avoid copying another copy. */
 export const SLEEP_TALK_INSTRUCTION = SLEEP_TALK_TEXT;
 
 /**
- * 碎碎念指令：带表情包时要求模型配合作画说一句。
+ * Whisper command: When adding an emoticon, ask the model to cooperate with the painting and say a word.
  *
- * 明确「正文仍是一句话」：图是配图，不是让模型描述画面本身。
- * 图由调用方随机抽而不是让模型选：碎碎念没有上下文可依（人设固定、无用户输入），
- * 交模型选只能盲选，还多一层幻觉风险。
+ * Make it clear that "the text is still one sentence": the picture is a supplement, not a model describing the picture
+ * itself. The pictures are randomly selected by the caller instead of being selected by the model: whisper has no
+ * context to rely on (persona is fixed, no user input), and the model selection can only be done blindly, which adds
+ * another layer of risk of illusion.
  */
 function userTextWithMeme(meme: { name: string; desc: string }): string {
   return (
@@ -52,58 +54,59 @@ function userTextWithMeme(meme: { name: string; desc: string }): string {
   );
 }
 
-/** 一次生成请求：人设必填，其余可选。参数改对象是为了不再往函数签名上挂第 5 个参数。 */
+/** One-time generation request: persona is required, the rest are optional. The parameter change object is to no longer attach the fifth parameter to the function signature. */
 export interface WhisperRequest {
-  /** 人设 system 提示词（whisperPrompt）。 */
+  /** persona system prompt word (whisperPrompt). */
   system: string;
-  /** 配图（开启配图时传入；缺省 = 纯文本碎碎念）。生成成功时原样带回，客户端据此展示图片。 */
+  /** Picture (passed in when turning on picture; default = plain text whisper). When the generation is successful, it will be brought back as it is, and the client will display the picture accordingly. */
   meme?: { name: string; desc: string };
-  /** 条目单独指定的模型（whisperModel）；缺省 / 留空 = 只用当前对话的模型。 */
+  /** Entry individually specified model (whisperModel); Default/leave blank = only use the model of the current session. */
   preferred?: ModelRef;
-  /** 功能指令（梦话传 SLEEP_TALK_INSTRUCTION）；缺省 = 碎碎念指令。 */
+  /** Function command (whisper command SLEEP_TALK_INSTRUCTION); default = whisper command. */
   instruction?: string;
 }
 
 /**
- * 用指定（或当前对话的）provider/model 生成一句话。
- * @param ctx - 宿主上下文（注入 agentDefaultModel / llm）。
- * @param request - 人设、可选配图、可选模型与指令。
- * @returns 生成的文本（+ 配图），或结构化失败（provider 缺失 / 生成错误）。
+ * Generate a sentence using the specified (or current conversation's) provider/model.
+ * @param ctx - host context (injected agentDefaultModel / llm).
+ * @param request - persona, optional drawings, optional models and instructions.
+ * @returns generated text (+ images), or structuring failure (provider missing/generated incorrectly).
  */
 export async function generateWhisper(
   ctx: { agentDefaultModel: { currentSelection(): { provider: string; model: string } }; llm?: unknown },
   request: WhisperRequest,
 ): Promise<WhisperGenerateResult> {
-  // 候选链：配置的模型优先 → 当前对话的模型兜底（whisperModel 留空时链上只有后者）
+  // Candidate chain: The configured model takes priority → the model of the current conversation fallback (when whisperModel is left empty, only the latter is on the chain)
   const candidates = modelCandidates(ctx, request.preferred);
   if (candidates.length === 0) {
     return { ok: false, reason: 'provider-missing', message: '当前对话未配置模型' };
   }
-  // ctx.llm 是核心服务但保持防御：缺失时显式失败（静默跳过由上层决定）
+  // ctx.llm is a core service but remains defensive: explicitly fails when missing (silent skipping is determined by the upper layer)
   const llm = (ctx as { llm?: { stream(o: unknown): AsyncIterable<unknown> } }).llm;
   if (!llm || typeof llm.stream !== 'function') {
     return { ok: false, reason: 'generate-error', message: 'LLM 服务不可用' };
   }
-  // 依次尝试：配置的模型失败（凭据被删 / 模型下架 / 该服务商没配 key）时回落到当前对话的模型
-  // 重试一次——那才是用户当前真正在用的模型，报错更有意义。
-  // 兜底文案与失败分支同源，避免两处字面量漂移
+  // Try in sequence: when the configured model fails (the credentials are deleted/the model is removed from the
+  // shelves/the service provider does not match key), fallback to the model of the current conversation and try again
+  // - that is the model that the user is currently using, and it is more meaningful to report an error. The fallback
+  // copy has the same origin as the failed branch to avoid literal drift between the two places.
   let last: WhisperGenerateResult = { ok: false, reason: 'generate-error', message: noTextReason(undefined) };
   for (const [i, sel] of candidates.entries()) {
     const result = await generateWith(ctx, llm, sel, request);
     if (result.ok) return result;
     last = result;
-    // 回落要留痕：配的模型没生效时能在日志里看到原因（否则「我明明配了 A，怎么还是用 B」没法查）
+    // fallback should leave traces: when the configured model does not take effect, the reason can be seen in the log (otherwise "I clearly configured A, why do I still use B" cannot be checked)
     if (i + 1 < candidates.length) {
       defaultLog(
         'warn',
-        `dsh-pet: 碎碎念用 ${modelLabel(sel)} 生成失败（${result.message ?? result.reason}），回落到 ${modelLabel(candidates[i + 1])}`,
+        `dsh-pet: Whisper generation failed with ${modelLabel(sel)} (${result.message ?? result.reason}); falling back to ${modelLabel(candidates[i + 1])}`,
       );
     }
   }
   return last;
 }
 
-/** 用一个确定的 provider/model 跑一次生成（候选链的一环；失败原样返回结构化原因，不吞）。 */
+/** Run a generation with a certain provider/model (a link in the candidate chain; if it fails, the structured reason will be returned as is and will not be swallowed). */
 async function generateWith(
   ctx: { llm?: unknown },
   llm: { stream(o: unknown): AsyncIterable<unknown> },
@@ -111,14 +114,15 @@ async function generateWith(
   request: WhisperRequest,
 ): Promise<WhisperGenerateResult> {
   const deadline = AbortSignal.timeout(TIMEOUT_MS);
-  // 仅当模型声明支持 reasoning effort（含 "off"）时才传，否则省略：
-  // 无 reasoning 元数据的模型显式传 off 会被 dsh-llm 判为 UNSUPPORTED_REASONING_EFFORT，
-  // 折叠成空流（表现为「模型未返回文本」）。
+  // It is only passed when the model declaration supports reasoning effort (including " off "), otherwise it is
+  // omitted: if the model without reasoning metadata explicitly passes off, it will be judged as
+  // UNSUPPORTED_REASONING_EFFORT by dsh-llm and folded into an empty stream (shown as "the model does not return
+  // text").
   const supportsOff = await supportsReasoningOff(ctx, sel.provider, sel.model);
   const options = {
     provider: sel.provider,
     model: sel.model,
-    // 调用身份（见 llm-call.ts）：缺它时 opencode-go 回 400
+    // Calling identity (see llm-call.ts): when it is missing, opencode-go returns 400
     sessionId: PET_CALL_IDENTITY,
     messages: [
       createUserMessage({
@@ -129,10 +133,11 @@ async function generateWith(
       }),
     ],
     system: request.system,
-    // 不显式限 maxTokens：推理模型会把思考计入预算，显式小上限只会截断正文报「模型未返回文本」；
-    // 不传由 dsh-llm 按适配器 defaultMaxTokens（默认 32768）兜底，碎碎念短指令输出仍短。
+    // No explicit limit maxTokens: The inference model will include thinking into the budget, and the explicit small
+    // limit will only truncate the text and report "Model did not return text"; do not pass the fallback by dsh-llm
+    // according to the adapter defaultMaxTokens (default 32768), and the whisper short command output is still short.
     temperature: 1,
-    // 统一关闭深度思考：碎碎念不需要推理，只求随口一句（仅模型声明支持时传）
+    // Unifiedly turn off deep thinking: whisper does not require reasoning, just a casual sentence (only model declaration supports time passing)
     ...(supportsOff ? { reasoningEffort: ReasoningEffortId('off') } : {}),
     signal: deadline,
   };

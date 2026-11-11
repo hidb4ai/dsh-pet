@@ -1,10 +1,12 @@
 /**
- * 自播动画决策（src/client/pet/animation/next-animation.ts）的契约测试。
+ * Contract test of self-play animation decision (src/client/pet/animation/next-animation.ts).
  *
- * 三条契约：
- *   1. idle / turn 只从各自池里抽，并避开当前正在播的那一段；
- *   2. move 档：占用中不重播（返回 null），走位成功就把动作名用于日志，无法移动才退回原地分类动作；
- *   3. 宠物固定（fixed）时不会走到 turn / move——决策层不重复判断，靠调用方传对的类别。
+ * Three contracts:
+ * 1. idle / turn only draw from their respective pools and avoid the segment currently being played;
+ * 2. move file: no replay during occupation (return to null), the action name will be used in the log if the move is
+ * successful, and the action will be returned to the original place if it cannot be moved;
+ * 3. When the pet is fixed (fixed), it will not go to turn / move - the decision-making layer does not make repeated
+ * judgments and relies on the caller to pass the correct category.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,43 +26,43 @@ const animations = {
 
 const base = { animations, facing: 'left' as const, current: 'idle2' };
 
-describe('decideNextAnimation —— 自播动画决策', () => {
-  test('idle：从 idle 池抽，避开当前动画', () => {
+describe('decideNextAnimation——Self-broadcast animation decision', () => {
+  test('idle: Draw from the idle pool to avoid the current animation', () => {
     const decision = decideNextAnimation({ ...base, kind: 'idle' });
     assert.equal(decision.kind, 'IDLE');
-    assert.equal(decision.anim, 'idle1', '当前是 idle2，应抽到另一个');
-    assert.equal(decision.play, true, 'idle 要真的切动画');
+    assert.equal(decision.anim, 'idle1', 'The current one is idle2, another one should be drawn');
+    assert.equal(decision.play, true, 'idle really cuts the animation');
   });
 
-  test('idle 池只有一段时宁可重复也不返回 null', () => {
+  test('The idle pool is only for a period of time. I would rather repeat it than return null.', () => {
     const single = { ...animations, idle: ['only'] } as unknown as Animations;
     const decision = decideNextAnimation({ ...base, animations: single, current: 'only', kind: 'idle' });
     assert.equal(decision.anim, 'only');
   });
 
-  test('turn：从 turn 池抽', () => {
+  test('turn: drawn from the turn pool', () => {
     const decision = decideNextAnimation({ ...base, kind: 'turn' });
     assert.equal(decision.kind, 'TURN');
     assert.equal(decision.anim, 'turn1');
     assert.equal(decision.play, true);
   });
 
-  test('move 占用中：返回 null（别切动画，切了会打断走位）', () => {
+  test('move is occupied: return to null (do not cut the animation, as it will interrupt the movement)', () => {
     const decision = decideNextAnimation({ ...base, kind: 'move', move: true });
     assert.deepEqual(decision, { kind: 'MOVES', anim: null, play: false });
   });
 
-  test('move 成功：类别 MOVES，动作名带上（只用于日志，不重复切换）', () => {
+  test('move Success: Category MOVES, action name is included (only used for logs, no repeated switching)', () => {
     const decision = decideNextAnimation({ ...base, kind: 'move', move: 'walk2' });
     assert.deepEqual(decision, { kind: 'MOVES', anim: 'walk2', play: false });
   });
 
-  test('move 失败：退回原地分类动作，类别用分类 id', () => {
+  test('move failed: return to the original classification action, use classification id for the category', () => {
     const decision = decideNextAnimation({ ...base, kind: 'move', move: false });
     assert.deepEqual(decision, { kind: 'wave', anim: 'wave1', play: true });
   });
 
-  test('action 档：分类动作；无分类时回落 idle 池', () => {
+  test('action file: classification action; fallback idle pool when no classification', () => {
     const decision = decideNextAnimation({ ...base, kind: 'action' });
     assert.deepEqual(decision, { kind: 'wave', anim: 'wave1', play: true });
 

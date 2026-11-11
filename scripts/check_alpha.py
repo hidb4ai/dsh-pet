@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""校验 HEVC-with-Alpha 产物的 alpha 通道是否真实存在。
+"""Verify whether the alpha channel of the HEVC-with-Alpha product actually exists.
 
-用法：python check_alpha.py dist/*.mov（或 ls 展开）
-判断：提取首帧的 RGBA，A 通道必须有真实层次（存在 >200 的不透明像素，
-也存在 <100 的透明像素）——若全是 255 说明编码丢 alpha，必须修编码命令。
-"""
+Usage: python check_alpha.py dist /*. mov (or ls expansion)
+Judgment: Extract the RGBA of the first frame, and the A channel must have real levels (there are >200 opaque pixels,
+There are also transparent pixels <100) - if all are 255, it means the encoding is lost alpha, and the encoding command must be modified."""
 import os
 import subprocess
 import sys
@@ -23,7 +22,7 @@ def check_one(path: str) -> bool:
         print(f"  [WARN] {path}: no frame extracted")
         return True
     data = open(rgba, "rb").read()
-    alpha = data[3::4]  # rgba 每像素 4 字节，A 是第 4 个
+    alpha = data[3::4]  # rgba is 4 bytes per pixel, A is the 4th
     a_min, a_max = min(alpha), max(alpha)
     a_mean = sum(alpha) / len(alpha)
     ok = a_max > 200 and a_min < 100
@@ -35,7 +34,7 @@ def check_one(path: str) -> bool:
 def main() -> int:
     files = sys.argv[1:]
     if not files:
-        print("usage: python check_alpha.py <mov...> 或 ls dist/*.mov | xargs python check_alpha.py")
+        print("usage: python check_alpha.py <mov...> or ls dist/*.mov | xargs python check_alpha.py")
         return 2
     failed = 0
     for f in files:

@@ -1,9 +1,10 @@
 /**
- * DeepSeek 官方 API Key 路由（provider id deepseek-official）：账户金额。
+ * DeepSeek official API Key route (provider id deepseek-official): account amount.
  *
- * 取 GET https://api.deepseek.com/user/balance 后按币种逐条搬出 balance_infos；
- * 只取首条会让后面的币种凭空消失。金额原样透传，不按赠送加充值重算。
- * 档位基准与峰谷取自 ./deepseek-common.ts；重试与校验细节统一走 ./internal.ts。
+ * Get GET https:// api.deepseek.com/user/balance and then move out balance_infos one by one according to currency;
+ * only taking the first one will make the subsequent currencies disappear out of thin air. The amount is transmitted
+ * as it is and will not be recalculated based on the gift plus recharge. The state benchmark and peak and valley are
+ * taken from ./deepseek-common.ts; retry and verification details are unified from ./internal.ts.
  *
  * @module dsh-pet/src/host/balance/providers/deepseek-official
  */
@@ -11,7 +12,7 @@ import { deepseekFullBalance, deepseekPricingTier } from '../deepseek-common.ts'
 import { fetchWithRetry, obj, str } from '../internal.ts';
 import type { BalanceProvider } from '../types.ts';
 
-/** DeepSeek 官方 API Key 路由的内置定义。 */
+/** DeepSeek Official built-in definition of API Key route. */
 export const deepseekOfficial: BalanceProvider = {
   id: 'deepseek-official',
   credential: { mode: 'ref', ref: 'DEEPSEEK_API_KEY' },
@@ -21,7 +22,7 @@ export const deepseekOfficial: BalanceProvider = {
     const body: unknown = await res.json();
     const infos = (body as { balance_infos?: unknown })?.balance_infos;
     if (!Array.isArray(infos) || infos.length === 0)
-      throw new Error('dsh-pet: deepseek balance 响应缺少 balance_infos');
+      throw new Error('dsh-pet: deepseek balance response is missing balance_infos');
     const wallets = infos.map((raw) => {
       const w = obj(raw) ?? {};
       const currency = str(w.currency, 'currency');

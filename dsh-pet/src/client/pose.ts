@@ -1,34 +1,37 @@
 /**
- * 「实况」（位置 + 朝向）的页面内注册表：PetCard 挂载时注册读法，供 Cordis 只读服务 `petApi7340` 读取。
- * 网页端的位置天生按页面各一份：宠物在各自视口里，读到的也正好是这一页里的这只，无需实例 id。
- * 只服务浏览器半侧；不负责宿主半侧的快照——桌面宠物走自己的 `POST /pose/report` 与 `GET /pose`。
- * 坐标口径与 `POST /position` 完全一致（归一化中心坐标），且按需读取，不是注册时的快照。
+ * The register table in the "live" (position + orientation) page: PetCard register reading method when mounting, for
+ * Cordis read-only service `petApi7340` to read. The position on the web page is generated for each page: the pet is
+ * in each viewport, and what is read is exactly the one on this page, without the need to instance id. Only serves the
+ * browser side; not responsible for the host side's snapshots - desktop pets take their own `POST /pose/report` and
+ * `GET /pose` . The coordinate conventions are exactly the same as `POST /position` (normalized center coordinates),
+ * and are read on demand, not a snapshot when registering.
  * @module dsh-pet/src/client/pose
  */
 
-/** 一次实况：宠物中心的归一化坐标与朝向。 */
+/** A live broadcast: the normalized coordinates and orientation of the pet center. */
 export type Pose = { x: number; y: number; facing: 'left' | 'right' };
 
-/** petId → 取当前实况的函数；PetCard 挂载时注册、卸载时摘除。 */
+/** petId → Function to get the current live view; PetCard is registered when mounted and removed when unmounted. */
 const readers = new Map<string, () => Pose>();
 
 /**
- * 注册一只宠物在这一页的实况读法。
- * @param petId - 宠物 id。
- * @param read - 取当前实况的函数。
- * @returns 摘除函数；重复调用无害。
+ * Register a pet's live reading on this page.
+ * @param petId - Pet id.
+ * @param read - function to get the current live stream.
+ * @returns Remove function; repeated calls are harmless.
  */
 export function registerPose(petId: string, read: () => Pose): () => void {
   readers.set(petId, read);
   return () => {
-    // 只摘掉自己那一份：同一 id 重新挂载时，后注册的那份不能被前一个的清理函数误摘。
+    // Only remove its own copy: When the same id is remounted, the copy of the later register cannot be mistakenly removed by the previous cleanup function.
     if (readers.get(petId) === read) readers.delete(petId);
   };
 }
 
 /**
- * 读某只宠物在这一页的实况；不在这页（未注册 / 未挂载 / `display` 不含 `web`）时为 `null`。
- * 与桌面端 `GET /pose` 的「明确不可用」同义；每次调用都取当前值，走位、拖拽中途也能读到。
+ * Read the live status of a certain pet on this page; when it is not on this page (not registered / not mounted /
+ * `display` does not include `web` ), it is `null` . It is synonymous with "clearly unavailable" on the desktop
+ * `GET /pose` ; the current value is taken every time it is called, and it can be read during movement and dragging.
  */
 export function readPose(petId: string): Pose | null {
   if (typeof petId !== 'string' || petId === '') return null;
@@ -36,7 +39,7 @@ export function readPose(petId: string): Pose | null {
   return read === undefined ? null : read();
 }
 
-/** 当前注册了几只（测试与观测用：验证卸载不泄漏）。 */
+/** How many are currently registered (for testing and observation: verify that unmount does not leak). */
 export function poseReaderCount(): number {
   return readers.size;
 }

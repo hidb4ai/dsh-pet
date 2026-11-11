@@ -1,17 +1,18 @@
 /**
- * 睡觉状态与挑选逻辑单测：钉住「进睡写定三段名字、重复进睡不重放、醒来只清状态」与
- * 「整套随机 + 段内随机、没有可用套时返回 null」。
+ * Sleep state and selection logic single test: verify "Write three segment names when going to sleep, repeat the sleep
+ * without replaying, wake up and only clear the state" and "Randomize the entire set + random within the segment,
+ * return null when there is no available set".
  *
- * 纯逻辑，不启 HTTP、不碰文件；叶子同步用回调收集。
- * 跑法：node --experimental-strip-types --test src/host/sleep.test.ts
+ * Pure logic, do not start HTTP, do not touch files; use callback to collect leaf synchronization. Running method:
+ * node --experimental-strip-types --test src/host/sleep.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SleepStore, pickSleepNames, pickSleepText, sleepTextsOf, type SleepLeafData } from './sleep.ts';
 
-describe('SleepStore —— 进睡 / 醒来 / 叶子同步', () => {
-  test('进睡写定三段名字并同步叶子；再次进睡保持原套、不重复写叶子', () => {
+describe('SleepStore——Sleep/wake up/leaf synchronization', () => {
+  test('When you go to sleep, write three paragraphs of names and synchronize the leaves; when you go to sleep again, the original set will be kept and the leaves will not be written again.', () => {
     const writes: Array<[string, SleepLeafData]> = [];
     const store = new SleepStore({ onChange: (petId, data) => writes.push([petId, data]) });
     const first = { start: '睡-开始', loop: '睡-循环', end: '睡-起来' };
@@ -19,13 +20,13 @@ describe('SleepStore —— 进睡 / 醒来 / 叶子同步', () => {
 
     assert.equal(store.enter('a', first), true);
     assert.deepEqual(store.setOf('a'), first);
-    assert.equal(store.enter('a', second), false, '已经在睡时保持原套');
+    assert.equal(store.enter('a', second), false, 'Already keeping the original set while sleeping');
     assert.deepEqual(store.setOf('a'), first);
-    assert.equal(writes.length, 1, '重复进睡不得再写一次叶子');
+    assert.equal(writes.length, 1, 'If you fall asleep repeatedly, you are not allowed to write another leaf.');
     assert.deepEqual(writes[0], ['a', { sleeping: true, ...first }]);
   });
 
-  test('醒来清状态并写 sleeping:false；没在睡时是幂等空操作', () => {
+  test('Clear the state when waking up and write sleeping:false; it is an idempotent no operation when not sleeping.', () => {
     const writes: Array<[string, SleepLeafData]> = [];
     const store = new SleepStore({ onChange: (petId, data) => writes.push([petId, data]) });
     store.enter('a', { start: 'a1', loop: 'a2', end: 'a3' });
@@ -37,7 +38,7 @@ describe('SleepStore —— 进睡 / 醒来 / 叶子同步', () => {
     assert.equal(writes.length, 2);
   });
 
-  test('anySleeping / ids 反映当前睡着的宠物；wakeAll 一次清空', () => {
+  test('anySleeping / ids reflects the currently sleeping pet; wakeAll clears once', () => {
     const store = new SleepStore();
     assert.equal(store.anySleeping(), false);
     store.enter('a', { start: 'a1', loop: 'a2', end: 'a3' });
@@ -50,7 +51,7 @@ describe('SleepStore —— 进睡 / 醒来 / 叶子同步', () => {
   });
 });
 
-describe('pickSleepNames —— 整套随机 + 段内随机', () => {
+describe('pickSleepNames——Random for the entire set + random within the segment', () => {
   const animations = {
     sleep: [
       { start: ['蹲-开始'], loop: ['蹲-循环'], end: ['蹲-起来'] },
@@ -58,8 +59,8 @@ describe('pickSleepNames —— 整套随机 + 段内随机', () => {
     ],
   };
 
-  test('抽到的是同一套的三段（不会跨套拼）', () => {
-    // roll 依次决定：段内索引 → 段内索引 → 段内索引 → 套索引（实现顺序），全部取 0 时落到第一套
+  test('I drew three pieces of the same suit (cannot fight across suits)', () => {
+    // roll is determined in sequence: intra-segment index → intra-segment index → intra-segment index → set index (implementation order), when all are 0, it falls to the first set
     assert.deepEqual(
       pickSleepNames(animations, () => 0),
       { start: '蹲-开始', loop: '蹲-循环', end: '蹲-起来' },
@@ -70,7 +71,7 @@ describe('pickSleepNames —— 整套随机 + 段内随机', () => {
     );
   });
 
-  test('段内多候选时可各自命中不同项', () => {
+  test('When there are multiple candidates in a segment, they can each hit different items.', () => {
     const multi = { sleep: [{ start: ['A1', 'A2'], loop: ['L1', 'L2'], end: ['E1', 'E2'] }] };
     const rolls = [0.9, 0.1, 0.9];
     let index = 0;
@@ -78,7 +79,7 @@ describe('pickSleepNames —— 整套随机 + 段内随机', () => {
     assert.deepEqual(picked, { start: 'A2', loop: 'L1', end: 'E2' });
   });
 
-  test('没有配置 / 空数组 / 空段时返回 null（调用方据此拒绝入睡）', () => {
+  test('null is returned when there is no configuration/empty array/empty segment (the caller refuses to sleep based on this)', () => {
     assert.equal(pickSleepNames(undefined), null);
     assert.equal(pickSleepNames({}), null);
     assert.equal(pickSleepNames({ sleep: [] }), null);
@@ -87,8 +88,8 @@ describe('pickSleepNames —— 整套随机 + 段内随机', () => {
   });
 });
 
-describe('文本池 —— 台词只来自配置，代码不留第二份', () => {
-  test('pickSleepText：池非空时随机挑一句；空池返回 undefined（调用方不弹气泡）', () => {
+describe('Text pool - lines only come from configuration, no second copy of code is left', () => {
+  test('pickSleepText: Randomly pick a sentence when the pool is not empty; if the pool is empty, undefined will be returned (the caller does not play the bubble)', () => {
     const saved = Math.random;
     try {
       Math.random = () => 0.99;
@@ -99,7 +100,7 @@ describe('文本池 —— 台词只来自配置，代码不留第二份', () =>
     }
   });
 
-  test('sleepTextsOf：三组台词都从条目配置读，缺字段即空（不落代码默认）', () => {
+  test('sleepTextsOf: The three groups of lines are all read from the entry configuration, and the missing fields are empty (default if no code is dropped)', () => {
     const conf = {
       sleepStartTexts: ['去睡了'],
       sleepEndTexts: ['醒了'],

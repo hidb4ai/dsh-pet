@@ -1,8 +1,9 @@
 /**
- * 宠物卡的 DOM 结构：根节点、舞台与两路视频、命中区、气泡槽、悬浮提示。
- * 不持有状态、不做判定：尺寸变量、定位样式与事件回调都由 PetCard 当帧传入，这里只按顺序拼装。
- * 依赖注入的 h、pet/motion/geometry 的命中区样式与 shared/tooltip 的类名。
- * 不变量：命中区在 stage 内，气泡与提示是根节点的直接子节点——三者的定位都相对根节点。
+ * DOM structure of pet card: root node, stage and two-channel video, hit area, bubble slot, floating prompt. No state
+ * is held and no judgment is made: size variables, positioning styles and event callbacks are all passed in by PetCard
+ * when the frame is in, here they are only assembled in order. The hit area styles of h and pet/motion/geometry and
+ * the class name of shared/tooltip for dependency injection. Invariant: The hit area is within stage, bubble and
+ * prompt are direct child nodes of the root node - all three are positioned relative to the root node.
  * @module dsh-pet/src/client/pet/card/view
  */
 import { PET_HIT_STYLE } from '../motion/geometry.ts';
@@ -12,66 +13,66 @@ import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
 import type { Corner } from '../../../shared/types.ts';
 
-/** 宠物卡视图的渲染输入：全部是当帧的值、ref 与事件回调。 */
+/** The rendering input of the pet card view: all are the current frame value, ref and event callback. */
 export interface CardViewProps {
-  /** 根节点：定位与尺寸变量的宿主。 */
+  /** Root node: host for positioning and size variables. */
   rootRef: ReactNS.MutableRefObject<HTMLDivElement | null>;
-  /** 舞台：位移恒定，脚底垫高不随拖拽取消。 */
+  /** Stage: The displacement is constant, and the foot pads are not canceled with dragging. */
   stageRef: ReactNS.MutableRefObject<HTMLDivElement | null>;
-  /** 前台视频（A/B 双缓冲之一）。 */
+  /** Foreground video (one of A/B double buffers). */
   videoARef: ReactNS.MutableRefObject<HTMLVideoElement | null>;
-  /** 后台视频。 */
+  /** Backstage video. */
   videoBRef: ReactNS.MutableRefObject<HTMLVideoElement | null>;
-  /** 悬浮提示：位置由 placeTip 直接写 style。 */
+  /** Floating prompt: The position is directly written from placeTip to style. */
   tipRef: ReactNS.MutableRefObject<HTMLDivElement | null>;
-  /** 角落定位，写进 data-corner 由 CSS 取值。 */
+  /** Corner positioning, write data-corner and get the value from CSS. */
   corner: Corner;
-  /** 朝向，写进 data-facing 由 CSS 镜像。 */
+  /** Orientation, write data-facing mirrored by CSS. */
   facing: 'left' | 'right';
-  /** 宠物宽度 px，注入 --dsh-pet-size。 */
+  /** Pet width px, injected --dsh-pet-size. */
   size: number;
-  /** 水平边距 px。 */
+  /** Horizontal margin px. */
   marginX: number;
-  /** 垂直边距 px。 */
+  /** Vertical margin px. */
   marginY: number;
-  /** 气泡正文字号 px。 */
+  /** bubble text number px. */
   fontBubblePx: number;
-  /** 悬浮提示字号 px。 */
+  /** The floating prompt font size is px. */
   fontTipPx: number;
-  /** 根节点定位样式；未拖拽时为空对象，位置交给角落与边距的 CSS 变量。 */
+  /** Root node positioning style; it is an empty object when not dragged, and the position is given to the CSS variables of the corners and margins. */
   rootStyle: CSSProperties;
-  /** 舞台位移样式；拖拽中取消脚垫位移。 */
+  /** Stage displacement style; cancel the pad displacement during dragging. */
   stageStyle: CSSProperties;
-  /** 当前该挂的气泡；null 表示无气泡。 */
+  /** The current bubble that should be hung; null means there is no bubble. */
   bubble: ReactNode;
-  /** 悬浮提示是否点亮。 */
+  /** Whether the floating prompt is lit. */
   tipOn: boolean;
-  /** 宠物名：悬浮提示内容，同时作为命中区的无障碍名称。 */
+  /** Pet name: the content of the floating prompt, and also serves as the barrier-free name of the hit area. */
   name: string;
-  /** 点击命中区。 */
+  /** Click on the hit area. */
   onClick(e: ReactNS.MouseEvent<HTMLDivElement>): void;
-  /** 按下：开启指针捕获与拖拽。 */
+  /** Press: Enable pointer capture and dragging. */
   onPointerDown(e: ReactNS.PointerEvent<HTMLDivElement>): void;
-  /** 指针移动：拖拽跟随。 */
+  /** Pointer movement: drag to follow. */
   onPointerMove(e: ReactNS.PointerEvent<HTMLDivElement>): void;
-  /** 抬起与取消共用一条路径。 */
+  /** Lift and cancel share the same path. */
   onPointerUp(e: ReactNS.PointerEvent<HTMLDivElement>): void;
-  /** 指针进入命中区。 */
+  /** The pointer enters the hit zone. */
   onPointerEnter(e: ReactNS.PointerEvent<HTMLDivElement>): void;
-  /** 指针离开命中区。 */
+  /** The pointer leaves the hit area. */
   onPointerLeave(): void;
-  /** 右键菜单。 */
+  /** Right-click menu. */
   onContextMenu(e: ReactNS.MouseEvent<HTMLDivElement>): void;
 }
 
-/** 两路视频的共同属性：静音、内联播放并自动播放。 */
+/** Common properties of the two videos: mute, inline playback and automatic playback. */
 const VIDEO_PROPS = { muted: true, playsInline: true, autoPlay: true };
 
 /**
- * 制造宠物卡视图。
+ * Create pet card view.
  *
- * @param rt - 注入的 react 能力。
- * @returns 只做拼装的纯展示组件。
+ * @param rt - Injected react capability.
+ * @returns is only a pure display component of assemble.
  */
 export function makeCardView(rt: { h: typeof jsx }) {
   const { h } = rt;
@@ -87,14 +88,14 @@ export function makeCardView(rt: { h: typeof jsx }) {
           '--dsh-pet-size': props.size + 'px',
           '--dsh-pet-mx': props.marginX + 'px',
           '--dsh-pet-my': props.marginY + 'px',
-          // 字号注入最终 px；CSS 侧带原值回退，漏注入也不会坏。
+          // The final font size injected is px; the CSS side has the original value rolled back, and leaking the injection will not cause damage.
           '--dsh-pet-font-bubble': props.fontBubblePx + 'px',
           '--dsh-pet-font-tip': props.fontTipPx + 'px',
         },
         props.rootStyle,
       ),
       children: [
-        // 气泡单槽；余额不可用说明也走这里，手动请求与命令气泡不受 whisperEnabled 限制。
+        // bubble single slot; balance unavailable instructions also go here, manual request and command bubble are not restricted by whisperEnabled.
         props.bubble,
         h('div', {
           ref: props.stageRef,
@@ -114,13 +115,14 @@ export function makeCardView(rt: { h: typeof jsx }) {
               onPointerEnter: props.onPointerEnter,
               onPointerLeave: props.onPointerLeave,
               onContextMenu: props.onContextMenu,
-              // 原生 title 换成自绘浮层后，无障碍名称仍要保留。
+              // After replacing the original title with a self-drawn floating layer, the accessibility name must still be retained.
               'aria-label': props.name,
             }),
           ],
         }),
-        // 悬浮提示常驻只切 class，挂卸节点吃不到淡入过渡；坐标由 placeTip 直接写 style。
-        // pointer-events:none 见 TOOLTIP_CSS，否则会挡住命中区导致 enter/leave 闪烁。
+        // The permanent floating prompt only cuts class, and the mounting and unloading nodes cannot enjoy the fade-in
+        // transition; the coordinates are directly written from placeTip to style. pointer-events:none See
+        // TOOLTIP_CSS, otherwise it will block the hit zone and cause enter/leave to flash.
         h('div', {
           ref: props.tipRef,
           className: TOOLTIP_CLASS + (props.tipOn ? ' is-on' : ''),

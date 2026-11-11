@@ -13,20 +13,20 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "step01"
 OUT = ROOT / "step02"
-# 统一使用工作区自带的 ffmpeg（素材处理链零第三方依赖）
+# Uniformly use ffmpeg that comes with the workspace (the asset processing chain has zero third-party dependencies)
 FFMPEG = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffmpeg.exe")
 FFPROBE = str(ROOT / ".tools" / "ffmpeg-9.0.1-essentials_build" / "bin" / "ffprobe.exe")
 
 PARALLEL = 4
 W, H, FPS = 1280, 720, 24
-# HSV 色相判定抠像：只把"绿色色相 + 足够饱和/明度"的像素判为背景（透明）。
-# 相比 chromakey(YUV 色度距离) 和 RGB 色差阈值：它们是"以绿幕为中心画圈"，
-# 蓝色/白色等彩色可能落入圈内被误抠；HSV 色相判定只认绿色方向，蓝/白/红永不误抠。
-GREEN_HUE_MIN = 70.0   # 绿色色相下界
-GREEN_HUE_MAX = 170.0  # 绿色色相上界
-SAT_MIN = 0.15         # 饱和度下界（低于此的白色/浅色不算背景）
-VAL_MIN = 0.15         # 明度下界
-HUE_FEATHER = 6.0      # 色相边界渐变（度）
+# HSV Hue judgment background removal: Only pixels with "green hue + sufficient saturation/brightness" are judged as background (transparent).
+# Compared with chromakey (YUV chromaticity distance) and RGB chromaticity threshold: they are "circled with the green screen as the center",
+# Blue/white and other colors may fall into the circle and be picked out by mistake; HSV Hue judgment only recognizes the green direction, blue/white/red will never be picked out by mistake.
+GREEN_HUE_MIN = 70.0   # Green hue lower bound
+GREEN_HUE_MAX = 170.0  # Upper bound of green hue
+SAT_MIN = 0.15         # Lower bound of saturation (white/light colors below this are not considered background)
+VAL_MIN = 0.15         # Lower bound of lightness
+HUE_FEATHER = 6.0      # Hue boundary gradient (degrees)
 
 WIDTH = 320
 HEIGHT = 180
@@ -101,7 +101,7 @@ def sample_background_color(video: Path) -> str:
 
 
 def read_exact(stream, n):
-    """阻塞读满 n 字节（管道 read 可能部分返回，必须循环）。EOF 时返回不足。"""
+    """Blocked reading of n bytes (pipeline read may partially return and must be looped). Return insufficient when EOF."""
     buf = b""
     while len(buf) < n:
         chunk = stream.read(n - len(buf))
@@ -112,7 +112,7 @@ def read_exact(stream, n):
 
 
 def _rgb_to_yuv(frame: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """rgb24 (H,W,3) → Y/U/V 平面（BT.601 limited）。U/V 用 2x2 平均做 4:2:0 子采样。"""
+    """rgb24 ( H , W ,3) → Y/U/V plane ( BT.601 limited ). U/V does 4:2:0 subsampling on average with 2 x2."""
     r = frame[..., 0].astype(np.float32)
     g = frame[..., 1].astype(np.float32)
     b = frame[..., 2].astype(np.float32)
@@ -125,7 +125,7 @@ def _rgb_to_yuv(frame: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def _rgb_to_hsv(frame: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """rgb24 (H,W,3) → hue(0-360), saturation(0-1), value(0-1)，numpy 向量化。"""
+    """rgb24 ( H , W ,3) → hue (0-360), saturation (0-1), value (0-1), numpy vectorized."""
     r = frame[..., 0].astype(np.float32) / 255.0
     g = frame[..., 1].astype(np.float32) / 255.0
     b = frame[..., 2].astype(np.float32) / 255.0
@@ -144,11 +144,10 @@ def _rgb_to_hsv(frame: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def convert_video(src: Path, dst: Path, color: str) -> None:
-    """HSV 色相判定抠像：绿色色相 + 足够饱和/明度 → 透明。
+    """HSV Hue judgment background removal: green hue + sufficient saturation/brightness → transparent.
 
-    输入管道：step01 视频 rgb24 流；输出管道：yuva420p → VP9 透明 webm。
-    """
-    bg = np.array([int(color[i:i + 2], 16) for i in (1, 3, 5)], np.uint8)  # #RRGGBB（仅用于参考）
+    Input pipe: step01 video rgb24 stream; output pipe: yuva420p → VP9 transparent webm."""
+    bg = np.array([int(color[i:i + 2], 16) for i in (1, 3, 5)], np.uint8)  # # RRGGBB (for reference only)
     p1 = subprocess.Popen(
         [FFMPEG, "-loglevel", "error", "-i", str(src), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         stdout=subprocess.PIPE)
@@ -160,7 +159,7 @@ def convert_video(src: Path, dst: Path, color: str) -> None:
         stdin=subprocess.PIPE)
 
     frame_size = W * H * 3
-    # 色相跨 0 度处理：绿色范围 [70,170]，两侧各留 HUE_FEATHER 渐变
+    # Hue span 0 degree processing: green range [70,170], leaving HUE_FEATHER gradient on both sides
     lo = GREEN_HUE_MIN - HUE_FEATHER
     hi = GREEN_HUE_MAX + HUE_FEATHER
     while True:
@@ -169,10 +168,10 @@ def convert_video(src: Path, dst: Path, color: str) -> None:
             break
         frame = np.frombuffer(buf, np.uint8).reshape(H, W, 3)
         hue, sat, val = _rgb_to_hsv(frame)
-        # 背景 = 绿色色相内 且 饱和度/明度达标；色相边界做线性渐变
+        # Background = within the green hue and the saturation/brightness meets the standard; the hue boundary is linearly gradient
         in_hue = np.clip((hue - lo) / HUE_FEATHER, 0, 1) * np.clip((hi - hue) / HUE_FEATHER, 0, 1)
         bg_mask = (sat >= SAT_MIN) & (val >= VAL_MIN) & (hue >= lo) & (hue <= hi)
-        # 背景 → alpha 0（透明）；绿色色相中心全透明，边缘渐变；非背景 → 255
+        # Background → alpha 0 (transparent); green hue center fully transparent, edge gradient; non-background → 255
         alpha = np.where(bg_mask, (1.0 - in_hue) * 255, 255).astype(np.uint8)
         y, u, v = _rgb_to_yuv(frame)
         p2.stdin.write(y.tobytes() + u.tobytes() + v.tobytes() + alpha.tobytes())
@@ -184,7 +183,7 @@ def convert_video(src: Path, dst: Path, color: str) -> None:
 
 
 def _is_valid(dst: Path, src: Path, min_size: int = 50_000) -> bool:
-    """断点续跑完整性检查：存在、够大、不比源旧、且能被 ffprobe 读到视频流。"""
+    """Breakpoint resume integrity check: exists, is large enough, is not older than the source, and can be read by ffprobe into the video stream."""
     if not dst.exists() or dst.stat().st_size <= min_size:
         return False
     if dst.stat().st_mtime < src.stat().st_mtime:
@@ -195,7 +194,7 @@ def _is_valid(dst: Path, src: Path, min_size: int = 50_000) -> bool:
 
 
 def _process_one(video: Path) -> tuple[str, str]:
-    """处理单个视频（worker 函数，必须模块级以支持 Windows spawn）。"""
+    """Processing a single video (worker function, must be module level to support Windows spawn)."""
     dst = OUT / (video.stem + ".webm")
     if _is_valid(dst, video):
         return video.name, "SKIP"

@@ -1,8 +1,9 @@
 /**
- * 待办事项路由：`GET/POST /todos` 与 `PATCH/DELETE /todos/{id}`。
+ * Backlog route: `GET/POST /todos` and `PATCH/DELETE /todos/{id}` .
  *
- * 只解析与校验输入，存取全走 `deps.todos`；写盘失败归一成 `internal-error`，不把路径带进响应。
- * 业务结论一律 200（与其余动作端点一致），只有协议错误（方法、JSON、体超限）保留真实状态码。
+ * It only parses and verifies the input, and all accesses are `deps.todos` ; disk writing failures are normalized to
+ * `internal-error` , and the path is not brought into the response. The business conclusion is always 200 (consistent
+ * with other action endpoints), and only protocol errors (method, JSON, body exceeded) retain the real status code.
  * @module dsh-pet/src/host/routes/todos
  */
 import { failResult, invalidJson, methodNotAllowed, okResult, payloadTooLarge } from './result.ts';
@@ -11,14 +12,14 @@ import type { RouteResult } from '../http.ts';
 import type { TodoPatch } from '../todo/store.ts';
 import type { PetRouteDeps, RouteInput } from './types.ts';
 
-/** 路径前缀：`todos` 或 `todos/<id>`。 */
+/** Path prefix: `todos` or `todos/<id>`. */
 const PREFIX = 'todos';
 
-/** Object.prototype.hasOwnProperty 的短别名：PATCH 要把「没传」与「传了 null」分开。 */
+/** Short alias of Object.prototype.hasOwnProperty: PATCH. It is necessary to separate "not passed" from "passed null". */
 const has = (source: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(source, key);
 
-/** 解析请求体：不是 JSON 对象 → null。 */
+/** Parsing request body: not JSON object → null. */
 function parseObjectBody(body: string | undefined): Record<string, unknown> | null {
   if (body === undefined) return null;
   let parsed: unknown;
@@ -32,10 +33,10 @@ function parseObjectBody(body: string | undefined): Record<string, unknown> | nu
 }
 
 /**
- * PATCH 的字段校验：出现的键逐个校验，任一非法整包拒绝。
+ * Field verification of PATCH: The keys that appear are verified one by one, and any invalid packet is rejected.
  *
- * @param raw - 已解析的请求体。
- * @returns 待写入的字段集合；没有可写字段时返回空对象。
+ * @param raw - The parsed request body.
+ * @returns A collection of fields to be written; if there are no writable fields, an empty object is returned.
  */
 function readPatch(raw: Record<string, unknown>): TodoPatch | null {
   const patch: TodoPatch = {};
@@ -56,7 +57,7 @@ function readPatch(raw: Record<string, unknown>): TodoPatch | null {
   return patch;
 }
 
-/** 待办领域：未命中返回 undefined，命中返回应答。 */
+/** To-do field: undefined is returned for misses and response is returned for hits. */
 export async function handleTodoRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { body, method, rest } = input;
   if (rest !== PREFIX && !rest.startsWith(PREFIX + '/')) return undefined;
@@ -76,7 +77,7 @@ export async function handleTodoRoutes(deps: PetRouteDeps, input: RouteInput): P
       return okResult({ ok: true, todo: await todos.create({ text, dueAt: due.value }) });
     }
 
-    // /todos/{id}：id 是实例内标识，不是文件路径；只做形状校验。
+    // / todos /{ id }: id is an identifier within the instance, not a file path; only shape verification is performed.
     const id = rest.slice(PREFIX.length + 1);
     if (id === '' || id.includes('/')) return failResult('bad-request', 'todo id 不合法');
 
@@ -96,8 +97,8 @@ export async function handleTodoRoutes(deps: PetRouteDeps, input: RouteInput): P
 
     return methodNotAllowed();
   } catch (error) {
-    // 写盘失败（磁盘满 / 权限）：真实原因只进日志，响应里只回分类文案。
-    log.warn(`[dsh-pet] 待办读写失败：${error instanceof Error ? error.message : String(error)}`);
+    // Failed to write to disk (disk full/permissions): Only the real reason will be entered in the log, and only the classified copy will be returned in the response.
+    log.warn(`[dsh-pet] To-do storage operation failed: ${error instanceof Error ? error.message : String(error)}`);
     return failResult('internal-error', 'dsh-pet: 待办读写失败');
   }
 }

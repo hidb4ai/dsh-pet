@@ -1,21 +1,26 @@
 /**
- * 模型候选链单元测试 —— 钉住「条目配置的模型优先、失败回落当前对话的模型」这条链的构造规则：
- *  - whisperModel / chatModel 留空（内置默认）→ 链上只有当前对话的模型（不追加其它候选）；
- *  - 填了 → 配置的模型在前、当前对话的模型在后（生成侧按序尝试，前者失败才用后者重试一次）；
- *  - 两个来源是同一个选择 → 去重只留一个（否则失败时会拿同一个模型白试一遍、白等一个超时）；
- *  - 当前对话没配模型 → 只留配置的那个；两边都拿不到 → 空链（生成侧回「当前对话未配置模型」）。
+ * Model candidate chain unit test - verify "The model of the entry configuration takes precedence, and if it fails,
+ * the model of the current conversation" The construction rules of this chain:
+ * - whisperModel / chatModel leave blank (built-in default) → only the model of the current dialogue is on the chain
+ * (no other candidates are added);
+ * - Filled → The configured model is in the front and the model of the current dialogue is in the back (the generation
+ * side tries in order, and the latter will be used to try again if the former fails);
+ * - The two sources are the same choice → deduplicate only leaves one (otherwise if it fails, it will try again with
+ * the same model and wait for a timeout in vain);
+ * - There is no model configured in the current conversation → only the configured one is left; neither side can get
+ * it → Empty link (generates a side response "The model is not configured in the current conversation").
  *
- * 本模块不 import @deepseek-ai/dsh-llm（纯逻辑），故能在 node:test 里直接跑——
- * 与 chat.test.ts 只测 memes.ts 同一个理由。
+ * This module does not import @deepseek-ai/dsh-llm (pure logic), so it can be run directly in node:test - the same
+ * reason that chat.test.ts only tests memes.ts.
  *
- * 跑法：node --experimental-strip-types --test src/host/model-selection.test.ts
+ * Running method: node --experimental-strip-types --test src/host/model-selection.test.ts
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { configuredModel, currentModel, modelCandidates, modelLabel, type ModelRef } from './model-selection.ts';
 
-/** 造一个宿主 ctx：currentSelection 返回给定选择（undefined = 未配置，'throw' = 抛错） */
+/** Create a host ctx: currentSelection returns the given selection (undefined = not configured, 'throw' = throws an error) */
 function ctxOf(sel: ModelRef | undefined | 'throw'): { agentDefaultModel: { currentSelection(): ModelRef } } {
   return {
     agentDefaultModel: {
@@ -27,8 +32,8 @@ function ctxOf(sel: ModelRef | undefined | 'throw'): { agentDefaultModel: { curr
   };
 }
 
-describe('configuredModel —— 条目配置里的 whisperModel / chatModel', () => {
-  test('两个字段都非空 → 该选择', () => {
+describe('configuredModel - whisperModel / chatModel in the entry configuration', () => {
+  test('Both fields are not empty → this selection', () => {
     assert.deepEqual(
       configuredModel({ whisperModel: { provider: 'deepseek', model: 'deepseek-chat' } }, 'whisperModel'),
       {
@@ -38,11 +43,11 @@ describe('configuredModel —— 条目配置里的 whisperModel / chatModel', (
     );
   });
 
-  test('都留空（内置默认）→ undefined（= 跟随当前对话）', () => {
+  test('Leave both blank (built-in default) → undefined (= follow current conversation)', () => {
     assert.equal(configuredModel({ whisperModel: { provider: '', model: '' } }, 'whisperModel'), undefined);
   });
 
-  test('只填一半 / 结构不对 → undefined（合并器已挡下，这里再防御一次）', () => {
+  test('Only half filled in / Wrong structure → undefined (The combiner has been blocked, defend again here)', () => {
     const bad: unknown[] = [
       { provider: 'deepseek', model: '' },
       { provider: '', model: 'deepseek-chat' },
@@ -55,14 +60,18 @@ describe('configuredModel —— 条目配置里的 whisperModel / chatModel', (
       assert.equal(
         configuredModel({ chatModel: value }, 'chatModel'),
         undefined,
-        `${JSON.stringify(value)} 应视为未指定`,
+        `${JSON.stringify(value)} should be treated as unspecified`,
       );
     }
-    assert.equal(configuredModel({}, 'chatModel'), undefined, '整个字段缺失同样视为未指定');
-    assert.equal(configuredModel(undefined, 'chatModel'), undefined, '条目缺失时不得抛错');
+    assert.equal(configuredModel({}, 'chatModel'), undefined, 'Missing entire fields are also considered unspecified');
+    assert.equal(
+      configuredModel(undefined, 'chatModel'),
+      undefined,
+      'No error must be thrown when an entry is missing',
+    );
   });
 
-  test('两侧空白被 trim（写配置时手滑多打空格不算另一个模型）', () => {
+  test('The blank spaces on both sides are trim (when writing the configuration, swiping more spaces with your hand does not count as another model)', () => {
     assert.deepEqual(
       configuredModel({ chatModel: { provider: ' deepseek ', model: ' deepseek-chat ' } }, 'chatModel'),
       {
@@ -72,54 +81,54 @@ describe('configuredModel —— 条目配置里的 whisperModel / chatModel', (
     );
   });
 
-  test('两个键互不串台：whisperModel 不读 chatModel', () => {
+  test('The two keys do not communicate with each other: whisperModel does not read chatModel', () => {
     const conf = { whisperModel: { provider: 'a', model: 'a1' }, chatModel: { provider: 'b', model: 'b1' } };
     assert.equal(configuredModel(conf, 'whisperModel')?.provider, 'a');
     assert.equal(configuredModel(conf, 'chatModel')?.provider, 'b');
   });
 });
 
-describe('currentModel —— 当前对话的模型', () => {
-  test('有选择 → 原样返回', () => {
+describe('currentModel - the model of the current conversation', () => {
+  test('There is a choice → Return as is', () => {
     assert.deepEqual(currentModel(ctxOf({ provider: 'deepseek', model: 'deepseek-reasoner' })), {
       provider: 'deepseek',
       model: 'deepseek-reasoner',
     });
   });
 
-  test('未配置 / 抛错 / ctx 不完整 → undefined（绝不向上抛）', () => {
+  test('Not configured/throw error/ctx is incomplete → undefined (never throw upward)', () => {
     assert.equal(currentModel(ctxOf(undefined)), undefined);
     assert.equal(currentModel(ctxOf('throw')), undefined);
     assert.equal(currentModel({}), undefined);
   });
 });
 
-describe('modelCandidates —— 候选链（配置优先 → 当前对话兜底）', () => {
+describe('modelCandidates - candidate chain (configuration priority → current conversation fallback)', () => {
   const configured: ModelRef = { provider: 'deepseek', model: 'deepseek-chat' };
   const current: ModelRef = { provider: 'opencode', model: 'big-model' };
 
-  test('配置留空 → 链上只有当前对话的模型（旧行为逐字不变）', () => {
+  test('Leave the configuration blank → only the model of the current conversation is on the chain (the old behavior remains unchanged verbatim)', () => {
     assert.deepEqual(modelCandidates(ctxOf(current), undefined), [current]);
   });
 
-  test('配置了 → 配置的在前、当前对话的在后（回落重试一次）', () => {
+  test('Configured → The configured one comes first and the current conversation comes last (fallback retry)', () => {
     assert.deepEqual(modelCandidates(ctxOf(current), configured), [configured, current]);
   });
 
-  test('两个来源相同 → 去重（不拿同一个模型白试一遍）', () => {
+  test('The two sources are the same → deduplicate (if you don’t try it again with the same model)', () => {
     assert.deepEqual(modelCandidates(ctxOf(configured), configured), [configured]);
   });
 
-  test('当前对话没配模型 → 只留配置的那个', () => {
+  test('There is no model configured in the current conversation → only the configured one is left', () => {
     assert.deepEqual(modelCandidates(ctxOf(undefined), configured), [configured]);
   });
 
-  test('两边都拿不到 → 空链（生成侧据此回「当前对话未配置模型」）', () => {
+  test('Neither side can get it → Empty link (the generation side will reply "No model is configured in the current dialogue" accordingly)', () => {
     assert.deepEqual(modelCandidates(ctxOf(undefined), undefined), []);
   });
 });
 
-describe('modelLabel —— 报错/日志标签', () => {
+describe('modelLabel - Error/log label', () => {
   test('provider/model', () => {
     assert.equal(modelLabel({ provider: 'deepseek', model: 'deepseek-chat' }), 'deepseek/deepseek-chat');
   });

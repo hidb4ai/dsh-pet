@@ -1,26 +1,27 @@
 /**
- * 待办接口的浏览器侧封装：取清单、新建、修改、删除。
+ * Browser-side encapsulation of to-do interface: fetch list, create, modify, delete.
  *
- * 只做 HTTP 与响应收窄，不碰 DOM；失败统一成 `{ ok: false, message }` 让面板原样展示。
- * 数据只有 `/todos` 一个出口：修改成功后由调用方重新拉一次清单，不靠本地拼装猜结果。
+ * Only do HTTP and response narrowing, without touching DOM; fail to unify into `{ ok: false, message }` and let the
+ * panel display as it is. The data has only one outlet: `/todos` : after the modification is successful, the caller
+ * will pull the list again, without relying on local assemble to guess the result.
  * @module dsh-pet/src/shared/todo/api
  */
 import { ROUTE_PATH } from '../constants.ts';
 import { parseTodoItem, parseTodoList, type TodoItem } from './types.ts';
 
-/** 待办接口的基址（与宿主路由同一前缀）。 */
+/** Base address of the pending interface (same prefix as host route). */
 export const TODOS_PATH = ROUTE_PATH + '/todos';
 
-/** 一次调用的结论：成功带解析后的值，失败带一句能直接展示的中文原因。 */
+/** The conclusion of a call: if successful, the parsed value will be provided; if failed, a Chinese reason that can be directly displayed will be provided. */
 export type TodoResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
-/** 内部：HTTP 成功且业务 ok 时的响应体。 */
+/** Internal: The response body when HTTP is successful and the service is ok. */
 type OkBody = Record<string, unknown>;
 
-/** 内部发送结论：用独立的判别字段，避免与业务体的 `ok` 撞在一起。 */
+/** Internal transmission conclusion: use independent discrimination field to avoid collision with `ok` of the business body. */
 type SendResult = { failed: false; body: OkBody } | { failed: true; message: string };
 
-/** 发一次请求并收窄最外层：协议失败、业务失败、非 JSON 都归成失败。 */
+/** Send a request and narrow the outermost layer: protocol failure, business failure, and non-JSON are all classified as failures. */
 async function send(url: string, method: string, body?: unknown): Promise<SendResult> {
   try {
     const response = await fetch(url, {
@@ -41,27 +42,27 @@ async function send(url: string, method: string, body?: unknown): Promise<SendRe
   }
 }
 
-/** 单条响应 → 待办；形状不对时给出可展示的失败。 */
+/** Single response → To-do; displayable failure is given when the shape is wrong. */
 function readTodo(body: OkBody): TodoResult<TodoItem> {
   const todo = parseTodoItem(body.todo);
   return todo === null ? { ok: false, message: '响应里没有有效的待办' } : { ok: true, value: todo };
 }
 
-/** 读整张清单。 */
+/** Read the entire list. */
 export async function loadTodos(baseUrl = TODOS_PATH): Promise<TodoResult<TodoItem[]>> {
   const result = await send(baseUrl, 'GET');
   if (result.failed) return { ok: false, message: result.message };
   return { ok: true, value: parseTodoList(result.body.todos) };
 }
 
-/** 新建一条；`dueAt` 为 null 表示没有期限。 */
+/** Create a new one; `dueAt` is null, which means there is no deadline. */
 export async function addTodo(text: string, dueAt: number | null, baseUrl = TODOS_PATH): Promise<TodoResult<TodoItem>> {
   const result = await send(baseUrl, 'POST', { text, dueAt });
   if (result.failed) return { ok: false, message: result.message };
   return readTodo(result.body);
 }
 
-/** 修改一条：只传要改的字段。 */
+/** Modify one item: only transmit the fields to be changed. */
 export async function patchTodo(
   id: string,
   patch: { text?: string; dueAt?: number | null; done?: boolean },
@@ -72,7 +73,7 @@ export async function patchTodo(
   return readTodo(result.body);
 }
 
-/** 删除一条；返回删掉的条数（0 = 本来就没有）。 */
+/** Delete an item; return the number of deleted items (0 = none). */
 export async function removeTodo(id: string, baseUrl = TODOS_PATH): Promise<TodoResult<number>> {
   const result = await send(baseUrl + '/' + encodeURIComponent(id), 'DELETE');
   if (result.failed) return { ok: false, message: result.message };

@@ -1,6 +1,7 @@
 /**
- * 对话弹窗的 DOM 装配：输入框、上传/截屏/按住说话三枚按钮、待发送图片缩略图、提示行与错误行。
- * 只建元素并把能力接上，不发送、不定位、不管关闭；录音的状态机在 chat/hear-control。
+ * DOM configuration of the dialog pop-up window: input box, upload/screenshot/press and hold three buttons, image
+ * thumbnail to be sent, prompt line and error line. Only create elements and connect capabilities, without sending,
+ * positioning, or closing; the recording state machine is at chat/hear-control.
  * @module dsh-pet/src/shared/chat/dom
  */
 import { type EncodedImage, encodeImageFile } from './encode.ts';
@@ -10,40 +11,40 @@ import { cameraIcon, micIcon, pictureIcon } from './icons.ts';
 import type { ChatAttachment } from './send.ts';
 import { CHAT_H_PAD, CHAT_MAX_W, CHAT_MIN_W } from './styles.ts';
 
-/** 提示自动收起的时间（ms）。 */
+/** Prompt the time of automatic closing (ms). */
 const HINT_MS = 2200;
 
-/** 弹窗用到的元素与行为；挂载函数只按需接线，不重新造 DOM。 */
+/** Elements and behaviors used in pop-up windows; the mounting function is only wired as needed and does not recreate DOM. */
 export interface ChatDom {
   readonly root: HTMLDivElement;
   readonly input: HTMLTextAreaElement;
   readonly err: HTMLDivElement;
   readonly shotBtn: HTMLButtonElement;
-  /** 输入框与根宽度随文本自适应；挂到文档后调用一次，输入时自动重算。 */
+  /** The input box and root width adapt to the text; call it once after attaching it to the document, and automatically recalculate when inputting. */
   readonly resizeInput: () => void;
-  /** 清掉待发送图片（含 file input 的值）。 */
+  /** Clear the picture to be sent (including the value of file input). */
   readonly clearAttach: () => void;
-  /** 放进一张待发送图片（上传、拖拽、粘贴共用）；类型不接受或编码失败时提示并返回 false。 */
+  /** Put in a picture to be sent (shared by uploading, dragging, and pasting); when the type is not accepted or the encoding fails, it prompts and returns false. */
   readonly setImageFile: (file: File) => Promise<boolean>;
-  /** 放进一张已编码好的图（截屏走这条：没有 File，只有 base64）。 */
+  /** Put in an encoded picture (take this screenshot: there is no File, only base64). */
   readonly setEncoded: (encoded: EncodedImage) => boolean;
-  /** 当前待发送的图片；没有时 undefined。 */
+  /** The picture currently to be sent; if not undefined. */
   readonly getAttachment: () => ChatAttachment | undefined;
-  /** 是否正在编码：发送前要等它结束，否则这条消息会漏掉图片。 */
+  /** Whether it is encoding: You need to wait for it to end before sending, otherwise the message will miss the picture. */
   readonly isEncoding: () => boolean;
-  /** 临时提示（不是错误），超时自动收起。 */
+  /** Temporary prompt (not an error), automatically closed after timeout. */
   readonly flash: (text: string) => void;
-  /** 从外部开录（快捷键「按住说话」用）；录不了时给一句原因，已在录时什么都不做。 */
+  /** Open recording from outside (use the shortcut key "Hold and Talk"); give a reason when recording fails, and do nothing while recording. */
   readonly startHear: () => void;
-  /** 从外部收尾（快捷键松手用）；没在录时什么都不做。 */
+  /** Cleanup from outside (shortcut key to release); nothing will be done when not recording. */
   readonly stopHear: () => void;
-  /** 此刻是否真的在采集；全局快捷键据此把「开/关」合成一个动作。 */
+  /** Is it really collecting at this moment? The global shortcut key synthesizes an action of "on/off" accordingly. */
   readonly isHearing: () => boolean;
-  /** 收起提示、停掉正在进行的录音并清计时器；关闭弹窗时调用。 */
+  /** Put away the prompt, stop the ongoing recording and clear the timer; called when closing the pop-up window. */
   readonly dispose: () => void;
 }
 
-/** 造一枚图标按钮（图标 + 无障碍标签）。 */
+/** Create an icon button (icon + accessibility label). */
 function iconButton(title: string, icon: SVGElement): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -54,16 +55,16 @@ function iconButton(title: string, icon: SVGElement): HTMLButtonElement {
   return btn;
 }
 
-/** 输入框宽度随文本自适应：宽度按测量值，封顶后由高度接住折行。 */
+/** The width of the input box adapts to the text: the width is based on the measured value, and the height is used to catch the line break after capping. */
 function enableAutoResize(input: HTMLTextAreaElement, root: HTMLElement): () => void {
   let measureCtx: CanvasRenderingContext2D | null = null;
   const resize = (): void => {
     const ctx =
       measureCtx ?? (measureCtx = document.createElement('canvas').getContext('2d') as CanvasRenderingContext2D);
-    ctx.font = getComputedStyle(input).font; // 每次取当前计算样式（挂载前后都准）
+    ctx.font = getComputedStyle(input).font; // Get the current calculation style each time (accurate before and after mounting)
     const textW = ctx.measureText(input.value || ' ').width;
     const w = Math.max(CHAT_MIN_W, Math.min(Math.ceil(textW + CHAT_H_PAD), CHAT_MAX_W));
-    root.style.width = w + 'px'; // 根宽度跟随 → 夹回仍按实际宽
+    root.style.width = w + 'px'; // Root width follows → Clamp back still according to actual width
     input.style.height = 'auto';
     input.style.height = Math.max(input.scrollHeight, 22) + 'px';
   };
@@ -72,11 +73,12 @@ function enableAutoResize(input: HTMLTextAreaElement, root: HTMLElement): () => 
 }
 
 /**
- * 建好弹窗的全部元素并挂到 `document.body` 下。
+ * Create all the elements of the pop-up window and hang them under `document.body` .
  *
- * @param opts - 可选的截屏实现（不传时按钮只给"当前环境不支持"的提示）与识别地址
- *   （录不了时按住说话的按钮照样在，点它给一句原因）。
- * @returns 元素引用与行为（清理附件、临时提示、自适应、释放计时器）。
+ * @param opts - Optional screenshot implementation (the button only gives a "not supported by the current environment"
+ * prompt when not uploading) and identification address
+ * (When the recording fails, press and hold the talk button, and click it to give a reason).
+ * @returns element reference and behavior (clean attachments, temporary prompts, adaptive, release timer).
  */
 export function createChatDom(opts: { capture?: () => Promise<EncodedImage>; hearUrl?: string } = {}): ChatDom {
   const root = document.createElement('div');
@@ -95,7 +97,7 @@ export function createChatDom(opts: { capture?: () => Promise<EncodedImage>; hea
   const hint = document.createElement('div');
   hint.className = 'dsh-pet-chat-hint';
   let hintTimer = 0;
-  /** 常驻提示：录音与识别期间一直显示，由调用点自己收。 */
+  /** Permanent prompt: It is always displayed during recording and recognition, and is collected by the calling point. */
   const showHint = (text: string): void => {
     window.clearTimeout(hintTimer);
     hint.textContent = text;
@@ -150,9 +152,9 @@ export function createChatDom(opts: { capture?: () => Promise<EncodedImage>; hea
     thumb.removeAttribute('src');
     fileInput.value = '';
   };
-  /** 把编码结果挂上去：上传与截屏两条路共用这一处落点。 */
+  /** Hang up the encoding results: uploading and screenshots share this landing point. */
   const applyEncoded = (encoded: EncodedImage): boolean => {
-    if (!root.isConnected) return false; // 编码完成前弹窗已关
+    if (!root.isConnected) return false; // The pop-up window was closed before the encoding was completed.
     attachment = { mediaType: encoded.mediaType, data: encoded.base64 };
     thumb.src = encoded.previewUrl;
     attach.dataset.on = '1';
@@ -182,15 +184,16 @@ export function createChatDom(opts: { capture?: () => Promise<EncodedImage>; hea
     if (file) void setImageFile(file);
   });
   attachX.addEventListener('click', clearAttach);
-  // 粘贴图片：截图工具通常先把图放剪贴板，Ctrl+V 比"存盘再选文件"少两步。
-  // 挂在根元素上而不是输入框：焦点可能停在 ✕ / 按钮上，事件照样冒泡到这里；纯文本不拦截。
+  // Paste pictures: Snipping tools usually put the pictures on the clipboard first, Ctrl + V is two steps less than
+  // "save and then select the file". Hang on the root element instead of the input box: the focus may stop on the ✕ /
+  // button, and the event will still bubble up here; plain text will not be intercepted.
   root.addEventListener('paste', (e) => {
     const file = firstImageFromClipboard(e.clipboardData);
     if (!file) return;
     e.preventDefault();
     void setImageFile(file);
   });
-  // 截屏：有实现就抓一帧（流在实现里立刻停掉，不留长连接）；没有就说明当前环境不支持
+  // Screenshot: If the implementation is available, capture a frame (the stream will be stopped immediately in the implementation, leaving no long connection); if not, it means the current environment does not support it.
   if (opts.capture) {
     const capture = opts.capture;
     shotBtn.addEventListener('click', () => {
@@ -209,7 +212,7 @@ export function createChatDom(opts: { capture?: () => Promise<EncodedImage>; hea
     shotBtn.addEventListener('click', () => flash('当前环境不支持截屏，先用上传试试'));
   }
 
-  // 按住说话：状态机、录音与结果落点都在 chat/hear-control，这里只把元素与提示行交过去。
+  // Press and hold to speak: The state machine, recording and result points are all at chat/hear-control. Here only the elements and prompt lines are passed over.
   const hear = createHearControl({
     micBtn,
     input,
@@ -218,7 +221,7 @@ export function createChatDom(opts: { capture?: () => Promise<EncodedImage>; hea
     hearUrl,
   });
 
-  resizeInput(); // 以占位符为初始宽度
+  resizeInput(); // Use placeholder as initial width
 
   return {
     root,

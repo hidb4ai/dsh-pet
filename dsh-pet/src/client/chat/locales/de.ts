@@ -1,5 +1,5 @@
 /**
- * 对话面板德语文案；键集必须与 zh 一致。
+ * German text for dialog panel; keyset must be consistent with zh.
  */
 import type { Key } from './zh.ts';
 

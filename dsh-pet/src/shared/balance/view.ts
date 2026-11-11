@@ -1,8 +1,10 @@
 /**
- * 气泡行数据的主出口：把余额状态转成气泡行，浏览器与桌面共用同一份内容与文案。
+ * Main export of bubble row data: Convert balance status to bubble row, browser and desktop share the same content and
+ * copy.
  *
- * 纯函数，不碰 DOM 与 React；形态相关的文案也不在这里，本模块只负责不可用状态的说明行，
- * 其余按形态查分发表。必须始终成立：不可用时绝不伪造数字。
+ * Pure function, do not touch DOM and React; the copy related to the form is not here. This module is only responsible
+ * for the description line of the unavailable state, and the rest is published according to the form. This must always
+ * be true: never falsify a number when it is not available.
  *
  * @module dsh-pet/src/shared/balance/view
  */
@@ -11,9 +13,9 @@ import { HANDLERS } from './handlers/index.ts';
 import type { BalanceBubbleRow, BalanceState, BalanceUnavailable, CustomNode } from './types.ts';
 
 /**
- * 不可用状态的气泡行：显式给出原因，绝不伪造数字。
+ * Bubble line for unavailable status: Give the reason explicitly and never fake numbers.
  *
- * 次要行为空的会被剔除——空 div 在气泡里会白占一行高度。
+ * Empty secondary rows will be eliminated - empty div will occupy one row height in the bubble.
  */
 function unavailableRows(state: BalanceUnavailable): BalanceBubbleRow[] {
   const rows: BalanceBubbleRow[] =
@@ -24,7 +26,7 @@ function unavailableRows(state: BalanceUnavailable): BalanceBubbleRow[] {
         ]
       : state.reason === 'credential-missing'
         ? [
-            // host 的 message 已自带「缺少凭证 X」前缀，这里原样展示，不再加前缀。
+            // message of host already has the prefix "missing certificate X". It is displayed here as it is without adding the prefix.
             { role: 'error', text: '缺少余额查询凭证' },
             { role: 'sub', text: state.message ?? '' },
           ]
@@ -36,10 +38,11 @@ function unavailableRows(state: BalanceUnavailable): BalanceBubbleRow[] {
 }
 
 /**
- * 把余额状态渲染成气泡行数据。
+ * Render balance status into bubble row data.
  *
- * 形态文案由各 handler 提供；custom 形态返回空数组——它走节点树这条并行通道（见下方 customViews），
- * 空数组只在误用行数据时兜底成空气泡。不可用时显式展示原因，绝不伪造数字。
+ * The form copy is provided by each handler; the custom form returns an empty array - it takes the parallel path of
+ * the node tree (see customViews below), and the empty array only falls back into an empty bubble when row data is
+ * misused. Explicitly show why when unavailable and never fake numbers.
  */
 export function balanceBubbleView(state: BalanceState): BalanceBubbleRow[] {
   if (!state.ok) return unavailableRows(state);
@@ -47,10 +50,11 @@ export function balanceBubbleView(state: BalanceState): BalanceBubbleRow[] {
 }
 
 /**
- * 展开态的气泡行，点开余额气泡后显示。
+ * The expanded bubble row is displayed after clicking on the balance bubble.
  *
- * 只有 windows 有三窗口读数可展开，每个存在的窗口一行；money 与 points 没有窗口概念，
- * 回落到收起态视图，避免点了一下却什么都没变的空交互。
+ * Only windows has three windows that can be expanded, with one line for each existing window; money and points have
+ * no window concept and fallback to the collapsed view to avoid empty interactions where nothing changes after
+ * clicking.
  */
 export function balanceDetailView(state: BalanceState): BalanceBubbleRow[] {
   if (!state.ok) return unavailableRows(state);
@@ -59,10 +63,12 @@ export function balanceDetailView(state: BalanceState): BalanceBubbleRow[] {
 }
 
 /**
- * 余额气泡的可翻页数：不可用只有一页说明；windows 至少两页（收起态 + 窗口明细），
- * 服务商给了区间用量就多一页；custom 以节点树页数为准，其余形态点开没有新内容。
+ * The number of pages that can be turned for the balance bubble: Unavailable, only one page of description; windows is
+ * at least two pages (collapsed state + window details), and one more page will be provided by the service provider
+ * for the range usage; custom is based on the number of pages in the node tree, and there is no new content when
+ * clicking on other forms.
  *
- * 页数与 {@link balancePageView} 必须同源：两边各判一次就会翻出一页空白。
+ * The page number and {@link balancePageView} must have the same origin: once on both sides, a blank page will appear.
  */
 export function balancePageCount(state: BalanceState): number {
   if (!state.ok) return 1;
@@ -72,9 +78,11 @@ export function balancePageCount(state: BalanceState): number {
 }
 
 /**
- * 指定页的气泡行数据：windows 下 0 为收起态、1 为窗口明细、2 为区间用量。
+ * Specify the bubble row data of the specified page: 0 under windows is the collapsed state, 1 is the window details,
+ * and 2 is the interval usage.
  *
- * 越界页回落到最后一页有内容的页，不返回空数组——空白气泡比停在前一页更像坏了。
+ * Out-of-bounds page fallback to the last page with content, instead of returning an empty array - a blank bubble is
+ * more broken than stopping at the previous page.
  */
 export function balancePageView(state: BalanceState, page: number): BalanceBubbleRow[] {
   if (!state.ok) return unavailableRows(state);
@@ -84,12 +92,15 @@ export function balancePageView(state: BalanceState, page: number): BalanceBubbl
   return handler.usage?.(state) ?? balanceDetailView(state);
 }
 
-// 自定义气泡（custom 形态）走节点树这条并行通道：行数据由插件定好长什么样，只填文案；
-// 节点树把布局本身交给第三方。两种通道按 shape 互斥，两端渲染入口各判一次即可，其余展示逻辑共用。
+// The custom bubble (custom form) takes the parallel channel of the node tree: the row data is determined by the
+// plugin, and only the copy is filled in; the node tree leaves the layout itself to a third party. The two channels
+// are mutually exclusive according to shape. The rendering entry points at both ends can be judged once each, and the
+// rest of the display logic is shared.
 
 /**
- * 多页节点树：只对 custom 形态有值，其余形态返回 undefined，调用方据此回落行数据。
- * 第一项是初始页；多于一项时气泡可点，点一下切下一页，末页回第一页。
+ * Multi-page node tree: Only the custom form has a value, the other forms return undefined, and the caller fallsback
+ * the row data accordingly. The first item is the initial page; if there is more than one item, bubble can be clicked.
+ * Click to cut to the next page, and the last page will return to the first page.
  */
 export function customViews(state: BalanceState): CustomNode[] | undefined {
   if (!state.ok || state.shape !== 'custom') return undefined;
@@ -98,9 +109,11 @@ export function customViews(state: BalanceState): CustomNode[] | undefined {
 }
 
 /**
- * custom 气泡是否可点切页，两端据此决定气泡可不可点。
+ * Whether the custom bubble can be clicked to cut the page, the two ends will determine whether the bubble can be
+ * clicked accordingly.
  *
- * 只有一页时点开也没有别的内容，保持不可点，气泡继续不挡页面。
+ * When there is only one page, there is no other content when you click it. If it remains unclickable, the bubble will
+ * continue to not block the page.
  */
 export function customClickable(state: BalanceState): boolean {
   return (customViews(state)?.length ?? 0) > 1;

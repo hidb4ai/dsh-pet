@@ -1,8 +1,9 @@
 /**
- * 独立模式 AI 服务的公开出口：创建服务与依赖形状。
+ * Public export of standalone mode AI service: Create service with dependency shape.
  *
- * 只做再导出；限额与 schema 在 ./ai-provider/limits，请求解析在 ./ai-provider/request。
- * 必须始终成立：输入输出都有硬上限，超出即截断或拒绝，绝不透传。
+ * Only re-export; the limit and schema are in ./ai-provider/limits, and the request resolution is in ./
+ * ai-provider/request. This must always be true: there is a hard upper limit for input and output. If it is exceeded,
+ * it will be truncated or rejected, and it will never be transmitted transparently.
  * @module dsh-pet/src/standalone/ai-provider
  */
 export type { StandaloneAiDependencies, StandaloneAiService } from './ai-provider/types.ts';

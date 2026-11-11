@@ -1,5 +1,5 @@
 /**
- * 对话面板中文文案；键集是全集的真源。
+ * Chinese text for the dialogue panel; the key set is the true source of the entire collection.
  */
 export const zh = {
   factsSourceNumber: '来源 {n}',

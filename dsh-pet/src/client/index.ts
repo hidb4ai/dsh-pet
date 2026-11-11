@@ -1,15 +1,16 @@
 /**
- * 浏览器半侧 bundle 外壳：由 tsdown 构建为 lib/client.js。
- * 只负责把 makeFactory() 造出的模块交给宿主注入的 window.__ModuleLoader__。
- * 不负责业务逻辑；依赖 app.ts 的工厂与加载前已注入的模块系统。
- * 必须始终成立：整个文件是普通副作用脚本，不能有顶层 ESM import / export（react 由 factory 的 require 取得）。
+ * Browser side bundle shell: built from tsdown to lib/client.js. It is only responsible for handing over the module
+ * created by makeFactory() to the window.__ModuleLoader__ injected by the host. Not responsible for business logic;
+ * relies on app.ts's factory and the module system that has been injected before loading. Must always be true: the
+ * entire file is a normal side effect script and cannot have top-level ESM import / export (react is obtained from
+ * require of factory).
  * @module dsh-pet/src/client/index
  */
 import { makeFactory } from './app.ts';
 
 declare const window: {
   __ModuleLoader__: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH 全局注入的模块系统契约（f(require) => module）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DSH injects the module-system contract f(require) => module.
     load(info: { id: string; factory: (require: (m: string) => any) => any }): void;
   };
 };

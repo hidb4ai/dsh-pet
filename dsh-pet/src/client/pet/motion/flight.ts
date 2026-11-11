@@ -1,8 +1,11 @@
 /**
- * 抛掷飞行：重力积分、边缘反弹、落地摩擦与宠物互撞，飞行中只改 DOM 位置，落定后才提交归一化中心。
- * 不负责起点与初速（拖拽松手、抛掷指令、被撞起飞各自决定），也不负责落地挤压的动画本身。
- * 依赖注入的取值函数；rAF 句柄与运动状态由本模块持有，跨渲染存活。
- * 不变量：每帧先积分、再结算互撞、最后写 DOM；互撞只写结算后的绝对速度，落定那一帧才调 commitFinal。
+ * Throwing flight: gravity integration, edge rebound, landing friction and pet collision. Only the DOM position is
+ * changed during flight, and the normalization center is submitted after settling. It is not responsible for the
+ * starting point and initial velocity (the drag release, throwing command, and being hit to take off are determined
+ * separately), nor is it responsible for the landing and squeezing animation itself. Dependency injection value
+ * function; rAF handle and motion state are held by this module and survive across renderings. Invariant: first
+ * integrate each frame, then calculate the collision, and finally write DOM; the absolute speed after the collision
+ * write-only is calculated, and then settle on which frame commitFinal.
  * @module dsh-pet/src/client/pet/motion/flight
  */
 import { throwBounds, type GravityVector, type PetCollisionSlot, type ThrowState } from '../../../shared/physics.ts';
@@ -11,118 +14,120 @@ import { createPetCollision, type PetCollisionResolver } from './pet-collision.t
 import type { BoxPoint, Center, Viewport } from './geometry.ts';
 import type { PhysicsParams } from '../../../shared/types.ts';
 
-/** 飞行需要的当帧几何（px）。 */
+/** Current frame geometry required for flight (px). */
 export interface FlightMetrics {
-  /** 宠物宽度。 */
+  /** Pet width. */
   size: number;
-  /** 盒半宽。 */
+  /** Box half width. */
   halfW: number;
-  /** 盒半高。 */
+  /** Box half height. */
   halfH: number;
-  /** 身体相对视频盒左右各留的透明边。 */
+  /** There are transparent edges left on the left and right of the body relative to the video box. */
   sideAllow: number;
-  /** 舞台脚底垫高：互撞用的身体框按它上移。 */
+  /** The stage foot is raised: the body frame used for collision moves up according to it. */
   bottomPad: number;
 }
 
-/** 本帧撞击：撞的是哪条边（或宠物）与撞前速度。 */
+/** Impact in this frame: which side (or pet) it hit and the speed before the collision. */
 export interface FlightImpact {
-  /** 撞击对象；`pet` = 撞到另一只宠物。 */
+  /** Collision object; `pet` = Collision with another pet. */
   kind: 'left' | 'right' | 'ceiling' | 'floor' | 'pet';
-  /** 撞击前的法向速度绝对值（px/s）。 */
+  /** Absolute value of normal velocity before impact (px/s). */
   speed: number;
 }
 
-/** 飞行驱动的依赖：全部用取值函数，避免捕获渲染期的快照。 */
+/** Flight driver dependencies: all use value functions to avoid capturing snapshots during rendering. */
 export interface FlightDeps {
-  /** 宠物根节点；`null` 表示还没挂载。 */
+  /** Pet root node; `null` means it has not been mounted yet. */
   root(): HTMLDivElement | null;
-  /** 当帧几何。 */
+  /** When frame geometry. */
   metrics(): FlightMetrics;
-  /** 当前视口尺寸。 */
+  /** Current viewport size. */
   viewport(): Viewport;
-  /** 该宠物的物理参数。 */
+  /** The physical parameters of this pet. */
   physics(): PhysicsParams;
-  /** 宠物间碰撞站场。 */
+  /** Collision between pets. */
   arena(): { slots: Record<string, PetCollisionSlot> };
-  /** 本宠物 id：碰撞时用来跳过自己。 */
+  /** This pet id: used to jump over itself during collision. */
   petId: string;
-  /** 当前包围盒位置。 */
+  /** Current bounding box position. */
   box(): BoxPoint | null;
-  /** 写回包围盒位置（每帧调用）。 */
+  /** Write back the bounding box position (called every frame). */
   setBox(box: BoxPoint): void;
-  /** 每帧写回归一化中心：刷新或重渲染时按它重排位置，不能用 React 状态（会慢一拍）。 */
+  /** Each frame writes back to the unified center: press it to rearrange the position when refreshing or re-rendering, and the React state cannot be used (it will be a beat slower). */
   commitLive(center: Center): void;
-  /** 落定后提交归一化中心，交给 React 收尾。 */
+  /** After settling, submit it to the normalization center and hand it over to React cleanup. */
   commitFinal(center: Center): void;
-  /** 落地挤压：入参是本帧落地前的竖直速度（冲击速度）。 */
+  /** Landing squeeze: The input parameter is the vertical speed (impact speed) before landing in this frame. */
   onLanding(impactVy: number): void;
-  /** 本帧发生撞击（撞边或撞宠）：触觉反馈用；一帧最多回调一次，取本帧最重的那次。 */
+  /** An impact occurs in this frame (collision with an edge or a pet): used for tactile feedback; a maximum of one callback is allowed in one frame, and the heaviest one in this frame is taken. */
   onImpact?(impact: FlightImpact): void;
-  /** 体感模式下的重力向量；缺省用 physics.gravity 竖直向下。只在常驻模式里读。 */
+  /** Gravity vector in somatosensory mode; the default is physics.gravity vertically downward. Read only in resident mode. */
   gravity?(): GravityVector;
 }
 
-/** 飞行驱动：一个宠物一个实例。 */
+/** Flight driver: one instance per pet. */
 export interface Flight {
   /**
-   * 从给定左上角与初速起飞（抛掷模式：重力恒竖直向下，贴地低速即落定）。
+   * Take off from the given upper left corner and initial velocity (throwing mode: constant gravity and vertical
+   * downwards, settling on the ground at low speed).
    *
-   * @param px - 包围盒左边缘（px）。
-   * @param py - 包围盒上边缘（px）。
-   * @param vx - 水平初速（px/s）。
-   * @param vy - 竖直初速（px/s）。
+   * @param px - left edge of the bounding box ( px ).
+   * @param py - the upper edge of the bounding box ( px ).
+   * @param vx - Horizontal muzzle velocity (px/s).
+   * @param vy - vertical initial velocity (px/s).
    */
   start(px: number, py: number, vx: number, vy: number): void;
-  /** 体感常驻模式：从当前位置起步、初速为零，重力逐帧取 {@link FlightDeps.gravity}；已在常驻时无副作用。 */
+  /** Somatosensory resident mode: Starting from the current position, the initial velocity is zero, and the gravity is taken frame by frame {@link FlightDeps.gravity}; there is no side effect when it is resident. */
   startHeld(): void;
   /**
-   * 改写当前速度：碰撞结算给的是绝对速度，不是增量。
+   * Rewrite current speed: collision settlement gives absolute speed, not increment.
    *
-   * @param vx - 水平速度（px/s）。
-   * @param vy - 竖直速度（px/s）。
+   * @param vx - horizontal speed (px/s).
+   * @param vy - Vertical speed (px/s).
    */
   setVelocity(vx: number, vy: number): void;
   /**
-   * 叠加一个冲量（摇一摇）；没在跑时忽略——起不起飞、以什么模式起飞由调用方决定。
+   * Superimpose an impulse (shake it); ignore it when running - whether to take off and in what mode to take off are
+   * determined by the caller.
    *
-   * @param dvx - 横向冲量（px/s）。
-   * @param dvy - 纵向冲量（px/s）。
+   * @param dvx - Transverse impulse (px/s).
+   * @param dvy - Longitudinal impulse (px/s).
    */
   impulse(dvx: number, dvy: number): void;
-  /** 停飞：取消在跑的帧并清空运动状态。 */
+  /** Grounded: Cancel the running frame and clear the motion status. */
   stop(): void;
-  /** 是否在跑（抛掷与常驻都算）。 */
+  /** Whether it is running (both throwing and standing count). */
   isFlying(): boolean;
-  /** 是否处于体感常驻模式。 */
+  /** Whether it is in somatosensory resident mode. */
   isHeld(): boolean;
-  /** 最近一帧的速度；没在跑时为 0。 */
+  /** The speed of the latest frame; it is 0 when not running. */
   velocity(): { vx: number; vy: number };
 }
 
-/** 常驻模式的速度上限（px/s）：传感器重力会持续加速，留一个硬天花板兜底。 */
+/** The upper speed limit of resident mode (px/s): The sensor gravity will continue to accelerate, leaving a hard ceiling fallback. */
 const MAX_HELD_SPEED = 6000;
 
 /**
- * 造飞行驱动。
+ * Build a flight driver.
  *
- * @param deps - 取几何、写位置与落地回调。
- * @returns 可反复调用的驱动。
+ * @param deps - Get geometry, write position and landing callback.
+ * @returns driver that can be called repeatedly.
  */
 export function createFlight(deps: FlightDeps): Flight {
-  /** 在跑的 rAF；`null` = 没在跑。 */
+  /** rAF is running; `null` = is not running. */
   let frame: number | null = null;
-  /** 世代号：起飞或停飞 +1，迟到的帧据此自弃。 */
+  /** Generation number: +1 for takeoff or grounding, late frames are discarded accordingly. */
   let token = 0;
-  /** 最近一帧的状态；`null` = 没在跑。帧间它与帧内的 `current` 是同一个对象，改速度就是改下一刻的输入。 */
+  /** Status of the latest frame; `null` = not running. It is the same object as `current` within the frame. Changing the speed means changing the input at the next moment. */
   let state: ThrowState | null = null;
 
-  /** 是否体感常驻模式：重力逐帧由 {@link FlightDeps.gravity} 提供，落定改用静默计时。 */
+  /** Whether to use somatosensory resident mode: gravity is provided by {@link FlightDeps.gravity} frame by frame, and silent timing is used instead. */
   let held = false;
-  /** 常驻模式的静默时长（ms）：重力为零且速度低时累计，到点停帧。 */
+  /** Silent duration in resident mode (ms): accumulated when the gravity is zero and the speed is low, and the frame stops at that point. */
   let quietMs = 0;
 
-  /** 互撞结算：规则在 pet-collision，这里只把撞击转成触觉回调。 */
+  /** Collision settlement: The rules are in pet-collision, where only the collision is converted into a tactile callback. */
   const resolveCollisions: PetCollisionResolver = createPetCollision({
     arena: deps.arena,
     petId: deps.petId,
@@ -145,7 +150,7 @@ export function createFlight(deps: FlightDeps): Flight {
     run(px, py, vx, vy);
   };
 
-  /** 体感常驻模式：没有初速，重力逐帧由 {@link FlightDeps.gravity} 提供；已在常驻时无副作用。 */
+  /** Somatosensory resident mode: no muzzle velocity, gravity is provided by {@link FlightDeps.gravity} frame by frame; there is no side effect when in resident mode. */
   const startHeld = (): void => {
     if (frame !== null && held) return;
     const el = deps.root();
@@ -156,10 +161,10 @@ export function createFlight(deps: FlightDeps): Flight {
   };
 
   /**
-   * 改写当前速度：碰撞结算给的是绝对速度，不是增量。
+   * Rewrite current speed: collision settlement gives absolute speed, not increment.
    *
-   * @param vx - 水平速度（px/s）。
-   * @param vy - 竖直速度（px/s）。
+   * @param vx - horizontal speed (px/s).
+   * @param vy - Vertical speed (px/s).
    */
   const setVelocity = (vx: number, vy: number): void => {
     if (state === null) return;
@@ -168,10 +173,10 @@ export function createFlight(deps: FlightDeps): Flight {
   };
 
   /**
-   * 叠加一个冲量（摇一摇）：只在已经在跑时有效——没在跑时由调用方按抛掷起飞。
+   * Superimpose an impulse (shake it): only effective when running - press throw to take off when not running.
    *
-   * @param dvx - 横向冲量（px/s）。
-   * @param dvy - 纵向冲量（px/s）。
+   * @param dvx - Transverse impulse (px/s).
+   * @param dvy - Longitudinal impulse (px/s).
    */
   const impulse = (dvx: number, dvy: number): void => {
     if (state === null) return;
@@ -193,10 +198,10 @@ export function createFlight(deps: FlightDeps): Flight {
     quietMs = 0;
     let current: ThrowState = { x: px, y: py, vx, vy };
     let last = performance.now();
-    let prevGrounded = false; // 落地挤压只在空中到地面的转换帧触发一次。
+    let prevGrounded = false; // The landing squeeze only triggers once at the transition frame from air to ground.
     const rootEl = deps.root();
 
-    /** 写回本帧位置：DOM、包围盒与归一化中心（后者供重渲染时按它重排）。 */
+    /** Write back the position of this frame: DOM, bounding box and normalized center (the latter is rearranged according to it when re-rendering). */
     const commitPose = (at: ThrowState): Center => {
       if (rootEl) {
         rootEl.style.left = at.x + 'px';
@@ -215,14 +220,14 @@ export function createFlight(deps: FlightDeps): Flight {
       const now = performance.now();
       const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
       last = now;
-      const fallingVy = current.vy; // 本帧积分前的竖直速度，即落地冲击速度。
+      const fallingVy = current.vy; // The vertical speed before integration in this frame, that is, the landing impact speed.
       const gravity = held ? deps.gravity?.() : undefined;
       const res = integrateFlight(current, dt, bounds, physics, gravity);
       if (res.hit !== null) deps.onImpact?.({ kind: res.hit.edge, speed: res.hit.speed });
       const integrated: ThrowState = { x: res.x, y: res.y, vx: res.vx, vy: res.vy };
       current = integrated;
       if (physics.petCollision) current = resolveCollisions(current, metrics);
-      // 被撞过就不在当帧判落定：积分结果已经代表不了当前位置了。
+      // After being hit, the frame judgment is no longer settled: the points result no longer represents the current position.
       const disturbed = current !== integrated;
       if (held) {
         const speed = Math.hypot(current.vx, current.vy);
@@ -233,12 +238,12 @@ export function createFlight(deps: FlightDeps): Flight {
       }
       state = current;
       const center = commitPose(current);
-      // 落地挤压：只在空中到地面的转换帧触发，力度随冲击速度。
+      // Landing Squeeze: Triggered only at the transition frame from air to ground, the strength depends on the impact speed.
       const grounded = current.y >= bounds.maxY - 1;
       if (res.bounced && grounded && !prevGrounded) deps.onLanding(fallingVy);
       prevGrounded = grounded;
       if (held) {
-        // 常驻模式没有固定地面：重力为零且速度低就累计静默，到点停帧。
+        // There is no fixed ground in the resident mode: when the gravity is zero and the speed is low, silence will accumulate and the frame will freeze at a certain point.
         const g = gravity ?? { gx: 0, gy: physics.gravity };
         const isStill = Math.hypot(g.gx, g.gy) < 1 && Math.hypot(current.vx, current.vy) < 20;
         quietMs = isStill ? quietMs + dt * 1000 : 0;

@@ -1,4 +1,4 @@
-/** 记忆管理路由的写入边界：宠物绑定、字段校验和失败回执。 */
+/** Memory management route write boundaries: pet binding, field verification and failure receipt. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { handleMemoryLibraryRoutes } from './memory-library.ts';

@@ -1,8 +1,10 @@
 'use strict';
 /**
- * 冒烟自检：DSH_PET_SMOKE=1 时延时检查窗口、渲染、动画与交互链路，截图后退出。
+ * Smoke self-check: DSH_PET_SMOKE =1 time delay to check the window, rendering, animation and interactive links, and
+ * exit after taking a screenshot.
  *
- * 只在开发与排查时进入；检查项要读主进程侧的窗口表与穿透镜像，所以由调用方传入，不自己持状态。
+ * It is only entered during development and troubleshooting; the check item requires reading the window table and
+ * click-through image on the main process side, so it is passed in by the caller and does not maintain its own state.
  * @module dsh-pet/runtime/electron-helper/main-smoke
  */
 
@@ -10,18 +12,18 @@ const path = require('node:path');
 const { writeFileSync } = require('node:fs');
 
 /**
- * 跑一次冒烟检查。
- * @param deps.app - Electron app（退出与临时目录）。
- * @param deps.windows - 宠物窗口表。
- * @param deps.windowIgnore - 每个窗口当前是否穿透（主进程镜像）。
- * @param deps.setPointerFallbackPaused - 检查穿透往返期间暂停兜底轮询。
+ * Run a smoke check.
+ * @param deps.app - Electron app (exit with temporary directory).
+ * @param deps.windows - Pet window table.
+ * @param deps.windowIgnore - Whether each window is currently click-through (main process mirrored).
+ * @param deps.setPointerFallbackPaused - Check click-through to pause fallback polling during round trip.
  */
 function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused }) {
   const smokeOut = process.env.DSH_PET_SMOKE_OUT || path.join(app.getPath('temp'), 'dsh-pet-smoke.png');
   const afterMs = Number(process.env.DSH_PET_SMOKE_AFTER_MS || 9000);
   const target = windows.values().next().value;
   if (target) {
-    // 转发渲染端 console（定位动画/余额/错误问题）
+    // Forward renderer console (positioning animation/balance/error issue)
     target.webContents.on('console-message', (event) => {
       console.log(`[renderer:${event.level}] ${event.message}`);
     });
@@ -61,10 +63,14 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
             return out;
           })(),
           releaseKeptPosition: await (async function () {
-            // 独立不变量：把宠物先拖到工作区内的固定安全点（600,300），松手后窗口位置必须原地不动。
-            // 拖拽抛掷物理（弹簧跟手+甩抛）下：指针长距跳跃后弹簧需要 ~0.3s 收敛，
-            // 松手前停留超过 RELEASE_STALE_MS(150ms) 判为「温柔放下」（估速 null，不抛掷）——
-            // 所以先等弹簧到位、再停留才松手，只测"释放瞬间是否位移"。
+            // Independent invariant: Drag the pet to a fixed safe point (600,300) in the work area first. After letting
+            // go, the window position must remain in place.
+            // Under drag and throw physics (spring follows hand + throw): the spring needs ~0.3 s to converge after the
+            // pointer jumps long distance.
+            // Staying for more than RELEASE_STALE_MS (150 ms) before letting go will be judged as "gentle release"
+            // (estimate speed null, no throwing)——
+            // Therefore, wait until the spring is in place and then stop before letting go. Only test "whether there is
+            // displacement at the moment of release."
             var d = window.__dshPetDebug;
             var hit = document.querySelector('.pet-hit');
             if (!d || !d.dragPos || !hit) return null;
@@ -92,8 +98,10 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
             };
           })(),
           interactiveFlip: (function () {
-            // 点击穿透命中判定：光标在命中区内→可交互；移出→穿透；拖拽中（pointer 已捕获）→强制可交互。
-            // hitRect 是 sprite 坐标，mousemove 用窗口坐标——测试事件需加上本体在窗口内的偏移 winOffset。
+            // Click-through hit judgment: the cursor is within the hit area → interactive; moves out → click-through;
+            // dragging (pointer has been captured) → forced interactive.
+            //  hitRect is the sprite coordinate, mousemove uses the window coordinate - the test event needs to add the
+            // offset of the body in the window winOffset.
             var d = window.__dshPetDebug;
             var hit = document.querySelector('.pet-hit');
             if (!d || !d.hitRect || !d.winOffset || !hit) return null;
@@ -116,10 +124,13 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
           })(),
           videoSrcA: (document.querySelectorAll('.pet-sprite video')[0] || { src: '' }).src,
           videoSrcB: (document.querySelectorAll('.pet-sprite video')[1] || { src: '' }).src,
-          // 右键菜单自检：在命中区派发 contextmenu → 校验菜单挂载/根文案/子面板/运行错误
+          // Right-click menu self-test: dispatch contextmenu in the hit area → verify menu mounting/root
+          // copy/sub-panel/running error
           menuSmoke: await (async function () {
-            // 前面 drag/release/interactive 测试刚拖过宠：justDragged 100ms 内屏蔽右键，
-            // 真实用户不会拖完立刻右键——先等 250ms 消除该时序影响
+            // The previous drag/release/interactive test has just been dragged: justDragged 100 ms Right click on the
+            // inner shield,
+            // Real users will not right-click immediately after dragging - wait 250 ms first to eliminate the timing
+            // impact
             await new Promise(function (resolve) {
               setTimeout(resolve, 250);
             });
@@ -156,7 +167,7 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
                 };
                 out.panelCount = panels.length;
                 out.lvl2AfterHoverRoot = visible().length;
-                // 二级：悬停「动作」下的第一个分类 → 打开三级面板（具体动画）
+                // Level 2: Hover the first category under "Action" → Open the level 3 panel (specific animation)
                 var panel1 = visible().filter(function (p) {
                   return p !== panels[0];
                 })[0];
@@ -168,8 +179,9 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
                       setTimeout(resolve, 50);
                     });
                     out.lvl3AfterHoverCat = visible().length;
-                    // 重放用户路径：鼠标从分类项移向三级面板（先离开分类项进入 4px 缝隙，
-                    // 再进入三级面板）——缝隙里 mouseleave 会排 160ms 关闭定时器
+                    // Replay user path: Move the mouse from the category item to the third-level panel (leave the category item
+                    // first and enter the 4 px gap,
+                    // Then enter the third-level panel) - mouseleave in the gap will queue 160 ms to close the timer
                     cat.dispatchEvent(
                       new MouseEvent('mouseleave', { bubbles: false, relatedTarget: document.body }),
                     );
@@ -184,7 +196,7 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
                       setTimeout(resolve, 220);
                     });
                     out.lvl3SurvivedAfterReenter = visible().length;
-                    // 极端情况：缝隙停留超过关闭延时（鼠标犹豫）
+                    // Extreme case: the gap stays longer than the closing delay (mouse hesitates)
                     cat.dispatchEvent(
                       new MouseEvent('mouseleave', { bubbles: false, relatedTarget: document.body }),
                     );
@@ -208,8 +220,10 @@ function runSmokeCheck({ app, windows, windowIgnore, setPointerFallbackPaused })
             JSON.stringify(dump),
         );
         console.log('[dsh-pet-desktop-helper] smoke bounds:', JSON.stringify(first.getContentBounds()));
-        // 点击穿透 round-trip：true → 窗口捕获输入，false → 恢复整窗穿透；状态取自主进程镜像。
-        // 期间暂停兜底轮询：它按真实光标翻转，冒烟时鼠标不在宠物身上会覆盖本断言的状态。
+        // Click-through round-trip: true → window capture input, false → restore the entire window click-through; the
+        // status is taken from the main process image. Pause during fallback polling: it flips according to the real
+        // cursor. When the mouse is not on the pet when the smoke is emitted, the state of this assertion will be
+        // overwritten.
         setPointerFallbackPaused(true);
         await first.webContents.executeJavaScript('window.petBridge.setInteractive(true); true;');
         await new Promise((r) => setTimeout(r, 80));

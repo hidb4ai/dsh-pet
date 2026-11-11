@@ -4,13 +4,13 @@ import { runInNewContext } from 'node:vm';
 import { validateSettings, publicSettings } from './settings.ts';
 import { settingsPage, settingsScript, settingsStyle } from './settings-page.ts';
 
-/** 记录到的一条请求。 */
+/** A recorded request. */
 type RecordedRequest = {
   url: string;
   options: { method: string; body?: string; headers: Record<string, string> };
 };
 
-/** getElementById 的替身：只实现页面脚本用到的那几个属性。 */
+/** Stand-in for getElementById: only implements those attributes used by the page script. */
 type FakeElement = {
   value: string;
   checked: boolean;
@@ -34,7 +34,7 @@ type FakeElement = {
   };
 };
 
-/** createElement 的替身：能追加、能设属性、能点、能被读值。 */
+/** createElement's stand-in: can be added, can set attributes, can point, and can be read. */
 type FakeNode = {
   nodeType: number;
   isConnected: boolean;
@@ -60,28 +60,29 @@ type FakeNode = {
   readonly firstElementChild: FakeNode | null;
 };
 
-/** 一次页面启动后的句柄：各 test 自己起一份，互不共享状态。 */
+/** The handle after a page startup: Each test has its own copy, and the status is not shared with each other. */
 interface Page {
-  /** 按 id 取到启动时被脚本访问过的元素。 */
+  /** Press id to get the elements accessed by the script at startup. */
   element(id: string): FakeElement;
-  /** 脚本发出的全部请求，按发出顺序。 */
+  /** All requests issued by the script, in the order of issue. */
   requests: RecordedRequest[];
-  /** createElement 造出来的节点都会挂到 body 上（菜单、弹窗）。 */
+  /** The nodes created by createElement will be linked to body (menu, pop-up window). */
   body: FakeNode;
-  /** 地址片段是否已被清掉，清成什么。 */
+  /** Whether the address fragment has been cleared and what it is cleared to. */
   stripped(): string;
-  /** 打到 AI 设置端点的请求。 */
+  /** Request hit to AI setup endpoint. */
   aiRequests(): RecordedRequest[];
-  /** 最后一次 AI 设置请求的请求体。 */
+  /** The request body of the last AI setting request. */
   lastAiBody(): Record<string, unknown>;
-  /** 最近一次确认框的两个按钮；没弹过就是空数组。 */
+  /** The two buttons of the latest confirmation box; if they have not been played, they are empty arrays. */
   lastDialogActions(): FakeNode[];
 }
 
 /**
- * 起一份页面：假 DOM + 真脚本。
+ * Create a page: fake DOM + real script.
  *
- * 每个 test 都新建，避免用例之间互相污染——脚本在启动时会发请求、改元素状态。
+ * Each test is newly created to avoid mutual contamination between use cases - the script will send requests and
+ * change element status when it is started.
  */
 async function setupPage(): Promise<Page> {
   const elements = new Map<string, FakeElement>();
@@ -236,7 +237,7 @@ async function setupPage(): Promise<Page> {
   };
 }
 
-/** 等两轮事件循环，让脚本里的 await 链落定。 */
+/** Wait for two rounds of event loops to allow the await chain in the script to settle. */
 async function settle(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
   await new Promise((resolve) => setImmediate(resolve));
@@ -301,33 +302,37 @@ test('settings shell is accessible, self contained, and never saves browser secr
   assert.match(settingsStyle, /focus-visible/);
 });
 
-test('启动：地址片段被清掉，密钥框清空并显示已保存', async () => {
+test('Startup: The address fragment is cleared, the key box is clear and shows saved', async () => {
   const page = await setupPage();
   assert.equal(page.stripped(), '/standalone-ai/');
   assert.equal(page.element('apiKey').value, '');
   assert.equal(page.element('key-state').textContent, '已保存 · 不回显');
   assert.ok(
     page.aiRequests().every(({ options }) => options.headers['X-DSH-Pet-Token'] === 'process-capability'),
-    'AI 请求必须带本次运行的访问令牌',
+    'AI request must carry the access token for this run',
   );
 });
 
-test('保存：密钥只写不回显，且不再提交启用位', async () => {
+test('Save: Key write-only is not echoed and the enable bit is no longer committed', async () => {
   const page = await setupPage();
   page.element('apiKey').value = 'write-only-fake-key';
   await page.element('settings').listeners.submit({ preventDefault() {} });
   assert.equal(page.element('apiKey').value, '');
   assert.equal(page.lastAiBody().apiKey, 'write-only-fake-key');
-  assert.equal('enabled' in page.lastAiBody(), false, '页面不再提交启用位');
-  assert.equal(page.lastAiBody().balanceProvider, 'deepseek-official', '余额服务商随设置一起提交');
+  assert.equal('enabled' in page.lastAiBody(), false, 'The page no longer submits the enable bit');
+  assert.equal(
+    page.lastAiBody().balanceProvider,
+    'deepseek-official',
+    'The balance service provider is submitted with the settings',
+  );
 });
 
-test('查询余额：选了服务商才可点，结果拼成一行金额并带上访问令牌', async () => {
+test('Check balance: Click only after selecting a service provider. The result will be spelled into one line with the amount and the access token.', async () => {
   const page = await setupPage();
   await settle();
   const button = page.element('balance-btn');
   const result = page.element('balance-result');
-  assert.equal(button.disabled, false, '已保存 deepseek-official，按钮应可点');
+  assert.equal(button.disabled, false, 'deepseek-official has been saved, the button should be clickable');
 
   const balanceRequests = () => page.requests.filter(({ url }) => url === '/standalone-ai/balance');
   await button.listeners.click();
@@ -337,19 +342,19 @@ test('查询余额：选了服务商才可点，结果拼成一行金额并带�
   assert.equal(balanceRequests()[0].options.headers['X-DSH-Pet-Token'], 'process-capability');
   assert.match(result.textContent, /CNY 12\.34/);
   assert.equal(result.dataset.ok, 'true');
-  assert.equal(button.disabled, false, '查询结束后按钮恢复可点');
+  assert.equal(button.disabled, false, 'After the query is completed, the button can be clicked again.');
 });
 
-test('删除密钥：先弹确认框，取消不发请求，确认才提交 clearApiKey', async () => {
+test('Delete key: pop up the confirmation box first, cancel without sending the request, and then submit after confirmation clearApiKey', async () => {
   const page = await setupPage();
   page.element('key-delete').listeners.click();
   await settle();
-  assert.equal(page.lastDialogActions().length, 2, '删除前必须先弹确认框');
+  assert.equal(page.lastDialogActions().length, 2, 'A confirmation box must pop up before deletion');
 
   const before = page.aiRequests().length;
   page.lastDialogActions()[0].listeners.click();
   await settle();
-  assert.equal(page.aiRequests().length, before, '取消后不得发出删除请求');
+  assert.equal(page.aiRequests().length, before, 'No deletion request may be issued after cancellation');
 
   page.element('key-delete').listeners.click();
   await settle();
@@ -357,10 +362,14 @@ test('删除密钥：先弹确认框，取消不发请求，确认才提交 clea
   await settle();
   assert.equal(page.lastAiBody().clearApiKey, true);
   assert.equal(page.element('key-state').textContent, '尚未设置');
-  assert.equal(page.element('key-actions').hidden, true, '没有密钥时不再显示删除入口');
+  assert.equal(
+    page.element('key-actions').hidden,
+    true,
+    'Delete entry point is no longer displayed when there is no key',
+  );
 });
 
-test('拉取模型：用表单草稿请求端点，选中后写回输入框并标记未保存', async () => {
+test('Pull model: request the endpoint with a form draft, write it back to the input box after selecting it and mark it as not saved', async () => {
   const page = await setupPage();
   page.element('baseUrl').value = 'https://draft.test/v1';
   page.element('apiKey').value = 'draft-key';
@@ -376,11 +385,11 @@ test('拉取模型：用表单草稿请求端点，选中后写回输入框并�
   });
   assert.equal(modelRequests()[0].options.headers['X-DSH-Pet-Token'], 'process-capability');
   assert.match(page.element('model-result').textContent, /已拉取 2 个模型/);
-  assert.equal(page.element('model').value, 'x', '拉取本身不得改动已填的模型');
+  assert.equal(page.element('model').value, 'x', 'The pull itself must not modify the filled model');
 
   const menus = page.body.children.filter((kid) => kid.className === 'selectMenu');
   const menu = menus[menus.length - 1];
-  assert.ok(menu, '拉到模型后必须直接弹出候选菜单');
+  assert.ok(menu, 'After pulling the model, the candidate menu must pop up directly');
   menu.children[0].listeners.click();
   assert.equal(page.element('model').value, 'm-one');
   assert.equal(page.element('dirty').hidden, false);

@@ -1,18 +1,20 @@
 /**
- * 模型选择器的纯视图模型：把「候选清单 + 搜索词」折成一行一行可渲染的清单，并给出键盘可走的行号。
- * 不碰 DOM、不持有状态；搜索语义（大小写不敏感的有序子序列）与 DSH 自带的模型选择器一致。
- * 行顺序固定为：跟随当前对话（仅无搜索词时）→ 各服务商分组头 → 组内命中的模型，或该组「没有可用模型」。
+ * Pure view model of the model selector: fold the "candidate list + search terms" into a list that can be rendered
+ * line by line, and give the line number that the keyboard can navigate. Does not touch DOM and does not hold state;
+ * the search semantics (case-insensitive ordered subsequences) are consistent with the model selector that comes with
+ * DSH. The row order is fixed as: following the current conversation (only when there is no search term) → the group
+ * header of each service provider → the model hit in the group, or "no model available" in the group.
  * @module dsh-pet/src/client/settings/picker/model-rows
  */
 
-/** 候选清单里的一组：一个服务商及它名下的模型（`GET /models` 的响应形态）。 */
+/** A group in the candidate list: a service provider and the model under its name (response form of `GET /models`). */
 export interface ModelCatalogGroup {
   id: string;
   name: string;
   models: Array<{ id: string; name: string }>;
 }
 
-/** 选择器浮层里的一行：跟随当前对话、服务商分组头、模型或「该服务商没有可用模型」。 */
+/** A line in the selector overlay: following the current conversation, provider group header, model or "This provider has no available models". */
 export type ModelRow =
   | { kind: 'follow'; key: string }
   | { kind: 'group'; key: string; name: string }
@@ -20,10 +22,11 @@ export type ModelRow =
   | { kind: 'model'; key: string; provider: string; model: { id: string; name: string } };
 
 /**
- * 搜索词是否命中：大小写不敏感的有序子序列匹配，空搜索词命中一切。
- * @param text - 被搜索的文本，通常是「模型名 + 空格 + 模型 id」。
- * @param query - 用户输入；两侧空白忽略。
- * @returns 命中返回 true；字符顺序不对或字符不全返回 false。
+ * Whether the search term hits: Case-insensitive ordered subsequence matching, empty search term hits everything.
+ * @param text - The text to be searched, usually "model name + space + model id".
+ * @param query - User input; whitespace on both sides is ignored.
+ * If @returns hits, true is returned; if characters are in wrong order or characters are incomplete, false is
+ * returned.
  */
 export function matchModelQuery(text: string, query: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -37,20 +40,20 @@ export function matchModelQuery(text: string, query: string): boolean {
 }
 
 /**
- * 把候选清单折成可渲染的行。
+ * Collapse candidate list into renderable rows.
  *
- * @param groups - 候选清单；`[]` 表示宿主没有可用服务商。
- * @param query - 搜索词；为空时多出「跟随当前对话」一行。
- * @returns 行清单；分组头与「没有可用模型」行不可选，见 {@link selectableIndexes}。
+ * @param groups - candidate list; `[]` indicates that the host has no available service provider.
+ * @param query - search term; if empty, an extra line of "Follow current conversation" will be added.
+ * @returns line list; group header and "No model available" line are not selectable, see {@link selectableIndexes} .
  */
 export function buildModelRows(groups: readonly ModelCatalogGroup[], query: string): ModelRow[] {
   const needle = query.trim().toLowerCase();
   const rows: ModelRow[] = [];
-  // 「跟随当前对话」不是一个模型，只在没搜索词时出现。
+  // "Follow the current conversation" is not a model and only appears when there is no search term.
   if (needle === '') rows.push({ kind: 'follow', key: '__follow' });
   for (const group of groups) {
     const models = group.models.filter((model) => matchModelQuery(model.name + ' ' + model.id, needle));
-    // 有搜索词时，整组没命中就整组不显示；无搜索词时，空组要留下分组头去挂「没有可用模型」。
+    // When there is a search term, the entire group will not be displayed if there is no hit; when there is no search term, the group header should be left to hang "No available model" in the empty group.
     if (models.length === 0 && !(needle === '' && group.models.length === 0)) continue;
     rows.push({ kind: 'group', key: group.id, name: group.name });
     if (models.length === 0) {
@@ -65,10 +68,10 @@ export function buildModelRows(groups: readonly ModelCatalogGroup[], query: stri
 }
 
 /**
- * 键盘 ↑↓ 只能停在可选项上：分组头与提示行跳过。
+ * Keyboard ↑↓ can only stop at optional items: group header and prompt line are skipped.
  *
- * @param rows - {@link buildModelRows} 的输出。
- * @returns 可选行的下标，递增排列。
+ * @param rows - Output of {@link buildModelRows} .
+ * @returns The subscript of the optional row, arranged in ascending order.
  */
 export function selectableIndexes(rows: readonly ModelRow[]): number[] {
   return rows.map((row, index) => (row.kind === 'group' || row.kind === 'none' ? -1 : index)).filter((i) => i >= 0);

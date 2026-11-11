@@ -1,36 +1,39 @@
 /**
- * 素材字节加载：把一次动画素材取成可播的 blob 地址，带超时与在途登记。
- * 一次拿全文件而不是让 video 流式加载——后者在 DSH WebServer 上偶发 stalled，表现为点了没反应。
- * 只负责「拿到地址」与「释放地址」；播哪一段、A/B 哪个槽位归动画链。
- * cache 用默认策略：服务端给了 max-age，有效期内不走网络；不能用 force-cache，否则换掉同名素材后仍读旧缓存。
+ * Asset bytes loading: Get an animation asset into a playable blob address, with timeout and in-transit registration.
+ * Get the whole file at once instead of letting video stream load - the latter occasionally stalled on DSH WebServer,
+ * which behaves like no response after clicking. It is only responsible for "getting the address" and "releasing the
+ * address"; which segment to play and which slot A/B belongs to the animation chain. cache uses the default policy:
+ * the server gives max-age and does not use the network during the validity period; force-cache cannot be used,
+ * otherwise the old cache will still be read after replacing the asset with the same name.
  * @module dsh-pet/src/client/pet/animation/asset-loader
  */
-/** 一次加载的两个结局。 */
+/** Two endings in one load. */
 export interface AssetHandlers {
-  /** 拿到可直接赋给 `video.src` 的对象地址；调用方负责稍后 `release`。 */
+  /** Get the object address that can be directly assigned to `video.src`; the caller is responsible for `release` later. */
   onObjectUrl: (objectUrl: string) => void;
-  /** 拿不到字节（超时、非 2xx、被中断）；调用方决定是否上报。 */
+  /** Unable to get bytes (timeout, non-2 xx, interrupted); caller decides whether to report. */
   onError: (error: unknown) => void;
 }
 
-/** 素材加载器。 */
+/** asset loader. */
 export interface AssetLoader {
-  /** 取一次素材。 */
+  /** Get asset once. */
   load: (url: string, handlers: AssetHandlers) => void;
-  /** 中断所有在途请求（卸载时调）。 */
+  /** Interrupt all in-flight requests (unmount timeout). */
   abortAll: () => void;
-  /** 释放一个由本加载器创建的对象地址。 */
+  /** Release the address of an object created by this loader. */
   release: (objectUrl: string) => void;
 }
 
 /**
- * 造素材加载器。
+ * Create asset loader.
  *
- * @param timeoutMs - 单次请求的超时（ms）；到点即中断，避免请求无限挂着。
- * @returns 加载、批量中断与释放。
+ * @param timeoutMs - The timeout of a single request (ms); it will be interrupted when it reaches the point to avoid
+ * the request from hanging indefinitely.
+ * @returns loading, batch interrupt and release.
  */
 export function createAssetLoader(timeoutMs: number): AssetLoader {
-  /** 在途请求：销毁时统一中断，否则卸载后完成的响应会创建无人回收的地址。 */
+  /** Requests in transit: uniformly interrupted when destroyed, otherwise the response completed after unmount will create an address that no one will reclaim. */
   const inflight = new Set<AbortController>();
 
   return {

@@ -1,9 +1,10 @@
 /**
- * 独立模式的本机配置文件读写：只处理权限、原子替换与大小上限。
+ * Native configuration file reading and writing in standalone mode: only handles permissions, atomic replacement and
+ * size caps.
  *
- * 不负责设置语义与校验（见 ai-config），也不决定文件该放在哪个目录。
- * 必须始终成立：写入先在空临时文件上收紧权限再原子替换；
- * 读取拒绝符号链接、超限文件与过宽的 ACL。
+ * It is not responsible for setting semantics and validation (see ai-config), nor determining which directory the file
+ * should be placed in. Must always be true: writes tighten permissions on empty temporary files before atomic
+ * replacement; reads reject symlinks, oversized files, and ACL that are too wide.
  * @module dsh-pet/src/standalone/ai-storage
  */
 import { execFileSync } from 'node:child_process';
@@ -25,10 +26,10 @@ import {
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-/** 配置文件的字节上限。 */
+/** The upper limit of bytes for the configuration file. */
 const MAX_CONFIG_BYTES = 32_768;
 
-/** 只把权限授给当前用户；绝不把 shell 命令、账户名或未校验的 SID 交给 icacls。 */
+/** Only grant permissions to the current user; never give the shell command, account name, or unverified SID to icacls. */
 function restrictFile(path: string): void {
   if (process.platform !== 'win32') {
     chmodSync(path, 0o600);
@@ -48,7 +49,7 @@ function restrictFile(path: string): void {
   );
 }
 
-/** 解析并准备配置目录，拒绝符号链接。 */
+/** Parsing and preparing configuration directory, rejecting symbolic links. */
 function configPath(home: string): string {
   const directory = join(home, 'dsh-pet');
   if (!existsSync(directory)) mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -58,10 +59,10 @@ function configPath(home: string): string {
 }
 
 /**
- * 读取本机 AI 配置。
- * @param home - DSH_HOME。
- * @returns 解析后的未知值；文件不存在时返回 undefined。
- * @throws 路径、大小或权限不安全时抛出。
+ * Read the local AI configuration.
+ * @param home - DSH_HOME.
+ * @returns Parsed unknown value; returns undefined if the file does not exist.
+ * @throws Thrown when the path, size, or permissions are not secure.
  */
 export function readAiSettings(home: string): unknown | undefined {
   return readPrivateJson(configPath(home));
@@ -72,8 +73,8 @@ export function readPrivateJson(path: string): unknown | undefined {
   if (!existsSync(path)) return undefined;
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_CONFIG_BYTES) throw new Error('Unsafe settings file');
-  // 显式宽权限比读不到更危险：先拒绝，再由 restrictFile 收紧到当前 SID。
-  // 这里创建的文件除当前 SID 外不应有任何显式授权。
+  // Explicit wide permissions are more dangerous than being unable to read: first deny, then tighten from restrictFile
+  // to the current SID. Files created here should not have any explicit authorization other than the current SID.
   if (process.platform === 'win32') {
     const acl = execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'icacls.exe'), [path], {
       encoding: 'utf8',
@@ -93,29 +94,29 @@ export function readPrivateJson(path: string): unknown | undefined {
 }
 
 /**
- * 原子写入 AI 配置。
- * @param home - DSH_HOME。
- * @param settings - 待持久化的成品配置。
- * @throws 目录或权限不安全时抛出。
+ * Atomic write to AI configuration.
+ * @param home - DSH_HOME.
+ * @param settings - Finished configuration to be persisted.
+ * @throws Thrown when the directory or permissions are not secure.
  */
 export function writeAiSettings(home: string, settings: unknown): void {
   writePrivateJson(configPath(home), settings);
 }
 
 /**
- * 把 JSON 原子写入受信任目录。
- * @param path - 目标文件。
- * @param settings - 待写入的 JSON 值。
- * @throws 目录是符号链接或写入失败时抛出。
+ * Writing JSON atom to trusted directory.
+ * @param path - target file.
+ * @param settings - JSON value to be written.
+ * @throws Thrown when the directory is a symbolic link or writing fails.
  */
 export function writePrivateJson(path: string, settings: unknown): void {
-  // 先确认目录是普通目录，避免被符号链接带到别处。
+  // First confirm that the directory is a normal directory to avoid being taken elsewhere by symbolic links.
   const directory = lstatSync(dirname(path));
   if (!directory.isDirectory() || directory.isSymbolicLink()) throw new Error('Unsafe private file directory');
   if (existsSync(path) && (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()))
     throw new Error('Unsafe settings file');
   const temporary = `${path}.${randomUUID()}.tmp`;
-  // 先建空临时文件并收紧权限，再写入任何密钥，避免密钥短暂落进宽权限文件。
+  // Create an empty temporary file first and tighten the permissions before writing any keys to prevent the keys from temporarily falling into the wide permissions file.
   const fd = openSync(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
   try {
     restrictFile(temporary);

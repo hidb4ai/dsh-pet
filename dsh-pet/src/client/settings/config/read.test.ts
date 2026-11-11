@@ -1,10 +1,13 @@
 /**
- * 成品配置读取的契约测试。
+ * Contract testing of finished configuration read.
  *
- * 三条契约：
- *   1. 坏响应要显式失败：`main.pets` 缺失或不是数组时返回 `null`，让调用方报错而不是渲染半张空表单；
- *   2. 没写或写成坏值的字段不出现在补丁里，表单保留自己手里的值，绝不拿坏数据覆盖；
- *   3. 成品里已填满的段落（物理参数、字体）缺子键时用内置默认补满，读出来的始终是完整对象。
+ * Three contracts:
+ * 1. Bad responses must explicitly fail: `null` is returned when `main.pets` is missing or is not an array, allowing
+ * the caller to report an error instead of rendering a half-empty form;
+ * 2. Fields that are not written or written with bad values will not appear in the patch. The form retains its own
+ * value and will never be overwritten with bad data;
+ * 3. When the filled paragraphs (physical parameters, fonts) in the resolved value are missing subkeys, they are
+ * filled with the built-in default, and the complete object is always read out.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,30 +16,30 @@ import { readConfigEntries, readMainConfig } from './read.ts';
 import { DEFAULT_PHYSICS } from '../../../shared/physics.ts';
 import { DEFAULT_FONT } from '../../../shared/fonts.ts';
 
-describe('readMainConfig —— 成品聚合 → 表单补丁', () => {
-  test('main.pets 缺失或不是数组：返回 null（响应坏了）', () => {
+describe('readMainConfig - resolved configuration → form patch', () => {
+  test('main.pets is missing or not an array: return null (response broken)', () => {
     assert.equal(readMainConfig({}), null);
     assert.equal(readMainConfig({ main: {} }), null);
     assert.equal(readMainConfig({ main: { pets: 'oops' } }), null);
   });
 
-  test('pets 深拷贝位置：编辑列表与成品列表是两份数据', () => {
+  test('pets deep copy position: the editing list and the resolved value list are two pieces of data', () => {
     const merged = {
       main: { pets: [{ id: 'pet-1', position: { corner: 'top-left', marginX: 1, marginY: 2 } }] },
     };
     const patch = readMainConfig(merged);
     assert.ok(patch?.pets);
     patch.pets[0].position.marginX = 99;
-    assert.equal(merged.main.pets[0].position.marginX, 1, '不允许共享同一份 position 对象');
+    assert.equal(merged.main.pets[0].position.marginX, 1, 'Sharing the same position object is not allowed');
   });
 
-  test('物理参数与字体：成品缺子键时用内置默认补满', () => {
+  test('Physical parameters and fonts: When the resolved value is missing subkeys, use the built-in default to fill them.', () => {
     const patch = readMainConfig({ main: { pets: [], physics: { gravity: 3 }, font: { size: 20 } } });
     assert.deepEqual(patch?.physics, { ...DEFAULT_PHYSICS, gravity: 3 });
     assert.deepEqual(patch?.font, { ...DEFAULT_FONT, size: 20 });
   });
 
-  test('动作频率权重：三项非负数字才带出，坏值当作没写', () => {
+  test('Action frequency weight: Only three non-negative numbers are brought out, and bad values are treated as not written.', () => {
     const patch = readMainConfig({ main: { pets: [], animationWeights: { idle: 30, turn: 5, move: 5 } } });
     assert.deepEqual(patch?.animationWeights, { idle: 30, turn: 5, move: 5 });
     assert.equal('animationWeights' in (readMainConfig({ main: { pets: [] } }) ?? {}), false);
@@ -44,24 +47,24 @@ describe('readMainConfig —— 成品聚合 → 表单补丁', () => {
       'animationWeights' in
         (readMainConfig({ main: { pets: [], animationWeights: { idle: -1, turn: 5, move: 5 } } }) ?? {}),
       false,
-      '负数当作没写',
+      'Negative numbers are treated as if they are not written.',
     );
   });
 
-  test('模型选择只写一半：整对都当没写（宿主会按非法拒绝）', () => {
+  test('The model selects write-only half: the entire pair is treated as not written (the host will be rejected as invalid)', () => {
     const half = readMainConfig({ main: { pets: [], whisperModel: { provider: 'openai' } } });
     assert.equal(half?.whisperModel, undefined);
     const full = readMainConfig({ main: { pets: [], chatModel: { provider: 'a', model: 'b' } } });
     assert.deepEqual(full?.chatModel, { provider: 'a', model: 'b' });
   });
 
-  test('数值字段：负数与非数字当没写，0 是合法值', () => {
+  test('Numeric field: When negative numbers and non-numbers are not written, 0 is a valid value.', () => {
     assert.equal(readMainConfig({ main: { pets: [], chatMemoryRounds: -1 } })?.chatMemoryRounds, undefined);
     assert.equal(readMainConfig({ main: { pets: [], chatMemoryRounds: 'x' } })?.chatMemoryRounds, undefined);
     assert.equal(readMainConfig({ main: { pets: [], chatImageLimit: 0 } })?.chatImageLimit, 0);
   });
 
-  test('布尔字段缺失就不进补丁，避免把默认值当用户选择写回去', () => {
+  test('If the Boolean field is missing, the patch will not be added to avoid writing back the default value as a user choice.', () => {
     const patch = readMainConfig({ main: { pets: [] } });
     assert.equal('notificationsEnabled' in (patch ?? {}), false);
     assert.equal('trayEnabled' in (patch ?? {}), false);
@@ -69,44 +72,44 @@ describe('readMainConfig —— 成品聚合 → 表单补丁', () => {
     assert.equal(withFlag?.trayEnabled, false);
   });
 
-  test('语音细分开关：布尔原样带出，缺失或非布尔不进补丁', () => {
+  test('Voice subdivision switch: Boolean is brought out as it is, missing or non-Boolean will not be included in the patch', () => {
     const patch = readMainConfig({ main: { pets: [], voiceWhisperEnabled: true, voiceTodoEnabled: false } });
     assert.equal(patch?.voiceWhisperEnabled, true);
-    assert.equal(patch?.voiceTodoEnabled, false, 'false 是合法值，不能当作没写');
+    assert.equal(patch?.voiceTodoEnabled, false, 'false is a legal value and cannot be treated as not written.');
     const none = readMainConfig({ main: { pets: [] } });
     assert.equal('voiceWhisperEnabled' in (none ?? {}), false);
     assert.equal('voiceTodoEnabled' in (none ?? {}), false);
     const bad = readMainConfig({ main: { pets: [], voiceTodoEnabled: 'yes' } });
-    assert.equal('voiceTodoEnabled' in (bad ?? {}), false, '非布尔当作没写');
+    assert.equal('voiceTodoEnabled' in (bad ?? {}), false, 'Non-boolean is treated as not written');
   });
 
-  test('工作状态播报开关：布尔原样带出，缺失或非布尔不进补丁', () => {
+  test('Working status broadcast switch: Boolean is brought out as it is, missing or non-Boolean will not be patched', () => {
     assert.equal(readMainConfig({ main: { pets: [], voiceNotifyEnabled: false } })?.voiceNotifyEnabled, false);
     assert.equal('voiceNotifyEnabled' in (readMainConfig({ main: { pets: [] } }) ?? {}), false);
     assert.equal(
       'voiceNotifyEnabled' in (readMainConfig({ main: { pets: [], voiceNotifyEnabled: 'yes' } }) ?? {}),
       false,
-      '非布尔当作没写',
+      'Non-boolean is treated as not written',
     );
   });
 
-  test('对话动作联动开关：布尔原样带出，缺失或非布尔不进补丁', () => {
+  test('Dialogue action linkage switch: Boolean is brought out as it is, missing or non-Boolean will not be included in the patch', () => {
     assert.equal(readMainConfig({ main: { pets: [], chatAnimationEnabled: false } })?.chatAnimationEnabled, false);
     assert.equal('chatAnimationEnabled' in (readMainConfig({ main: { pets: [] } }) ?? {}), false);
     assert.equal(
       'chatAnimationEnabled' in (readMainConfig({ main: { pets: [], chatAnimationEnabled: 1 } }) ?? {}),
       false,
-      '非布尔当作没写',
+      'Non-boolean is treated as not written',
     );
   });
 
-  test('条目人设原样带出，供「留空时跟随什么」的预览', () => {
+  test('The entry persona is brought out as it is for preview of "what to follow when left blank"', () => {
     assert.equal(readMainConfig({ main: { pets: [], whisperPrompt: '条目人设' } })?.entryPrompt, '条目人设');
   });
 });
 
-describe('readConfigEntries —— 成品聚合 → 条目实例列表', () => {
-  test('按条目拍平：main 在前，文件宠物带 assetRoot 与 pack 标记', () => {
+describe('readConfigEntries —— resolved configuration → item instance list', () => {
+  test('Flatten by entry: main first, file pets marked with assetRoot and pack', () => {
     const entries = readConfigEntries({
       main: { pets: [{ id: 'm1', position: { corner: 'top-left', marginX: 0, marginY: 0 } }] },
       glm: { pets: [{ id: 'g1', position: { corner: 'top-right', marginX: 1, marginY: 2 } }] },
@@ -118,18 +121,18 @@ describe('readConfigEntries —— 成品聚合 → 条目实例列表', () => {
         ['glm', 'pack'],
       ],
     );
-    assert.equal(entries?.[1].pets[0].assetRoot, 'glm', '实例要记住自己属于哪个种类');
+    assert.equal(entries?.[1].pets[0].assetRoot, 'glm', 'Instances need to remember which category they belong to');
   });
 
-  test('位置深拷贝：编辑列表与成品列表是两份数据', () => {
+  test('Position deep copy: the editing list and the resolved value list are two pieces of data', () => {
     const merged = { main: { pets: [{ id: 'm1', position: { corner: 'top-left', marginX: 1, marginY: 2 } }] } };
     const entries = readConfigEntries(merged);
     assert.ok(entries);
     entries[0].pets[0].position.marginX = 99;
-    assert.equal(merged.main.pets[0].position.marginX, 1, '不允许共享同一份 position 对象');
+    assert.equal(merged.main.pets[0].position.marginX, 1, 'Sharing the same position object is not allowed');
   });
 
-  test('不把条目级大对象挂到实例上（提交体不该被动画池撑大）', () => {
+  test('Do not hang item-level large objects on the instance (the submission body should not be expanded by the animation pool)', () => {
     const entries = readConfigEntries({
       main: {
         pets: [{ id: 'm1', position: { corner: 'top-left', marginX: 0, marginY: 0 } }],
@@ -139,13 +142,13 @@ describe('readConfigEntries —— 成品聚合 → 条目实例列表', () => {
     assert.equal('animations' in (entries?.[0].pets[0] ?? {}), false);
   });
 
-  test('main.pets 缺失或不是数组：返回 null（响应坏了）', () => {
+  test('main.pets is missing or not an array: return null (response broken)', () => {
     assert.equal(readConfigEntries({}), null);
     assert.equal(readConfigEntries({ main: {} }), null);
     assert.equal(readConfigEntries({ main: { pets: 'oops' } }), null);
   });
 
-  test('条目人设各自带出：pack 跟随自己种类那份，不共用 main 的', () => {
+  test('Each entry persona brings out: pack follows its own type, and does not share main', () => {
     const entries = readConfigEntries({
       main: { pets: [], whisperPrompt: '主宠物人设' },
       glm: { pets: [], whisperPrompt: 'GLM 人设' },

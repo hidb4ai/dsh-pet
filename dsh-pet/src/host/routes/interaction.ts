@@ -1,8 +1,9 @@
 /**
- * 会话交互：占用锁 /lock、碎碎念 /whisper、第三方投喂 /broadcast、气泡清除 /bubble/clear。
+ * Session interaction: occupation lock / lock, whisper / whisper, third-party feeding / broadcast, bubble clear /
+ * bubble/clear.
  *
- * 不决定文案与语气（归 shared/whisper）。
- * 依赖（PetRouteDeps）显式传入，模块内不读全局、不建状态。
+ * Does not determine text and tone (owned by shared/whisper). Dependency (PetRouteDeps) is passed in
+ * explicitly, and the module does not read global information or create status.
  * @module dsh-pet/src/host/routes/interaction
  */
 import { readAllConfig } from '../config.ts';
@@ -19,17 +20,19 @@ import type { PetRouteDeps, RouteInput } from './types.ts';
 import type { RouteResult } from '../http.ts';
 import { failResult, invalidJson, methodNotAllowed, okResult } from './result.ts';
 
-/** 会话交互领域：未命中返回 undefined，命中返回应答。 */
+/** Session interaction field: undefined is returned on a miss, and a response is returned on a hit. */
 export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteInput): Promise<RouteResult | undefined> {
   const { configPaths, lock, lockBlocked, memeDirsFor, publishWhisper, requirePet, sleep, state, surfaceBlocked } =
     deps;
   const { body, method, rest, url } = input;
 
-  // 占用锁：POST /lock?pet= 取锁 / 续期二合一（lockId 给了 = 续期，续期即心跳，丢了回 lock-lost），
-  // POST /lock/release?pet= 释放。一把锁、全有全无：占用期间除持锁者外全静音。
-  // 与 /playback 的分工：那个是「这次点播播完没有」的回执，这个是「这段时间归谁控制」的租约。
-  // 锁自己占一个叶子（pets.<id>.lock）：宿主停不掉正在播的视频，「完全静止」最终由渲染端执行。
-  // 失败一律 HTTP 200 + 失败实体；方法错与坏 JSON 由协议构造器给真实状态码。
+  // Lock occupied: POST /lock ? pet = two-in-one lock acquisition / renewal (lockId given = renewal, renewal is
+  // heartbeat, lost back to lock-lost), POST /lock/release ? pet = release. One lock, all-or-nothing: all silence
+  // except for the lock holder during occupation. The division of labor with / playback: That one is the receipt of
+  // "has the playback request been completed this time?" and this one is the lease of "who controls this time." The
+  // lock occupies a leaf (pets.<id>.lock): The host cannot stop the video being played, and "complete stillness" is
+  // eventually executed by the renderer. Failure is always HTTP 200 + failed entities; wrong and bad methods JSON The
+  // real status code is given by the protocol constructor.
   if (rest === 'lock' || rest === 'lock/release') {
     const isRelease = rest === 'lock/release';
     if (method !== 'POST') return methodNotAllowed();
@@ -41,8 +44,9 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
     }
     const o = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
     try {
-      // pet 必填且必须真实存在（与 /anim、/broadcast 同一口径，见 requirePet）
-      // surface 只对取锁这一支校验：`/lock/release` 必须永远能成功（否则宠物中途被隐藏就撤不掉锁）
+      // pet is required and must actually exist (same conventions as / anim and / broadcast, see requirePet) surface
+      // only verifies the lock removal: `/lock/release` must always succeed (otherwise the lock cannot be removed if
+      // the pet is hidden midway)
       const who = requirePet(url.searchParams, () => readAllConfig(configPaths), { surface: !isRelease });
       if (!who.ok) return who.res;
       const petId = who.petId;
@@ -51,40 +55,43 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
         if (!d.ok) {
           return failResult(d.reason, d.message, d.reason === 'lock-lost' ? { cause: d.cause } : undefined);
         }
-        // 幂等：当前没有锁同样回 ok（「让锁消失」这个意图在空状态下已经成立）
+        // Idempotent: If there is currently no lock, ok will be returned (the intention of "making the lock disappear" has been established in the empty state)
         return okResult({ ok: true });
       }
       const d = lock.acquire({ petId, lockId: o.lockId, ttl: o.ttl });
       if (!d.ok) {
         const extra: Record<string, unknown> = {};
-        if (d.reason === 'locked') extra.expiresAt = d.expiresAt; // 让对方知道何时能重试
+        if (d.reason === 'locked') extra.expiresAt = d.expiresAt; // Tell the caller when it can retry.
         if (d.reason === 'lock-lost') extra.cause = d.cause;
         return failResult(d.reason, d.message, extra);
       }
-      // 锁 = 第三方接管，所以取锁就把睡着的宠物叫醒：否则它会带着睡姿被指挥，
-      // 而且每条指令都要再走一次「持锁让路」的特判。唤醒只写一次叶子，渲染端照常播「起来」。
+      // Lock = third party takes over, so to take the lock, wake up the sleeping pet: otherwise it will be commanded
+      // in a sleeping position, and each command will have to go through the special judgment of "hold the lock and
+      // give way" again. Wake up the write-only once leaf, and the renderer will broadcast "up" as usual.
       sleep.wake(petId);
       return okResult({ ok: true, lockId: d.lockId, petId: d.petId, expiresAt: d.expiresAt });
     } catch (e) {
-      // 配置读取失败等（安装损坏）→ 显式失败，不静默（与其他动作端点同一口径）
+      // Configuration read failure, etc. (corrupt installation) → fails explicitly, not silently (same conventions as other action endpoints)
       return failResult('generate-error', e instanceof Error ? e.message : String(e));
     }
   }
 
-  // 碎碎念：POST /whisper?pet= 立即让桌宠新说一句，返回 {ok,text,image?}。文本照旧写进 S 的
-  // pets.<id>.say（与命令气泡、对话回复同一个叶子），同时随响应带回。
-  // 手动语义不受 whisperEnabled 门控：那个字段只关自动周期。
-  // ?image= 指定这一次用哪张图（右键「配图」菜单点了具体某张）：不在池内 → unknown-image，
-  // 由 publishWhisper 判定，这里只搬运。
+  // whisper: POST /whisper ? pet = Immediately let the desktop pet say a new word and return { ok , text , image ?}.
+  // The text is still written into pets.<id>.say of S (the same leaf as the command bubble and conversation reply),
+  // and is brought back with the response. Manual semantics are not affected by whisperEnabled gating: that field only
+  // turns off the automatic period. ? image = Specify which picture to use this time (right-click the "Picture" menu
+  // and click on a specific picture): not in the pool → unknown-image, determined by publishWhisper, only moved here.
   if (rest === 'whisper') {
     if (method !== 'POST') return methodNotAllowed();
     try {
-      // pet 必填且必须真实存在：空串会让人设/配图按 main 条目取、生成结果写进没人消费的
-      // `pets[""].say`，还回 ok:true（钱花了、话丢了、调用方以为成功）。
+      // pet is required and must actually exist: an empty string will cause the persona/picture to be fetched
+      // according to the main entry, the generated result will be written into `pets[""].say` that no one consumes,
+      // and ok:true will be returned (money is spent, words are lost, the caller thinks it is successful).
       const who = requirePet(url.searchParams, () => readAllConfig(configPaths), { surface: true });
       if (!who.ok) return who.res;
-      // 谁点的谁念：请求面在 requirePet 里已被 displayCovers 校验过，具体到一端就用它；
-      // both / any 不足以指定一端，留空交给生成函数按 display 推导。
+      // Whoever clicked it read it: The request surface has been verified by displayCovers in requirePet, and it is
+      // used to specify one end; both / any is not enough to specify one end, so leave it blank and leave it to the
+      // generation function to derive it according to display.
       const want = normalizeSurface(url.searchParams.get('surface'));
       const r = await publishWhisper(
         who.petId,
@@ -92,20 +99,23 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
         want === null ? undefined : voiceTargetOfSurface(want),
       );
       if (r.ok) return okResult({ ok: true, text: r.text, ...(r.image ? { image: r.image } : {}) });
-      // 真实 reason 原样透出（独立模式是 `provider-missing`，见 ./whisper 的联合体）——
-      // 不再把一切失败糊成 generate-error，调用方据此能分清「没配模型」与「生成炸了」。
+      // The real reason is exposed as it is (the standalone mode is `provider-missing` , see the combination of
+      // ./whisper) - no longer confuse all failures into generate-error, the caller can distinguish between "no model"
+      // and "generated explosion".
       return failResult(r.reason, r.message ?? '生成失败');
     } catch (e) {
       return failResult('generate-error', e instanceof Error ? e.message : String(e));
     }
   }
 
-  // 第三方投喂：POST /broadcast?pet= 把一段外部给定的文本写进气泡——不生成，调用方自己给文本，
-  // 宿主侧其他插件用它把自己的话说出来（issue #76）。写入 S 的 pets.<id>.say，只回 {ok}。
-  // text 必填且 trim 后非空（不设长度限制、不限频：内容与频率由调用方负责）；pet 必填且须存在。
-  // image / url 二选一：image 只认该条目表情包池内的名称，url 是第三方自带的完整地址、不查池，
-  // scheme 由宿主卡在 http/https；宿主不做代理（跨域由浏览器强制）。
-  // duration 缺省 10s、0 = 不显示、负数/非有限数拒绝；anim 只有严格 false 才关闭。
+  // Third-party feeding: POST /broadcast ? pet = Write a piece of externally given text into the bubble - not
+  // generated, the caller gives the text itself, and other plugins on the host side use it to speak their own words
+  // (issue #76). Writing pets .< id >. say to S only returns { ok }. text is required and is not empty after trim (no
+  // length limit, no frequency limit: the content and frequency are the responsibility of the caller); pet is required
+  // and must exist. image / url Choose one: image only recognizes the name of the entry in the emoticon pool, url is
+  // the complete address provided by the third party and does not check the pool, scheme is stuck in http/https by the
+  // host; the host does not act as a proxy (cross-domain is forced by the browser). duration Default 10 s, 0 = no
+  // display, negative/non-finite number rejection; anim is only closed if it is strictly false.
   if (rest === 'broadcast') {
     if (method !== 'POST') return methodNotAllowed();
     let parsed: unknown;
@@ -115,9 +125,9 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
       return invalidJson();
     }
     const o = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
-    // 空文本不需要读配置就能判定：先短路，别为一个必然失败的请求去碰磁盘
+    // Empty text can be determined without reading the configuration: short-circuit first, don't touch the disk for a request that will inevitably fail.
     if (!normalizeBroadcastText(o.text)) return failResult('bad-request', 'text 为空');
-    // duration 同理：判定不需要配置，先短路（anim 没有非法值，宽松口径下永远有结论）
+    // duration is the same: it is determined that no configuration is required, short-circuit first (anim has no invalid value, and there will always be a conclusion under loose conventions)
     const duration = normalizeBroadcastDuration(o.duration);
     if (duration === null) return failResult('bad-request', 'duration 必须是 ≥0 的有限数字（毫秒）');
     const anim = normalizeBroadcastAnim(o.anim);
@@ -135,19 +145,22 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
         memeDirs: memeDirsFor,
       });
       if (!d.ok) return failResult(d.reason, d.message);
-      // 显示端对齐：不满足 → pet-not-displayed（+ 实际 display），早于锁门禁
+      // renderer alignment: not satisfied → pet-not-displayed (+actual display), earlier than lock validation check
       const noSurface = surfaceBlocked(cfg, d.petId, url.searchParams);
       if (noSurface) return noSurface;
-      // 占用门禁：有锁时只有持锁者能投喂（无锁恒放行，见 lockBlocked）
+      // Occupied validation check: only the lock holder can feed when there is a lock (permanent release without lock, see lockBlocked)
       const blocked = lockBlocked(d.petId, url.searchParams);
       if (blocked) return blocked;
-      // duration / anim 写解析后的生效值（缺省也已填成显式值）：/state 里因此能看到
-      // 实际生效的时长与联动开关，调用方不用自己猜缺省是多少。
-      // 配图两种形态二选一（判定层保证）：url 形态写 url，名称形态写池内规范名，都没有则纯文本。
+      // duration / anim Write the parsed effective value (the default value has also been filled in as an explicit
+      // value): / state. Therefore, you can see the actual effective duration and linkage switch, and the caller does
+      // not need to guess what the default is. Choose one of the two forms of the picture (guaranteed by the judgment
+      // layer): url form url, write the pool's canonical name in the name form, otherwise it will be plain text.
       const pic = d.url !== undefined ? { url: d.url } : d.image !== undefined ? { image: d.image } : {};
-      // 与手动碎碎念同一口径：调用方用 ?surface= 明说了「我希望这句显示在哪一端」，就由那一端念；
-      // both / any 不足以指定一端，留空不写（消费端据此不念）。
-      // speak 是第二道门：投喂默认只弹气泡，调用方显式要了才出声（见 normalizeBroadcastVoice）。
+      // Same conventions as manual whisper: caller uses ? surface = which clearly states "Which end I want this
+      // sentence to be displayed on", then read it from that end; both / any is not enough to specify one end, leave
+      // it blank and do not write it (consumer will not read it accordingly). speak is the second door: by default,
+      // the bubble will only be played, and the caller will not make a sound until it is explicitly requested (see
+      // normalizeBroadcastVoice).
       const want = normalizeSurface(url.searchParams.get('surface'));
       const voiceTo = want === null ? undefined : voiceTargetOfSurface(want);
       state.writePet(d.petId, 'say', {
@@ -159,15 +172,16 @@ export async function handleInteractionRoutes(deps: PetRouteDeps, input: RouteIn
       });
       return okResult({ ok: true });
     } catch (e) {
-      // 配置读取失败等（安装损坏）→ 显式失败，不静默
+      // Configuration reading failure, etc. (installation damage) → explicit failure, not silent
       return failResult('generate-error', e instanceof Error ? e.message : String(e));
     }
   }
 
-  // 清空气泡：POST /bubble/clear?pet= 收起该宠物当前正显示的说话气泡，与 /broadcast 共用
-  // pets.<id>.say 叶子。清空靠 `{ clear: true }` 标记——空文本表达不了这个动作（消费端会把
-  // 空文本判成非法、整拍跳过）。只收说话气泡，余额/工作状态气泡与 anim/position/throw 都不动。
-  // 幂等：没有气泡也回 {ok:true}。
+  // clear bubble: POST /bubble/clear ? pet = Collapse the speech bubble currently displayed by this pet, shared with
+  // / broadcast pets .< id >. say leaves. clear is marked by `{ clear: true }` - empty text cannot express this action
+  // (the consumer will judge the empty text as invalid and skip the entire shot). Only the talk bubble is collected,
+  // the balance/working status bubble and anim/position/throw are not moved. Idempotent: { ok:true } is returned even
+  // without bubble.
   if (rest === 'bubble/clear') {
     if (method !== 'POST') return methodNotAllowed();
     try {

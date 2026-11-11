@@ -1,77 +1,80 @@
 /**
- * 自主走位：视频就绪后按播放时间把宠物从起点平移到目标比例，途中直接写根节点位置。
- * 不负责选哪段走路动作（planMoveAction 已决定），也不负责位置跟随的弹簧与拖拽——那是另外两条驱动。
- * 依赖注入的取值函数与当帧度量；rAF 句柄与待走动作由本模块持有，stop 之后同一实例可重新规划。
- * 不变量：同一时刻最多一条走位在跑；停走必须取消在跑的帧并作废已排队的动作。
+ * Autonomous positioning: After the video is ready, the pet is moved from the starting point to the target proportion
+ * according to the playback time, and the root node position is directly written on the way. It is not responsible for
+ * which walking action to choose (planMoveAction has been decided), nor is it responsible for the spring and drag of
+ * position following - those are the other two drives. The value function and current frame measurement of dependency
+ * injection; rAF handle and pending actions are held by this module. After stop, the same instance can be re-planned.
+ * Invariant: At most one moving position is running at the same time; when stopping and running, the running frame
+ * must be canceled and the queued actions must be cancelled.
  * @module dsh-pet/src/client/pet/motion/walk
  */
 import { planMoveAction, type PendingMove } from './move-action.ts';
 import type { BoxPoint } from './geometry.ts';
 import type { MovesConfig } from '../../../shared/types.ts';
 
-/** 走位需要的当帧几何（px）。 */
+/** The current frame geometry (px) required for movement. */
 export interface WalkMetrics {
-  /** 宠物宽度。 */
+  /** Pet width. */
   size: number;
-  /** 盒半宽。 */
+  /** Box half width. */
   halfW: number;
-  /** 盒半高。 */
+  /** Box half height. */
   halfH: number;
-  /** 身体相对视频盒左右各留的透明边。 */
+  /** There are transparent edges left on the left and right of the body relative to the video box. */
   sideAllow: number;
 }
 
-/** 走位驱动的依赖：全部用取值函数，避免捕获渲染期的快照。 */
+/** Dependence on positioning drivers: all use value functions to avoid capturing snapshots during the rendering period. */
 export interface WalkDeps {
-  /** 宠物根节点；`null` 表示还没挂载。 */
+  /** Pet root node; `null` means it has not been mounted yet. */
   root(): HTMLDivElement | null;
-  /** 当前宠物中心的视口坐标。 */
+  /** The viewport coordinates of the current pet center. */
   center(): { x: number; y: number };
-  /** 当帧几何。 */
+  /** When frame geometry. */
   metrics(): WalkMetrics;
-  /** 该宠物的走位池。 */
+  /** The moving pool of this pet. */
   moves(): MovesConfig;
-  /** 当前朝向，决定走位方向。 */
+  /** The current orientation determines the moving direction. */
   facing(): 'left' | 'right';
-  /** 当前视口尺寸。 */
+  /** Current viewport size. */
   viewport(): { width: number; height: number };
-  /** 抛掷是否在飞：飞行中不发起新的走位。 */
+  /** Is the throw flying? No new moves are initiated during flight. */
   isFlying(): boolean;
-  /** 换成走路动作并播一次。 */
+  /** Change to walking action and play it once. */
   play(anim: string): void;
-  /** 每帧回写包围盒：抛掷起点与宠物互撞都优先读它。 */
+  /** Write back the bounding box every frame: the starting point of the throw and the collision of the pet will read it first. */
   setBox(box: BoxPoint): void;
-  /** 走位结束提交归一化中心，交给 React 重排。 */
+  /** After the movement is completed, it is submitted to the normalization center and handed over to React for rearrangement. */
   commit(center: { rx: number; ry: number }): void;
 }
 
-/** 走位驱动：一个宠物一个实例。 */
+/** Movement driver: one instance per pet. */
 export interface Walk {
-  /** 是否有排队的动作；视频就绪时据此决定要不要开跑。 */
+  /** Is there any queuing action? When the video is ready, it will be decided whether to start or not. */
   hasPending(): boolean;
-  /** 视频就绪后开跑；没有排队的动作时立即返回。 */
+  /** Start running after the video is ready; return immediately when there are no queued actions. */
   start(el: HTMLVideoElement): void;
-  /** 尝试发起一次走位：占用中返回 `true`，无法移动返回 `false`，成功返回动作名。 */
+  /** Try to initiate a move: `true` is returned when occupied, `false` is returned when unable to move, and the action name is returned successfully. */
   tryMove(preferredName?: string): boolean | string;
-  /** 停走：作废已排队的动作并取消在跑的帧。 */
+  /** Stop and go: Cancel queued actions and cancel running frames. */
   stop(): void;
 }
 
-/** 元数据未就绪时的兜底时长（秒）：取内置走路素材的常见时长，避免除零。 */
+/** Fallback duration (seconds) when metadata is not ready: Take the common duration of the built-in walking asset to avoid division by zero. */
 const FALLBACK_DURATION_SEC = 10.09;
 
 /**
- * 造走位驱动。
+ * Create movement driver.
  *
- * @param deps - 取位置、几何与回写位置的回调。
- * @returns 可反复调用的驱动。
+ * @param deps - callback to get position, geometry and write back position.
+ * @returns driver that can be called repeatedly.
  */
 export function createWalk(deps: WalkDeps): Walk {
-  /** 在跑的 rAF；`null` = 没在走。 */
+  /** rAF is running; `null` = is not running. */
   let frame: number | null = null;
-  /** 世代号：开跑或停走 +1，迟到的帧据此自弃。 */
+  /** Generation number: +1 for running or stopping, and late frames will be discarded accordingly. */
   let token = 0;
-  /** 已规划、等待视频就绪的走位。 */
+  /** Position planned and waiting for video to be ready. */
   let pending: PendingMove | null = null;
 
   const hasPending = (): boolean => pending !== null;
@@ -91,8 +94,9 @@ export function createWalk(deps: WalkDeps): Walk {
       let ratioX: number;
       if (t <= move.leadSec) ratioX = move.startRatio;
       else if (t >= duration - move.tailSec) ratioX = move.targetRatio;
-      // 按规划落点插值而不是 dir × 距离：minDist/maxDist 为负时符号必须保留，
-      // 否则规划往左、驱动往右，走完再跳回原本的方向。
+      // Interpolate according to the planned landing point instead of dir × distance: When minDist/maxDist is
+      // negative, the sign must be retained, otherwise the plan will go to the left, the drive will go to the right,
+      // and then jump back to the original direction after walking.
       else ratioX = move.startRatio + (move.targetRatio - move.startRatio) * ((t - move.leadSec) / travelWindow);
       const box = { x: ratioX * W - halfW, y: move.startYRatio * H - halfH };
       const rootEl = deps.root();
@@ -102,7 +106,7 @@ export function createWalk(deps: WalkDeps): Walk {
         rootEl.style.right = 'auto';
         rootEl.style.bottom = 'auto';
       }
-      // 回写包围盒：走完一段后抛掷起点与互撞矩形都读它，不回写就会用到上一次拖拽/飞行的位置。
+      // Write back the bounding box: After walking a certain distance, both the throwing starting point and the collision rectangle will read it. If you don’t write back, the last drag/flying position will be used.
       deps.setBox(box);
       if (t < duration - move.tailSec) frame = requestAnimationFrame(step);
       else {
@@ -114,13 +118,13 @@ export function createWalk(deps: WalkDeps): Walk {
   };
 
   const tryMove = (preferredName?: string): boolean | string => {
-    // 占用中返回 true：调用方据此知道宠物没空，不必再挑原地动作。
+    // true is returned during occupation: the caller knows that the pet is not available and does not need to choose the original action.
     if (frame !== null || pending !== null || deps.isFlying()) return true;
     const metrics = deps.metrics();
     const action = planMoveAction({
       moves: deps.moves(),
       preferredName,
-      // 走路方向只看当前 facing；不要用 turn 动画反推方向，facingRef 已在 handleEnded 即时同步。
+      // The walking direction only looks at the current facing; do not use the turn animation to reverse the direction, facingRef has been synchronized in handleEnded in real time.
       facing: deps.facing(),
       size: metrics.size,
       center: deps.center(),

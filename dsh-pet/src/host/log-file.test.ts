@@ -1,14 +1,15 @@
 /**
- * 统一日志落盘的行为测试（src/host/log-file.ts）。
+ * Behavior test of unified log persist to disk (src/host/log-file.ts).
  *
- * 钉住五件容易写错的事：
- *   ① 缓冲语义：没到阈值/间隔就不碰盘（否则「每秒一次写」的承诺就是假的）；
- *   ② 批量落盘：达到阈值后一次写完，行里有时间戳与级别；
- *   ③ 单文件截断：超过 maxBytes 只保留尾部 keepBytes，且保留的是最新内容；
- *   ④ 脱敏：令牌形态不得原样进文件；
- *   ⑤ 进程退出：批次已出缓冲、尚未提交时退出，日志既不丢也不重复（子进程验证）。
+ * Five things that are easy to write incorrectly in verify: ① Buffering semantics: Do not touch the disk before the
+ * threshold/interval is reached (otherwise the promise of "write once per second" is false); ② Batch persist to disk:
+ * Write in one go after reaching the threshold, with timestamp and level in the line; ③ Single file truncation: Only
+ * the tail keepBytes is retained when it exceeds maxBytes, and the latest content is retained; ④ Desensitization: The
+ * token form must not be entered into the file as it is; ⑤ Process exit: exit when the batch has been out of the
+ * buffer and has not yet been submitted, and the log is neither lost nor repeated (sub-process verification).
  *
- * 全部用真实临时目录 + 真实 fs（不 mock）：本模块的价值就在文件行为，mock 掉就没意义了。
+ * All use real temporary directories + real fs (not mock): The value of this module lies in file behavior, and it will
+ * be meaningless if mock is removed.
  */
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,23 +32,23 @@ after(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('纯函数', () => {
-  test('formatLogLine：ISO 时间 + 级别 + 正文 + 换行', () => {
+describe('Pure function', () => {
+  test('formatLogLine: ISO time + level + text + newline', () => {
     assert.equal(
       formatLogLine('warn', '出事了', new Date('2026-10-23T11:52:25.123Z')),
       '2026-10-23T11:52:25.123Z [warn] 出事了\n',
     );
   });
 
-  test('redactSensitive：令牌、站点 URL 片段一律打码', () => {
+  test('redactSensitive: Tokens and site URL fragments must be coded', () => {
     assert.equal(redactSensitive('x-dsh-pet-token: abcdefghijklmnopqrstuvwx'), 'x-dsh-pet-token: ***');
     assert.equal(redactSensitive('打开 http://x/#token=abcdefghijklmnopqrstuvwx'), '打开 http://x/#token=***');
     assert.equal(redactSensitive('DSH_PET_SITE_URL=http://127.0.0.1:1/?t=2'), 'DSH_PET_SITE_URL=***');
-    // 普通文本不动
+    // Ordinary text does not move
     assert.equal(redactSensitive('helper exited with code 3'), 'helper exited with code 3');
   });
 
-  test('tailForTrim：未超限原样返回，超限只留尾部', () => {
+  test('tailForTrim: Return as it is if the limit is not exceeded, only the tail part is left if the limit is exceeded.', () => {
     const small = Buffer.from('abc');
     assert.equal(tailForTrim(small, 10).toString(), 'abc');
     const big = Buffer.from('0123456789');
@@ -56,20 +57,20 @@ describe('纯函数', () => {
 });
 
 describe('createFileLogger', () => {
-  test('未达阈值且未到间隔时不落盘', async () => {
+  test('Do not persist to disk when the threshold is not reached and the interval is not reached.', async () => {
     const file = join(dir, 'lazy.log');
     const logger = createFileLogger({ file, flushThreshold: 10, flushIntervalMs: 60_000 });
     try {
       logger.info('one');
       logger.info('two');
       await new Promise((resolve) => setTimeout(resolve, 30));
-      assert.equal(existsSync(file), false, '没到阈值就不许碰盘');
+      assert.equal(existsSync(file), false, 'No touching is allowed before the threshold is reached.');
     } finally {
       logger.dispose();
     }
   });
 
-  test('达到阈值后批量落盘，行内带级别', async () => {
+  test('Batch persist to disk after reaching the threshold, with inline level', async () => {
     const file = join(dir, 'batch.log');
     const logger = createFileLogger({ file, flushThreshold: 2, flushIntervalMs: 60_000 });
     try {
@@ -85,7 +86,7 @@ describe('createFileLogger', () => {
     }
   });
 
-  test('超过大小上限只保留尾部（最新的部分）', async () => {
+  test('Only the tail (latest part) is retained when the upper limit of size is exceeded.', async () => {
     const file = join(dir, 'trim.log');
     const logger = createFileLogger({
       file,
@@ -98,20 +99,20 @@ describe('createFileLogger', () => {
       for (let i = 0; i < 40; i += 1) logger.info(`line-${String(i).padStart(3, '0')}-padding-padding`);
       await logger.flush();
       const text = readFileSync(file, 'utf8');
-      assert.ok(text.length <= 400, `文件应被截断到上限内，实际 ${text.length}`);
-      assert.ok(text.includes('line-039'), '截断必须保留最新内容');
+      assert.ok(text.length <= 400, `File should be truncated to within limit, actual ${text.length}`);
+      assert.ok(text.includes('line-039'), 'Truncation must retain the latest content');
     } finally {
       logger.dispose();
     }
   });
 
-  test('debug 默认不落盘，打开后才写', async () => {
+  test('debug does not persist to disk by default, and is written after opening it.', async () => {
     const off = join(dir, 'debug-off.log');
     const offLogger = createFileLogger({ file: off, flushThreshold: 1, flushIntervalMs: 60_000 });
     offLogger.debug('hidden');
     await offLogger.flush();
     offLogger.dispose();
-    assert.equal(existsSync(off), false, 'debug 默认不该产生文件');
+    assert.equal(existsSync(off), false, 'debug files should not be generated by default');
 
     const on = join(dir, 'debug-on.log');
     const onLogger = createFileLogger({
@@ -126,7 +127,7 @@ describe('createFileLogger', () => {
     assert.match(readFileSync(on, 'utf8'), /\[debug\] shown/);
   });
 
-  test('转发原 logger（node 版终端里照旧可见）', async () => {
+  test('Forward the original logger (the node version is still visible in the terminal)', async () => {
     const file = join(dir, 'tee.log');
     const seen: string[] = [];
     const logger = createFileLogger({
@@ -142,7 +143,7 @@ describe('createFileLogger', () => {
     assert.match(readFileSync(file, 'utf8'), /\[warn\] both places/);
   });
 
-  test('原 logger 抛错不影响落盘（日志系统不许成为故障源）', async () => {
+  test('The original logger error does not affect persist to disk (the log system is not allowed to become the source of the fault)', async () => {
     const file = join(dir, 'broken-base.log');
     const logger = createFileLogger({
       file,
@@ -160,7 +161,7 @@ describe('createFileLogger', () => {
     assert.match(readFileSync(file, 'utf8'), /\[error\] still written/);
   });
 
-  test('落盘前脱敏：令牌不进文件', async () => {
+  test('Desensitization before persist to disk: token does not enter the file', async () => {
     const file = join(dir, 'redact.log');
     const logger = createFileLogger({ file, flushThreshold: 1, flushIntervalMs: 60_000 });
     logger.info('请求头 x-dsh-pet-token: abcdefghijklmnopqrstuvwx');
@@ -173,12 +174,12 @@ describe('createFileLogger', () => {
 });
 
 /**
- * 在子进程里跑一段日志脚本，等进程退出后返回落盘内容。
- * 退出路径只能在真实进程里验证：同进程的 flush/dispose 看不到 exit 时的行为。
+ * Run a log script in the child process and return the fallback disk content after the process exits. The exit path
+ * can only be verified in the real process: flush/dispose in the same process cannot see the behavior of exit.
  */
 function logFromChild(script: string): string {
   const childDir = mkdtempSync(join(tmpdir(), 'dsh-pet-log-exit-'));
-  // 父目录故意不存在：首次退出时也要能自己建出来
+  // The parent directory does not exist on purpose: you must be able to create it yourself when exiting for the first time.
   const file = join(childDir, 'nested', 'logs.txt');
   try {
     const child = spawnSync(
@@ -193,14 +194,14 @@ function logFromChild(script: string): string {
   }
 }
 
-/** 断言 `item-0…item-{count-1}` 恰好各出现一次且顺序一致。 */
+/** assertion `item-0…item-{count-1}` appears exactly once each and in the same order. */
 function assertItemsInOrder(text: string, count: number): void {
   const items = [...text.matchAll(/\[info\] item-(\d+)/g)].map((match) => Number(match[1]));
-  assert.deepEqual(items, [...Array(count).keys()], '日志应完整、顺序一致且不重复');
+  assert.deepEqual(items, [...Array(count).keys()], 'Logs should be complete, consistent in order and non-duplicate');
 }
 
-describe('进程退出', () => {
-  test('写入 64 条后立即退出：批次边界上的日志全部落盘', () => {
+describe('Process exited', () => {
+  test('Exit immediately after writing 64 entries: all logs on the batch boundary persist to disk', () => {
     const text = logFromChild(`
       const { createFileLogger } = await import(process.argv[2]);
       const log = createFileLogger({ file: process.argv[1] });
@@ -210,7 +211,7 @@ describe('进程退出', () => {
     assertItemsInOrder(text, 64);
   });
 
-  test('写入 65 条后立即退出：在途批次与缓冲里的行都不丢', () => {
+  test('Exit immediately after writing 65 items: no lines in the batch in transit or in the buffer are lost', () => {
     const text = logFromChild(`
       const { createFileLogger } = await import(process.argv[2]);
       const log = createFileLogger({ file: process.argv[1] });
@@ -220,7 +221,7 @@ describe('进程退出', () => {
     assertItemsInOrder(text, 65);
   });
 
-  test('dispose 后立即退出：补写完整，重复 dispose 不重复写', () => {
+  test('Exit immediately after dispose: write completely, repeat dispose without repeating', () => {
     const text = logFromChild(`
       const { createFileLogger } = await import(process.argv[2]);
       const log = createFileLogger({ file: process.argv[1] });
@@ -232,7 +233,7 @@ describe('进程退出', () => {
     assertItemsInOrder(text, 64);
   });
 
-  test('dispose 之后记录的日志也落盘', () => {
+  test('Logs recorded after dispose also persist to disk', () => {
     const text = logFromChild(`
       const { createFileLogger } = await import(process.argv[2]);
       const log = createFileLogger({ file: process.argv[1] });

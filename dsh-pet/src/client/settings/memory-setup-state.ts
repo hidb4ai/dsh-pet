@@ -1,18 +1,19 @@
 /**
- * 本机记忆状态轮询与操作：迟到请求不能覆盖新操作，卸载时终止请求。
- * 配置回调只传记忆绑定，模型密钥不进入状态快照。
+ * Native memory status polling and operations: late requests cannot overwrite new operations, and requests are
+ * terminated when unmounting. The configuration callback only passes the memory binding, and the model key does not
+ * enter the state snapshot.
  */
 import { ROUTE_PATH } from '../../shared/constants.ts';
 import type { MemorySetupStatus } from '../../shared/memory-setup.ts';
 import type { SettingsRuntime } from './runtime.ts';
 
-/** 与设置容器同步操作状态和已保存的记忆字段。 */
+/** Synchronize operation status and saved memory fields with settings container. */
 export interface MemorySetupCallbacks {
   onBusy(busy: boolean): void;
   onBinding(binding: NonNullable<MemorySetupStatus['binding']>): void;
 }
 
-/** 操作成功后持续轮询，读写失败保留错误并允许重新连接。 */
+/** Polling continues after the operation is successful. If the read or write fails, the error is retained and reconnection is allowed. */
 export function useMemorySetup(rt: SettingsRuntime, callbacks: MemorySetupCallbacks) {
   const { useState, useRef, useEffect } = rt;
   const [status, setStatus] = useState<MemorySetupStatus | null>(null);

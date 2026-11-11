@@ -140,7 +140,7 @@ export class PowerContextClient {
     return parsed as Record<string, unknown>;
   }
 
-  /** 管理操作使用独立超时；不把翻页、编辑等操作的耗时施加给聊天召回。 */
+  /** Use independent timeouts for management operations; do not impose time-consuming operations such as page turning and editing on chat recall. */
   async listMemories(scope: string, cursor?: string): Promise<MemoryPage> {
     return listRememberedFacts(this.request.bind(this), scope, AbortSignal.timeout(10_000), cursor);
   }

@@ -1,18 +1,19 @@
 /**
- * 进度条配色档位：阈值只此一份，两端共用。
+ * Progress bar color matching state: There is only one threshold value and it is shared by both ends.
  *
- * 独立成叶子模块是为了避开循环依赖——handlers/* 需要 quotaTone，而 view.ts 又要分发到 handlers。
+ * The purpose of being independent into leaf modules is to avoid circular dependencies - handlers /* requires
+ * quotaTone, and view.ts needs to be distributed to handlers.
  *
  * @module dsh-pet/src/shared/balance/tone
  */
 
-/** 进度条配色档位：低于 70% 正常、70% 至 90% 预警、90% 及以上危急。 */
+/** Progress bar color matching state: normal when below 70%, warning between 70% and 90%, critical when 90% and above. */
 export type QuotaTone = 'ok' | 'warn' | 'crit';
 
 export const QUOTA_WARN_PERCENT = 70;
 export const QUOTA_CRIT_PERCENT = 90;
 
-/** 按已用百分比取配色档位。 */
+/** Get the color matching state based on the used percentage. */
 export function quotaTone(percent: number): QuotaTone {
   if (percent >= QUOTA_CRIT_PERCENT) return 'crit';
   if (percent >= QUOTA_WARN_PERCENT) return 'warn';

@@ -1,31 +1,32 @@
 /**
- * 碰撞触觉反馈：把撞击速度换成一个单脉冲振动。
+ * Impact tactile feedback: Change the impact speed to a single pulse vibration.
  *
- * 只做浏览器半侧——Vibration API 在 iOS 与桌面端都不存在，调用方不必为此分支。
- * 一次碰撞只震一下：贴地弹跳会连续多帧回报同一次落地，靠「同类撞击冷却窗口」吞掉。
+ * Only the browser side - Vibration API does not exist in iOS or the desktop side, the caller does not need to branch
+ * for this. A collision only causes one shock: bouncing close to the ground will report the same landing for multiple
+ * consecutive frames, which is swallowed up by the "similar impact cooling window".
  * @module dsh-pet/src/client/pet/haptics
  */
 
-/** 同类撞击的冷却窗口（ms）：窗口内重复命中只震一次。 */
+/** Cooling window for similar impacts (ms): Repeated hits within the window will only shock once. */
 export const HAPTIC_COOLDOWN_MS = 120;
 
-/** 低于这个撞击速度不震（px/s）：轻碰与静止都不该有反馈。 */
+/** No vibration below this impact speed (px/s): There should be no feedback when touching lightly or when stationary. */
 export const HAPTIC_MIN_SPEED = 150;
 
-/** 手感锚点：与落地挤压同一组速度阈值——软碰取最短，硬砸取最长。 */
+/** Feel anchor point: The same set of speed thresholds as the landing squeeze - soft impact is the shortest and hard smashing is the longest. */
 const SOFT_SPEED = 300;
 const HARD_SPEED = 1500;
 const SHORT_PULSE_MS = 10;
 const LONG_PULSE_MS = 28;
 
-/** 撞击种类，取值与物理侧的边名一致，另加宠物互撞。 */
+/** Collision type, the value is consistent with the edge name on the physical side, plus pets colliding with each other. */
 export type ImpactKind = 'left' | 'right' | 'ceiling' | 'floor' | 'pet';
 
 /**
- * 撞击速度 → 单次振动时长。
+ * Impact speed → single vibration duration.
  *
- * @param speed - 撞击前的法向速度（px/s）。
- * @returns 时长（ms）；不该震时返回 `null`。
+ * @param speed - Normal velocity before impact (px/s).
+ * @returns duration (ms); return to `null` when the earthquake should not occur.
  */
 export function pulseMsFor(speed: number): number | null {
   if (!Number.isFinite(speed) || speed < HAPTIC_MIN_SPEED) return null;
@@ -33,13 +34,13 @@ export function pulseMsFor(speed: number): number | null {
   return Math.round(SHORT_PULSE_MS + (LONG_PULSE_MS - SHORT_PULSE_MS) * t);
 }
 
-/** 触觉反馈入口：一次撞击调一次。 */
+/** Tactile feedback entry point: Adjust once per impact. */
 export interface Haptics {
-  /** 按撞击种类与速度决定要不要震、震多久。 */
+  /** Depending on the type and speed of the impact, determine whether or not to shock and for how long. */
   hit(kind: ImpactKind, speed: number): void;
 }
 
-/** 造触觉反馈；依赖可注入，便于在 Node 里断言而不碰真实硬件。 */
+/** Create tactile feedback; dependencies can be injected to facilitate assertion in Node without touching the real hardware. */
 export function createHaptics(deps?: {
   vibrate?: (ms: number) => void;
   now?: () => number;
@@ -48,7 +49,7 @@ export function createHaptics(deps?: {
   const vibrate = deps?.vibrate ?? hardwareVibrate;
   const now = deps?.now ?? (() => performance.now());
   const enabled = deps?.enabled ?? (() => true);
-  /** 每类撞击上次震动的时刻；`undefined` = 还没震过。 */
+  /** The last time of shock for each type of impact; `undefined` = Not yet. */
   const lastAt = new Map<ImpactKind, number>();
   return {
     hit(kind: ImpactKind, speed: number): void {
@@ -64,13 +65,13 @@ export function createHaptics(deps?: {
   };
 }
 
-/** 真实硬件：无 API、页面不可见或 WebView 抛错时静默跳过——触觉不是关键路径。 */
+/** Real hardware: None API, page invisible or WebView silently skipped when error is thrown - Haptics is not a critical path. */
 function hardwareVibrate(ms: number): void {
   if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
   if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
   try {
     navigator.vibrate(ms);
   } catch {
-    // 部分 WebView 要求宿主声明 VIBRATE 权限，未声明时会抛；忽略即可。
+    // Some WebView require the host to declare the VIBRATE permission. If it is not declared, it will be thrown; just ignore it.
   }
 }

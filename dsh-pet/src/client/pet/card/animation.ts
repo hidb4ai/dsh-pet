@@ -1,7 +1,9 @@
 /**
- * 一张宠物卡的动画链装配：构造 OwnAnimation、跟随状态换源，并登记挂载期的只读服务。
- * 不负责运动与浮层：走位、拖拽、挤压经装配根的迟绑槽取值，本模块只决定「何时读」。
- * 卸载顺序固定：摘监听 → 注销 pose/progress → dispose 动画链 → 停三套运动。
+ * Animation chain assembly of a pet card: construct OwnAnimation, change sources according to the status, and register
+ * the read-only service during the mounting period. It is not responsible for movement and floating layer:
+ * positioning, dragging, extrusion and the value of the late binding slot of the assembly root. This module only
+ * determines "when to read". The unmount sequence is fixed: unmount monitoring → log out pose/progress → dispose
+ * animation chain → stop three sets of motion.
  * @module dsh-pet/src/client/pet/card/animation
  */
 import { createOwnAnimation, type OwnAnimation, type OwnAnimationDeps } from '../animation/animation.ts';
@@ -15,45 +17,45 @@ import type { LockState } from '../../../shared/state.ts';
 import type { WorkStatusSnapshot } from '../../../shared/work-status.ts';
 import type * as ReactNS from 'react';
 
-/** 注入的 react 能力。 */
+/** Injected react capability. */
 export interface CardAnimationRuntime {
-  /** 副作用。 */
+  /** side effect. */
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
-  /** 引用；动画链只造一次。 */
+  /** Quote; animation chain is only created once. */
   useRef: <T>(initial: T) => ReactNS.MutableRefObject<T>;
 }
 
-/** 动画链装配的输入；全部是取值函数或稳定引用。 */
+/** Inputs to animation chain assembly; all are value functions or stable references. */
 export interface CardAnimationInput {
-  /** 卡状态：动画名、序号与朝向都从它取。 */
+  /** Card status: animation name, serial number and orientation are taken from it. */
   card: CardStateApi;
-  /** 成品配置的最新值。 */
+  /** Latest value of resolved configuration. */
   cfgRef: ReactNS.MutableRefObject<RuntimePet>;
-  /** 工作状态的最新值：播完判定要读，回调晚于状态更新。 */
+  /** The latest value of the working status: it needs to be read after the broadcast is completed, and the callback is later than the status update. */
   workStatusRef: ReactNS.MutableRefObject<WorkStatusSnapshot | null>;
-  /** 装配根迟绑槽。 */
+  /** Assemble root binding groove. */
   live: ReactNS.MutableRefObject<CardLive>;
-  /** 新首帧就位后是否补一次 Q 弹（点击互动置位）。 */
+  /** Whether to add a Q bounce after the new first frame is in place (click to set it interactively). */
   pendingSquash: ReactNS.MutableRefObject<boolean>;
-  /** 双缓冲的前台元素。 */
+  /** Double buffered front element. */
   videoA: () => HTMLVideoElement | null;
-  /** 双缓冲的后台元素。 */
+  /** Double-buffered background elements. */
   videoB: () => HTMLVideoElement | null;
-  /** 点播回执：真实播放结果只有浏览器侧知道。 */
+  /** playback request receipt: Only the browser side knows the actual playback result. */
   report: OwnAnimationDeps['report'];
-  /** 挂载瞬间的锁叶子：只用于决定动画链初始是否冻结。 */
+  /** The lock leaf at the moment of mounting: only used to determine whether the animation chain is initially frozen. */
   lock?: LockState;
-  /** 消费掉点播编号，避免 effect 再跑一趟。 */
+  /** Consume the playback request number to avoid effect from running again. */
   setCuePlayback: (id: string | null) => void;
-  /** 本宠物 id：挂载期注册只读服务用它。 */
+  /** This pet id: The register read-only service uses it during the mount period. */
   petId: string;
 }
 
 /**
- * 造动画链接配的 hook。
+ * Create animation link configuration hook.
  *
- * @param rt - 注入的 react 能力。
- * @returns 接收装配输入的 hook，返回本卡的动画链实例。
+ * @param rt - Injected react capabilities.
+ * @returns receives the hook of the assembly input and returns the animation chain instance of this card.
  */
 export function createCardAnimation(rt: CardAnimationRuntime) {
   const { useEffect, useRef } = rt;
@@ -61,7 +63,7 @@ export function createCardAnimation(rt: CardAnimationRuntime) {
   return function useCardAnimation(input: CardAnimationInput): OwnAnimation {
     const { card, cfgRef, live, pendingSquash, petId, workStatusRef } = input;
 
-    // 动画链只造一次（放进 ref）：它持有 A/B 槽位、世代号与 blob，跨渲染重建会把这些状态清空。
+    // The animation chain is only created once (put into ref): it holds the A/B slot, generation number and blob, and cross-rendering reconstruction will clear these states.
     const ownAnimRef = useRef<OwnAnimation | null>(null);
     ownAnimRef.current ??= createOwnAnimation({
       videoA: input.videoA,
@@ -73,7 +75,7 @@ export function createCardAnimation(rt: CardAnimationRuntime) {
       report: input.report,
       clearCuePlayback: () => input.setCuePlayback(null),
       onFrontReady: (el) => {
-        // 点击 Q 弹要等新动画就位后才压，压的是新首帧。
+        // When you click Q, you have to wait for the new animation to be in place before pressing, and the new first frame is pressed.
         if (pendingSquash.current) {
           pendingSquash.current = false;
           live.current.squash.start(el);
@@ -89,32 +91,34 @@ export function createCardAnimation(rt: CardAnimationRuntime) {
 
     const { anim, cuePlayback, once, seq } = card.state;
 
-    // 状态驱动播放。
+    // State-driven playback.
     useEffect(() => {
       ownAnim.switchTo(anim, once, cuePlayback);
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- 依赖由 anim/once/seq/cuePlayback 的换源身份决定；ownAnim 是稳定引用，补它没有意义
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Source identity is anim/once/seq/cuePlayback; ownAnim is stable.
     }, [anim, once, seq, cuePlayback]);
 
     useEffect(() => {
-      // 槽对象身份稳定（useRef 一次），字段每渲染就地更新；捕获一份给清理用，避免读 .current。
+      // The identity of the slot object is stable (useRef once), and the field is updated in place every time it is rendered; a copy is captured for cleaning to avoid reading . current.
       const services = live.current;
-      // 视口变化要按新尺寸重算根节点位置，否则改窗口大小后宠物停在旧比例上；
-      // 重算后再压一次可见下限，缩窗把宠物挤到视口外时能自愈。
+      // When the viewport changes, the root node position must be recalculated according to the new size, otherwise
+      // the pet will stop at the old proportion after changing the window size; after recalculating, press the visible
+      // lower limit again, and the pet will self-heal when the window is shrunk and squeezed out of the viewport.
       const onResize = () =>
         card.actions.setCustomPos((prev) => {
           if (!prev) return prev;
-          // 读 cfgRef 而不是闭包里的 card.state：本效果只注册一次，渲染期快照是初始尺寸。
+          // Read cfgRef instead of card.state in the closure: This effect is only registered once, and the snapshot during rendering is the initial size.
           const { size } = cfgRef.current;
           const { halfW, halfH, bottomPad } = derivePetMetrics(size);
           const viewport = { width: window.innerWidth, height: window.innerHeight };
           const half = { w: halfW, h: halfH };
           const box = centerToBox(prev, viewport, half);
-          // 必须返回新对象：视口变了就得重渲染，返回同一引用 React 会跳过，位置不会重算。
+          // A new object must be returned: if the viewport changes, it must be re-rendered. Returning the same reference React will be skipped and the position will not be recalculated.
           return { ...boxToRatio(clampReachableBox(box, viewport, { size, bottomPad }), viewport, half) };
         });
       window.addEventListener('resize', onResize);
-      // 把本页这只宠物的实时位置与朝向注册给只读服务 petApi7340（见 ../pose）；
-      // 消费者按需读闭包，拖拽、抛掷中途也能拿到当前值，不是快照。
+      // Register the real-time position and orientation of the pet on this page to the read-only service petApi7340
+      // (see ../pose); consumers read the closure on demand, and can get the current value during dragging and
+      // throwing, not a snapshot.
       const unregisterPose = registerPose(petId, () => {
         const center = live.current.center();
         return {
@@ -123,16 +127,16 @@ export function createCardAnimation(rt: CardAnimationRuntime) {
           facing: card.facingRef.current,
         };
       });
-      // 播放进度走同一个 Cordis 入口（见 ../progress）；读前台 video，A/B 切换期间读 back 会跳。
+      // The playback progress goes to the same Cordis entry point (see ../progress); reading video in the foreground and back will jump during A/B switching.
       const unregisterProgress = registerProgress(petId, () => {
         const el = ownAnim.frontVideo();
         const playbackId = ownAnim.playingPlayback();
         const anim = card.animRef.current;
         if (el === null) {
-          // 首帧还没挂上元素，给可解析的零值，别让调用方拿到 undefined。
+          // The element has not been attached to the first frame. Give a parsable zero value and do not let the caller get undefined.
           return { playbackId, anim, currentTime: 0, duration: 0, paused: true, buffering: false };
         }
-        // duration 在元数据就绪前是 NaN，统一成 0。
+        // duration is NaN before the metadata is ready, which is unified to 0.
         const duration = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
         return {
           playbackId,
@@ -145,15 +149,15 @@ export function createCardAnimation(rt: CardAnimationRuntime) {
       });
       return () => {
         window.removeEventListener('resize', onResize);
-        unregisterPose(); // 卸载即摘除：静默失效比读到陈旧值安全。
+        unregisterPose(); // unmount means removal: Silent failure is safer than reading stale values.
         unregisterProgress();
-        ownAnim.dispose(); // 中断在途素材请求并释放 blob，之后本实例不可复用。
+        ownAnim.dispose(); // Interrupt the asset request in transit and release blob. This instance cannot be reused thereafter.
         services.stopMove();
         services.drag.stopFollow();
         services.flight.stop();
         services.squash.stop();
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- 挂载/卸载各跑一次：闭包读的是 refs 与稳定 props
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Run once per mount/unmount; the closure reads refs and stable props.
     }, []);
 
     return ownAnim;

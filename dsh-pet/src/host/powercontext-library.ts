@@ -1,4 +1,4 @@
-/** PowerContext 1.5 原子记忆的查看、更正与遗忘；所有调用限定到宿主选定的 scope。 */
+/** View, correct and forget PowerContext 1.5 atomic memory; all calls are limited to scope selected by host. */
 import { z } from 'zod';
 import type { MemoryChange, MemoryEvidence, MemoryPage } from '../shared/memory-library.ts';
 
@@ -19,7 +19,7 @@ const record = state.extend({ kind: z.string(), text: z.string().max(8192) });
 const pathFor = (scope: string, id: string): string =>
   '/v1/scopes/' + encodeURIComponent(scope) + '/artifacts/atomic-memory/' + encodeURIComponent(id);
 
-/** 分页只列 active 记忆，空页与服务故障由调用者分别展示。 */
+/** Only active memory is listed for paging. Empty pages and service failures are displayed separately by the caller. */
 export async function listRememberedFacts(
   request: MemoryRequest,
   scope: string,
@@ -47,7 +47,7 @@ export async function listRememberedFacts(
   };
 }
 
-/** 查看确切版本的来源；来源暂不可读时保留标识，不伪造摘录。 */
+/** View the exact version of the source; retain identification when the source is temporarily unreadable, and do not forge excerpts. */
 export async function inspectRememberedFact(
   request: MemoryRequest,
   scope: string,
@@ -80,7 +80,7 @@ export async function inspectRememberedFact(
           typeof value.content === 'string' ? value.content : (JSON.stringify(value.content) ?? '')
         ).slice(0, 2000);
       } catch {
-        /* 来源读取失败不掩盖记忆本身及来源标识。 */
+        /* Source read failure does not obscure the memory itself and source identification. */
       }
       return view;
     }),
@@ -88,7 +88,7 @@ export async function inspectRememberedFact(
   return { revision: artifact.revision, createdAt: artifact.created_at ?? null, sources };
 }
 
-/** 更正用内容版本 CAS，遗忘用内容与生命周期双版本 CAS；遗忘不会物理删除来源。 */
+/** The content version CAS is used for correction, and the content and lifecycle dual version CAS is used for forgetting; forgetting will not physically delete the source. */
 export async function changeRememberedFact(
   request: MemoryRequest,
   scope: string,

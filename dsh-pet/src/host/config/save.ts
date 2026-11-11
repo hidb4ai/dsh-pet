@@ -1,8 +1,9 @@
 /**
- * 配置写入：白名单重建用户层，或把内置默认整份同步给用户。
+ * Configuration writing: whitelist to rebuild the user layer, or synchronize the entire built-in default to the user.
  *
- * 不负责读取与合并（归 ./read），也不重启桌面 Helper（由调用方决定）。
- * 必须始终成立：只写白名单字段，用户手改的非白名单字段必须原样带回。
+ * Not responsible for reading and merging (owned by ./read), nor restarting desktop Helper (determined by caller).
+ * Must always be true: write-only whitelist fields, non-whitelist fields manually modified by users must be brought
+ * back as they are.
  * @module dsh-pet/src/host/config/save
  */
 import { defaultLog } from '../log-file.ts';
@@ -14,10 +15,12 @@ import type { ConfigPaths } from './constants.ts';
 import { fontValid, modelSelectionValid, physicsValid, topFieldValid } from './validate.ts';
 
 /**
- * 保存用户层（PUT /config）：接受 pets + 全局开关 + physics / font / 两个模型 / 对话参数。
- * 非白名单顶层字段（whisperPrompt、eventsRefreshSec、memes 等）从 existing 原样透传保留——
- * 用户手动编辑的精调配置不会被设置页保存抹掉；白名单字段也只在请求体真的传了时才算白名单。
- * 非法 → 返回 null，由路由回 200 + 失败实体。与读取分离：文件宠物永不回写。
+ * Saving user layer ( PUT /config ): accepts pets + global switch + physics / font / two models / dialog parameters.
+ * The non-whitelist top-level fields (whisperPrompt, eventsRefreshSec, memes, etc.) are transparently transmitted from
+ * existing and retained as they are - the fine-tuned configuration manually edited by the user will not be erased by
+ * the settings page save; the whitelist field is only considered whitelisted when the request body is actually
+ * transmitted. Invalid → Return null, route returns 200 + failed entity. Decoupled from reading: file pets never write
+ * back.
  */
 export function saveUserConfig(
   raw: unknown,
@@ -31,21 +34,22 @@ export function saveUserConfig(
   for (const p of arr) {
     if (!p || typeof p !== 'object') return null;
     const pp = p as Record<string, unknown>;
-    // 与 mergePet 的身份规则一致：先 trim，再判唯一性，最后写盘。
+    // It is consistent with the identity rule of mergePet: first trim, then determine the uniqueness, and finally write to the disk.
     const id = typeof pp.id === 'string' ? pp.id.trim() : '';
-    // 有意过滤文件名非法字符（Windows 保留符 + 控制字符），防止配置值逃逸 main-config.jsonc 路径
+    // Intentional filtering of invalid file names (Windows reserved character + control character) to prevent configuration values from escaping the main-config.jsonc path
     if (!isValidPetId(id) || seenIds.has(id)) return null;
     seenIds.add(id);
     const size = Number(pp.size);
     if (!Number.isFinite(size) || size <= 0) return null;
-    // 百分比大小（可选）：与读取侧同一份判定。传了就必须是不小于 1 的数字（不设上限），否则整包 400；
-    // 缺省表示不用百分比——这里不回填默认值，否则清空会变成「显式写回一个百分比」。
+    // Percentage size (optional): The same judgment as the reading side. The number passed must be no less than 1 (no
+    // upper limit), otherwise the whole package will be 400; the default means no percentage is used - the default
+    // value is not backfilled here, otherwise clear will become "explicitly write back a percentage".
     const sizePercent = pp.sizePercent;
     if (sizePercent !== undefined && sizePercent !== null && !isValidSizePercent(sizePercent)) return null;
-    // 显示名：可重复不校验唯一；缺失/留空/非字符串 → 按该宠物 id 处理（兼容旧配置）并告警
+    // Display name: repeatable and not verified to be unique; missing/blank/non-character string → Process as the pet id (compatible with old configuration) and alert
     let name = typeof pp.name === 'string' ? pp.name.trim() : '';
     if (!name) {
-      defaultLog('warn', `dsh-pet: pet「${id}」缺少 name，已按默认 ${id}（宠物 id）处理`);
+      defaultLog('warn', `dsh-pet: pet ${id} has no name; using its ID ${id}`);
       name = id;
     }
     const balanceEnabled = pp.balanceEnabled;
@@ -54,8 +58,9 @@ export function saveUserConfig(
     if (whisperEnabled !== undefined && typeof whisperEnabled !== 'boolean') return null;
     const workStatusEnabled = pp.workStatusEnabled;
     if (workStatusEnabled !== undefined && typeof workStatusEnabled !== 'boolean') return null;
-    // 宠物固定（随机链不再抽「转向 / 移动」两档）：与上面两个开关同语义——可选，
-    // 传了必须是布尔，没传则走下面的读取侧默认值（内置默认 false = 不固定）。
+    // Pet fixed (random chain no longer selects the "Turn/Move" two states): The same semantics as the above two
+    // switches - optional, if passed it must be Boolean, if not passed, the following default value on the read side
+    // will be used (built-in default false = not fixed).
     const fixedEnabled = pp.fixedEnabled;
     if (fixedEnabled !== undefined && typeof fixedEnabled !== 'boolean') return null;
     const display = String(pp.display ?? '');
@@ -66,10 +71,12 @@ export function saveUserConfig(
     const marginX = Number(pos.marginX);
     const marginY = Number(pos.marginY);
     if (!Number.isFinite(marginX) || !Number.isFinite(marginY)) return null;
-    // 实例级人设（可选）：非空字符串才落盘（trim 后写）；空串/纯空白 = 不写该键——
-    // 落盘结果是「这只宠物没有自己的覆盖」，读取侧（./persona 的 petPersona）自动回落到所属条目。
-    // 也就是说：清空输入框 + 保存 = 删除覆盖，而不是写一个空人设。
-    // 非字符串（且非 undefined/null）与其他字段同口径：整包 400，不静默丢用户输入。
+    // Instance-level persona (optional): Only non-empty character strings persist to disk (written after trim); empty
+    // string/pure blank = do not write the key - persist to disk The result is "This pet does not have its own
+    // coverage", and the reading side (petPersona of ./persona) automatically falls back to the corresponding entry.
+    // That is: clear input box + save = delete override, instead of writing an empty persona. Non-character strings
+    // (and not undefined/null) have the same conventions as other fields: the whole package is 400, and user input is
+    // not silently lost.
     const rawPersona = pp.whisperPrompt;
     if (rawPersona !== undefined && rawPersona !== null && typeof rawPersona !== 'string') return null;
     const persona = typeof rawPersona === 'string' ? rawPersona.trim() : '';
@@ -90,69 +97,84 @@ export function saveUserConfig(
   }
   const ne = o.notificationsEnabled;
   if (ne !== undefined && typeof ne !== 'boolean') return null;
-  // 点击音效开关（全局布尔，与 notificationsEnabled 同语义）：传了必须是布尔，没传走透传保留
+  // Click the sound effect switch (global Boolean, the same semantics as notificationsEnabled): if it is passed, it must be Boolean, if it is not passed, it will be retained through transparent transmission.
   const cse = o.clickSoundEnabled;
   if (cse !== undefined && typeof cse !== 'boolean') return null;
   const wie = o.whisperImageEnabled;
   if (wie !== undefined && typeof wie !== 'boolean') return null;
   const cie = o.chatImageEnabled;
   if (cie !== undefined && typeof cie !== 'boolean') return null;
-  // 对话动作联动开关（全局布尔）：与上面几个开关同一套语义——传了必须是布尔，没传走透传保留
+  // Dialogue action linkage switch (global Boolean): The same set of semantics as the above switches - if it is passed, it must be Boolean, if it is not passed, it will be retained through transparent transmission.
   const cae = o.chatAnimationEnabled;
   if (cae !== undefined && typeof cae !== 'boolean') return null;
   const cts = o.confineToScreen;
   if (cts !== undefined && typeof cts !== 'boolean') return null;
-  // 语音播报开关与音色（全局）：与上面几个布尔同语义；音色必须落在白名单内，
-  // 校验直接复用读取侧的 topFieldValid，读写同一份规则。
+  // Voice broadcast switch and voice (global): The same semantics as the above booleans; the voice must fall in the
+  // white list, and the verification directly reuses topFieldValid on the reading side, reading and writing the same
+  // rule.
   const ve = o.voiceEnabled;
   if (ve !== undefined && typeof ve !== 'boolean') return null;
   const vn = o.voiceName;
   if (vn !== undefined && !topFieldValid('voiceName', vn)) return null;
-  // 播放音量（全局系数，0–1）：与上面同一套语义——传了必须合法，没传走透传保留。
+  // Playback volume (global coefficient, 0–1): The same set of semantics as above - if it is passed, it must be valid, if it is not passed, it will be retained through transparent transmission.
   const vv = o.voiceVolume;
   if (vv !== undefined && !topFieldValid('voiceVolume', vv)) return null;
-  // 语音播报的两个细分开关（周期碎碎念 / 待办提醒）：与上面两个布尔同语义——传了必须是布尔，
-  // 没传走透传保留；校验直接复用读取侧的 topFieldValid，读写同一份规则。
+  // Two subdivision switches for voice broadcast (periodic whisper / to-do reminder): The same semantics as the above
+  // two Boolean - if it is passed, it must be Boolean, if it is not passed, it will be retained through transparent
+  // transmission; for verification, directly reuse topFieldValid on the reading side, and read and write the same
+  // rule.
   const vwe = o.voiceWhisperEnabled;
   if (vwe !== undefined && !topFieldValid('voiceWhisperEnabled', vwe)) return null;
   const vte = o.voiceTodoEnabled;
   if (vte !== undefined && !topFieldValid('voiceTodoEnabled', vte)) return null;
   const vne = o.voiceNotifyEnabled;
   if (vne !== undefined && !topFieldValid('voiceNotifyEnabled', vne)) return null;
-  // 系统托盘开关（全局，仅桌面模式）：与上面几个全局布尔同语义——传了必须是布尔，没传走透传保留。
+  // System system tray switch (global, desktop mode only): The same semantics as the above global booleans - if it is passed, it must be Boolean, if it is not passed, it will be retained through transparent transmission.
   const te = o.trayEnabled;
   if (te !== undefined && typeof te !== 'boolean') return null;
-  // physics（拖拽抛掷手感，设置页「物理」区可图形化编辑）：整段校验——physicsValid 与读取侧
-  // 是同一份规则（gravity/groundFriction ≥ 0、restitution ∈ [0,1]、throwPower > 0、两个布尔）。
-  // 传了就按白名单写入；没传则走下面的透传保留（用户手改的值原样不动）。
+  // physics (drag and throw feel, graphic editing in the "Physics" area of the settings page): The entire verification
+  // - physicsValid and the reading side are the same rules (gravity/groundFriction ≥ 0, restitution ∈ [0,1],
+  // throwPower > 0, two Boolean). If it is passed, it will be written according to the white list; if it is not
+  // passed, it will be retained through transparent transmission below (the value manually modified by the user will
+  // remain unchanged).
   const ph = o.physics;
   if (ph !== undefined && !physicsValid(ph)) return null;
-  // animationWeights（动作频率；设置页「动作频率」卡写的就是它）：与 physics 同一套语义——
-  // 传了就整段校验后进白名单，没传则走下面的透传保留。校验复用读取侧的 topFieldValid
-  // （三个权重都是非负有限数），落盘只留 idle / turn / move 三个数字。
+  // animationWeights (action frequency; this is what is written on the "action frequency" card on the settings page):
+  // The same set of semantics as physics - if it is passed, the entire segment will be verified and then entered into
+  // the whitelist. If it is not passed, the transparent transmission and retention below will be used. Verify
+  // topFieldValid on the read side of reuse (the three weights are all non-negative finite numbers), and persist to
+  // disk only leaves three numbers idle / turn / move.
   const aw = o.animationWeights;
   if (aw !== undefined && !topFieldValid('animationWeights', aw)) return null;
-  // font（字体种类 / 字号 / 是否随宠物缩放；设置页「外观与字体」区写的就是它）：与 physics
-  // 同一套语义——传了就整段校验后进白名单，没传则走下面的透传保留。
-  // 校验直接复用读取侧的 fontValid（family 白名单 / size 4~200 / followPet 布尔），读写同一份规则。
+  // font (font type / font size / whether to scale with pets; it is written in the "Appearance and Font" area of the
+  // settings page): The same set of semantics as physics - if it is passed, the entire paragraph will be verified and
+  // entered into the whitelist, if not passed, the transparent transmission and retention below will be used. The
+  // verification directly reuses fontValid on the reading side (family white list / size 4~200 / followPet Boolean),
+  // reading and writing the same rule.
   const fo = o.font;
   if (fo !== undefined && !fontValid(fo)) return null;
-  // whisperModel / chatModel（碎碎念 / 对话各自的服务商 + 模型；设置页两个下拉框写的就是它们）：
-  // 与 physics 同一套语义——传了就整段校验后进白名单，没传则走下面的透传保留。
-  // 落盘时归一化成 { provider, model } 两个 trim 过的字符串（请求体多带的键不写进用户层）。
+  // whisperModel / chatModel (whisper / talk to the respective service provider + model; they are written in the two
+  // drop-down boxes on the settings page): The same set of semantics as physics - if it is passed, the entire
+  // paragraph will be verified and then entered into the whitelist, if not passed, the transparent transmission and
+  // retention below will be used. When persisting to disk, it is normalized into { provider , model } and two trim
+  // passed character strings (the keys in the request body are not written into the user layer).
   const wm = o.whisperModel;
   if (wm !== undefined && !modelSelectionValid(wm)) return null;
   const cm = o.chatModel;
   if (cm !== undefined && !modelSelectionValid(cm)) return null;
-  // chatMemoryRounds（对话历史条数；设置页「AI 模型与对话上下文」区的数字输入框写的就是它）：
-  // 与 physics / 模型同语义——传了就校验后进白名单，没传则走下面的透传保留。
-  // 校验直接复用读取侧的 topFieldValid（有限且 ≥ 0），读写同一份规则，不另写一套。
+  // chatMemoryRounds (the number of dialogue history entries; this is what is written in the number input box in the
+  // "AI Model and Dialog Context" area of the settings page): The same semantics as physics / model - if it is passed,
+  // it will be verified and then entered into the whitelist, if not passed, the transparent transmission and retention
+  // below will be used. The verification directly reuses topFieldValid on the reading side (limited and ≥ 0), reading
+  // and writing the same rule, without writing another set.
   const cmr = o.chatMemoryRounds;
   if (cmr !== undefined && !topFieldValid('chatMemoryRounds', cmr)) return null;
   const memory = o.chatMemory;
   if (memory !== undefined && !topFieldValid('chatMemory', memory)) return null;
-  // chatImageLimit（对话配图张数上限；设置页「AI 模型与对话上下文」区的数字输入框写的就是它）：
-  // 与 chatMemoryRounds 同一套语义——传了就校验后进白名单，没传则走下面的透传保留。
+  // chatImageLimit (the upper limit of the number of dialogue images; it is written in the number input box in the "AI
+  // Model and Dialog Context" area of the settings page): The same set of semantics as chatMemoryRounds - if it is
+  // passed, it will be verified and then entered into the whitelist, if it is not passed, it will be retained through
+  // transparent transmission below.
   const cil = o.chatImageLimit;
   if (cil !== undefined && !topFieldValid('chatImageLimit', cil)) return null;
   const cleanModel = (v: Record<string, unknown>): { provider: string; model: string } => ({
@@ -164,8 +186,10 @@ export function saveUserConfig(
     turn: Number(v.turn),
     move: Number(v.move),
   });
-  // 白名单可编辑字段：pets 来自请求体，其余（四个全局开关 / physics / 两个模型 /
-  // 对话历史条数）同样只在请求体真的传了时才写（未传则走下面的透传保留，不凭空造值）
+  // Whitelist editable fields: pets comes from the request body, and the rest (four global switches / physics / two
+  // models / number of conversation history entries) are also written only when the request body is actually
+  // transmitted (if not transmitted, the following transparent transmission is used to retain it, and no value is
+  // created out of thin air)
   const outConfig: { pets: unknown[]; [key: string]: unknown } = { pets: out };
   if (ne !== undefined) outConfig.notificationsEnabled = ne;
   if (cse !== undefined) outConfig.clickSoundEnabled = cse;
@@ -185,14 +209,16 @@ export function saveUserConfig(
   if (fo !== undefined) outConfig.font = fo;
   if (wm !== undefined) outConfig.whisperModel = cleanModel(wm as Record<string, unknown>);
   if (cm !== undefined) outConfig.chatModel = cleanModel(cm as Record<string, unknown>);
-  // 数值归一化落盘：请求体传 "9" 也存成 9（与读取侧 topFieldValid 的 Number() 口径一致）
+  // Value normalization persist to disk: request body "9" is also stored as 9 (consistent with the Number() conventions of topFieldValid on the reading side)
   if (cmr !== undefined) outConfig.chatMemoryRounds = Number(cmr);
   if (memory !== undefined) outConfig.chatMemory = memory;
   if (cil !== undefined) outConfig.chatImageLimit = Number(cil);
-  // 透传保留：请求体未携带的顶层字段，从 existing（磁盘现有用户文件）原样带回——
-  // 设置页只提交 pets(+全局开关+physics+模型+对话历史条数)，手改的 whisperPrompt/memes/... 借此保住。
-  // 白名单字段只在「请求体传了」时才算白名单（已由上方写入）；未传时走这里透传磁盘旧值——
-  // 否则整包调用的调用方漏传一个字段，就会把用户既有设置悄悄抹成默认。
+  // Transparent transmission retention: The top-level fields not carried in the request body are brought back as they
+  // are from existing (existing user files on the disk) - the settings page only submits pets (+global
+  // switch+physics+model+number of conversation history items), and the manually modified whisperPrompt/memes /... are
+  // preserved. The whitelist field is only considered whitelisted when "the request body is passed" (it has been
+  // written from above); if it is not passed, go here to transparently transmit the old disk value - otherwise the
+  // caller called by the whole package misses a field and will quietly erase the user's existing settings to default.
   const bodyOwned = new Set(['pets']);
   if (ne !== undefined) bodyOwned.add('notificationsEnabled');
   if (cse !== undefined) bodyOwned.add('clickSoundEnabled');
@@ -217,8 +243,9 @@ export function saveUserConfig(
   if (cil !== undefined) bodyOwned.add('chatImageLimit');
   if (existing && typeof existing === 'object') {
     for (const key of Object.keys(existing)) {
-      if (bodyOwned.has(key)) continue; // 白名单字段由请求体决定
-      // 只透传可精调的顶层字段，其余（如 memes/unknown/占位）一并保留，不丢弃用户内容
+      if (bodyOwned.has(key)) continue; // The whitelist fields are determined by the request body. Only the top-level fields that can be fine-tuned are
+      // transparently transmitted, and the rest (such as memes/unknown/placeholders) are retained without discarding user
+      // content.
       outConfig[key] = existing[key];
     }
   }
@@ -226,11 +253,14 @@ export function saveUserConfig(
 }
 
 /**
- * 同步用户层（POST /config，设置页「同步」）：把内置默认配置原文写入用户主配置文件。
- * 复制原文而不是删除用户层：既等价于恢复默认（合并结果 = 内置默认），又让用户拿到一份含全部
- * 注释、开箱可编辑的完整配置。读取侧统一走 stripJsonc，带注释写入照样能读。
- * 注意：文件一旦生成即成为显式覆盖层，插件升级改了内置默认后，文件里的旧值仍会继续生效。
- * 默认文件缺失 / 目录不可写 → 直接抛，由路由回 200 + 失败实体（`generate-error`），绝不静默留下半个配置文件。
+ * Synchronize user layer (POST /config, settings page "Synchronization"): Write the original built-in default
+ * configuration into the user's main configuration file. Copy the original text instead of deleting the user layer: it
+ * is equivalent to restoring the default (merged result = built-in default), but also allows the user to get a
+ * complete configuration with all comments and editable out of the box. On the reading side, use stripJsonc uniformly,
+ * and writing with comments can still be read. Note: Once the file is generated, it becomes an explicit overlay. After
+ * the plugin is upgraded and the built-in default is changed, the old values in the file will still take effect. The
+ * default file is missing/the directory is not writable → throw it directly, and route will return 200 + failed
+ * entities (`generate-error`), never leaving half of the configuration file silently.
  */
 export function syncUserConfigFromDefault(paths: ConfigPaths): void {
   const raw = readFileSync(paths.defaultFile, 'utf8');
@@ -239,23 +269,24 @@ export function syncUserConfigFromDefault(paths: ConfigPaths): void {
 }
 
 /**
- * 对话记忆截取：取尾部 rounds 轮（1 轮 = 1 问 1 答 → 2 条）。
- * 不能写 messages.slice(-rounds * 2)：rounds = 0 时 -0 === 0，slice(-0) 返回整个数组，
- * 「关掉历史」反而变成「带全部历史」。这里显式分支：0 → 空列表，> 0 → 截尾部。
+ * Dialogue memory interception: take the tail rounds rounds (1 round = 1 question, 1 answer → 2 items). Cannot write
+ * messages.slice (- rounds * 2): when rounds = 0 -0 === 0, slice (-0) returns the entire array, and "turn off history"
+ * becomes "with all history". Explicit branches here: 0 → empty list, > 0 → truncate.
  */
 export function sliceMemoryRounds<T>(messages: T[], rounds: number): T[] {
   return rounds > 0 ? messages.slice(-Math.floor(rounds) * 2) : [];
 }
 
 /**
- * 对话记忆按轮删除：`ts` 落在集合里的消息整轮移除（一轮两条共享同一个 `ts`，所以天然成对）。
+ * Dialogue memory is deleted in rounds: `ts` messages falling into the set are removed in the entire round (two in a
+ * round share the same `ts` , so they are naturally paired).
  *
- * 不用「空集合 = 全删」表达清空：那会让调用方在漏传参数时静默抹掉全部历史。清空是调用方
- * 的另一条显式分支（传空数组 = 一条都不删）。
+ * Don't use "empty set = delete all" to express clear: that will make the caller silently erase the entire history
+ * when missing parameters. clear is another explicit branch of caller (passing an empty array = none is deleted).
  *
- * @param messages - 记忆数组。
- * @param ts - 要删除的轮时间戳集合。
- * @returns 保留下来的消息，以及被移除的条数。
+ * @param messages - memory array.
+ * @param ts - The set of round timestamps to delete.
+ * @returns Messages retained and the number removed.
  */
 export function removeRoundsByTs<T extends { ts: number }>(
   messages: readonly T[],

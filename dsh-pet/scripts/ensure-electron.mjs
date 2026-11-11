@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * 把 Electron 下载并解压到 $DSH_HOME/electron（默认 ~/.dsh/electron），供桌面 Helper 使用。
+ * Download and extract Electron to $DSH_HOME/electron (default ~/. dsh/electron) for use by desktop Helper.
  *
- * 下载交给 @electron/get（URL 拼装、镜像、SHA256 校验、缓存复用），解压交给
- * @electron-internal/extract-zip（纯 Node + native，跨平台处理 symlink 与权限，不依赖系统 unzip/tar）。
- * 不做版本管理、不清理旧版本，也不拉起 Helper：可执行文件已存在就原样复用并直接返回。
- * 版本与镜像可由环境变量覆盖，落盘主目录由 DSH_HOME 决定，具体见 README。
- * 必须始终：解压后确认可执行文件真的存在，否则视为失败退出。
+ * Download to @electron / get (URL assemble, mirror, SHA256 verification, cache reuse), unzip and hand to
+ * @electron - internal/extract-zip (pure Node + native, cross-platform processing symlink and permissions, does not
+ * rely on system unzip/tar).
+ * No version management, no cleaning of old versions, no pulling up Helper: the executable file already exists, just
+ * reuse it as is and return it directly. The version and image can be overridden by environment variables, and the
+ * persist to disk home directory is determined by DSH_HOME. See README for details. Must always: Confirm that the
+ * executable file really exists after decompression, otherwise it will be regarded as a failure to exit.
  * @module dsh-pet/scripts/ensure-electron
  */
 
@@ -29,7 +31,7 @@ const ELECTRON_REL =
       : 'electron';
 const EXE = join(TARGET_DIR, ELECTRON_REL);
 
-/** 确保 Electron 就位：已存在即复用，否则下载解压并校验可执行文件。 */
+/** Make sure Electron is in place: reuse if it already exists, otherwise download, decompress and verify the executable file. */
 async function main() {
   if (existsSync(EXE)) {
     console.log(EXE);
@@ -42,7 +44,7 @@ async function main() {
   const zipPath = await downloadArtifact({
     version: `v${VERSION}`,
     artifactName: 'electron',
-    // platform/arch 不传：@electron/get 用宿主平台与架构自动推断
+    // platform/arch is not transmitted: @electron / get is automatically inferred using the host platform and architecture.
     mirrorOptions: { mirror: MIRROR.replace(/\/$/, '') + '/' },
     downloadOptions: { quiet: true },
   });

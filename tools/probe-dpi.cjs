@@ -1,18 +1,22 @@
 /**
- * 多屏异构 DPI 探针：验证「同一 DIP 矩形，随窗口归属屏不同而映射到不同物理位置/尺寸」。
+ * Multi-screen heterogeneous DPI probe: Verify that "the same DIP rectangle is mapped to different physical
+ * locations/sizes depending on the screen to which the window belongs."
  *
- * 背景（Chromium ui/display/win/screen_win.cc）：
- *   ScreenWin::DIPToScreenRect(hwnd, dip) 用 **hwnd 当前所在屏** 的 (dipOrigin, pixelOrigin, scale)
- *   做仿射变换 —— origin 走 DIPToScreenPoint(dip.origin, thatDisplay)，size 走 dip.size × thatDisplay.scale。
- *   hwnd 归属由 MonitorFromWindow(MONITOR_DEFAULTTONEAREST) 按面积占比决定，骑缝时会翻转。
- *   两屏 scale 不同 ⇒ 翻转前后同一 DIP 值落到不同物理像素；scale 相同 ⇒ 两屏共用同一仿射变换，翻转无影响。
+ * Background ( Chromium ui/display/win/screen_win.cc ):
+ * ScreenWin::DIPToScreenRect (hwnd, dip) uses **hwnd's current screen** (dipOrigin, pixelOrigin, scale) to do affine
+ * transformation - origin goes to DIPToScreenPoint (dip.origin, thatDisplay ), size goes dip.size × thatDisplay.scale.
+ * The ownership of hwnd is determined by the area ratio of MonitorFromWindow (MONITOR_DEFAULTTONEAREST), and it will
+ * flip when sewing. The two screens scale are different ⇒ The same DIP value falls into different physical pixels
+ * before and after flipping; scale is the same ⇒ The two screens share the same affine transformation, and flipping
+ * has no effect.
  *
- * 跑法（harness 自带 electron）：
- *   %APPDATA%\dsh-desktop-dev\harness\electron\electron.exe tools\probe-dpi.cjs
- *   %APPDATA%\dsh-desktop-dev\harness\electron\electron.exe tools\probe-dpi.cjs --force-device-scale-factor=1
+ * Running method (harness comes with electron): % APPDATA %\ dsh-desktop-dev \ harness \ electron \ electron.exe tools
+ * \ probe-dpi.cjs % APPDATA %\ dsh-desktop-dev \ harness \ electron \ electron.exe tools \ probe-dpi.cjs --
+ * force-device-scale-factor =1
  *
- * 判读：DELTA 段全为 0 = 该 DIP 值不受窗口归属影响（DPI 换算已线性化）；非 0 = 骑缝翻转会跳变，
- * 数值即跳变幅度（物理像素）。加 --force-device-scale-factor 后应全部归零。
+ * Interpretation: The DELTA segment is all 0 = the DIP value is not affected by the window ownership (the DPI
+ * conversion has been linearized); non-0 = the seam flip will jump, and the value is the jump amplitude (physical
+ * pixel). After adding --force-device-scale-factor, they should all be reset to zero.
  */
 'use strict';
 const { app, BrowserWindow, screen } = require('electron');
@@ -21,7 +25,7 @@ const forced = process.argv.find((a) => a.startsWith('--force-device-scale-facto
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fmt = (r) => `${r.x},${r.y} ${r.width}×${r.height}`;
 
-/** 把窗口挪到指定屏并等 Windows 处理完 WM_DPICHANGED / 归属更新 */
+/** Move the window to the specified screen and wait for Windows to finish processing WM_DPICHANGED / ownership update */
 async function park(win, display) {
   const a = display.workArea;
   win.setContentBounds({ x: Math.round(a.x + 20), y: Math.round(a.y + 20), width: 200, height: 200 }, false);
@@ -39,21 +43,21 @@ app.whenReady().then(async () => {
     );
   }
   console.log('forceDeviceScaleFactor =', forced || '(none)');
-  // 全局线性化是否成立：DIP↔物理 是不是一个与「归属哪块屏」无关的单一仿射变换。
-  // 充要条件是每块屏都满足 pixelOrigin == dipOrigin × scale（原点与缩放同源）。
-  // dipToScreenRect(null, r) 让 Chromium 自己按矩形位置挑屏，与逐屏推算对照即可看出偏移。
-  console.log('\n=== 逐屏仿射一致性（dipOrigin×scale vs 实际 pixelOrigin） ===');
+  // Whether global linearization is established: DIP ↔Physics Is it a single affine transformation that has nothing to
+  // do with "which screen it belongs to". The necessary and sufficient condition is that each screen satisfies
+  // pixelOrigin == dipOrigin × scale (the origin and scaling have the same origin).
+  // dipToScreenRect ( null , r ) Let Chromium select the screen according to the rectangular position, and compare it
+  // with the screen-by-screen calculation to see the offset.
+  console.log("\n=== Per-display affine mapping (dipOrigin * scale versus actual pixelOrigin) ===");
   for (const [i, d] of displays.entries()) {
     const oneDip = { x: d.bounds.x, y: d.bounds.y, width: 10, height: 10 };
     const phys = screen.dipToScreenRect(null, oneDip);
     console.log(
-      `  #${i} dipOrigin=${d.bounds.x},${d.bounds.y} ×${d.scaleFactor} => 期望 ${d.bounds.x * d.scaleFactor},${
-        d.bounds.y * d.scaleFactor
-      }   实际 pixelOrigin=${phys.x},${phys.y}`,
+      `  #${i} dipOrigin=${d.bounds.x},${d.bounds.y} *${d.scaleFactor} => expected ${d.bounds.x * d.scaleFactor},${d.bounds.y * d.scaleFactor}   actual pixelOrigin=${phys.x},${phys.y}`,
     );
   }
 
-  // 外接矩形 vs 工作区并集面积：P1 空洞占比
+  // The union area of the external rectangle vs working areas: P1 void ratio
   const x0 = Math.min(...displays.map((d) => d.workArea.x));
   const y0 = Math.min(...displays.map((d) => d.workArea.y));
   const x1 = Math.max(...displays.map((d) => d.workArea.x + d.workArea.width));
@@ -78,10 +82,10 @@ app.whenReady().then(async () => {
   win.setIgnoreMouseEvents(true, { forward: true });
   await sleep(300);
 
-  // 测试用 DIP 矩形：宠物窗口典型尺寸 924×600，取缝隙两侧 + 各屏深处
+  // DIP rectangle for testing: typical size of pet window 924×600, take both sides of the gap + depth of each screen
   const W = 924;
   const H = 600;
-  // tag 必须带下标：同型号双屏 label 完全相同，用 label 做 key 会互相覆盖
+  // tag must have a subscript: dual screens of the same model label are exactly the same, and using label to make key will cover each other.
   const probes = [];
   displays.forEach((d, i) => {
     const a = d.workArea;
@@ -104,15 +108,15 @@ app.whenReady().then(async () => {
     table.push(row);
   }
 
-  console.log('\n=== DIP → PHYSICAL, 按窗口停放屏分组 ===');
-  console.log(`测试矩形 DIP 尺寸 = ${W}×${H}`);
+  console.log("\n=== DIP -> PHYSICAL, grouped by window placement ===");
+  console.log(`Test rectangle DIP size = ${W}x${H}`);
   for (const row of table) {
-    console.log(`\n-- 窗口停在 ${row.parkedOn} --`);
+    console.log(`\n-- Window placed on ${row.parkedOn} --`);
     for (const [tag, r] of Object.entries(row.map)) console.log(`   ${tag.padEnd(28)} → ${fmt(r)}`);
   }
 
   if (table.length >= 2) {
-    console.log('\n=== DELTA（第 2 组 − 第 1 组；全 0 = 与窗口归属无关） ===');
+    console.log("\n=== DELTA (group 2 - group 1; all zeros means independent of window placement) ===");
     const a = table[0].map;
     const b = table[1].map;
     for (const tag of Object.keys(a)) {
@@ -122,13 +126,13 @@ app.whenReady().then(async () => {
         dw: b[tag].width - a[tag].width,
         dh: b[tag].height - a[tag].height,
       };
-      const flag = d.dx || d.dy || d.dw || d.dh ? '  <-- 跳变' : '';
+      const flag = d.dx || d.dy || d.dw || d.dh ? '  <-- jump' : '';
       console.log(`   ${tag.padEnd(28)} dx=${d.dx} dy=${d.dy} dw=${d.dw} dh=${d.dh}${flag}`);
     }
   }
 
-  // setContentBounds 往返：设 DIP → 读回 DIP，看主进程「回读去重」为何永远不相等
-  console.log('\n=== setContentBounds 往返（读回 ≠ 设定 ⇒ 回读去重必然每帧重设） ===');
+  // setContentBounds round trip: Suppose DIP → read back DIP, see why the main process "readback deduplicate" is never equal
+  console.log("\n=== setContentBounds round trip (readback differing from the target causes repeated updates) ===");
   for (const d of displays) {
     const a = d.workArea;
     const target = { x: Math.round(a.x + a.width / 2 - W / 2), y: Math.round(a.y + 100), width: W, height: H };

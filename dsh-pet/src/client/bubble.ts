@@ -1,8 +1,8 @@
 /**
- * 浏览器半侧的余额与碎碎念气泡：哑组件，只把 shared 的行数据或节点树映射成 React 节点。
- * 不发起请求，显隐与停留时长由 pet.ts 控制。
- * 依赖运行时注入的 react 与 shared 的 balance / whisper 视图。
- * 必须始终成立：样式与桌面端同源，文案与档位由 shared 计算。
+ * Browser side balance and whisper bubble: dumb component, which only maps shared row data or node tree to React node.
+ * No request is initiated, and the visibility and stay duration are controlled by pet.ts. balance / whisper views of
+ * react and shared that rely on runtime injection. It must always be true: the style has the same source as the
+ * desktop version, and the copy and file are calculated by shared.
  * @module dsh-pet/src/client/bubble
  */
 import {
@@ -25,19 +25,23 @@ import type * as ReactNS from 'react';
 import type { jsx } from 'react/jsx-runtime';
 import { ROUTE_PATH } from '../shared/constants.ts';
 
-/** 气泡内联样式：白色半透明圆泡加底部小尾巴，盒子尺寸锚字号 `--f`，位置锚宠物尺寸。
- *  width:max-content 不可省：left:50% 的绝对定位盒可用宽度只有包含块一半，shrink-to-fit
- *  会先被卡死；先按内容取宽，再由 max-width 收口。box-sizing 钉死 content-box，避免宿主
- *  全局 border-box 把内边距算进宽度；断词用 break-word，数字与单位不会被拆行。
+/**
+ * bubble inline style: white translucent round bubble with a small tail at the bottom, box size anchor font size `--f`
+ * , position anchor pet size.
+ * width:max-content cannot be omitted: The available width of the absolute positioning box of left:50 % is only half
+ * of the containing block, and shrink-to-fit will be stuck first; first get the width according to the content, and
+ * then centralize it with max-width. box-sizing pegs content-box to prevent the host global border-box from counting
+ * padding into the width; use break-word for word segmentation, and numbers and units will not be separated.
  */
 const bubbleCss = [
-  // 本地字体：由 host 从 assets/fonts 提供；font-display:swap 先回退后切换。
+  // Local font: provided by host from assets/fonts; font-display:swap first falls back and then switches.
   `@font-face{font-family:"ShangshouSoftCandy";src:url("${ROUTE_PATH}/font/上首软糖体.ttf") format("truetype");font-display:swap;font-weight:400}`,
   '.dsh-pet-bubble{position:absolute;left:50%;transform:translateX(-50%);' +
     'bottom:calc(100% - var(--dsh-pet-size)*0.108);' +
     'width:max-content;min-width:calc(var(--f)*5.7143);max-width:min(calc(var(--f)*16),100%);' +
-    // 钉死 content-box：宿主可能全局设了 border-box，让 min/max-width 把内边距算进去，
-    // 表现为「明明还有空位却折行」；桌面端同样钉死，两端一致。
+    // Pinned content-box: The host may have set border-box globally, allowing min/max-width to include the padding,
+    // which behaves like "wrap the line even though there is space"; the desktop side is also pinned, and both ends
+    // are consistent.
     'box-sizing:content-box;' +
     'padding:calc(var(--f)*0.4835) calc(var(--f)*0.6593);' +
     'border-radius:calc(var(--f)*0.7692);' +
@@ -48,34 +52,34 @@ const bubbleCss = [
     'box-shadow:0 calc(var(--f)*0.1978) calc(var(--f)*0.7692) rgba(0,0,0,.14),0 1px 3px rgba(0,0,0,.08);' +
     'backdrop-filter:blur(6px);opacity:0;transition:opacity .25s ease;' +
     'white-space:normal;overflow-wrap:break-word}',
-  // 底部尾巴：小三角指向下方宠物，尺寸锚字号。
+  // Bottom tail: small triangle points to the pet below, size anchor font size.
   '.dsh-pet-bubble::after{content:"";position:absolute;left:50%;bottom:calc(var(--f)*-0.3736);' +
     'transform:translateX(-50%);border:calc(var(--f)*0.3736) solid transparent;' +
     'border-top-color:rgba(255,255,255,.92);border-bottom:none}',
   '.dsh-pet-bubble.is-on{opacity:1}',
-  // 碎碎念变体：字号缩到余额气泡的 0.75，宽度下限更窄，上限与折行规则相同。
+  // whisper variant: the font size is reduced to 0.75 of the balance bubble, the lower limit of the width is narrower, and the upper limit is the same as the line wrapping rule.
   '.dsh-pet-bubble.dsh-pet-whisper{font-size:calc(var(--f)*0.7473);' +
     'min-width:calc(var(--f)*2.1978);max-width:min(calc(var(--f)*10.989),100%)}',
-  // 配图样式在 shared 的 MEME_BUBBLE_CSS，这里只保留标题与行样式。
+  // The picture style is in shared and MEME_BUBBLE_CSS. Only the title and row styles are retained here.
   '.dsh-pet-bubble .pet-bub-title{font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.6);margin-bottom:calc(var(--f)*0.1978)}',
   '.dsh-pet-bubble .pet-bub-row{display:flex;justify-content:space-between;gap:calc(var(--f)*0.6593);flex-wrap:wrap}',
-  // 档位行由多个片段拼成：只在片段之间换行，片段内部不拆字，避免竖排。
+  // The stall row is composed of multiple fragments: only line breaks are done between fragments, and words are not split within the fragments to avoid vertical arrangement.
   '.dsh-pet-bubble .pet-bub-row>span{white-space:nowrap}',
   '.dsh-pet-bubble .pet-bub-sub{font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.6)}',
   '.dsh-pet-bubble .pet-bub-val{font-variant-numeric:tabular-nums;font-weight:650;color:#1f1f1f}',
   '.dsh-pet-bubble .pet-bub-err{color:#d94f3d;font-size:calc(var(--f)*0.7692)}',
   '.dsh-pet-bubble .pet-bub-tag{margin-left:calc(var(--f)*0.2857);font-size:calc(var(--f)*0.4835);color:rgba(43,43,43,.55);border:1px solid rgba(43,43,43,.25);' +
     'border-radius:calc(var(--f)*0.2857);padding:0 calc(var(--f)*0.1978);vertical-align:1px}',
-  // 峰/谷计价档位：峰红、谷绿。
+  // Peak/valley pricing range: peak red, valley green.
   '.dsh-pet-bubble .pet-bub-tier{font-weight:700}',
   '.dsh-pet-bubble .pet-bub-tier-peak{color:#e53935}',
   '.dsh-pet-bubble .pet-bub-tier-idle{color:#2e9e4f}',
-  // 展开态：每个窗口一行，进度条长度等于已用百分比。
-  // 气泡默认不挡宿主页面，只有可展开的余额气泡才开命中。
+  // Expanded state: one line per window, the length of the progress bar is equal to the used percentage. The bubble
+  // does not block the host page by default, and only expandable balance bubbles are enabled.
   '.dsh-pet-bubble.is-clickable{pointer-events:auto;cursor:pointer}',
-  // 收起态排不下「窗口名 + 条 + 百分比 + 重置」四列，展开态单独加宽并缩到 60% 字号。
+  // The four columns of "window name + bar + percentage + reset" cannot be arranged in the collapsed state, and the expanded state is individually widened and reduced to 60% font size.
   '.dsh-pet-bubble.is-expanded{--f:calc(var(--f0)*0.6);width:min(calc(var(--f)*21),100%);max-width:100%}',
-  // 淡出：换内容前先透明，换完去掉这个类再淡入。
+  // Fade out: Make it transparent before changing the content. After changing, remove this class and then fade in.
   '.dsh-pet-bubble.is-on.is-fading{opacity:0}',
   '.dsh-pet-bubble .pet-bub-quota{display:flex;align-items:center;gap:calc(var(--f)*0.4);margin:calc(var(--f)*0.13) 0}',
   '.dsh-pet-bubble .pet-bub-quota-label{flex:none;min-width:calc(var(--f)*1.9);font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.6)}',
@@ -85,8 +89,9 @@ const bubbleCss = [
   '.dsh-pet-bubble .pet-bub-quota-fill.pet-bub-quota-crit{background:#e53935}',
   '.dsh-pet-bubble .pet-bub-quota-used{flex:none;min-width:calc(var(--f)*2.2);text-align:right;font-variant-numeric:tabular-nums;font-weight:650;color:#1f1f1f}',
   '.dsh-pet-bubble .pet-bub-quota-reset{flex:none;min-width:calc(var(--f)*2.6);text-align:right;font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.6)}',
-  // 用量页（第三页）：三行两列占满展开态宽度，总量是唯一的大字。
-  // 配色只给进/出两处强调，其余沿用次级灰——同页里超过两种彩色会盖过数值本身。
+  // Usage page (the third page): three rows and two columns occupy the expanded state width, and the total amount is
+  // the only big character. The color scheme only emphasizes the entrance/exit points, and the rest uses secondary
+  // gray - more than two colors on the same page will overwhelm the value itself.
   '.dsh-pet-bubble .pet-bub-usage{display:flex;flex-direction:column;gap:calc(var(--f)*0.22);margin:calc(var(--f)*0.1) 0}',
   '.dsh-pet-bubble .pet-bub-usage-line{display:flex;align-items:baseline;justify-content:space-between;gap:calc(var(--f)*0.8);line-height:1.45}',
   '.dsh-pet-bubble .pet-bub-usage-title{font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.62)}',
@@ -95,13 +100,13 @@ const bubbleCss = [
   '.dsh-pet-bubble .pet-bub-usage-out{font-size:calc(var(--f)*0.7692);font-variant-numeric:tabular-nums;color:#b4703c}',
   '.dsh-pet-bubble .pet-bub-usage-period{font-size:calc(var(--f)*0.7692);color:rgba(43,43,43,.62)}',
   '.dsh-pet-bubble .pet-bub-usage-spend{font-size:calc(var(--f)*0.7692);font-weight:650;font-variant-numeric:tabular-nums;color:#1f1f1f}',
-  // 进出比例条：两段按真实占比分宽，颜色与下面的数字一一对应；占比极小时只留一条细线，不放大。
+  // In/out proportion bar: The two sections are wide according to the actual proportion, and the colors correspond to the numbers below; when the proportion is extremely small, only a thin line is left and is not enlarged.
   '.dsh-pet-bubble .pet-bub-usage-bar{display:flex;height:calc(var(--f)*0.3);border-radius:calc(var(--f)*0.15);overflow:hidden;background:rgba(43,43,43,.1);margin:calc(var(--f)*0.05) 0}',
   '.dsh-pet-bubble .pet-bub-usage-bar-in{display:block;height:100%;background:#3f6ea8}',
   '.dsh-pet-bubble .pet-bub-usage-bar-out{display:block;height:100%;background:#b4703c}',
 ].join('\n');
 
-/** 注入气泡样式，每页只注入一次。 */
+/** Inject bubble style only once per page. */
 function injectBubbleCss(): void {
   if (typeof document !== 'undefined' && document.querySelector('style[data-plugin-css="dsh-pet/bubble"]') === null) {
     const tag = document.createElement('style');
@@ -112,14 +117,14 @@ function injectBubbleCss(): void {
   }
 }
 
-/** 把余额行数据映射成 React 节点。 */
+/** Map the balance row data to the React node. */
 function rowsToNodes(h: typeof jsx, rows: BalanceBubbleRow[]): ReactNode {
-  // 含档位段时同一行内联渲染，峰/谷着色。
+  // When state segments are included, the same line is rendered inline and peak/valley colored.
   if (rows.some((r) => r.role === 'tier')) {
     return h('div', {
       className: 'pet-bub-row',
       children: rows.map((r, i) => {
-        // 进度条行不会与档位段同现。
+        // The progress bar line does not appear together with the state segment.
         if (r.role === 'quota') return null;
         if (r.role === 'tier') {
           return h('span', {
@@ -132,9 +137,9 @@ function rowsToNodes(h: typeof jsx, rows: BalanceBubbleRow[]): ReactNode {
       }),
     });
   }
-  // 其余每行一个块：label、sub、error、quota。
+  // The rest are one block per row: label, sub, error, quota.
   return rows.map((r, i) => {
-    // 展开态一行一个窗口；四段 flex 同行，进度条吃剩余宽度。
+    // In the expanded state, there is one window per line; four segments flex are in the same row, and the progress bar occupies the remaining width.
     if (r.role === 'quota') {
       return h('div', {
         key: i,
@@ -154,7 +159,7 @@ function rowsToNodes(h: typeof jsx, rows: BalanceBubbleRow[]): ReactNode {
         ],
       });
     }
-    // 用量页：三行两列，总量是整卡唯一的大字；进/出各一处强调色，其余保持次级灰。
+    // Usage page: three rows and two columns, the total amount is the only large character on the whole card; there is an accent color for each entry/exit, and the rest remain secondary gray.
     if (r.role === 'usage') {
       return h('div', {
         key: i,
@@ -168,7 +173,7 @@ function rowsToNodes(h: typeof jsx, rows: BalanceBubbleRow[]): ReactNode {
               h('span', { key: 'total', className: 'pet-bub-usage-total', children: r.total }),
             ],
           }),
-          // 进出比例条：宽度即真实占比，输入通常压倒性占多数，条偏单色属正常。
+          // In/out ratio bar: The width is the actual proportion. The input usually accounts for an overwhelming majority. It is normal for the bar to be a single color.
           r.inputPercent === undefined
             ? null
             : h('div', {
@@ -208,16 +213,17 @@ function rowsToNodes(h: typeof jsx, rows: BalanceBubbleRow[]): ReactNode {
   });
 }
 
-/** 把自定义节点树映射成 React 节点，与 rowsToNodes 并列。
- *  行数据由插件定排版，这里把第三方定好的 tag、内联样式与文本原样映射。
- *  解析层已做白名单裁剪，故不做二次校验；不用 innerHTML，没有注入面。
- *  先文本后子节点，与 DOM 的 textContent + appendChild 顺序一致。
+/**
+ * Map the custom node tree to the React node, parallel to rowsToNodes. The row data is formatted by the plugin. Here,
+ * the tag and inline styles determined by the third party are mapped to the text as they are. The parsing layer has
+ * been whitelisted, so it does not perform secondary verification; innerHTML is not used and there is no injection
+ * surface. Text first, then child nodes, consistent with the textContent + appendChild order of DOM.
  */
 function treeToNodes(h: typeof jsx, node: CustomNode, key: string | number): ReactNode {
   const props: Record<string, unknown> = { key };
   if (node.style) props.style = node.style;
   if (node.tag === 'img') {
-    // 配图地址只来自解析层的 http/https 白名单；alt 留空由周围文本承担。
+    // The image address only comes from the http/https whitelist of the parsing layer; alt is left blank and is borne by the surrounding text.
     props.src = node.src ?? '';
     props.alt = '';
     return h('img', props);
@@ -231,24 +237,26 @@ function treeToNodes(h: typeof jsx, node: CustomNode, key: string | number): Rea
   return h(node.tag, props);
 }
 
-/** 换内容前的淡出等待（ms），与 opacity 过渡同为 250ms。 */
+/** The fade-out wait before changing content (ms) is the same as the opacity transition of 250 ms. */
 const BALANCE_FADE_MS = 250;
 
-/** 制造余额气泡组件（工厂），注入样式一次。
- *  内容来自 shared 的 balancePageView（按页取行数据）；内置形态走行数据，
- *  custom 走第三方节点树。切页是淡出 → 换内容 → 淡入，显隐与 10s 计时归 pet.ts 管。
+/**
+ * Make balance bubble component (factory), inject style once. The content comes from balancePageView (fetching row
+ * data by page) of shared; built-in morphological walking data, custom walking through the third-party node tree. Page
+ * switching is fading out → changing content → fading in, showing and hiding, and the timing of 10 s is managed by
+ * pet.ts.
  */
 export function makeBalanceBubble(rt: {
   h: typeof jsx;
   useState: <T>(init: T) => [T, Dispatch<SetStateAction<T>>];
-  // 用 React 命名空间类型而非 typeof：type-only import 的 hook 无法进入声明导出（TS4078）。
+  // Use React namespace type instead of typeof: type-only import of hook cannot enter declaration export (TS4078).
   useEffect: (effect: ReactNS.EffectCallback, deps?: ReactNS.DependencyList) => void;
 }): (props: {
   state: BalanceState;
   on: boolean;
-  /** 目标页：0 为初始页；内置 windows 形态下 0 收起、1 窗口明细、2 区间用量。 */
+  /** Target page: 0 is the initial page; in the built-in windows form, 0 is collapsed, 1 is window details, and 2 is interval usage. */
   index: number;
-  /** 点击气泡：上层切到下一页并重置 10s 计时器。 */
+  /** Click bubble: the upper layer switches to the next page and resets the 10 s timer. */
   onCycle: () => void;
 }) => ReactNode {
   const { h, useState, useEffect } = rt;
@@ -265,7 +273,7 @@ export function makeBalanceBubble(rt: {
     index: number;
     onCycle: () => void;
   }) {
-    // shown 是实际显示页，index 是目标页；分开是为了留出淡出换内容的 250ms。
+    // shown is the actual display page, index is the target page; the separation is to leave 250 ms for fade-out content.
     const [shown, setShown] = useState(0);
     const [fading, setFading] = useState(false);
     useEffect(() => {
@@ -278,16 +286,16 @@ export function makeBalanceBubble(rt: {
       return () => window.clearTimeout(timer);
     }, [index, shown]);
 
-    // 行数据与第三方节点树二选一；custom 页索引越界时夹到最后一页，避免显示残页。
+    // Choose one between row data and third-party node tree; when the custom page index crosses the boundary, it is clamped to the last page to avoid displaying broken pages.
     const isCustom = state.ok && state.shape === 'custom';
     const views = isCustom ? customViews(state) : undefined;
     const tree = views ? views[Math.min(shown, views.length - 1)] : undefined;
     const rows = isCustom ? [] : balancePageView(state, shown);
-    // 可点：windows 可展开；custom 只有多于 1 页才可点；其余形态点开没有新内容。
+    // Can be clicked: windows can be expanded; custom can only be clicked if it has more than 1 page; there is no new content when clicking on other forms.
     const clickable = state.ok && (state.shape === 'windows' || (isCustom && customClickable(state)));
-    // 不可用状态是多行说明，套用碎碎念的窄字号变体。
+    // The unavailable state is a multi-line description, using the narrow font variant of whisper.
     const wrap = state.ok ? '' : ' dsh-pet-whisper';
-    // 展开态字号只属于内置 windows 的窗口明细与用量两页；custom 各页是对等页面，翻页不该切紧凑字号。
+    // The expanded font size only belongs to the two pages of window details and usage of the built-in windows; custom pages are equivalent pages, and the compact font size should not be changed when turning pages.
     return h('div', {
       className:
         'dsh-pet-bubble' +
@@ -296,7 +304,7 @@ export function makeBalanceBubble(rt: {
         (clickable ? ' is-clickable' : '') +
         (!isCustom && shown > 0 ? ' is-expanded' : '') +
         (fading ? ' is-fading' : ''),
-      // 就地吞掉，避免触发宠物本体的点击与拖拽。
+      // Swallow it on the spot to avoid triggering the click and drag of the pet body.
       onClick: clickable
         ? (e: ReactNS.MouseEvent<HTMLDivElement>) => {
             e.stopPropagation();
@@ -308,9 +316,11 @@ export function makeBalanceBubble(rt: {
   };
 }
 
-/** 制造碎碎念气泡组件（工厂），与余额气泡共用样式与行渲染。
- *  image 是池内名（按素材根拼路径），url 是第三方完整地址，两者互斥且由 host 判定层保证。
- *  有配图时渲染在文字上方，图片样式取自 shared 的 MEME_BUBBLE_CSS。
+/**
+ * Create a whisper bubble component (factory) that shares styles and row rendering with the balance bubble. image is
+ * the name in the pool (path based on asset root), and url is the complete address of the third party. The two are
+ * mutually exclusive and guaranteed by the host decision layer. When there is a picture, it is rendered above the
+ * text, and the picture style is taken from MEME_BUBBLE_CSS of shared.
  */
 export function makeWhisperBubble(rt: { h: typeof jsx }): (props: {
   text: string;
@@ -319,7 +329,7 @@ export function makeWhisperBubble(rt: { h: typeof jsx }): (props: {
   assetRoot?: string;
   on: boolean;
   voiceState?: 'idle' | 'loading' | 'ready' | 'failed';
-  /** 可点时的回调；工作状态气泡用它跳会话，缺省即不可点。 */
+  /** The callback is clickable; the working state bubble uses it to jump to the session, and it is not clickable by default. */
   onClick?: (e: ReactNS.MouseEvent<HTMLDivElement>) => void;
 }) => ReactNode {
   const { h } = rt;
@@ -346,14 +356,14 @@ export function makeWhisperBubble(rt: { h: typeof jsx }): (props: {
     const rows = whisperBubbleView({ ok: true, text, ts: 0 });
     const key = String(image ?? '').trim();
     const href = String(url ?? '').trim();
-    // 配图二选一：url 直接用，image 按素材根拼路径；判别位在字段名上，不靠 startsWith 嗅探。
+    // Choose one of the two pictures: url is used directly, image is used to spell the path according to the asset root; the judgment position is on the field name, and does not rely on startsWith sniffing.
     const src = href || (key ? memeImageUrl(key, ROUTE_PATH, assetRoot) : '');
     const body = src
       ? [
           h('img', {
             key: 'img',
             className: MEME_IMG_CLASS,
-            // 名称形态拼本页路由前缀；url 形态是完整地址，与本页 origin 无关。
+            // The name form spells the route prefix of this page; the url form is the complete address and has nothing to do with origin of this page.
             src,
             alt: key || href,
           }),
@@ -366,7 +376,7 @@ export function makeWhisperBubble(rt: { h: typeof jsx }): (props: {
         (src ? ' ' + MEME_BUBBLE_CLASS : '') +
         (on ? ' is-on' : '') +
         (onClick ? ' is-clickable' : ''),
-      // 点在气泡上不能漏到底下的宠物本体：那里是拖拽与「摸一下」的命中区。
+      // Clicking on the bubble cannot leak to the pet body below: there is the hit area for dragging and "touching".
       onClick: onClick
         ? (e: ReactNS.MouseEvent<HTMLDivElement>) => {
             e.stopPropagation();
@@ -378,8 +388,11 @@ export function makeWhisperBubble(rt: { h: typeof jsx }): (props: {
   };
 }
 
-/** 语音状态角标：只在手动触发的播报上出现，右下角绝对定位，不参与文字排版。
- *  `failed` 用静音喇叭——「本该有声却没响」，不是系统告警，所以不上警告符号。 */
+/**
+ * Voice status corner mark: only appears on manually triggered broadcasts. The lower right corner is absolutely
+ * positioned and does not participate in text layout. `failed` uses a silent speaker - "it should have a sound but it
+ * didn't". It is not a system warning, so there is no warning symbol.
+ */
 function voiceBadgeNode(h: typeof jsx, state: 'loading' | 'ready' | 'failed'): ReactNode {
   return h('span', {
     key: 'voice',

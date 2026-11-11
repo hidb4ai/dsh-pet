@@ -1,10 +1,12 @@
 /**
- * 模型选择器行模型的契约测试。
+ * Contract testing of model selector rows.
  *
- * 三条契约：
- *   1. 「跟随当前对话」不是模型：只在没有搜索词时出现；
- *   2. 搜索是大小写不敏感的有序子序列匹配，且命中不了的服务商整组不显示；
- *   3. 只有「无搜索词且该服务商确实没有模型」才补一行「没有可用模型」，其余情况不产生提示行。
+ * Three contracts:
+ * 1. "Follow current conversation" is not a model: it only appears when there is no search term;
+ * 2. The search is case-insensitive ordered subsequence matching, and the entire group of service providers that
+ * cannot be hit will not be displayed;
+ * 3. Add a line "No model available" only if "there is no search term and the service provider does not have a model".
+ * In other cases, no prompt line will be generated.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,32 +31,32 @@ const catalog: ModelCatalogGroup[] = [
 
 const kinds = (rows: ReturnType<typeof buildModelRows>): string[] => rows.map((row) => row.kind);
 
-describe('matchModelQuery —— 搜索语义', () => {
-  test('空搜索词命中一切；纯空白等同空', () => {
+describe('matchModelQuery - Search semantics', () => {
+  test('Empty search terms hit everything; pure whitespace equals empty', () => {
     assert.equal(matchModelQuery('GPT-4o', ''), true);
     assert.equal(matchModelQuery('GPT-4o', '   '), true);
   });
 
-  test('大小写不敏感的有序子序列：gpt4 命中 GPT-4o', () => {
+  test('Case-insensitive ordered subsequence: gpt4 hits GPT-4o', () => {
     assert.equal(matchModelQuery('GPT-4o', 'gpt4'), true);
     assert.equal(matchModelQuery('GPT-4o', 'GpT4O'), true);
   });
 
-  test('字符顺序不对或字符不全就不命中', () => {
-    assert.equal(matchModelQuery('GPT-4o', '4gpt'), false, '子序列必须保持原顺序');
+  test('The characters are in the wrong order or all characters are missing, so there is no hit.', () => {
+    assert.equal(matchModelQuery('GPT-4o', '4gpt'), false, 'Subsequences must maintain their original order');
     assert.equal(matchModelQuery('GPT-4o', 'gpt5'), false);
-    assert.equal(matchModelQuery('GPT-4o', 'gpt4oo'), false, '重复字符不能凭空命中');
+    assert.equal(matchModelQuery('GPT-4o', 'gpt4oo'), false, 'Repeated characters cannot be hit out of thin air');
   });
 });
 
-describe('buildModelRows —— 行清单', () => {
-  test('无搜索词：先「跟随当前对话」，再每个服务商一个分组头 + 组内全部模型', () => {
+describe('buildModelRows - line list', () => {
+  test('No search terms: first "Follow the current conversation", then a group header for each service provider + all models in the group', () => {
     const rows = buildModelRows(catalog, '');
     assert.deepEqual(kinds(rows), ['follow', 'group', 'model', 'model', 'group', 'none']);
     assert.equal(rows[1].kind === 'group' ? rows[1].name : '', 'OpenAI');
   });
 
-  test('有搜索词：不出现「跟随当前对话」（它不是模型）', () => {
+  test('There is a search term: "Follow current conversation" does not appear (it is not a model)', () => {
     const rows = buildModelRows(catalog, 'gpt');
     assert.equal(
       rows.some((row) => row.kind === 'follow'),
@@ -62,20 +64,20 @@ describe('buildModelRows —— 行清单', () => {
     );
   });
 
-  test('有搜索词：组内一个都没命中就整组消失，连分组头也不留', () => {
+  test('There is a search term: if no one in the group is hit, the whole group disappears, not even the group header is left.', () => {
     const rows = buildModelRows(catalog, 'gpt');
     assert.deepEqual(kinds(rows), ['group', 'model']);
-    assert.equal(rows[0].key, 'openai', '剩下的分组头必须是命中的那个服务商');
+    assert.equal(rows[0].key, 'openai', 'The remaining packet header must be the hit service provider');
   });
 
-  test('空服务商：无搜索词时留分组头 + 一行「没有可用模型」，有搜索词时整组消失', () => {
+  test('Empty service provider: When there is no search term, the group header + a line "No available model" is left, and when there is a search term, the entire group disappears', () => {
     const idle = buildModelRows(catalog, '');
     assert.deepEqual(kinds(idle).slice(-2), ['group', 'none']);
     const searching = buildModelRows(catalog, 'zzz');
     assert.deepEqual(kinds(searching), []);
   });
 
-  test('行的 key 唯一：同名模型在不同服务商下不会撞键', () => {
+  test('OK key only: models with the same name will not hit keys under different service providers', () => {
     const rows = buildModelRows(
       [
         { id: 'a', name: 'A', models: [{ id: 'same', name: '同名' }] },
@@ -84,12 +86,12 @@ describe('buildModelRows —— 行清单', () => {
       '',
     );
     const keys = rows.map((row) => row.key);
-    assert.equal(new Set(keys).size, keys.length, 'key 撞了会让 React 复用错节点');
+    assert.equal(new Set(keys).size, keys.length, 'If key collides, React will reuse the wrong node.');
   });
 });
 
-describe('selectableIndexes —— 键盘可走的位置', () => {
-  test('跳过分组头与提示行，只留模型与「跟随当前对话」', () => {
+describe('selectableIndexes ——The position where the keyboard can move', () => {
+  test('Skip the group header and prompt line, leaving only the model and "Follow current conversation"', () => {
     const rows = buildModelRows(catalog, '');
     const selectable = selectableIndexes(rows);
     assert.deepEqual(
@@ -98,8 +100,12 @@ describe('selectableIndexes —— 键盘可走的位置', () => {
     );
   });
 
-  test('没有可选行时返回空数组（键盘走动必须直接返回）', () => {
-    assert.deepEqual(selectableIndexes(buildModelRows([], '')), [0], '空清单时仍有「跟随当前对话」');
+  test('Return an empty array when there is no optional row (keyboard movement must return directly)', () => {
+    assert.deepEqual(
+      selectableIndexes(buildModelRows([], '')),
+      [0],
+      '"Follow current conversation" still exists when the list is empty',
+    );
     assert.deepEqual(selectableIndexes(buildModelRows(catalog, 'zzz')), []);
   });
 });

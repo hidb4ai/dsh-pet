@@ -1,10 +1,12 @@
 /**
- * 注册壳的契约：默认键位铺哪几个环境、web:linux 为什么缺席、触发后跑不跑、服务缺失怎么降级。
+ * The contract of the register shell: which environments are the default keys, why web:linux is absent, whether it can
+ * run after being triggered, and how to downgrade if the service is missing.
  *
- * 这一层是三条命令共用的，错了会一起错：铺错档案会让某端悄悄没有默认键，
- * 漏掉 resolve 会让快捷键按下去毫无反应，只说 page 则让第二次按被输入框吞掉。
+ * This layer is shared by three commands. If they are wrong, they will go wrong together: the wrong file will cause a
+ * certain end to have no default key, leaving out resolve will cause the shortcut key to have no response when
+ * pressed, and only saying page will cause the second press to be swallowed by the input box.
  *
- * 跑法：node --experimental-strip-types --test src/client/app-shortcut.test.ts
+ * Running method: node --experimental-strip-types --test src/client/app-shortcut.test.ts
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +20,7 @@ import {
   type ShortcutHost,
 } from './app-shortcut.ts';
 
-/** 一次注册的完整命令（断言用）。 */
+/** A complete command of register (for assertion). */
 interface Registered {
   id: string;
   label: () => string;
@@ -28,7 +30,7 @@ interface Registered {
   resolve: () => { status: string; run?: () => void };
 }
 
-/** 假上下文：记录注册与注销。 */
+/** False context: logging register and logout. */
 function makeHost(mode: 'ok' | 'missing' | 'reject') {
   const state: { command?: Registered; disposed: number } = { disposed: 0 };
   const host: ShortcutHost =
@@ -54,25 +56,25 @@ function makeHost(mode: 'ok' | 'missing' | 'reject') {
   return { host, state };
 }
 
-/** 被测命令：键位随便给，断言只关心它被原样铺开。 */
+/** The command under test: the key position is given casually, and the assertion only cares that it is laid out as it is. */
 const BINDING = { code: 'KeyL', modifiers: ['primary', 'shift'] } as const;
 
-describe('keycapOf —— 键帽推导', () => {
-  /** 与实现同一套判据；测试只关心「推导规则」而不是具体平台。 */
+describe('keycapOf —— Keycap derivation', () => {
+  /** The same set of criteria as the implementation; the test only cares about the "derivation rules" rather than the specific platform. */
   const primary = /Mac/i.test(navigator.platform || navigator.userAgent) ? 'Cmd' : 'Ctrl';
 
-  test('primary 按平台展开，Key 前缀去掉', () => {
+  test('primary is expanded according to the platform, and the Key prefix is removed.', () => {
     assert.equal(keycapOf({ code: 'KeyL', modifiers: ['primary', 'shift'] }), primary + '+Shift+L');
     assert.equal(keycapOf({ code: 'KeyM', modifiers: ['primary'] }), primary + '+M');
   });
 
-  test('没有修饰键时只出字母', () => {
+  test('Only letters appear when there are no modifier keys', () => {
     assert.equal(keycapOf({ code: 'KeyV', modifiers: [] }), 'V');
   });
 });
 
-describe('registerAppShortcut —— 快捷键注册壳', () => {
-  test('服务可用 → 五个环境都用同一个键位，web:linux 不在其中', () => {
+describe('registerAppShortcut —— shortcut key register shell', () => {
+  test('Service available → All five environments use the same key, web:linux is not among them', () => {
     const { host, state } = makeHost('ok');
     const result = registerAppShortcut(host, {
       id: 'pet-chat.float',
@@ -85,19 +87,24 @@ describe('registerAppShortcut —— 快捷键注册壳', () => {
     for (const profile of SHORTCUT_PROFILES) {
       assert.deepEqual(state.command?.defaults[profile], BINDING, profile);
     }
-    assert.equal(state.command?.defaults['web:linux'], undefined, 'web:linux 进白名单会整条被拒');
+    assert.equal(
+      state.command?.defaults['web:linux'],
+      undefined,
+      'If web:linux is added to the whitelist, the entire line will be rejected.',
+    );
   });
 
-  test('同时认 page 与 editable：弹窗开了焦点在输入框里也必须收得到', () => {
+  test('Recognize page and editable at the same time: the pop-up window must be received even if the focus is on in the input box', () => {
     const { host, state } = makeHost('ok');
     registerAppShortcut(host, { id: 'x.y', label: () => 'L', binding: BINDING, run: () => {} });
-    // 少写 editable：第一次按能开窗，第二次按会被 DSH 当成「在输入框里打字」直接放过，
-    // 于是既不关窗也不 preventDefault，浏览器原生快捷键照跑。
+    // Write less editable: The first press will open the window, but the second press will treat DSH as "typing in the
+    // input box" and directly ignore it. Therefore, neither close the window nor preventDefault, and the browser's
+    // native shortcut keys will still run.
     assert.deepEqual(state.command?.regions, ['page', 'editable']);
     assert.deepEqual(state.command?.modals, []);
   });
 
-  test('触发 → 调用传入的动作', () => {
+  test('Trigger → Call the incoming action', () => {
     const { host, state } = makeHost('ok');
     let ran = 0;
     registerAppShortcut(host, {
@@ -114,13 +121,13 @@ describe('registerAppShortcut —— 快捷键注册壳', () => {
     assert.equal(ran, 1);
   });
 
-  test('注销透传给快捷键服务', () => {
+  test('Log out of transparent transmission shortcut key service', () => {
     const { host, state } = makeHost('ok');
     registerAppShortcut(host, { id: 'x.y', label: () => 'L', binding: BINDING, run: () => {} }).dispose();
     assert.equal(state.disposed, 1);
   });
 
-  test('服务缺失 → 不注册、不抛，回报 registered=false', () => {
+  test('Missing service → No register, no throw, return registered = false', () => {
     const { host, state } = makeHost('missing');
     const result = registerAppShortcut(host, { id: 'x.y', label: () => 'L', binding: BINDING, run: () => {} });
     assert.equal(result.registered, false);
@@ -128,7 +135,7 @@ describe('registerAppShortcut —— 快捷键注册壳', () => {
     assert.doesNotThrow(() => result.dispose());
   });
 
-  test('注册被拒（键位不合白名单 / id 冲突）→ 回报 registered=false，不向上抛', () => {
+  test('register rejected (key position does not match the whitelist / id conflict) → return registered = false, do not throw upward', () => {
     const { host } = makeHost('reject');
     const result = registerAppShortcut(host, { id: 'x.y', label: () => 'L', binding: BINDING, run: () => {} });
     assert.equal(result.registered, false);
@@ -136,10 +143,10 @@ describe('registerAppShortcut —— 快捷键注册壳', () => {
   });
 });
 
-/** 目录行：`keys` 是服务按平台展开好的片段，macOS 用符号且不带 `+`。 */
+/** Directory line: `keys` is a fragment of the service expanded by platform, macOS is marked without `+`. */
 type Row = { id: string; keys: string[] };
 
-/** 假目录：记录订阅者，`emit()` 模拟用户改绑。 */
+/** Fake directory: record subscriber, `emit()` simulates user change. */
 function makeCatalogHost(rows: Row[]) {
   const listeners: Array<() => void> = [];
   const host: ShortcutHost = {
@@ -157,32 +164,32 @@ function makeCatalogHost(rows: Row[]) {
   return { host, listeners };
 }
 
-describe('readShortcutKeycap —— 读用户改绑后的键帽', () => {
-  test('目录里有这行 → 拼成键帽', () => {
+describe('readShortcutKeycap - Read the keycaps modified by the user', () => {
+  test('There is this line in the directory → spelled as keycap', () => {
     const { host } = makeCatalogHost([{ id: 'pet-chat.float', keys: ['Ctrl', '+', 'Alt', '+', 'K'] }]);
     assert.equal(readShortcutKeycap(host, 'pet-chat.float'), 'Ctrl+Alt+K');
   });
 
-  test('macOS 的符号键帽原样拼接，不插入分隔符', () => {
+  test('The symbol keycap of macOS is concatenate as it is without inserting the delimiter.', () => {
     const { host } = makeCatalogHost([{ id: 'pet-chat.float', keys: ['⌃', '⇧', 'L'] }]);
     assert.equal(readShortcutKeycap(host, 'pet-chat.float'), '⌃⇧L');
   });
 
-  test('命令没在目录里 / 键位被清空 → undefined，由调用方退回默认组合', () => {
+  test('The command is not in the directory/the key is cleared → undefined, and the caller returns to the default combination', () => {
     const { host } = makeCatalogHost([{ id: 'other.command', keys: ['Ctrl', '+', 'L'] }]);
     assert.equal(readShortcutKeycap(host, 'pet-chat.float'), undefined);
     const cleared = makeCatalogHost([{ id: 'pet-chat.float', keys: [] }]);
     assert.equal(readShortcutKeycap(cleared.host, 'pet-chat.float'), undefined);
   });
 
-  test('宿主没有目录（旧版本 / 服务缺失）→ undefined，不抛', () => {
+  test('host has no directory (old version/service missing) → undefined, not thrown', () => {
     assert.equal(readShortcutKeycap({ get: () => ({ register: () => () => {} }) }, 'pet-chat.float'), undefined);
     assert.equal(readShortcutKeycap({ get: () => undefined }, 'pet-chat.float'), undefined);
   });
 });
 
-describe('subscribeShortcutKeycaps —— 改绑后通知重读', () => {
-  test('改绑触发订阅者', () => {
+describe('subscribeShortcutKeycaps ——Notification to reread after changing the binding', () => {
+  test('Change binding to trigger subscriber', () => {
     const { host, listeners } = makeCatalogHost([]);
     let hits = 0;
     const off = subscribeShortcutKeycaps(host, () => {
@@ -193,7 +200,7 @@ describe('subscribeShortcutKeycaps —— 改绑后通知重读', () => {
     assert.doesNotThrow(() => off());
   });
 
-  test('宿主没有目录 → 返回空注销函数，不抛', () => {
+  test('host has no directory → returns an empty logout function and does not throw', () => {
     const off = subscribeShortcutKeycaps({ get: () => undefined }, () => {});
     assert.doesNotThrow(() => off());
   });

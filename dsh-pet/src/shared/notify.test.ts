@@ -1,52 +1,52 @@
 /**
- * 通知标题的单元测试 —— 钉住「会话名进标题」这条约定：
- *   completed 的标题就是会话名（没有名字才回落「对话完成」）；
- *   error / max-tokens / 审批 / 提问 用「会话名 · 事件」，事件类型不被会话名吞掉；
- *   没有会话名（宿主没带 sessionId、会话不在列表、空白会话）一律回落固定文案；
- *   超长会话名按 30 字符截断，标题只占一行。
+ * Unit test of notification title - verify the convention of "the session name enters the title": the title of
+ * completed is the session name (if there is no name, fallback "conversation is completed"); error / max-tokens /
+ * Approval / Question uses "session name · event", the event type is not swallowed up by the session name; there is no
+ * session name (host does not contain sessionId, the session is not in the list, the session is blank) fallback fixed
+ * copy; very long session names are truncated by 30 characters, and the title only occupies one line.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { frameToToast, MAX_BODY } from './notify.ts';
 
-/** 审批帧：标题固定是「正在申请权限」，用它观察会话名怎么拼进标题。 */
+/** Approval frame: The title is fixed to "Applying for Permissions", use it to observe how the session name is spelled into the title. */
 const approvalFrame = { type: 'approval/requested', sessionId: 's1', toolName: 'bash', reason: '要写 /tmp' };
 
-describe('frameToToast：会话名进标题', () => {
-  test('有会话名时是「会话名 · 事件」', () => {
+describe('frameToToast: The session name is entered into the title', () => {
+  test('When there is a session name, it is "session name·event"', () => {
     assert.equal(frameToToast(approvalFrame, '修复通知标题')?.title, '修复通知标题 · 正在申请权限');
   });
 
-  test('没有会话名、空串、纯空白时只留事件类型', () => {
+  test('When there is no session name, empty string, or pure blank, only the event type is left.', () => {
     assert.equal(frameToToast(approvalFrame)?.title, '正在申请权限');
     assert.equal(frameToToast(approvalFrame, '')?.title, '正在申请权限');
     assert.equal(frameToToast(approvalFrame, '   ')?.title, '正在申请权限');
   });
 
-  test('会话名超长按 30 字符截断，事件类型不被截掉', () => {
+  test('The session name is truncated after a long press of 30 characters, but the event type is not truncated.', () => {
     assert.equal(frameToToast(approvalFrame, '会话'.repeat(30))?.title, '会话'.repeat(15) + '… · 正在申请权限');
   });
 });
 
-describe('frameToToast：完成通知', () => {
+describe('frameToToast: Completion notification', () => {
   const done = (text?: string) => ({
     type: 'session/event',
     sessionId: 's1',
     event: { type: 'turn/end', data: { reason: { kind: 'completed' }, text } },
   });
 
-  test('标题是会话名本身，不再缀「对话完成」', () => {
+  test('The title is the session name itself, no longer appended with "Conversation Completed"', () => {
     const t = frameToToast(done('改完了'), '修复通知标题');
     assert.equal(t?.title, '修复通知标题');
     assert.equal(t?.body, '改完了');
   });
 
-  test('没有会话名时回落「对话完成」', () => {
+  test('fallback "Conversation completed" when there is no session name', () => {
     assert.equal(frameToToast(done('改完了'))?.title, '对话完成');
     assert.equal(frameToToast(done('改完了'), '   ')?.title, '对话完成');
   });
 
-  test('正文仍按 80 字符截断，标题与正文互不影响', () => {
+  test('The text is still truncated at character 80, and the title and text do not affect each other.', () => {
     const long = 'x'.repeat(MAX_BODY + 10);
     const t = frameToToast(done(long), 'a'.repeat(100));
     assert.equal(t?.body, 'x'.repeat(MAX_BODY) + '…');
@@ -54,8 +54,8 @@ describe('frameToToast：完成通知', () => {
   });
 });
 
-describe('frameToToast：其他事件带上会话名', () => {
-  test('error 是「会话名 · 生成失败」，正文仍是错误信息', () => {
+describe('frameToToast: Other events carry session names', () => {
+  test('error is "Session name·Generation failed", the text is still an error message', () => {
     const frame = {
       type: 'session/event',
       sessionId: 's1',
@@ -67,7 +67,7 @@ describe('frameToToast：其他事件带上会话名', () => {
     assert.equal(frameToToast(frame)?.title, '生成失败');
   });
 
-  test('max-tokens / 审批 / 提问同样前缀会话名', () => {
+  test('max-tokens / Approval / Question the same prefix session name', () => {
     const maxTokens = { type: 'session/event', event: { type: 'turn/end', data: { reason: { kind: 'max-tokens' } } } };
     assert.equal(frameToToast(maxTokens, '长文档')?.title, '长文档 · 输出被截断');
     assert.equal(frameToToast(approvalFrame, '部署')?.title, '部署 · 正在申请权限');
@@ -77,15 +77,15 @@ describe('frameToToast：其他事件带上会话名', () => {
     assert.equal(frameToToast(question)?.title, '模型在等你回答');
   });
 
-  test('host/agent-error 没有会话维度，标题保持「生成失败」', () => {
+  test('host/agent-error has no session dimension and the title remains "Generation failed"', () => {
     const t = frameToToast({ type: 'host/agent-error', message: '进程崩了' }, '任何名字');
     assert.equal(t?.title, '生成失败');
     assert.equal(t?.body, '进程崩了');
   });
 });
 
-describe('frameToToast：不弹的分支', () => {
-  test('aborted / interrupted / 未知类型返回 null', () => {
+describe('frameToToast: branch that is not played', () => {
+  test('aborted / interrupted / Unknown type returns null', () => {
     for (const kind of ['aborted', 'interrupted']) {
       const frame = { type: 'session/event', event: { type: 'turn/end', data: { reason: { kind } } } };
       assert.equal(frameToToast(frame, '这条也不该弹'), null);

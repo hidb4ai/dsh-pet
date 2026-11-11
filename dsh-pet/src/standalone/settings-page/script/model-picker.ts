@@ -1,16 +1,20 @@
 /**
- * 模型字段的可手填下拉：输入框持有值，右侧箭头拉取候选并弹出菜单。
+ * Hand-fillable drop-down of model fields: the input box holds the value, and the arrow on the right pulls the
+ * candidate and pops up the menu.
  *
- * 拉到的列表只留在内存，地址或协议一改就作废，避免拿 A 家的模型去配 B 家。
+ * The pulled list only remains in the memory, and will be invalidated once the address or protocol is changed. Avoid
+ * using the model of the A family to match the B family.
  * @module dsh-pet/src/standalone/settings-page/script/model-picker
  */
 
-/** 生成模型选择片段。 */
+/** Generating model selection fragments. */
 export function modelPickerScript(): string {
   return `
 const AI_MODELS_URL = '/standalone-ai/models';
 
-/** 上一次拉到的候选；null 表示还没拉过，需要先请求。 */
+/**
+ * Candidate pulled last time; null means it has not been pulled yet and needs to be requested first.
+ */
 let modelOptions = null;
 
 function modelLabel(model) {

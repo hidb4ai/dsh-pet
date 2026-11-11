@@ -1,17 +1,20 @@
 /**
- * 构建期初始化：DOM 骨架、事件绑定、各面板与驱动的初值、跨窗碰撞订阅。
+ * Initialization during construction: DOM skeleton, event binding, initial values of each panel and driver,
+ * cross-window collision subscribe.
  *
- * 只由 constructor 调用一次；运行期的行为在 sprite-playback / sprite-motion / sprite-input。
- * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
+ * Called only once by constructor; runtime behavior is in sprite-playback / sprite-motion / sprite-input. PetSprite is
+ * defined by sprite.js. This file only adds methods to the prototype and must be loaded afterwards.
  * @module dsh-pet/runtime/electron-helper/sprite-init
  */
 'use strict';
 
 Object.assign(PetSprite.prototype, {
   initPlayback(pet) {
-    // 动画池与权重由拍平层按条目注入（renderer 的 S.flattenConfigPets），条目缺 animations 就是配置不全：
-    // 明确报错交给 boot 的红条与 5s 重试，绝不回落到没有定义的全局（那只会变成一句 ReferenceError）。
-    if (!pet.animations) throw new Error('宠物缺少 animations 段：' + String(pet.id ?? ''));
+    // The animation pool and weight are injected from the flattening layer by entry (S.flattenConfigPets of renderer).
+    // If the entry is missing animations, it means the configuration is incomplete: clearly report the error to the
+    // red bar of boot and 5 s to try again, and never fallback to an undefined global (that will only become a
+    // sentence ReferenceError).
+    if (!pet.animations) throw new Error('Pet has no animations configuration:' + String(pet.id ?? ''));
     this.animations = pet.animations;
     this.weights = pet.animationWeights;
     this.front = 0; // 0 = A, 1 = B
@@ -19,131 +22,142 @@ Object.assign(PetSprite.prototype, {
     this.gen = 0;
     this.anim = this.animations.idle[0] ?? '';
     this.once = true;
-    // 播放回执：当前正在播的第三方点播编号（null = 自播动画，不上报）。单独一个字段是因为
-    // 动画名分不出「这一段该不该上报」——菜单点播与第三方 /anim 可以播同名动画。
+    // Playback receipt: The third-party playback request number currently being played (null = self-played animation,
+    // not reported). There is a single field because the animation name cannot be determined as "should this section
+    // be reported?" - the menu playback request and the third party / anim can play the animation with the same name.
     this.playback = null;
-    // 朝向走 accessor：赋值即标记实况脏。初始化阶段直接写 `_facing`，避免其它字段就绪前触发上报。
+    // Heading towards accessor: Assignment means marking the live dirty. Write `_facing` directly during the initialization phase to avoid triggering reporting before other fields are ready.
     this._facing = 'left';
-    this.poseTimer = null; // 实况上报的节流定时器（见 markPoseDirty）
+    this.poseTimer = null; // throttling timer for live reporting (see markPoseDirty)
   },
 
-  /** 拖拽 / 抛掷 / 移动 / 挤压的帧句柄与状态；stop 之前这些只有一份。 */
+  /** Frame handle and status of dragging/throwing/moving/squeezing; stop There was only one copy of these before. */
   initMotion() {
-    // 交互/移动
+    // Interaction/Movement
     this.dragState = { active: false, dragging: false, sx: 0, sy: 0, petX: 0, petY: 0 };
     this.justDragged = false;
-    // 上一次按下的时刻（0 = 还没记过）：弹弓的判定依据是两次按下之间隔了多久，与松手时间无关。
+    // The time of the last press (0 = not yet recorded): The slingshot is judged based on the time between two presses, regardless of the release time.
     this.lastPressAt = 0;
-    this._interactive = null; // 已上报的可交互状态（setInteractive 去重用）
-    this._inputBusy = null; // 已上报的"正在用输入"状态（syncInputBusy 去重用）
-    // 拖拽抛掷物理（纯计算在 shared）：弹簧跟随包围盒左上角，松手按指针轨迹估速 → 抛掷
-    this.dragTrail = []; // 指针轨迹采样（screenX/Y + performance.now()，初速估算用）
+    this._interactive = null; // Reported interactive status (for setInteractive deduplicate)
+    this._inputBusy = null; // Reported "input in use" status (used by syncInputBusy deduplicate) Drag and throw physics (pure calculation in
+    // shared): The spring follows the upper left corner of the bounding box, let go and estimate the speed according to
+    // the pointer trajectory → Throw
+    this.dragTrail = []; // Pointer trajectory sampling (screenX/Y + performance.now(), used for muzzle velocity estimation)
     this.dragTarget = null;
     this.dragVel = { vx: 0, vy: 0 };
-    this.dragFollow = null; // 弹簧跟随 rAF handle
+    this.dragFollow = null; // Spring following rAF handle
     this.dragFollowToken = 0;
-    this.throwRef = null; // 抛掷 rAF handle
+    this.throwRef = null; // Throw rAF handle
     this.throwToken = 0;
-    // 位置指令的跟随 rAF（spring 与 line 共用）：与拖拽跟手分开——这条有终点，收敛或到点必须自己收掉。
+    // Position command following rAF (shared by spring and line): Separate from dragging and following the hand - this line has an end point, and must be closed when it converges or reaches the point.
     this.posFollow = null;
     this.posFollowToken = 0;
-    this.space = null; // 抛掷空间（逐屏 AABB）缓存；显示器变化时由 relayout() 置空重建
-    // Q 弹挤压（点击回应 / 抛掷落地）：rAF + 待压标记（等新动画成为前台再压，压新首帧）
+    this.space = null; // Throwing space (screen-by-screen AABB) cache; when the display changes, relayout() is left blank and rebuilt. Q
+    // bomb squeeze (click response/throw landing): rAF + waiting mark (wait for the new animation to become the foreground
+    // before pressing, and press the new first frame)
     this.squashRef = null;
     this.squashToken = 0;
     this.pendingSquash = false;
-    this._interactive = null; // 当前可交互状态（null=未定；只在变化时发 IPC，避免逐帧刷屏）
+    this._interactive = null; // Current interactive status (null = undecided; only send IPC when changing to avoid refreshing the screen frame by frame)
     this.moveRef = null;
     this.moveToken = 0;
     this.pendingMove = null;
-    this.customPos = null; // 拖拽后的会话内位置（{rx, ry} 比例）；restart 回角落
+    this.customPos = null; // Position within the session after dragging ({ rx , ry } ratio); restart returns to the corner
   },
 
-  /** 菜单、气泡、提示、余额、碎碎念、工作状态、占用锁与对话弹窗的开关状态。 */
+  /** Menu, bubble, prompt, balance, whisper, working status, occupation lock and dialogue pop-up window switching status. */
   initPanels() {
-    // 第三方菜单项（/state 的 sections.menu 快照）：只在右键那一刻拼进菜单，不参与渲染。
+    // Third-party menu item (/ sections.menu snapshot of state): only enters the menu at the moment of right-clicking, and does not participate in rendering.
     this.menuItems = [];
-    // 右键菜单（统一自绘组件，两端共用同一份：树+渲染均来自 shared-core）
-    this.menuOpen = false; // 菜单开启期间强制整窗可交互（悬停菜单不触发穿透翻转）
-    this.menuClose = null; // 当前菜单的 close()（打开时挂载，关闭后置空）
-    // 余额气泡
+    // Right-click menu (unified self-drawn components, both ends share the same one: tree + rendering are both from shared-core)
+    this.menuOpen = false; // Force the entire window to be interactive when the menu is open (hovering the menu does not trigger click-through flip)
+    this.menuClose = null; // close() of the current menu (mounted when opened, empty after closed) balance bubble
     this.bubbleOn = false;
     this.bubbleTimer = null;
-    // 悬浮提示（替代原生 title）：显隐 + 最近一次光标位置（视口坐标，见 renderTip）
+    // Floating prompt (replacing native title): visible + latest cursor position (viewport coordinates, see renderTip)
     this.tipOn = false;
     this.tipCursor = null;
     this.balanceView = null;
-    this.balanceWrap = false; // true = 当前余额气泡是不可用的「文字说明」（多行，需换行变体）
-    this.balanceState = null; // 最近一次余额读数（展开态按页现算窗口明细与用量；balanceView 只是收起态的行）
-    this.balanceViewIndex = 0; // 当前页：点一下切下一页（windows 是收起 / 窗口明细 / 用量，有用量才有第三页；custom 是 views.length 页）
-    this.balanceFadeTimer = null; // 展开/收起的淡出等待（250ms 后才换内容，避免硬切）
+    this.balanceWrap = false; // true = The current balance bubble is unavailable "text description" (multiple lines, line wrapping variant required)
+    this.balanceState = null; // The latest balance reading (details and usage of the current calculation window in the expanded state; balanceView is only the row in the collapsed state)
+    this.balanceViewIndex = 0; // Current page: Click to cut the next page (windows is the collapse / window details / usage, the third page is only available when the amount is used; custom is the views.length page)
+    this.balanceFadeTimer = null; // Expand/collapse fade-out wait (change content after 250 ms to avoid hard cutting)
     this.prevTick = 0;
-    // 说话（碎碎念/命令气泡/对话回复）：文本与配图由容器统一轮询 /state 后经 showWhisper 送进来。
+    // Speaking (whisper/command bubble/conversation reply): Text and images are polled by the container / state and then sent in via showWhisper.
     this.whisperOn = false;
     this.whisperTimer = null;
     this.whisperView = null;
     this.whisperText = '';
-    // 收起计划：合成期间挂起计时，播完再留尾巴（状态机在 shared/bubble-hold，与浏览器端同一份）
+    // Collapse plan: suspend the timing during synthesis, and leave the tail after playing (the state machine is at shared/bubble-hold, the same as the browser)
     this.whisperHold = S.BUBBLE_HOLD_IDLE;
-    // 配图名称（配置 memes 的键；whisperImageEnabled 开启时由 host 随机抽定，随文本一起来）
+    // Picture name (configure the key of memes; when whisperImageEnabled is turned on, it is randomly selected by host and comes with the text)
     this.whisperImage = '';
-    // 配图地址（与 whisperImage 二选一）：两种形态由字段名区分，不靠嗅探。
+    // Picture address (choose one from whisperImage): The two forms are distinguished by field names and do not rely on sniffing.
     this.whisperUrl = '';
-    // 工作状态联动：容器每秒轮询递增 workTick → 本宠物按档位播动画与气泡，未启用时完全免疫。
-    // 气泡单槽优先级：终态任务 > whisper > balance > 非终态任务（见 renderBubble）。
+    // Working status linkage: The polling of the container increases every second by workTick → This pet plays
+    // animation and bubble according to the state, and is completely immune when not enabled. Bubble single slot
+    // priority: final tasks > whisper > balance > non-final tasks (see renderBubble).
     this.workOn = false;
     this.workTimer = null;
     this.workText = null;
-    this.workState = null; // 最近一次工作状态（互动/事件动画播完恢复档位循环用）
-    this.workSessionId = null; // 当前展示条目所属会话：有值才让工作气泡可点（点了跳过去）
-    this.bubbleSlot = 'none'; // 当前显示的气泡槽位（renderBubble 写）：点击处理据此分清翻页与跳会话
-    this.prevWorkState = null; // 上一档状态（气泡只在状态变化时点亮/收起）
+    this.workState = null; // The latest working status (used to restore the state cycle after the interaction/event animation is played)
+    this.workSessionId = null; // The session to which the currently displayed item belongs: Only when there is a value, the working bubble can be clicked (click to skip)
+    this.bubbleSlot = 'none'; // Currently displayed bubble slot (written by renderBubble): Click processing to distinguish page turning and session jumping.
+    this.prevWorkState = null; // Previous state (the bubble only lights up/closes when the state changes)
     this.prevWorkTick = 0;
-    // 占用锁：frozen = 此刻正被第三方占用；lockTimer 按叶子里的 expiresAt 自己到点解除
-    // （宿主侧过期是懒判的，不会推「锁没了」）。
+    // Occupied lock: frozen = is currently occupied by a third party; lockTimer press expiresAt in the leaf to release
+    // it yourself (expiration on the host side is lazy and will not push "lock lost").
     this.frozen = false;
     this.lockTimer = null;
-    // 睡觉：sleeping = 此刻处于睡觉态（含「起来」那段过渡），sleepSet = 宿主挑定的三段名，
-    // sleepPhase = 当前段（start / loop / end）。阶段由 handleEnded 推进——视频播完只有渲染端知道。
+    // Sleeping: sleeping = In the sleeping state at this moment (including the transition of "getting up"), sleepSet =
+    // The three-segment name selected by the host,
+    // sleepPhase = current segment ( start / loop / end ). The stage is advanced by handleEnded - only the renderer
+    // knows when the video is finished.
     this.sleeping = false;
     this.sleepSet = null;
     this.sleepPhase = null;
-    // 对话弹窗：当前挂载句柄（close / startHear / stopHear）+ 开启标记。chatOpen 是穿透守卫——
-    // 弹窗是窗口内 DOM，期间整窗保持可交互，否则光标移到输入框就会被 onMouseMove 翻回穿透、点击全被透传。
+    // Dialog pop-up window: currently mounted handle (close / startHear / stopHear) + open mark. chatOpen is a
+    // click-through guard - the pop-up window is DOM in the window, during which the entire window remains
+    // interactive, otherwise the cursor will be turned back to click-through by onMouseMove when it moves to the input
+    // box, and all clicks will be transparently transmitted.
     this.chatMount = null;
     this.chatOpen = false;
-    // 快捷键「按住 M 说话」：按下开录、松手收尾。状态机在 shared（自动重复与失焦都要拦），
-    // 本实例只负责把两个键盘事件原样送进去，动作落到 menu 的 startHearChat / stopHearChat。
-    // 闸门两条：鼠标在宠物身上，或光标还在宠物自己的弹窗里——弹窗一开焦点就在输入框，
-    // 那时恰恰是最想按住说话的时候（判定不看焦点，开录时由 chat/dom 把输入框 blur 掉）。
+    // Shortcut key "Press and hold M to speak": press to start recording, release to cleanup. The state machine is in
+    // shared (both auto-repeat and out-of-focus are blocked). This example is only responsible for sending the two
+    // keyboard events as they are, and the action falls on startHearChat / stopHearChat of menu. There are two gates:
+    // the mouse is on the pet, or the cursor is still in the pet's own pop-up window - as soon as the pop-up window
+    // opens, the focus is on the input box, which is exactly the time when you most want to hold down and speak (it is
+    // determined that the focus is not visible, and chat/dom clears the input box blur when starting recording).
     this.hearHold = S.createHearHold({
       isArmed: () =>
         Boolean(this.hoverBody) || Boolean(this.chatMount && this.chatMount.el.contains(document.activeElement)),
       onPress: () => this.startHearChat(),
       onRelease: () => this.stopHearChat(),
     });
-    // 待办面板：与对话弹窗同一套穿透守卫（面板同样是窗口内 DOM，而且比对话窗更大）。
-    // todoPanel 是面板句柄（占气泡槽，节点塞在 this.bubble 里），todoOpen 是穿透守卫标记。
+    // To-do panel: The same set of click-through guards as the dialog pop-up window (the panel is also DOM in the
+    // window, and is larger than the dialog window). todoPanel is the panel handle (occupies the bubble slot, and the
+    // node is stuffed in this.bubble), and todoOpen is the click-through guard mark.
     this.todoPanel = null;
     this.todoOpen = false;
   },
 
-  /** 建 DOM 并把首帧位置落到窗口；布局数值全部来自上面算好的 geometry。 */
+  /** Create DOM and drop the first frame position into the window; all layout values come from geometry calculated above. */
   buildDom() {
-    // DOM：sprite 摆在窗口内 (winOffset.x, winOffset.y)；宠物"位置"= sprite 位置，窗口随余量外扩。
-    // 初值等于余量，窗口被系统钳回工作区后由 fitWindow 逐帧改成更大的偏移。
+    // DOM: sprite is placed in the window (winOffset.x, winOffset.y); pet "position" = sprite position, the window
+    // expands with the margin. The initial value is equal to the margin. After the window is clamped back to the work
+    // area by the system, it is changed from fitWindow to a larger offset frame by frame.
     this.el = document.createElement('div');
     this.el.className = 'pet-sprite';
     this.el.style.left = this.winOffset.x + 'px';
     this.el.style.top = this.winOffset.y + 'px';
     this.el.style.setProperty('--pet-size', this.size + 'px');
-    // 字号（配置 font）：按本宠物尺寸算好最终 px 注入，气泡与提示的 CSS 读这两个变量
+    // Font size (configuration font): Calculate the final px injection according to the size of this pet, and read these two variables of bubble and prompt CSS
     const fontPx = S.resolveFontPx(this.font, this.size);
     this.el.style.setProperty('--dsh-pet-font-bubble', fontPx.bubble + 'px');
     this.el.style.setProperty('--dsh-pet-font-tip', fontPx.tip + 'px');
     const stage = document.createElement('div');
     stage.className = 'pet-stage';
-    // 位移恒定：拖拽中也不取消，否则视频会相对光标上跳、抓取点全程偏移 bottomPad。
+    // Constant displacement: Do not cancel during dragging, otherwise the video will jump up relative to the cursor and the grab point will be offset by bottomPad.
     stage.style.transform = 'translateY(' + this.bottomPad + 'px)';
     this.videoA = document.createElement('video');
     this.videoA.className = 'pet-video is-front';
@@ -160,11 +174,11 @@ Object.assign(PetSprite.prototype, {
     this.hit.style.top = (S.HIT_BOX.y0 / 360) * 100 + '%';
     this.hit.style.width = ((S.HIT_BOX.x1 - S.HIT_BOX.x0) / 640) * 100 + '%';
     this.hit.style.height = ((S.HIT_BOX.y1 - S.HIT_BOX.y0) / 360) * 100 + '%';
-    // 命中层挂 aria-label：原生 title 已换成自绘浮层，但无障碍名称不能跟着丢
+    // The hit layer hangs aria-label: The original title has been replaced by a self-drawn floating layer, but the accessibility name cannot be lost along with it.
     this.hit.setAttribute('aria-label', this.pet.name);
     this.bubble = document.createElement('div');
     this.bubble.className = 'pet-bubble';
-    // 气泡点击按当前槽位分流：工作气泡跳会话，余额气泡切页。都就地吞掉事件，别落到下面的本体命中层。
+    // Clicking on the bubble will be split according to the current slot: the working bubble will jump to the session, and the balance bubble will switch to the page. Swallow the events on the spot, don't fall to the body hit layer below.
     this.bubble.addEventListener('click', (e) => {
       if (this.workClickable()) {
         e.stopPropagation();
@@ -177,7 +191,7 @@ Object.assign(PetSprite.prototype, {
       e.preventDefault();
       this.toggleBalanceDetail();
     });
-    // 悬浮提示：this.el 内的绝对定位浮层，位置与翻边由 renderTip 决定，样式走 shared 的 TOOLTIP_CSS。
+    // Floating prompt: The absolute positioning floating layer in this.el, the position and flanging are determined by renderTip, and the style is shared's TOOLTIP_CSS.
     this.tip = document.createElement('div');
     this.tip.className = S.TOOLTIP_CLASS;
     this.tip.setAttribute('aria-hidden', 'true');
@@ -192,12 +206,12 @@ Object.assign(PetSprite.prototype, {
     this.position();
   },
 
-  /** 绑定指针、窗口与碰撞广播；一次性 AbortController 在 dispose 里统一取消。 */
+  /** Binding pointers, windows and collision broadcasts; one-time AbortController is canceled uniformly in dispose. */
   bindEvents() {
-    // 事件（与浏览器同一套：pointerdown/move、click、window pointerup/cancel）
+    // Event (same set as browser: pointerdown/move, click, window pointerup/cancel)
     const ac = new AbortController();
     this.ac = ac;
-    // 级联菜单新增面板、聊天输入增长都可能在鼠标停住时发生，不能只等下一次 mousemove。
+    // New panels in the cascading menu and chat input growth may occur when the mouse is stopped. You cannot just wait for the next mousemove.
     this.inputRegionResize = new ResizeObserver(() => this.syncInputRegions());
     this.inputRegionElements = new Set();
     this.inputRegionMutation = new MutationObserver(() => this.syncInputRegions());
@@ -209,19 +223,21 @@ Object.assign(PetSprite.prototype, {
     window.addEventListener('pointerup', (e) => this.onPointerUp(e), { signal: ac.signal });
     window.addEventListener('pointercancel', (e) => this.onPointerUp(e), { signal: ac.signal });
     this.hit.addEventListener('lostpointercapture', (e) => this.onPointerUp(e), { signal: ac.signal });
-    // 拖一张图到宠物身上：直接开对话并挂成待发送图（浏览器端同一套判据）
+    // Drag a picture to your pet: open a conversation directly and hang it as a picture to be sent (same set of criteria on the browser side)
     this.hit.addEventListener('dragover', (e) => this.onDragOverImage(e), { signal: ac.signal });
     this.hit.addEventListener('drop', (e) => this.onDropImage(e), { signal: ac.signal });
-    // 悬停时按键：L 开对话、按住 M 说话、D 开关待办、S 截图、Z 切换睡/醒。
-    // 窗口未被聚焦时收不到按键（透明窗用 showInactive 显示，不抢焦点）
+    // Keys when hovering: L to open a conversation, press and hold M to speak, D to switch to-do, S to take
+    // screenshots, Z to switch sleep/wake. No buttons are received when the window is not focused (the transparent
+    // window is displayed with showInactive, which does not grab the focus)
     window.addEventListener('keydown', (e) => this.onHotkey(e), { signal: ac.signal });
-    // 悬停时粘贴：剪贴板里有图就直接开对话（或塞进已经开着的对话）
+    // Paste on hover: If there is an image in the clipboard, open the conversation directly (or insert it into an already open conversation)
     window.addEventListener('paste', (e) => this.onPasteImage(e), { signal: ac.signal });
-    // 按住说话靠 keyup 收尾：这条必须在按住期间一直有效，与 keydown 同一生命周期
+    // Press and hold to speak by keyup cleanup: This must be valid while pressing and holding, and it is the same lifecycle as keydown
     window.addEventListener('keyup', (e) => this.onHotkeyUp(e), { signal: ac.signal });
-    // 文本输入拿到焦点时补一次系统键盘焦点：X11/KWin 不会因为 DOM 聚焦就把键盘焦点给窗口，
-    // 不补的话光标在闪、按键却落到上一个窗口。判据复用 shared 的 isTypingTarget，
-    // 对话弹窗与待办面板都是窗口内 DOM，一处委托全覆盖。
+    // When the text input gets the focus, the system keyboard focus is replenished: X11/KWin will not give the
+    // keyboard focus to the window just because DOM is focused. If not, the cursor will flash and the keys will fall
+    // to the previous window. The criterion is isTypingTarget of reuse shared. The dialog pop-up window and to-do
+    // panel are both DOM in the window, and one commission is fully covered.
     document.addEventListener(
       'focusin',
       (e) => {
@@ -231,15 +247,17 @@ Object.assign(PetSprite.prototype, {
       },
       { signal: ac.signal },
     );
-    // 点击穿透：窗口默认整窗穿透，光标进出身体命中区时翻转可交互；穿透期间 mousemove 由主进程
-    // 转发进来（forward:true），mouseleave 保证光标离开窗口立即恢复穿透。
+    // Click-through: The window defaults to full-window click-through. When the cursor enters and exits the body hit
+    // area, it can be flipped and interacted; during click-through, mousemove is forwarded by the main process
+    // (forward:true), and mouseleave ensures that click-through is restored immediately after the cursor leaves the
+    // window.
     window.addEventListener('mousemove', (e) => this.onMouseMove(e), { signal: ac.signal });
     window.addEventListener(
       'blur',
       () => {
-        // 切到其它应用后旧菜单不该继续占着透明窗口；丢失松手时也释放拖拽。
+        // The old menu should not continue to occupy the transparent window after switching to other applications; the drag should also be released when lost.
         this.closeMenu();
-        // 切走时松手收不到 keyup：不在这里收尾，录音会一直开到 24 秒上限
+        // Unable to receive keyup when I let go when switching away: If you don’t cleanup here, the recording will continue to the upper limit of 24 seconds.
         this.hearHold.release();
         if (this.dragState.active) this.onPointerUp();
         if (!this.chatOpen && !this.todoOpen) this.setInteractive(false);
@@ -249,8 +267,10 @@ Object.assign(PetSprite.prototype, {
     window.addEventListener(
       'mouseleave',
       () => {
-        // 光标离开窗口：菜单若开着立刻收起（窗口内 DOM，离开即不可达），再恢复穿透。
-        // 拖拽中与对话弹窗开着都不恢复：前者会绕过 busy 并丢失 pointerup，后者要留光标回来点输入框。
+        // The cursor leaves the window: If the menu is open, it will be closed immediately (DOM in the window, it will
+        // be inaccessible if you leave it), and then click-through will be restored. It will not be restored during
+        // dragging or when the dialog pop-up window is open: the former will bypass busy and lose pointerup, while the
+        // latter requires leaving the cursor to return to the input box.
         this.closeMenu();
         if (!this.chatOpen && !this.todoOpen && !this.dragState.active) this.setInteractive(false);
       },
@@ -261,22 +281,23 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 宠物间碰撞（跨窗 broker）：订阅其它宠物状态广播 + 「被撞」事件 → onDeskHit。
-   * 退订由窗口销毁自然回收（webContents 销毁后 ipc 事件不再派发），无需显式取消。
+   * Collision between pets (cross-window broker): subscribe to other pet status broadcast + "collision" event →
+   * onDeskHit. Unsubscription is naturally recycled by window destruction (the ipc event will no longer be dispatched
+   * after webContents is destroyed), without explicit cancellation.
    */
   subscribeCollision() {
-    this.others = {}; // petId -> {x,y,vx,vy,size,bottomPad}（其它宠物的最新状态，来自主进程广播）
-    this.throwState = null; // 飞行中的实时状态（被撞查询 / 其它窗碰撞检测时上报用）
-    this.pressScoreFired = false; // 按下瞬间已触发过积分（pointerdown 即触发；click 据此不重复弹，同浏览器）
+    this.others = {}; // petId -> { x , y , vx , vy , size , bottomPad } (the latest status of other pets, broadcast from main process)
+    this.throwState = null; // Real-time status in flight (for collision query/reporting during other window collision detection)
+    this.pressScoreFired = false; // Points have been triggered at the moment of pressing (pointerdown is triggered; click will not be played repeatedly accordingly, the same as the browser)
     if (window.petBridge && window.petBridge.onFlightStates) {
       window.petBridge.onFlightStates((states) => {
         if (!states || typeof states !== 'object') return;
         const next = {};
         for (const pid of Object.keys(states)) {
-          if (pid === this.pet.id) continue; // 排除自己
+          if (pid === this.pet.id) continue; // Exclude yourself
           const s = states[pid];
           next[pid] = {
-            // 碰撞 broker 协议单位是物理像素：÷scale 进本窗口 CSS 系
+            // Collision broker protocol unit is physical pixel: ÷ scale Enter this window CSS system
             x: toLocal(Number(s && s.x) || 0),
             y: toLocal(Number(s && s.y) || 0),
             vx: toLocal(Number(s && s.vx) || 0),

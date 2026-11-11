@@ -1,38 +1,40 @@
 /**
- * 斜杠命令 /balance：刷新余额并把结果回给命令面板。
+ * Slash command / balance: Refresh the balance and return the result to the command panel.
  * @module dsh-pet/src/host/plugin/command-balance
  */
 import type { BalancePoll } from './balance-poll.ts';
 import type { PetLookup } from './pet-lookup.ts';
 import type { HostContext } from './context.ts';
 
-/** 余额命令的输入。 */
+/** Input of balance command. */
 export type CommandBalanceInput = {
-  /** 宿主上下文（apply 收到的那一个）。 */
+  /** host context (the one apply received). */
   ctx: HostContext;
 } & Pick<BalancePoll, 'refreshBalance'> &
   Pick<BalancePoll, 'effectivePetList'> &
   Pick<PetLookup, 'sleep'> &
   Pick<PetLookup, 'sleepRefusalText'>;
 
-/** 注册余额命令；返回的清理函数由 ctx.effect 收集。 */
+/** register balance command; the returned cleanup function is collected by ctx.effect. */
 export function registerBalanceCommand(deps: CommandBalanceInput): void {
   const { ctx, effectivePetList, refreshBalance, sleep, sleepRefusalText } = deps;
-  // /balance 斜杠命令：触发一次余额刷新（写 S → 前端 1s 轮询看到后弹气泡）。
-  // fire-and-forget：回执不等外部 API（查询可能要几秒），立刻回；结果一律从 S 看
-  // （成功播档位动画 + 余额气泡；服务商不支持 / 缺凭证 / 抓取失败则弹文字说明气泡，绝不静默）。
+  // / balance slash command: trigger a balance refresh (write S → front end 1 s polling and pop the bubble after
+  // seeing it). fire-and-forget: The receipt does not wait for external API (the query may take several seconds), and
+  // it will be replied immediately; the results will always be from S (successful broadcast of state animation +
+  // balance bubble; service provider does not support / lack of credentials / failed to capture, text description
+  // bubble will pop up, never silent).
   ctx.effect(
     () =>
       ctx.commands.register({
         name: 'balance',
         description: '手动触发桌宠余额显示（立即弹出余额气泡）',
         handler: () => {
-          // 余额是全局一份数据，但「给谁看」要按宠物算：全都睡着就没人看，拒绝并回一句台词。
+          // The balance is a global data, but the "who to show it to" depends on the pet: if everyone is asleep, no one will see it, refuse and reply with a line.
           const visible = effectivePetList().filter((pet) => String(pet.display ?? '') !== 'none');
           if (visible.length > 0 && visible.every((pet) => sleep.sleeping(String(pet.id ?? '')))) {
             return { kind: 'error', text: sleepRefusalText(String(visible[0].id ?? '')) };
           }
-          void refreshBalance(true); // manual：命令是用户主动敲的
+          void refreshBalance(true); // manual: The command was entered by the user actively
           return { kind: 'success', text: '已触发桌宠余额显示' };
         },
       }),

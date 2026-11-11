@@ -1,9 +1,9 @@
 /**
- * 独立模式的命令行解析与路径推导，纯逻辑、零 I/O。
+ * Parse standalone CLI arguments and derive paths without I/O.
  *
- * 负责把 argv 变成选项，并镜像宿主半侧推导出的配置路径；不读文件、不建目录。
- * 路径口径以宿主半侧为准，这里只是只读镜像，测试会钉住两者一致。
- * 必须始终成立：--check 不 apply 也能算出 DSH 会读的配置路径。
+ * Convert argv to options and mirror host configuration paths without reading or creating files.
+ * The host owns path conventions; tests keep this read-only mirror aligned.
+ * Invariant: --check can resolve the same paths as DSH without calling apply.
  * @module dsh-pet/src/standalone/options
  */
 import { join } from 'node:path';
@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import type { ConfigPaths } from '../host/config.ts';
 import { DEFAULT_STANDALONE_PORT } from './server.ts';
 
-/** 解析后的命令行选项。 */
+/** Parsed CLI options. */
 export interface CliOptions {
   port: number;
   check: boolean;
@@ -19,27 +19,28 @@ export interface CliOptions {
   setup: boolean;
 }
 
-/** --help 正文。 */
-export const USAGE = `dsh-pet 独立模式（不需要 DSH）
+/** CLI help text. */
+export const USAGE = `dsh-pet standalone (DSH is not required)
 
-用法：dsh-pet-powercontext [选项]
+Usage: dsh-pet-powercontext [options]
 
-选项：
-  --port <端口>   监听端口（默认 ${DEFAULT_STANDALONE_PORT}；被占用时自动向后顺延）
-  --check         只体检：打印配置来源、宠物清单与 Electron 状态，不启动窗口
-  --setup         启动桌宠并打开「开始养鱼」，配置聊天与本机长期记忆
-  -h, --help      显示本帮助
+Options:
+  --port <port>  Listen on this port (default ${DEFAULT_STANDALONE_PORT}; try the next port if busy)
+  --check        Report configuration, pets and Electron status without opening windows
+  --setup        Start the pet and open setup for chat and local long-term memory
+  -h, --help     Show this help
 
-说明：
-  桌宠在独立模式下以「透明置顶小窗」运行；浏览器内浮层需要有 DSH 网页，独立模式不提供。
-  对话与碎碎念可在本机 AI 设置页配置 API 后显式启用；未配置时不发送模型请求。
-  余额 / DSH 会话工作状态 / 系统通知仍需要 DSH 宿主。
+Notes:
+  Standalone pets use transparent, always-on-top desktop windows. Browser overlays require DSH.
+  Configure a provider in the local AI settings to enable chat and whispers. No model requests
+  are sent before configuration. Supported balance providers can also be selected there.
+  DSH session work states and system notifications require the DSH host.
 `;
 
 /**
- * 解析 argv。
- * @param argv - 已去掉 node 与脚本路径的参数。
- * @returns 选项，或带 error 的失败结果，由调用方打印用法并以 2 退出。
+ * Parse CLI arguments.
+ * @param argv - Arguments excluding the Node executable and script path.
+ * @returns Options or an error; the caller prints usage and exits with status 2 on failure.
  */
 export function parseArgs(argv: string[]): { options: CliOptions } | { error: string } {
   const options: CliOptions = { port: DEFAULT_STANDALONE_PORT, check: false, help: false, setup: false };
@@ -56,21 +57,21 @@ export function parseArgs(argv: string[]): { options: CliOptions } | { error: st
       if (arg === '--port') index += 1;
       const value = Number(raw);
       if (!Number.isInteger(value) || value < 1 || value > 65535) {
-        return { error: `--port 需要 1..65535 的整数端口，收到 ${JSON.stringify(raw)}` };
+        return { error: `--port requires an integer from 1 to 65535; received ${JSON.stringify(raw)}` };
       }
       options.port = value;
     } else {
-      return { error: `未知参数：${arg}` };
+      return { error: `Unknown argument: ${arg}` };
     }
   }
   return { options };
 }
 
 /**
- * 推导配置路径集（宿主半侧那份推导的只读镜像）。
- * @param root - 插件包根目录。
+ * Derive configuration paths using the same conventions as the host.
+ * @param root - Plugin package root.
  * @param home - DSH_HOME。
- * @returns 与宿主半侧一致的路径集。
+ * @returns Paths matching host resolution.
  */
 export function configPathsFor(root: string, home: string): ConfigPaths {
   const userRoot = join(home, 'dsh-pet');
@@ -82,18 +83,18 @@ export function configPathsFor(root: string, home: string): ConfigPaths {
   };
 }
 
-/** 宠物列表的展示串：display 原样打印，供用户确认。 */
+/** Format the pet list, retaining each display value for inspection. */
 export function describePets(pets: Record<string, unknown>[]): string {
-  if (pets.length === 0) return '（没有宠物：配置里 pets 为空）';
+  if (pets.length === 0) return '(no pets: the configured pets array is empty)';
   return pets
     .map((pet) => `${String(pet.id ?? '?')}(size=${String(pet.size ?? '?')}, display=${String(pet.display ?? '?')})`)
     .join('  ');
 }
 
 /**
- * 判断实例是否会出现在桌面（display 含 desktop 或 both），只用于提示。
- * @param pet - 宠物条目。
- * @returns 是否会出现在桌面。
+ * Check desktop visibility from display=desktop or both; used for diagnostics only.
+ * @param pet - Pet configuration entry.
+ * @returns Whether the pet is visible on the desktop.
  */
 export function isDesktopVisible(pet: Record<string, unknown>): boolean {
   const display = pet.display;

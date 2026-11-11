@@ -1,15 +1,18 @@
 /**
- * Command Code 用量的契约测试（provider id `commandcode`，控制面 `/alpha/*`）。
+ * Contract test of Command Code usage (provider id `commandcode` , control plane `/alpha/*` ).
  *
- * 背景：Command Code 的用量在官方 CLI 使用的未文档化控制面路由上。插件把它的 5h / 周 / 月
- * 三个窗口映射成与 opencode 同构的三窗口用量，展示层因此共用同一套「取最紧迫窗口」逻辑。
+ * Background: Command The usage of Code is on the undocumented control plane route used by the official CLI. The
+ * plugin maps its three windows of 5 h / week / month into three windows that are isomorphic to opencode. The display
+ * layer therefore shares the same set of "take the most urgent window" logic.
  *
- * 本文件把三件事钉住：
- *   ① 真实 GOAT 报文的解析（含 `resetAt: 0` 这类占位值不得被当成 1970 年重置时间）；
- *   ② 失败口径：必填字段缺失/非法一律抛错（→ fetch-error），可选信息一律省略，绝不伪造 0；
- *   ③ 网络链路：四个接口的顺序与 query、Bearer 注入、凭证 ref、订阅接口失败不致命。
+ * This document verifies three things: ① Parsing of real GOAT messages (including placeholder values such as
+ * `resetAt: 0` must not be regarded as the reset time in 1970); ② Failure conventions: Required fields are
+ * missing/invalid and an error will be thrown (→ fetch-error), optional information will be omitted and 0 will never
+ * be forged; ③ Network link: the order of the four interfaces is the same as query, Bearer injection, certificate ref,
+ * subscribe interface failure is not fatal.
  *
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖；fetch 用手写 stub 顶替（只跑假数据，不联网）。
+ * Use Node to build test runner (node:test) without introducing any npm dependencies; replace fetch with handwritten
+ * stub (only run fake data, not connected to the Internet).
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +28,7 @@ import {
   type WindowsUsage,
 } from './balance/index.ts';
 
-/** 真实 GOAT 套餐报文（字段名与取值照抄线上响应；`resetAt: 0` 是空闲窗口的占位值） */
+/** Real GOAT package message (field names and values copy the online response; `resetAt: 0` is the placeholder value of the idle window) */
 const GOAT_CREDITS = {
   credits: { belowThreshold: false, creditThreshold: 0, monthlyCredits: 70, purchasedCredits: 0, freeCredits: 0 },
   windowLimits: {
@@ -46,7 +49,7 @@ const GOAT_SUBSCRIPTION = {
 };
 const GOAT_SUMMARY = { totalCost: 0, periodBasis: 'billing-period' };
 
-/** 取成功的 commandcode 数据；形状不对直接失败（省得每个用例都写一遍收窄） */
+/** Obtain successful commandcode data; if the shape is incorrect, it will directly fail (save the need to write and narrow down each use case) */
 function dataOf(result: BalanceResult): WindowsUsage {
   if (!result.ok || result.shape !== 'windows') {
     assert.fail('期望 commandcode 的成功结果，实际：' + JSON.stringify(result));
@@ -54,18 +57,18 @@ function dataOf(result: BalanceResult): WindowsUsage {
   return result.data;
 }
 
-/** 百分比是算出来的浮点数：按 1e-9 容差比 */
+/** The percentage is a calculated floating point number: press 1 e-9 tolerance ratio */
 function assertClose(actual: number | undefined, expected: number, what: string): void {
   assert.equal(typeof actual, 'number', what + ' 应为数字');
   assert.ok(Math.abs((actual as number) - expected) < 1e-9, what + '：期望 ' + expected + '，实际 ' + actual);
 }
 
-/** 极简 Response 替身：被测代码只用到 ok / status / json() */
+/** Minimalist Response stand-in: the code under test only uses ok / status / json() */
 function res(body: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
 }
 
-/** 装上 fetch stub（返回记录与卸载函数）；只按 URL 路由，不做真实网络 */
+/** Mount fetch stub (return records and unmount function); only press URL route, do not do real network */
 function stubFetch(handler: (url: string) => Response): {
   calls: string[];
   auths: (string | null)[];
@@ -89,7 +92,7 @@ function stubFetch(handler: (url: string) => Response): {
   };
 }
 
-/** 默认路由：四个控制面接口都给真实 GOAT 报文 */
+/** Default route: All four control plane interfaces give real GOAT packets */
 function goatRoute(url: string): Response {
   if (url.includes('/alpha/whoami')) return res({ success: true, user: { id: 'u-1' }, org: { id: 'org-1' } });
   if (url.includes('/alpha/billing/credits')) return res(GOAT_CREDITS);
@@ -98,37 +101,49 @@ function goatRoute(url: string): Response {
   return res({}, 404);
 }
 
-describe('BALANCE_PROVIDERS —— commandcode 已登记（凭证 COMMANDCODE_API_KEY）', () => {
-  test('provider id 命中 commandcode，凭证 ref 是 COMMANDCODE_API_KEY，且定义自带取数', () => {
+describe('BALANCE_PROVIDERS —— commandcode has been registered (certificate COMMANDCODE_API_KEY)', () => {
+  test('provider id hits commandcode, the certificate ref is COMMANDCODE_API_KEY, and the definition has its own number.', () => {
     const def = matchBalanceProvider('commandcode');
-    assert.ok(def && 'credential' in def, '内置服务商必须带凭证声明');
+    assert.ok(def && 'credential' in def, 'The built-in service provider must have a certificate statement');
     assert.equal(def.id, 'commandcode');
     assert.deepEqual(def.credential, { mode: 'ref', ref: 'COMMANDCODE_API_KEY' });
-    assert.equal(typeof def.fetch, 'function', '服务商定义必须自带取数（加服务商只写一个文件）');
+    assert.equal(
+      typeof def.fetch,
+      'function',
+      'The service provider definition must come with its own access number (add a write-only file for the service provider)',
+    );
   });
 
-  test('未登记的服务商仍然不命中（→ unsupported，不静默伪造 0）', () => {
+  test('Unregistered service provider still misses (→ unsupported, not silently forged 0)', () => {
     assert.equal(matchBalanceProvider('unregistered-provider'), undefined);
-    assert.equal(matchBalanceProvider('opencode'), undefined, 'Zen 按量版（opencode）与 Go 是两个 id，前者无用量接口');
+    assert.equal(
+      matchBalanceProvider('opencode'),
+      undefined,
+      'Zen volume-based version (opencode) and Go are two id, the former has no volume interface',
+    );
   });
 });
 
-describe('parseCommandCode —— 真实 GOAT 报文', () => {
-  test('空闲窗口（resetAt: 0）：占位重置时间被丢弃，月度重置取订阅周期末', () => {
+describe('parseCommandCode - real GOAT message', () => {
+  test('Idle window (resetAt: 0): The placeholder reset time is discarded, and the monthly reset is at the end of the subscribe cycle', () => {
     const data = dataOf(parseCommandCode(GOAT_CREDITS, GOAT_SUBSCRIPTION, GOAT_SUMMARY, 'commandcode'));
     assert.equal(data.monthly, 0);
-    assert.equal(data.monthlyCapUsd, 70, '月度池 = 当期消耗 0 + 剩余 70');
+    assert.equal(data.monthlyCapUsd, 70, 'Monthly pool = current consumption 0 + remaining 70');
     assert.equal(data.monthlyResetsAt, '2026-10-13T01:01:27.000Z');
     assert.equal(data.rolling, 0);
     assert.equal(data.rollingCapUsd, 14);
     assert.equal(data.weekly, 0);
     assert.equal(data.weeklyCapUsd, 35);
-    assert.equal(data.rollingResetsAt, undefined, 'resetAt: 0 是占位值，不能变成 1970 年重置时间');
+    assert.equal(
+      data.rollingResetsAt,
+      undefined,
+      'resetAt: 0 is a placeholder value and cannot be changed to the reset time in 1970',
+    );
     assert.equal(data.weeklyResetsAt, undefined);
   });
 
-  test('有消耗：5h/周按 used/cap，月度按 消耗/(消耗+剩余)，字符串重置时间原样保留', () => {
-    // windowLimits 嵌在 credits 内的旧变体：同样要认（实际报文在 credits 同级）
+  test('There is consumption: 5 h/weekly used/cap, monthly consumption/(consumption+remaining), the character string reset time remains unchanged', () => {
+    // The old variant of windowLimits embedded in credits: the same needs to be recognized (the actual message is at the same level as credits)
     const credits = {
       credits: {
         monthlyCredits: 12.5,
@@ -153,7 +168,7 @@ describe('parseCommandCode —— 真实 GOAT 报文', () => {
     assert.equal(data.monthlyResetsAt, '2026-10-01T00:00:00.000Z');
   });
 
-  test('无窗口限制（limited: false）：只有月度窗，不拿 5h/周充数', () => {
+  test('No window limit (limited: false): only monthly window, no 5 h/weekly recharge', () => {
     const credits = {
       credits: { monthlyCredits: 0, purchasedCredits: 18.25, freeCredits: 0 },
       windowLimits: { limited: false },
@@ -165,10 +180,14 @@ describe('parseCommandCode —— 真实 GOAT 报文', () => {
     assert.equal(data.weekly, undefined);
     assert.equal(data.rollingCapUsd, undefined);
     assert.equal(data.weeklyCapUsd, undefined);
-    assert.equal(data.monthlyResetsAt, undefined, '订阅缺失 → 没有重置倒计时，但不编一个出来');
+    assert.equal(
+      data.monthlyResetsAt,
+      undefined,
+      'subscribe is missing → the countdown is not reset, but one is not programmed',
+    );
   });
 
-  test('cap 为 0 / used 缺失的窗口跳过，不影响其余窗口', () => {
+  test('cap is 0 / used missing windows are skipped and the remaining windows are not affected.', () => {
     const credits = {
       credits: { monthlyCredits: 5, purchasedCredits: 0, freeCredits: 0 },
       windowLimits: {
@@ -178,11 +197,11 @@ describe('parseCommandCode —— 真实 GOAT 报文', () => {
       },
     };
     const data = dataOf(parseCommandCode(credits, undefined, { totalCost: 1 }, 'commandcode'));
-    assert.equal(data.rolling, undefined, 'cap 为 0 的窗口不算（不是"已用 0%"）');
-    assert.equal(data.weekly, undefined, 'used 缺失的窗口不算');
+    assert.equal(data.rolling, undefined, 'Windows with cap as 0 are not counted (not "0% used")');
+    assert.equal(data.weekly, undefined, 'used missing windows do not count');
   });
 
-  test('数字重置时间：秒级/毫秒级时间戳都转成 ISO', () => {
+  test('Digital reset time: Second-level/millisecond-level timestamps are converted to ISO', () => {
     const credits = {
       credits: { monthlyCredits: 5, purchasedCredits: 0, freeCredits: 0 },
       windowLimits: {
@@ -196,7 +215,7 @@ describe('parseCommandCode —— 真实 GOAT 报文', () => {
     assert.equal(data.weeklyResetsAt, new Date(1790000000000).toISOString());
   });
 
-  test('负用量（无意义数据）按「未消耗」读：不产生负百分比（档位索引会越界）', () => {
+  test('Negative usage (meaningless data) is read as "not consumed": no negative percentage is generated (the state index will be out of bounds)', () => {
     const credits = {
       credits: { monthlyCredits: 5, purchasedCredits: 0, freeCredits: 0 },
       windowLimits: { limited: true, fiveHour: { used: -3, cap: 14 } },
@@ -206,22 +225,22 @@ describe('parseCommandCode —— 真实 GOAT 报文', () => {
   });
 });
 
-describe('parseCommandCode —— 必填缺失/非法一律抛错（绝不伪造 0）', () => {
-  test('缺少 credits → 抛错', () => {
+describe('parseCommandCode - If required or missing/invalid, an error will be thrown (never forged 0)', () => {
+  test('Missing credits → throw error', () => {
     assert.throws(() => parseCommandCode({}, undefined, { totalCost: 0 }, 'commandcode'), /credits/);
   });
 
-  test('credits 里三个额度字段全缺 → 抛错（否则分母当 0 会算出「已用 100%」）', () => {
-    assert.throws(() => parseCommandCode({ credits: {} }, undefined, { totalCost: 0 }, 'commandcode'), /额度字段/);
+  test('All three quota fields in credits are missing → throw an error (otherwise if the denominator is 0, "100% used" will be calculated)', () => {
+    assert.throws(() => parseCommandCode({ credits: {} }, undefined, { totalCost: 0 }, 'commandcode'), /quota fields/);
   });
 
-  test('缺少 / 非法 totalCost → 抛错', () => {
+  test('Missing/invalid totalCost → throw error', () => {
     const credits = { credits: { monthlyCredits: 1, purchasedCredits: 0, freeCredits: 0 } };
     assert.throws(() => parseCommandCode(credits, undefined, {}, 'commandcode'), /totalCost/);
     assert.throws(() => parseCommandCode(credits, undefined, { totalCost: 'abc' }, 'commandcode'), /totalCost/);
   });
 
-  test('订阅接口的响应非法不是致命错（可选信息：只影响月度重置倒计时）', () => {
+  test('The invalid response of the subscribe interface is not a fatal error (optional information: only affects the monthly reset countdown)', () => {
     const credits = { credits: { monthlyCredits: 5, purchasedCredits: 0, freeCredits: 0 } };
     for (const subscription of [undefined, {}, { data: null }, { data: { currentPeriodEnd: 0 } }]) {
       const data = dataOf(parseCommandCode(credits, subscription, { totalCost: 0 }, 'commandcode'));
@@ -229,7 +248,7 @@ describe('parseCommandCode —— 必填缺失/非法一律抛错（绝不伪造
     }
   });
 
-  test('区间用量：totalTokens / 输入 / 输出 / 请求数 / 花费 → usage（气泡第三页）', () => {
+  test('Interval usage: totalTokens / input / output / number of requests / cost → usage (bubble page 3)', () => {
     const data = dataOf(
       parseCommandCode(
         { credits: { monthlyCredits: 70 } },
@@ -253,7 +272,7 @@ describe('parseCommandCode —— 必填缺失/非法一律抛错（绝不伪造
     });
   });
 
-  test('区间用量字段不全 → 不出这一页（不拿 0 顶替）', () => {
+  test('The interval usage field is incomplete → this page will not appear (do not replace it with 0)', () => {
     for (const summary of [
       { totalCost: 1 },
       { totalCost: 1, totalTokens: 10, totalTokensIn: 8, totalTokensOut: 2 },
@@ -265,8 +284,8 @@ describe('parseCommandCode —— 必填缺失/非法一律抛错（绝不伪造
   });
 });
 
-describe('queryBalance —— 网络链路（fetch stub）', () => {
-  test('四个接口按序请求，Bearer 注入，orgId 回填（summary 不带 since）', async () => {
+describe('queryBalance ——Network link (fetch stub)', () => {
+  test('Four interfaces are requested in sequence, Bearer is injected, orgId is backfilled (summary without since)', async () => {
     const stub = stubFetch(goatRoute);
     const refs: string[] = [];
     try {
@@ -288,7 +307,7 @@ describe('queryBalance —— 网络链路（fetch stub）', () => {
     }
   });
 
-  test('whoami 里没有 org → 后续请求不带 orgId（不硬塞空值）', async () => {
+  test('whoami does not contain org → subsequent requests do not contain orgId (no null values are forced)', async () => {
     const stub = stubFetch((url) => {
       if (url.includes('/alpha/whoami')) return res({ success: true, user: { id: 'u-1' } });
       return goatRoute(url);
@@ -301,31 +320,31 @@ describe('queryBalance —— 网络链路（fetch stub）', () => {
       assert.equal(
         stub.calls[3],
         'https://api.commandcode.ai/alpha/usage/summary',
-        'orgId 没有就不带；summary 也不带 since——服务端默认区间就是计费周期',
+        'If orgId is not available, it will not be included; if summary is not available, since will not be included - the default interval of the server is the billing cycle',
       );
     } finally {
       stub.restore();
     }
   });
 
-  test('订阅接口失败（按量付费账号可能没有订阅）→ 仍然成功，只是没有重置倒计时', async () => {
+  test('The subscribe interface failed (the pay-as-you-go account may not have subscribe) → still successful, but the countdown is not reset.', async () => {
     const stub = stubFetch((url) => (url.includes('/alpha/billing/subscriptions') ? res({}, 500) : goatRoute(url)));
     try {
       const result = await queryBalance('commandcode', async () => 'k');
       const data = dataOf(result);
       assert.equal(data.monthlyResetsAt, undefined);
-      assert.equal(data.rollingCapUsd, 14, '三个窗口的百分比与额度一个都不少');
+      assert.equal(data.rollingCapUsd, 14, 'The percentages and quotas of the three windows are quite large.');
       assert.equal(
         stub.calls[3],
         'https://api.commandcode.ai/alpha/usage/summary?orgId=org-1',
-        '订阅失败只缺重置时间；summary 一律不带 since（区间由服务端按计费周期决定）',
+        'The subscribe failure only lacks the reset time; summary will never contain since (the interval is determined by the server based on the billing cycle)',
       );
     } finally {
       stub.restore();
     }
   });
 
-  test('401 → fetch-error，错误信息带接口路径与状态码（不退化成「未支持」）', async () => {
+  test('401 → fetch-error, the error message contains the interface path and status code (does not degrade to "not supported")', async () => {
     const stub = stubFetch(() => res({ error: { code: 'UNAUTHORIZED' } }, 401));
     try {
       assert.deepEqual(await queryBalance('commandcode', async () => 'bad-key'), {
@@ -339,7 +358,7 @@ describe('queryBalance —— 网络链路（fetch stub）', () => {
     }
   });
 
-  test('缺凭证 → credential-missing，且一个请求都不发', async () => {
+  test('Missing credentials → credential-missing, and no request is sent', async () => {
     const stub = stubFetch(goatRoute);
     try {
       assert.deepEqual(await queryBalance('commandcode', async () => undefined), {
@@ -354,7 +373,7 @@ describe('queryBalance —— 网络链路（fetch stub）', () => {
     }
   });
 
-  test('未登记的服务商 → unsupported，且一个请求都不发', async () => {
+  test('Unregistered service provider → unsupported, and no request is sent', async () => {
     const stub = stubFetch(goatRoute);
     let asked = 0;
     try {
@@ -365,7 +384,7 @@ describe('queryBalance —— 网络链路（fetch stub）', () => {
         }),
         { ok: false, provider: 'unregistered-provider', reason: 'unsupported' },
       );
-      assert.equal(asked, 0, '未登记的服务商连凭证都不该去解析');
+      assert.equal(asked, 0, 'Unregistered service providers should not even parse their credentials.');
       assert.deepEqual(stub.calls, []);
     } finally {
       stub.restore();
@@ -373,33 +392,40 @@ describe('queryBalance —— 网络链路（fetch stub）', () => {
   });
 });
 
-describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HTTP + API Key）', () => {
-  /** 真实 `AccountDetails['balance']` 形状：ready 带 value（充值）/ bonusWallets（赠送）两个钱包数组 */
+describe('deepseek-account —— DSH account route (account service, not HTTP + API Key)', () => {
+  /** Real `AccountDetails['balance']` shape: ready with value (recharge)/bonusWallets (gift) two wallet arrays */
   const READY = {
     status: 'ready' as const,
     value: [{ currency: 'CNY', balance: '8.79' }],
     bonusWallets: [{ currency: 'CNY', balance: '5.00' }],
   };
 
-  test('provider id 命中 deepseek-account，shape 与 deepseek-official 相同，凭证模式为 none（无 API Key）', () => {
+  test('provider id hits deepseek-account, shape is the same as deepseek-official, and the certificate mode is none (without API Key)', () => {
     const def = matchBalanceProvider('deepseek-account');
-    assert.ok(def && 'credential' in def, '内置服务商必须带凭证声明');
+    assert.ok(def && 'credential' in def, 'The built-in service provider must have a certificate statement');
     assert.equal(def.id, 'deepseek-account');
-    assert.deepEqual(def.credential, { mode: 'none' }, '账号路由没有 API Key，凭证由账号服务持有');
+    assert.deepEqual(
+      def.credential,
+      { mode: 'none' },
+      'The account route does not have API Key, and the certificate is held by the account service',
+    );
     assert.equal(typeof def.fetch, 'function');
   });
 
-  test('ready：每个币种一条钱包，total = 充值 + 赠送（与官方 total_balance 同构）', () => {
+  test('ready: One wallet for each currency, total = recharge + gift (same structure as the official total_balance)', () => {
     const r = parseAccountBalance(READY, 'deepseek-account');
     assert.ok(r.ok && r.shape === 'money');
     assert.equal(r.provider, 'deepseek-account');
     assert.deepEqual(r.data.wallets, [
       { currency: 'CNY', total: '13.79', granted: '5.00', toppedUp: '8.79', fullBalance: '20' },
     ]);
-    assert.ok(r.data.tier === 'peak' || r.data.tier === 'idle', '档位由服务商算好后随数据带出');
+    assert.ok(
+      r.data.tier === 'peak' || r.data.tier === 'idle',
+      'The gear is calculated by the service provider and then brought out with the data.',
+    );
   });
 
-  test('没有赠送钱包 → granted 为 0.00，total 等于充值（不因缺赠送而漏算或虚增）', () => {
+  test('No gift wallet → granted is 0.00, total is equal to the recharge (no omissions or inflated increases due to lack of gifts)', () => {
     const r = parseAccountBalance(
       { status: 'ready', value: [{ currency: 'CNY', balance: '8.79' }] },
       'deepseek-account',
@@ -410,7 +436,7 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
     ]);
   });
 
-  test('USD 钱包：币种原样带出（展示层据此选符号），金额不做换算，基准按币种查表', () => {
+  test('USD wallet: The currency is brought out as it is (the display layer selects the symbol accordingly), the amount is not converted, and the benchmark is looked up according to the currency.', () => {
     const r = parseAccountBalance(
       { status: 'ready', value: [{ currency: 'USD', balance: '12.5' }], bonusWallets: [] },
       'deepseek-account',
@@ -421,7 +447,7 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
     ]);
   });
 
-  test('多币种钱包：全部搬出去（不再只挑一个），每个币种各一条', () => {
+  test('Multi-currency wallet: move them all out (no longer just pick one), one for each currency', () => {
     const r = parseAccountBalance(
       {
         status: 'ready',
@@ -440,7 +466,7 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
     ]);
   });
 
-  test('同币种多条钱包 → 累加，不丢钱', () => {
+  test('Multiple wallets of the same currency → Accumulation, no money lost', () => {
     const r = parseAccountBalance(
       {
         status: 'ready',
@@ -458,7 +484,7 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
     ]);
   });
 
-  test('真实平台精度串（16 位小数）→ 收敛到两位，与官方路由的 ¥8.79 风格一致', () => {
+  test('The real platform precision string (16 decimal places) → converges to two digits, consistent with the ¥8.79 style of the official route', () => {
     const r = parseAccountBalance(
       {
         status: 'ready',
@@ -472,7 +498,7 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
     assert.equal(r.data.wallets[0]?.granted, '0.00');
   });
 
-  test('赠送钱包币种不同 → 各归各的：CNY 没有赠金，USD 那条把赠金带上', () => {
+  test('The gift wallet currencies are different → each belongs to his own: CNY has no bonus, USD has the bonus', () => {
     const r = parseAccountBalance(
       {
         status: 'ready',
@@ -488,25 +514,28 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
     ]);
   });
 
-  test('null（未登录）/ failed（查询失败）/ 空钱包 → 一律抛错，绝不伪造 0 余额', () => {
-    assert.throws(() => parseAccountBalance(null, 'deepseek-account'), /未登录/);
-    assert.throws(() => parseAccountBalance(undefined, 'deepseek-account'), /未登录/);
-    assert.throws(() => parseAccountBalance({ status: 'failed' }, 'deepseek-account'), /查询失败/);
+  test('null (not logged in)/failed (query failed)/empty wallet → always throw an error, never forge 0 balance', () => {
+    assert.throws(() => parseAccountBalance(null, 'deepseek-account'), /not signed in/);
+    assert.throws(() => parseAccountBalance(undefined, 'deepseek-account'), /not signed in/);
+    assert.throws(
+      () => parseAccountBalance({ status: 'failed' }, 'deepseek-account'),
+      /account balance request failed/,
+    );
     assert.throws(
       () => parseAccountBalance({ status: 'ready', value: [], bonusWallets: [] }, 'deepseek-account'),
-      /没有充值钱包/,
+      /no prepaid wallet balance/,
     );
     assert.throws(
       () => parseAccountBalance({ status: 'ready', value: [{ currency: 'CNY', balance: '' }] }, 'deepseek-account'),
-      /非法|balance/,
+      /invalid|balance/,
     );
     assert.throws(
       () => parseAccountBalance({ status: 'ready', value: [{ currency: 'CNY', balance: 'abc' }] }, 'deepseek-account'),
-      /非法/,
+      /invalid/,
     );
   });
 
-  test('queryBalance：账号路由不去解析凭证、不发任何 HTTP，只调 resolveAccount', async () => {
+  test('queryBalance: The account route does not parse the credentials, does not send any HTTP, and only adjusts resolveAccount.', async () => {
     const stub = stubFetch(goatRoute);
     let asked = 0;
     try {
@@ -522,16 +551,16 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
       assert.equal(
         r.data.wallets.find((w) => w.currency === 'CNY')?.total,
         '13.79',
-        '与 parseAccountBalance 同一口径：赠送 5.00 + 充值 8.79',
+        'Same conventions as parseAccountBalance: Free 5.00 + Recharge 8.79',
       );
-      assert.equal(asked, 0, '账号路由没有 API Key 可解析');
-      assert.deepEqual(stub.calls, [], '账号路由不走 fetch');
+      assert.equal(asked, 0, 'There is no account route API Key that can be resolved');
+      assert.deepEqual(stub.calls, [], 'Account route does not go fetch');
     } finally {
       stub.restore();
     }
   });
 
-  test('queryBalance：账号服务不在场（未注入）→ credential-missing，不退化成 unsupported', async () => {
+  test('queryBalance: Account service is not present (not injected) → credential-missing, does not degenerate into unsupported', async () => {
     assert.deepEqual(await queryBalance('deepseek-account', async () => 'k'), {
       ok: false,
       provider: 'deepseek-account',
@@ -540,25 +569,25 @@ describe('deepseek-account —— DSH 账号路由（走账号服务，不是 HT
     });
   });
 
-  test('queryBalance：账号查询抛错 → fetch-error，错误信息透传', async () => {
+  test('queryBalance: Account query throws an error → fetch-error, error information is transparently transmitted', async () => {
     const r = await queryBalance(
       'deepseek-account',
       async () => 'k',
       async () => {
-        throw new Error('dsh-pet: 账号余额查询失败');
+        throw new Error('dsh-pet: account balance request failed');
       },
     );
     assert.deepEqual(r, {
       ok: false,
       provider: 'deepseek-account',
       reason: 'fetch-error',
-      message: 'dsh-pet: 账号余额查询失败',
+      message: 'dsh-pet: account balance request failed',
     });
   });
 });
 
-describe('注册表 —— 第三方 provider（register / list / match）', () => {
-  /** 一个最小可用的第三方 provider（points 形态） */
+describe('register table - third party provider (register / list / match)', () => {
+  /** A minimal usable third party provider (points form) */
   const plugin = (id: string) => ({
     id,
     async fetch({ provider }: { provider: string }) {
@@ -571,36 +600,36 @@ describe('注册表 —— 第三方 provider（register / list / match）', () 
     },
   });
 
-  test('注册后命中，list 里可见；注销后回落 unsupported', () => {
+  test('Hit after register, visible in list; fallback unsupported after logout', () => {
     const dispose = registerBalanceProvider(plugin('plugin-a'));
     try {
       assert.equal(matchBalanceProvider('plugin-a')?.id, 'plugin-a');
       assert.ok(listBalanceProviders().external.includes('plugin-a'));
-      assert.ok(listBalanceProviders().builtin.includes('commandcode'), '内置仍在列表里');
+      assert.ok(listBalanceProviders().builtin.includes('commandcode'), 'Built-in is still in the list');
     } finally {
       dispose();
     }
-    assert.equal(matchBalanceProvider('plugin-a'), undefined, '注销后不再命中');
+    assert.equal(matchBalanceProvider('plugin-a'), undefined, 'No more hits after logging out');
   });
 
-  test('不能覆盖内置 id', () => {
-    assert.throws(() => registerBalanceProvider(plugin('deepseek-official')), /不能覆盖内置服务商/);
+  test('Cannot overwrite built-in id', () => {
+    assert.throws(() => registerBalanceProvider(plugin('deepseek-official')), /Cannot override a built-in provider/);
   });
 
-  test('重复注册同一个 id → 抛错（不静默覆盖）', () => {
+  test('Register the same id repeatedly → throw an error (not silently override)', () => {
     const dispose = registerBalanceProvider(plugin('plugin-b'));
     try {
-      assert.throws(() => registerBalanceProvider(plugin('plugin-b')), /已被注册/);
+      assert.throws(() => registerBalanceProvider(plugin('plugin-b')), /already registered/);
     } finally {
       dispose();
     }
   });
 
-  test('旧注销函数不会误删后来注册的同一个 id', () => {
+  test('The old logout function will not accidentally delete the same id registered later.', () => {
     const first = registerBalanceProvider(plugin('plugin-c'));
     first();
     const second = registerBalanceProvider(plugin('plugin-c'));
-    first(); // 迟到的注销（旧插件实例的 cleanup）
+    first(); // Late logout (cleanup for old plugin instance)
     try {
       assert.equal(matchBalanceProvider('plugin-c')?.id, 'plugin-c');
     } finally {
@@ -608,7 +637,7 @@ describe('注册表 —— 第三方 provider（register / list / match）', () 
     }
   });
 
-  test('queryBalance：第三方分支不解析 key、不传 resolveAccount', async () => {
+  test('queryBalance: The third-party branch does not parse key and does not pass resolveAccount', async () => {
     let keyAsked = 0;
     let seen: unknown;
     const dispose = registerBalanceProvider({
@@ -628,14 +657,14 @@ describe('注册表 —— 第三方 provider（register / list / match）', () 
         async () => ({ status: 'ready' }),
       );
       assert.ok(r.ok && r.shape === 'points');
-      assert.equal(keyAsked, 0, '第三方分支不得去解析凭证');
-      assert.deepEqual(seen, { provider: 'plugin-d' }, 'fetch 只能拿到 provider（没有 key / resolveAccount）');
+      assert.equal(keyAsked, 0, 'Third-party branches are not allowed to parse credentials');
+      assert.deepEqual(seen, { provider: 'plugin-d' }, 'fetch can only get provider (no key / resolveAccount)');
     } finally {
       dispose();
     }
   });
 
-  test('queryBalance：第三方 fetch 抛错 → fetch-error（与内置同一口径）', async () => {
+  test('queryBalance: Third-party fetch throws an error → fetch-error (same conventions as built-in)', async () => {
     const dispose = registerBalanceProvider({
       id: 'plugin-e',
       async fetch() {
@@ -654,9 +683,10 @@ describe('注册表 —— 第三方 provider（register / list / match）', () 
     }
   });
 
-  test('queryBalance：第三方返回 custom 形态原样透传（host 不校验也不改形状）', async () => {
-    // host 侧的职责只是"把第三方交来的结果写进叶子"：tree 的白名单裁剪在客户端解析层
-    // （src/shared/balance/parse.ts）。这里钉住"不篡改"——否则第三方设计好的布局会在中途变形。
+  test('queryBalance: The third party returns the custom form for transparent transmission as it is (host does not verify or change the shape)', async () => {
+    // The responsibility of the host side is only to "write the results submitted by the third party into the leaves":
+    // the whitelist of tree is clipped at the client parsing layer (src/shared/balance/parse.ts). Here verify "no
+    // tampering" - otherwise the layout designed by a third party will be deformed midway.
     const custom = {
       ok: true as const,
       provider: 'plugin-f',
@@ -683,7 +713,7 @@ describe('注册表 —— 第三方 provider（register / list / match）', () 
     }
   });
 
-  test('未注册的 id 仍是 unsupported', async () => {
+  test('id that is not registered is still unsupported', async () => {
     assert.deepEqual(await queryBalance('plugin-unknown', async () => 'k'), {
       ok: false,
       provider: 'plugin-unknown',

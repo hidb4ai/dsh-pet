@@ -1,6 +1,7 @@
 /**
- * 宠物盒几何（src/client/pet/motion/geometry.ts）的契约测试：中心与包围盒两个方向互逆、
- * 度量随宽度线性缩放、命中区按画布换算、舞台与根节点的内联样式，以及越界摆放的可见下限。
+ * Contract test of pet box geometry (src/client/pet/motion/geometry.ts): the two directions of the center and the
+ * bounding box are reciprocal, the measurement scales linearly with the width, the hit area is converted according to
+ * the canvas, the inline style of the stage and the root node, and the visible lower limit of out-of-bounds placement.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,30 +21,30 @@ import {
 const viewport = { width: 1280, height: 800 };
 const half = { w: 130, h: 73 };
 
-describe('centerToBox / boxToRatio —— 中心与包围盒换算', () => {
-  test('中心→左上角：减去各自的半宽半高', () => {
+describe('centerToBox / boxToRatio —— Center and bounding box conversion', () => {
+  test('Center→upper left corner: subtract respective half-width and half-height', () => {
     assert.deepEqual(centerToBox({ rx: 0.5, ry: 0.5 }, viewport, half), { x: 640 - 130, y: 400 - 73 });
   });
 
-  test('互逆：来回换算还原同一个中心（松手不跳位）', () => {
+  test('Reciprocal: convert back and forth to restore the same center (no jump when letting go)', () => {
     for (const center of [
       { rx: 0.12, ry: 0.34 },
       { rx: 0.5, ry: 0.5 },
       { rx: 0.999, ry: 0.001 },
     ]) {
       const back = boxToRatio(centerToBox(center, viewport, half), viewport, half);
-      assert.ok(Math.abs(back.rx - center.rx) < 1e-9, `rx 应还原：${back.rx}`);
-      assert.ok(Math.abs(back.ry - center.ry) < 1e-9, `ry 应还原：${back.ry}`);
+      assert.ok(Math.abs(back.rx - center.rx) < 1e-9, `rx should be restored: ${back.rx}`);
+      assert.ok(Math.abs(back.ry - center.ry) < 1e-9, `ry should be restored: ${back.ry}`);
     }
   });
 
-  test('宽高不等：半高不会混进横向换算', () => {
+  test('Unequal width and height: half-height will not be mixed into horizontal conversion', () => {
     const box = centerToBox({ rx: 0.5, ry: 0.5 }, viewport, half);
     assert.equal(box.x, viewport.width / 2 - half.w);
     assert.equal(box.y, viewport.height / 2 - half.h);
   });
 
-  test('比例 0 / 1：允许盒一半出屏，不做夹取', () => {
+  test('Ratio 0 / 1: Allow half of the box to exit the screen without clamping', () => {
     assert.deepEqual(centerToBox({ rx: 0, ry: 0 }, viewport, half), { x: -half.w, y: -half.h });
     assert.deepEqual(centerToBox({ rx: 1, ry: 1 }, viewport, half), {
       x: viewport.width - half.w,
@@ -52,53 +53,62 @@ describe('centerToBox / boxToRatio —— 中心与包围盒换算', () => {
   });
 });
 
-describe('derivePetMetrics —— 由宽度推出盒子度量', () => {
-  test('半宽半高：保持 16:9 盒的一半', () => {
+describe('derivePetMetrics - Deriving box measurement from width', () => {
+  test('Half-width, half-height: keep half of the 16:9 box', () => {
     const m = derivePetMetrics(462);
     assert.equal(m.halfW, 231);
-    assert.ok(Math.abs(m.halfH / m.halfW - 9 / 16) < 1e-9, `半高半宽之比应为 9/16：${m.halfH / m.halfW}`);
+    assert.ok(
+      Math.abs(m.halfH / m.halfW - 9 / 16) < 1e-9,
+      `The ratio of half-height to half-width should be 9/16: ${m.halfH / m.halfW}`,
+    );
   });
 
-  test('线性缩放：宽度翻倍，四个量都翻倍', () => {
+  test('Linear scaling: double the width and double all four quantities', () => {
     const one = derivePetMetrics(300);
     const two = derivePetMetrics(600);
     for (const key of ['halfW', 'halfH', 'bottomPad', 'sideAllow'] as const) {
-      assert.ok(Math.abs(two[key] - one[key] * 2) < 1e-9, `${key} 应随宽度线性缩放`);
+      assert.ok(Math.abs(two[key] - one[key] * 2) < 1e-9, `${key} should scale linearly with width`);
     }
   });
 
-  test('脚底垫高小于半高：脚垫只吃掉盒底的一条留白', () => {
+  test('The height of the sole of the foot pad is less than half the height: the foot pad only eats up a blank space at the bottom of the box', () => {
     const m = derivePetMetrics(462);
-    assert.ok(m.bottomPad > 0 && m.bottomPad < m.halfH, `bottomPad=${m.bottomPad} 应落在 (0, halfH=${m.halfH})`);
+    assert.ok(
+      m.bottomPad > 0 && m.bottomPad < m.halfH,
+      `bottomPad = ${m.bottomPad} should fall in (0, halfH = ${m.halfH})`,
+    );
   });
 
-  test('左右余量小于半宽：贴边的是身体，不是整只透明盒', () => {
+  test('The left and right margins are less than half the width: the welt is the body, not the entire transparent box', () => {
     const m = derivePetMetrics(462);
-    assert.ok(m.sideAllow > 0 && m.sideAllow < m.halfW, `sideAllow=${m.sideAllow} 应落在 (0, halfW=${m.halfW})`);
+    assert.ok(
+      m.sideAllow > 0 && m.sideAllow < m.halfW,
+      `sideAllow = ${m.sideAllow} should fall in (0, halfW = ${m.halfW})`,
+    );
   });
 
-  test('零宽：四个量都退化为 0，不产出 NaN', () => {
+  test('Zero width: all four quantities degenerate to 0, no NaN is output', () => {
     const m = derivePetMetrics(0);
     assert.deepEqual(m, { halfW: 0, halfH: 0, bottomPad: 0, sideAllow: 0 });
   });
 });
 
-describe('petStageStyle —— 舞台位移', () => {
-  test('始终按脚垫下移：拖拽中也不取消，抓取点才不会相对光标偏移', () => {
+describe('petStageStyle —— Stage displacement', () => {
+  test('Always press the foot pad to move down: it will not be canceled during dragging, so that the grab point will not be offset relative to the cursor.', () => {
     assert.deepEqual(petStageStyle(21.6), { transform: 'translateY(21.6px)' });
   });
 
-  test('脚垫为 0：位移为 0，不产出额外偏移', () => {
+  test('Pad is 0: displacement is 0, no additional offset is generated', () => {
     assert.deepEqual(petStageStyle(0), { transform: 'translateY(0px)' });
   });
 });
 
-describe('petRootStyle —— 根节点定位', () => {
-  test('未拖拽：返回空对象，位置交给角落与边距的 CSS 变量', () => {
+describe('petRootStyle ——Root node positioning', () => {
+  test('Not dragged: an empty object is returned, and the position is given to the CSS variables of the corners and margins.', () => {
     assert.deepEqual(petRootStyle(null, viewport, { w: 231, h: 130 }), {});
   });
 
-  test('已拖拽：按归一化中心换算出左上角，并把另一侧归零', () => {
+  test('Dragged: Calculate the upper left corner according to the normalized center and return the other side to zero', () => {
     assert.deepEqual(petRootStyle({ rx: 0.5, ry: 0.25 }, viewport, { w: 231, h: 130 }), {
       left: 640 - 231 + 'px',
       top: 200 - 130 + 'px',
@@ -107,14 +117,14 @@ describe('petRootStyle —— 根节点定位', () => {
     });
   });
 
-  test('不做边界夹取：比例 0 / 1 允许盒一半出屏', () => {
+  test('No boundary clamping: ratio 0 / 1 allows half of the box to exit the screen', () => {
     assert.equal(petRootStyle({ rx: 0, ry: 0 }, viewport, { w: 231, h: 130 }).left, -231 + 'px');
     assert.equal(petRootStyle({ rx: 1, ry: 1 }, viewport, { w: 231, h: 130 }).top, 800 - 130 + 'px');
   });
 });
 
-describe('PET_HIT_STYLE —— 命中区换算成百分比', () => {
-  test('四个百分比与命中框在 640×360 画布上一致', () => {
+describe('PET_HIT_STYLE —— Hit area converted into percentage', () => {
+  test('Four percentages consistent with hitbox on 640×360 canvas', () => {
     assert.deepEqual(PET_HIT_STYLE, {
       left: (HIT_BOX.x0 / 640) * 100 + '%',
       top: (HIT_BOX.y0 / 360) * 100 + '%',
@@ -123,22 +133,25 @@ describe('PET_HIT_STYLE —— 命中区换算成百分比', () => {
     });
   });
 
-  test('命中框不越出宠物盒', () => {
+  test('The hit box does not exceed the pet box', () => {
     const left = parseFloat(PET_HIT_STYLE.left as string);
     const top = parseFloat(PET_HIT_STYLE.top as string);
     const width = parseFloat(PET_HIT_STYLE.width as string);
     const height = parseFloat(PET_HIT_STYLE.height as string);
-    assert.ok(left >= 0 && top >= 0, '左上角应在盒内');
-    assert.ok(left + width <= 100 + 1e-9 && top + height <= 100 + 1e-9, '右下角应不出盒');
+    assert.ok(left >= 0 && top >= 0, 'The upper left corner should be inside the box');
+    assert.ok(
+      left + width <= 100 + 1e-9 && top + height <= 100 + 1e-9,
+      'The box should not come out of the lower right corner',
+    );
   });
 });
 
-describe('clampReachableBox —— 越界摆放的可见下限', () => {
+describe('clampReachableBox——The visible lower limit of out-of-bounds placement', () => {
   const size = 462;
   const { bottomPad } = derivePetMetrics(size);
   const inset = bodyPixelBox({ x: 0, y: 0, size, bottomPad });
 
-  /** 命中区与视口的交集尺寸（px），即「还剩多少点得到」。 */
+  /** The intersection size of the hit area and the viewport (px), that is, "how many points are left to get". */
   function visible(box: { x: number; y: number }): { w: number; h: number } {
     const body = bodyPixelBox({ x: box.x, y: box.y, size, bottomPad });
     return {
@@ -147,47 +160,67 @@ describe('clampReachableBox —— 越界摆放的可见下限', () => {
     };
   }
 
-  test('右侧越界：命中区右缘超出视口 → 推回到只剩 24px 可见', () => {
+  test('The right edge is out of bounds: the right edge of the hit area exceeds the viewport → push back to only 24 px visible', () => {
     const box = clampReachableBox({ x: 5000, y: 200 }, viewport, { size, bottomPad });
-    assert.equal(box.x, viewport.width - inset.left - MIN_REACHABLE_PX, '左缘应推到命中区留出下限');
-    assert.ok(Math.abs(visible(box).w - MIN_REACHABLE_PX) < 1e-9, `可见宽应为 ${MIN_REACHABLE_PX}`);
-    assert.equal(box.y, 200, '未越界的那一轴不动');
+    assert.equal(
+      box.x,
+      viewport.width - inset.left - MIN_REACHABLE_PX,
+      'The left edge should be pushed to the hit zone to leave a lower limit',
+    );
+    assert.ok(Math.abs(visible(box).w - MIN_REACHABLE_PX) < 1e-9, `The visible width should be ${MIN_REACHABLE_PX}`);
+    assert.equal(box.y, 200, 'The axis that has not crossed the boundary does not move.');
   });
 
-  test('左侧越界：命中区左缘超出视口 → 推回到只剩 24px 可见', () => {
+  test('Left out of bounds: the left edge of the hit area exceeds the viewport → push back to only 24 px visible', () => {
     const box = clampReachableBox({ x: -5000, y: 200 }, viewport, { size, bottomPad });
-    assert.equal(box.x, MIN_REACHABLE_PX - inset.right, '右缘应推到命中区留出下限');
-    assert.ok(Math.abs(visible(box).w - MIN_REACHABLE_PX) < 1e-9, `可见宽应为 ${MIN_REACHABLE_PX}`);
+    assert.equal(
+      box.x,
+      MIN_REACHABLE_PX - inset.right,
+      'The right edge should be pushed to the hit zone to leave a lower limit',
+    );
+    assert.ok(Math.abs(visible(box).w - MIN_REACHABLE_PX) < 1e-9, `The visible width should be ${MIN_REACHABLE_PX}`);
   });
 
-  test('底部越界：命中区底边低于视口 → 推回到只剩 24px 可见', () => {
+  test('Bottom out of bounds: The bottom edge of the hit area is lower than the viewport → push back to only 24 px visible', () => {
     const box = clampReachableBox({ x: 200, y: 5000 }, viewport, { size, bottomPad });
-    assert.equal(box.y, viewport.height - inset.top - MIN_REACHABLE_PX, '顶边应推到命中区留出下限');
-    assert.ok(Math.abs(visible(box).h - MIN_REACHABLE_PX) < 1e-9, `可见高应为 ${MIN_REACHABLE_PX}`);
+    assert.equal(
+      box.y,
+      viewport.height - inset.top - MIN_REACHABLE_PX,
+      'The top edge should be pushed to the hit zone to leave a lower limit',
+    );
+    assert.ok(Math.abs(visible(box).h - MIN_REACHABLE_PX) < 1e-9, `The visible height should be ${MIN_REACHABLE_PX}`);
   });
 
-  test('顶部越界：命中区顶边高于视口 → 推回到只剩 24px 可见', () => {
+  test('Top out of bounds: The top edge of the hit area is higher than the viewport → push back to only 24 px visible', () => {
     const box = clampReachableBox({ x: 200, y: -5000 }, viewport, { size, bottomPad });
-    assert.equal(box.y, MIN_REACHABLE_PX - inset.bottom, '底边应推到命中区留出下限');
-    assert.ok(Math.abs(visible(box).h - MIN_REACHABLE_PX) < 1e-9, `可见高应为 ${MIN_REACHABLE_PX}`);
+    assert.equal(
+      box.y,
+      MIN_REACHABLE_PX - inset.bottom,
+      'The bottom edge should be pushed to the hit zone to leave a lower limit',
+    );
+    assert.ok(Math.abs(visible(box).h - MIN_REACHABLE_PX) < 1e-9, `The visible height should be ${MIN_REACHABLE_PX}`);
   });
 
-  test('未越界：原样返回 → 不做任何位移', () => {
+  test('Not crossing the boundary: return as is → without any displacement', () => {
     const inside = { x: 400, y: 300 };
     assert.deepEqual(clampReachableBox(inside, viewport, { size, bottomPad }), inside);
   });
 
-  test('极窄视口 + 小宠物：区间反向 → 该轴居中，不夹到错误一侧', () => {
+  test('Extremely narrow viewport + small pets: the range is reversed → the axis is centered and does not clip to the wrong side', () => {
     const narrow = { width: 5, height: 800 };
     const tiny = 100;
     const box = clampReachableBox({ x: 5000, y: 200 }, narrow, { size: tiny, bottomPad: 0 });
-    assert.equal(box.x, (narrow.width - tiny) / 2, '容不下两倍下限时应按盒居中');
+    assert.equal(
+      box.x,
+      (narrow.width - tiny) / 2,
+      'When twice the lower limit cannot be accommodated, the box should be centered',
+    );
   });
 
-  test('四角越界：两轴各自夹取 → 角上仍留 24px', () => {
+  test('Four corners out of bounds: Two axes are clamped separately → 24 px remains on the corner', () => {
     const box = clampReachableBox({ x: 5000, y: 5000 }, viewport, { size, bottomPad });
     const seen = visible(box);
-    assert.ok(Math.abs(seen.w - MIN_REACHABLE_PX) < 1e-9, `可见宽应为 ${MIN_REACHABLE_PX}`);
-    assert.ok(Math.abs(seen.h - MIN_REACHABLE_PX) < 1e-9, `可见高应为 ${MIN_REACHABLE_PX}`);
+    assert.ok(Math.abs(seen.w - MIN_REACHABLE_PX) < 1e-9, `The visible width should be ${MIN_REACHABLE_PX}`);
+    assert.ok(Math.abs(seen.h - MIN_REACHABLE_PX) < 1e-9, `The visible height should be ${MIN_REACHABLE_PX}`);
   });
 });

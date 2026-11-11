@@ -1,30 +1,32 @@
 /**
- * 种类标签条：横向列出全部种类（内置 + 各 pet pack），点一下切换当前种类。
+ * Category label bar: List all categories horizontally (built-in + each pet pack), click to switch the current
+ * category.
  *
- * 只负责「切到哪个种类」；实例的增删与字段编辑由宠物标签条和设置页外壳处理。
+ * It is only responsible for "which category to switch to"; the addition, deletion and field editing of instances are
+ * handled by the pet tag strip and the settings page shell.
  * @module dsh-pet/src/client/settings/kind-tabs
  */
 import type { FunctionComponent } from 'react';
 import type { PetKind } from './use-pet-list.ts';
 import type { SettingsRuntime } from './runtime.ts';
 
-/** 种类标签条的输入。 */
+/** Input of category label strip. */
 export interface KindTabsProps {
-  /** 全部种类（顺序即成品里的条目顺序）。 */
+  /** All categories (the order is the order of items in the resolved value). */
   kinds: readonly PetKind[];
-  /** 当前种类（条目名）。 */
+  /** Current category (entry name). */
   kind: string;
-  /** 保存中或配置未就绪时禁用切换。 */
+  /** Switching is disabled while saving or configuration is not ready. */
   busy: boolean;
-  /** 切到另一个种类。 */
+  /** Switch to another category. */
   onSelect: (entry: string) => void;
 }
 
 /**
- * 造种类标签条。
+ * Create category label strips.
  *
- * @param rt - 注入的 react 能力与翻译函数。
- * @returns 种类标签条组件。
+ * @param rt - Injected react capabilities and translation functions.
+ * @returns category label strip component.
  */
 export function makeKindTabs(rt: Pick<SettingsRuntime, 'h' | 't'>): FunctionComponent<KindTabsProps> {
   const { h, t } = rt;
@@ -41,7 +43,7 @@ export function makeKindTabs(rt: Pick<SettingsRuntime, 'h' | 't'>): FunctionComp
             disabled: props.busy,
             onClick: () => props.onSelect(item.entry),
             className: 'dsh-pet-cfg__tab' + (item.entry === props.kind ? ' is-active' : ''),
-            // 主条目固定显示「内置」；文件宠物直接显示目录前缀（与素材根一致）。
+            // The main entry is fixedly displayed as "built-in"; the file pet directly displays the directory prefix (consistent with the asset root).
             children: (item.kind === 'main' ? t('kindMain') : item.entry) + ' (' + item.count + ')',
           }),
         ),

@@ -1,17 +1,22 @@
 /**
- * issue #56 的判定测试 —— 「宿主退出后 Electron helper 因 stdout EPIPE 崩溃弹窗 / 赖着不走」。
+ * Judgment test of issue #56 - "After the host exits, Electron helper crashes due to stdout EPIPE pop-up window/stays
+ * on".
  *
- * 事实链：helper 的 stdout/stderr 是宿主给的管道，宿主一退出读端消失，下一次写（bridge 协议行）拿到
- * EPIPE（Windows 实测 `EPIPE: broken pipe, write`）；未处理的 'error' 事件 = 未捕获异常，Electron
- * 主进程只弹模态框、不退出；Windows 的 job 对象（KILL_ON_JOB_CLOSE）会在宿主退出时顺手杀掉子进程，
- * 所以那一幕在 Windows 上看不全，macOS 没有这层兜底。
+ * Fact chain: helper's stdout/stderr is the pipe given by the host. The host disappears as soon as it exits the
+ * reading end. The next write (bridge protocol line) gets EPIPE (Windows measured `EPIPE: broken pipe, write` );
+ * unhandled 'error' event = uncaught exception, Electron main process Only the modal box pops up and does not exit;
+ * the job object (KILL_ON_JOB_CLOSE) of Windows will kill the child process when the host exits, so that scene cannot
+ * be fully seen on Windows, and macOS does not have this layer of fallback.
  *
- * 本文件钉三件事：① 纯判定规则（宿主没了只认 ESRCH；管道断开只认 EPIPE / ERR_STREAM_DESTROYED）；
- * ② main.js 的接线：管道守卫 + 宿主探测都在位、都只经唯一出口、且守卫早于任何一次写；
- * ③ 宿主侧确实把 pid 注进去了，且新文件在发布必需清单里（缺了 main.js 启动即崩）。
+ * Three things are nailed in this document: ① Pure determination rules (only recognize ESRCH when the host is gone;
+ * only recognize EPIPE / ERR_STREAM_DESTROYED when the pipe is disconnected); ② Wiring of main.js: Pipe guard + host
+ * detection are both in place, only go through the only exit, and the guard is written earlier than any time; ③ The
+ * host side does pid It has been injected, and the new file is in the release required list (main.js will crash at
+ * startup if it is missing).
  *
- * helper 是随包发行的手写 JS，开发机上跑不起 Electron，接线只能靠源码断言 + 纯函数测试；
- * 用 Node 内置 test runner（node:test），不引入任何 npm 依赖。
+ * helper is the handwritten JS released with the package. Electron cannot be run on the development machine. The
+ * wiring can only rely on source code assertion + pure function testing; use Node to build test runner (node:test)
+ * without introducing any npm dependencies.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,31 +28,31 @@ const require = createRequire(import.meta.url);
 const helper = '../../runtime/electron-helper/';
 const { HOST_POLL_MS, parseHostPid, hostIsGone, isBrokenPipeError } = require(helper + 'host-liveness.js');
 
-/** 包内文件源码（守卫用；相对 src/host/ 解析） */
+/** Source code of files in the package (for guarding; relative to src/host / parsing) */
 const readSource = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-describe('parseHostPid —— 宿主 PID 解析', () => {
-  test('正常数字原样返回（含前后空白）', () => {
+describe('parseHostPid —— host PID analysis', () => {
+  test('Normal numbers are returned as they are (including leading and trailing blanks)', () => {
     assert.equal(parseHostPid('12345'), 12345);
     assert.equal(parseHostPid(' 42 '), 42);
   });
 
-  test('未设 / 空 / 非数字 / 非正数 → 0（调用方据此不做探测）', () => {
+  test('Not set / empty / not a number / a non-positive number → 0 (the caller does not detect accordingly)', () => {
     for (const raw of [undefined, null, '', '   ', 'abc', 'abc123', '0', '-7', 'NaN']) {
       assert.equal(parseHostPid(raw as string), 0, 'raw=' + String(raw));
     }
   });
 });
 
-describe('hostIsGone —— 只有 ESRCH 才算"宿主没了"', () => {
-  test('存活：kill(pid, 0) 正常返回 → false', () => {
+describe('hostIsGone - Only ESRCH is considered "host gone"', () => {
+  test('Survival: kill ( pid , 0) normal return → false', () => {
     assert.equal(
       hostIsGone(4242, () => undefined),
       false,
     );
   });
 
-  test('只做存在性检查：signal 必须是 0（绝不真给宿主发信号）', () => {
+  test('Only existence check: signal must be 0 (never actually sends a signal to the host)', () => {
     const calls: Array<[number, number]> = [];
     hostIsGone(4242, (pid: number, signal: number) => {
       calls.push([pid, signal]);
@@ -55,7 +60,7 @@ describe('hostIsGone —— 只有 ESRCH 才算"宿主没了"', () => {
     assert.deepEqual(calls, [[4242, 0]]);
   });
 
-  test('ESRCH → true（进程确实不在了）', () => {
+  test('ESRCH → true (the process is indeed gone)', () => {
     assert.equal(
       hostIsGone(4242, () => {
         throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
@@ -64,7 +69,7 @@ describe('hostIsGone —— 只有 ESRCH 才算"宿主没了"', () => {
     );
   });
 
-  test('EPERM / 其它错误码一律当存活（进程在，只是不该由我们动它）', () => {
+  test('EPERM / Other error codes should be treated as alive (the process is alive, but we should not touch it)', () => {
     for (const code of ['EPERM', 'EINVAL', 'EACCES', 'ECONNREFUSED']) {
       assert.equal(
         hostIsGone(4242, () => {
@@ -74,7 +79,7 @@ describe('hostIsGone —— 只有 ESRCH 才算"宿主没了"', () => {
         'code=' + code,
       );
     }
-    // 抛的不是 Error（没有 code）同样不判死
+    // If the throw is not Error (there is no code), it will not be sentenced to death.
     assert.equal(
       hostIsGone(4242, () => {
         throw 'boom';
@@ -83,7 +88,7 @@ describe('hostIsGone —— 只有 ESRCH 才算"宿主没了"', () => {
     );
   });
 
-  test('pid 非法（未注入 / 解析失败）时**绝不**判死——哪怕探测函数说 ESRCH', () => {
+  test('**Never** will result in death when pid is invalid (not injected/parsed failed) - even if the detection function says ESRCH', () => {
     const esrch = () => {
       throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
     };
@@ -93,13 +98,13 @@ describe('hostIsGone —— 只有 ESRCH 才算"宿主没了"', () => {
   });
 });
 
-describe('isBrokenPipeError —— 只有"管道对端没了"才算', () => {
-  test('EPIPE / ERR_STREAM_DESTROYED → true（真机那次就是 EPIPE: broken pipe, write）', () => {
+describe('isBrokenPipeError - Only "the peer end of the pipe is gone" counts', () => {
+  test('EPIPE / ERR_STREAM_DESTROYED → true (the real machine is EPIPE: broken pipe, write)', () => {
     assert.equal(isBrokenPipeError(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })), true);
     assert.equal(isBrokenPipeError(Object.assign(new Error('destroyed'), { code: 'ERR_STREAM_DESTROYED' })), true);
   });
 
-  test('其它错误 / 非 Error / 同名字符串 → false（不能被"长得像"骗到）', () => {
+  test('Other errors / non-Error / character string with the same name → false (cannot be fooled by "look-alike")', () => {
     for (const value of [
       Object.assign(new Error('reset'), { code: 'ECONNRESET' }),
       Object.assign(new Error('invalid'), { code: 'EINVAL' }),
@@ -112,88 +117,109 @@ describe('isBrokenPipeError —— 只有"管道对端没了"才算', () => {
     }
   });
 
-  test('探测间隔仍是 2s（宿主没了最多 2s 收敛）', () => {
+  test('The detection interval is still 2 s (the host has gone up to 2 s to converge)', () => {
     assert.equal(HOST_POLL_MS, 2000);
   });
 });
 
-describe('守卫：main.js 的两条路必须都在位（helper 随包发行，只能读源码断言）', () => {
+describe('Guard: Both paths of main.js must be in place (helper is released with the package, only the source code assertion can be read)', () => {
   const main = readSource(helper + 'main.js');
 
-  test('管道守卫（A）：两条流都挂 error，且断开即走唯一出口', () => {
-    assert.ok(/require\('\.\/host-liveness\.js'\)/.test(main), '必须 require host-liveness.js');
+  test('Pipe guard (A): Both streams are linked to error, and the only exit is taken when disconnected', () => {
+    assert.ok(/require\('\.\/host-liveness\.js'\)/.test(main), 'Required require host-liveness.js');
     assert.ok(
       /for \(const stream of \[process\.stdout, process\.stderr\]\)/.test(main),
-      'stdout 与 stderr 都要挂（两条都是宿主给的管道）',
+      'Both stdout and stderr need to be hung (both are pipes provided by the host)',
     );
-    assert.ok(/stream\.on\('error'/.test(main), '必须真的挂 error 监听');
-    assert.ok(/if \(isBrokenPipeError\(error\)\) exitForDeadHost\(\)/.test(main), '管道断开 = 宿主已死 → 立刻退出');
+    assert.ok(/stream\.on\('error'/.test(main), 'error monitoring must be really installed');
+    assert.ok(
+      /if \(isBrokenPipeError\(error\)\) exitForDeadHost\(\)/.test(main),
+      'Pipe disconnected = host is dead → exit immediately',
+    );
   });
 
-  test('唯一出口且只退一次：hostGone 去重 + app.exit(0)', () => {
-    assert.ok(/let hostGone = false;/.test(main), '必须有去重标记');
-    assert.ok(/function exitForDeadHost\(\) \{\s*if \(hostGone\) return;/.test(main), '重复触发只退一次');
-    assert.ok(/app\.exit\(0\)/.test(main), '用 app.exit（process.exit 在 Electron 主进程不干净）');
+  test('The only exit and only one return: hostGone deduplicate + app.exit (0)', () => {
+    assert.ok(/let hostGone = false;/.test(main), 'must have deduplicate flag');
+    assert.ok(
+      /function exitForDeadHost\(\) \{\s*if \(hostGone\) return;/.test(main),
+      'Repeated triggering only returns once',
+    );
+    assert.ok(/app\.exit\(0\)/.test(main), 'Use app.exit (process.exit in Electron main process is not clean)');
   });
 
-  test('宿主探测（B）：pid 由 env 来，只有 ESRCH 才退，且探测实例不参与', () => {
+  test('host detection (B): pid comes from env, only ESRCH returns, and the detection instance does not participate', () => {
     assert.ok(
       /const HOST_PID = parseHostPid\(process\.env\.DSH_PET_HOST_PID\)/.test(main),
-      'pid 必须来自宿主注入的 env（未注入 → 0 → 不探测）',
+      'pid must come from env injected by the host (not injected → 0 → not detected)',
     );
-    assert.ok(/if \(!DPI_PROBE && HOST_PID > 0\)/.test(main), 'pid 非法或 DPI 探测实例都不起轮询');
-    assert.ok(/if \(hostIsGone\(HOST_PID\)\) exitForDeadHost\(\)/.test(main), '判定走纯函数，出口同一个');
-    assert.ok(/HOST_POLL_MS/.test(main), '间隔必须是命名常量（来自 host-liveness.js）');
+    assert.ok(
+      /if \(!DPI_PROBE && HOST_PID > 0\)/.test(main),
+      'pid illegal or DPI detection instances cannot be polled.',
+    );
+    assert.ok(
+      /if \(hostIsGone\(HOST_PID\)\) exitForDeadHost\(\)/.test(main),
+      'Determination of pure function, the export is the same',
+    );
+    assert.ok(/HOST_POLL_MS/.test(main), 'Interval must be a named constant (from host-liveness.js)');
   });
 
-  test('守卫必须早于**任何一次写**（DPI 探测失败就会往 stderr 写）', () => {
+  test('The guard must be written earlier than **any time** (DPI will write to stderr if the detection fails)', () => {
     const guardAt = main.indexOf("stream.on('error'");
-    // DPI 探测已拆到 main-dpi.js：main.js 这边第一个可能写 stderr 的动作就是建它
+    // DPI detection has been split into main-dpi.js: main.js The first possible action to write stderr here is to build it
     const firstWriteAt = main.indexOf('createDpi({');
-    assert.ok(guardAt > 0, '找不到管道守卫');
-    assert.ok(firstWriteAt > 0, '找不到 DPI 工厂调用点（文件结构变了，请同步本断言）');
-    assert.ok(guardAt < firstWriteAt, '管道守卫必须装在任何一次可能写之前');
+    assert.ok(guardAt > 0, 'Pipe guard not found');
+    assert.ok(
+      firstWriteAt > 0,
+      'The DPI factory call point cannot be found (the file structure has changed, please synchronize this assertion)',
+    );
+    assert.ok(guardAt < firstWriteAt, 'Pipe guards must be installed before any possible write');
   });
 
-  test('不许加全局 uncaughtException 处理器（会顶掉 Electron 的行为并吞掉真实崩溃）', () => {
+  test('It is not allowed to add the global uncaughtException processor (it will override the behavior of Electron and swallow the real crash)', () => {
     assert.ok(
       !/process\.on\('uncaughtException'/.test(main),
-      '只治"管道断开"这一种，别把真实崩溃一起吞掉——那会让排障更困难',
+      'Only treat "disconnected pipes", don\'t swallow the real crash - that will make troubleshooting more difficult',
     );
   });
 });
 
-describe('守卫：宿主侧必须把 pid 注入（否则 B 永远不生效）', () => {
-  test('helper/child.ts：唯一的 spawn 点经 helperSpawnEnv 注入 DSH_PET_HOST_PID', () => {
+describe('Guard: The host side must inject pid (otherwise B will never take effect)', () => {
+  test('helper/child.ts: The only spawn point is injected into DSH_PET_HOST_PID via helperSpawnEnv', () => {
     const src = readSource('./helper/child.ts');
     assert.ok(
       /env: helperSpawnEnv\(process\.pid, this\.options\.env\)/.test(src),
-      'spawn 的 env 必须经 helperSpawnEnv 注入宿主 pid（放在唯一 spawn 点，所有调用方自动获得）',
+      'env of spawn must be injected into host pid through helperSpawnEnv (placed at the only spawn point, all callers automatically obtain it)',
     );
   });
 
-  test('helperSpawnEnv：删掉会劫持 Electron 启动模式的 ELECTRON_RUN_AS_NODE（issue #63）', () => {
+  test('helperSpawnEnv: Remove ELECTRON_RUN_AS_NODE that hijacks Electron boot mode (issue #63)', () => {
     const src = readSource('./helper/child.ts');
     assert.ok(
       /delete env\.ELECTRON_RUN_AS_NODE;/.test(src),
-      '必须**删键**：宿主（如 DSH Desktop）透传这个变量会让 helper 退化成纯 Node 模式、require("electron") 直接崩',
+      'Must **delete key**: Transparent transmission of this variable by host (such as DSH Desktop) will cause helper to degenerate into pure Node mode, and require (" electron ") will crash directly.',
     );
     assert.ok(
       !/ELECTRON_RUN_AS_NODE: ''/.test(src),
-      '不得把它设成空字符串——实测 Electron 43.3.0 下空串会直接 abort（exit 134）',
+      'It is not allowed to set it to an empty character string - actually measured under Electron 43.3.0, the empty string will be directly abort (exit 134)',
     );
   });
 
-  test('start-desktop.mjs：开发流同样注入 pid 且同样删掉该变量', () => {
+  test('start-desktop.mjs: The development stream also injects pid and deletes the variable.', () => {
     const src = readSource('../../scripts/start-desktop.mjs');
-    assert.ok(/DSH_PET_HOST_PID: String\(process\.pid\)/.test(src), '开发流也要跟随');
-    assert.ok(/delete env\.ELECTRON_RUN_AS_NODE;/.test(src), '手动拉起同样要防这个变量（issue #63）');
+    assert.ok(/DSH_PET_HOST_PID: String\(process\.pid\)/.test(src), 'Development flow must also be followed');
+    assert.ok(
+      /delete env\.ELECTRON_RUN_AS_NODE;/.test(src),
+      'This variable must also be guarded against when pulling up manually (issue #63)',
+    );
   });
 });
 
-describe('守卫：host-liveness.js 必须在发布必需清单里', () => {
-  test('prepack-check.js 的 required 含它（main.js require，缺了会启动即崩）', () => {
+describe('Guard: host-liveness.js must be in the release required list', () => {
+  test('required of prepack-check.js contains it (main.js require, if it is missing, it will crash at startup)', () => {
     const src = readSource('../../scripts/prepack-check.js');
-    assert.ok(/'runtime\/electron-helper\/host-liveness\.js'/.test(src), '漏了它，npm 包里就少一个 main.js 必需的模块');
+    assert.ok(
+      /'runtime\/electron-helper\/host-liveness\.js'/.test(src),
+      'If it is missing, the npm package is missing a necessary module for main.js',
+    );
   });
 });

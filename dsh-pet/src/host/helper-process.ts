@@ -1,8 +1,9 @@
 /**
- * 桌面 Helper 进程的公开出口：定位、启动、管道协议与重启策略。
+ * Public exits for desktop Helper process: location, startup, pipeline protocol and restart strategy.
  *
- * 只做再导出，不含逻辑；子模块按变化原因分居 ./helper/。
- * 必须始终成立：模块外只经本文件使用 Helper 能力，不得旁路拉起进程。
+ * Only re-export, no logic; sub-modules are separated according to the reason of change./helper/. This must always be
+ * true: the Helper capability can only be used outside the module through this file, and the process cannot be
+ * bypassed.
  * @module dsh-pet/src/host/helper-process
  */
 export {

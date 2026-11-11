@@ -1,38 +1,41 @@
 /**
- * 端侧语音输入：录一段话，拼成宿主认可的 WAV，`POST /voice/hear` 换回文字。
+ * End-side voice input: record a paragraph and spell it into WAV recognized by the host. `POST /voice/hear` is
+ * replaced with text.
  *
- * 格式口径（16kHz / 单声道 / PCM16）与宿主 provider 的校验是同一份事实——这里只按它产出，
- * 不再各自校验一遍；真对不上时宿主会回一条可读的失败说明。
- * 只负责「麦克风 → WAV → 文字」，不碰界面：按钮状态、文字落点都归调用方（chat/dom）。
+ * The verification of the format conventions (16 kHz / mono / PCM16) and the host provider is the same fact - here we
+ * only output according to it, and no longer verify them separately; if they are really inconsistent, the host will
+ * return a readable failure explanation. It is only responsible for "Microphone → WAV → Text" and does not touch the
+ * interface: the button status and text placement point belong to the caller (chat/dom).
  * @module dsh-pet/src/shared/hear
  */
 
-/** 采样率：宿主 provider 只收 16kHz。 */
+/** Sampling rate: host provider only accepts 16 kHz. */
 export const HEAR_SAMPLE_RATE = 16000;
 /**
- * 单次录音上限（ms）。
+ * The upper limit of single recording (ms).
  *
- * 24 秒 × 32000 B/s ≈ 750KB，base64 后仍落在宿主 1MiB 的请求体里（上限 768KiB 音频）；
- * 再长就必须先想办法分片，那是另一件事。
+ * 24 seconds × 32000 B/s ≈ 750 KB, base64 still falls in the request body of host 1 MiB (the upper limit is 768 KiB
+ * audio); if it is longer, you must first find a way to fragment it, that is another thing.
  */
 export const MAX_RECORD_MS = 24_000;
-/** 判静音的峰值阈值（0..1）：低于它视为没听到声音，不白送一次识别。 */
+/** The peak threshold for judging silence (0..1): below it, it is considered that no sound is heard, and the recognition is not wasted. */
 export const SILENCE_PEAK = 0.002;
 /**
- * 短于它的录音按误触处理。
+ * Recordings shorter than this are treated as false triggers.
  *
- * 快捷键按住说话时，一次误碰只会录到几十毫秒；这种片段既不值得送去识别，
- * 也不该报「没听到声音」——它跟麦克风有没有声毫无关系。
+ * When you hold down the shortcut key and speak, an accidental touch will only record a few tens of milliseconds; this
+ * kind of clip is neither worth sending for identification nor should it report "no sound" - it has nothing to do with
+ * whether there is sound from the microphone.
  */
 export const MIN_RECORD_MS = 300;
-/** 等识别结果的上限（ms）：宿主自己 30s 超时，这里留点余量先等它回结构化失败。 */
+/** The upper limit of waiting for recognition results (ms): The host itself 30 s times out, leave some margin here and wait for it to respond to structured failure. */
 const HEAR_TIMEOUT_MS = 40_000;
-/** 每块采集的样本数：1024 样本 @16kHz = 64ms，松手后等待补齐尾音的时长也按它算。 */
+/** The number of samples collected in each block: 1024 samples @16 kHz = 64 ms. The waiting time to complete the tail sound after letting go is also calculated according to this. */
 const BLOCK_SAMPLES = 1024;
-/** 松手后等最后一块音频落袋（ms）：比一块略长，避免把最后半句话砍掉。 */
+/** After letting go, wait for the last piece of audio to fall into the bag (ms): slightly longer than one piece to avoid cutting off the last half of the sentence. */
 const TAIL_SETTLE_MS = 80;
 
-/** 识别结果：成功给文字（空串 = 这段里没人说话），失败给分类与可直接展示的说明。 */
+/** Recognition results: success will be given to text (empty string = no one speaks in this paragraph), failure will be given to classification and instructions that can be directly displayed. */
 export type HearOutcome =
   | { readonly ok: true; readonly text: string }
   | {
@@ -41,34 +44,35 @@ export type HearOutcome =
       readonly message: string;
     };
 
-/** 一段录好的音频：WAV 字节与峰值一起交出去，静音判定不必再解一遍字节。 */
+/** A piece of recorded audio: WAV bytes are handed over together with the peak value. There is no need to decode the bytes again for silence determination. */
 export interface RecordedClip {
-  /** 完整的 WAV 字节（16kHz / 单声道 / PCM16）。 */
+  /** Complete WAV bytes (16 kHz / mono / PCM16). */
   readonly wave: Uint8Array;
-  /** 峰值（0..1）；低于 {@link SILENCE_PEAK} 就是没听到声音。 */
+  /** Peak value (0..1); lower than {@link SILENCE_PEAK} means no sound is heard. */
   readonly peak: number;
 }
 
-/** 一次录音的句柄；用完必须 `stop` 或 `cancel`，否则麦克风一直被占着。 */
+/** The handle for one recording; it must be `stop` or `cancel` when used up, otherwise the microphone will always be occupied. */
 export interface HearRecorder {
-  /** 已录时长（ms）：到 {@link MAX_RECORD_MS} 后不再增长。 */
+  /** Recorded duration (ms): It will no longer increase after {@link MAX_RECORD_MS}. */
   elapsedMs(): number;
-  /** 停止并交出音频；一个采样都没有时给 null。 */
+  /** Stop and hand over audio; gives null when not a single sample is available. */
   stop(): Promise<RecordedClip | null>;
-  /** 丢弃录音并释放麦克风；可重复调用。 */
+  /** Discard recording and release microphone; can be called repeatedly. */
   cancel(): void;
 }
 
-/** 浏览器能不能录音；非安全上下文（http 且非 localhost）下 `mediaDevices` 根本不存在。 */
+/** Whether the browser can record; `mediaDevices` does not exist at all in non-security context (http and not localhost). */
 export function canRecord(): boolean {
   return typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function';
 }
 
 /**
- * 浮点采样转 16 位整型：超范围先夹紧，负半轴按 32768 缩放，免得 -1 溢出成正数。
+ * Convert floating-point sampling to 16-bit integer type: clamp when out of range, and scale the negative half-axis
+ * according to 32768 to prevent -1 from overflowing into a positive number.
  *
- * @param samples - Web Audio 给的 [-1,1] 浮点采样。
- * @returns 可直接写进 WAV 的 16 位采样。
+ * @param samples - Web Audio gives [-1,1] floating point samples.
+ * @returns can write directly into the 16-bit samples of WAV.
  */
 export function floatToPcm16(samples: Float32Array): Int16Array {
   const out = new Int16Array(samples.length);
@@ -80,10 +84,10 @@ export function floatToPcm16(samples: Float32Array): Int16Array {
 }
 
 /**
- * 量峰值：静音判定只关心「有没有声音进来」，不关心它有多响。
+ * Volume peak: Silence judgment only cares about "whether there is sound coming in", not how loud it is.
  *
- * @param pcm - 16 位采样。
- * @returns 峰值归一到 0..1；空数组给 0。
+ * @param pcm - 16-bit samples.
+ * @returns peaks are normalized to 0..1; empty arrays give 0.
  */
 export function peakOf(pcm: Int16Array): number {
   let peak = 0;
@@ -95,20 +99,20 @@ export function peakOf(pcm: Int16Array): number {
 }
 
 /**
- * 拼一个裸 PCM 的 WAV：44 字节头 + 采样数据。
+ * Concatenate a bare PCM to WAV: 44 bytes header + sampling data.
  *
- * 头里每个字段宿主都会校验（`fmt ` 长度 16、PCM=1、单声道、16bit、byteRate 自洽），
- * 所以这里按固定偏移逐字节写，不做「挑一个能用的模板」那种取巧。
+ * Each field host in the header will be checked (`fmt ` length 16, PCM =1, mono, 16 bit, byteRate self-consistent), so
+ * here we write it byte by byte at a fixed offset, and there is no trick like "picking a usable template".
  *
- * @param pcm - 16 位采样。
- * @param sampleRate - 采样率；缺省 16kHz。
- * @returns 完整 WAV 字节。
+ * @param pcm - 16-bit samples.
+ * @param sampleRate - sampling rate; default 16 kHz.
+ * @returns complete WAV bytes.
  */
 export function encodeWave(pcm: Int16Array, sampleRate = HEAR_SAMPLE_RATE): Uint8Array {
   const dataBytes = pcm.length * 2;
   const bytes = new Uint8Array(44 + dataBytes);
   const view = new DataView(bytes.buffer);
-  /** 写 4 字节 ASCII 标记（RIFF/WAVE/fmt /data），全是大写或小写字母，不用考虑编码。 */
+  /** Write 4 bytes ASCII mark (RIFF/WAVE/fmt / data), all uppercase or lowercase letters, regardless of encoding. */
   const ascii = (offset: number, text: string): void => {
     for (let i = 0; i < text.length; i++) bytes[offset + i] = text.charCodeAt(i);
   };
@@ -118,10 +122,10 @@ export function encodeWave(pcm: Int16Array, sampleRate = HEAR_SAMPLE_RATE): Uint
   ascii(12, 'fmt ');
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true); // 1 = PCM
-  view.setUint16(22, 1, true); // 单声道
+  view.setUint16(22, 1, true); // Mono
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true); // byteRate = 采样率 × 声道 × 位深/8
-  view.setUint16(32, 2, true); // blockAlign = 声道 × 位深/8
+  view.setUint32(28, sampleRate * 2, true); // byteRate = sampling rate × channel × bit depth/8
+  view.setUint16(32, 2, true); // blockAlign = channel × bit depth/8
   view.setUint16(34, 16, true);
   ascii(36, 'data');
   view.setUint32(40, dataBytes, true);
@@ -130,12 +134,13 @@ export function encodeWave(pcm: Int16Array, sampleRate = HEAR_SAMPLE_RATE): Uint
 }
 
 /**
- * 字节转 base64（不带 data: 前缀）。
+ * bytes to base64 (without data: prefix).
  *
- * 分段转换：一次性展开几十万字节会撑爆参数栈，而这里是允许 750KB 的量级。
+ * Segmented conversion: Expanding hundreds of thousands of bytes at one time will burst the parameter stack, and here
+ * is the allowed magnitude of 750 KB.
  *
- * @param bytes - 原始字节。
- * @returns 规范 base64。
+ * @param bytes - raw bytes.
+ * @returns specification base64.
  */
 export function toBase64(bytes: Uint8Array): string {
   const BASE64_CHUNK_BYTES = 8192;
@@ -147,17 +152,17 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** 把宿主的失败原因收敛到自己认识的几种；其余一律按生成失败处理。 */
+/** Converg the host failure reasons to the ones you know; the rest will be treated as generation failures. */
 function reasonOf(raw: unknown): 'unsupported' | 'bad-request' | 'generate-error' {
   return raw === 'unsupported' || raw === 'bad-request' ? raw : 'generate-error';
 }
 
 /**
- * 把一段 WAV（base64）交给宿主识别。
+ * Give a section of WAV (base64) to the host for recognition.
  *
- * @param url - 已含挂载前缀的识别地址。
- * @param audio - 规范 base64（不带 data: 前缀）。
- * @returns 文字或失败分类；网络异常也收敛成 outcome，不向上抛。
+ * @param url - Identification address that includes the mount prefix.
+ * @param audio - specification base64 (without data : prefix).
+ * @returns text or failure classification; network exceptions also converge to outcome and are not thrown upward.
  */
 export async function hearAudio(url: string, audio: string, signal?: AbortSignal): Promise<HearOutcome> {
   const timeout = AbortSignal.timeout(HEAR_TIMEOUT_MS);
@@ -185,14 +190,16 @@ export async function hearAudio(url: string, audio: string, signal?: AbortSignal
 }
 
 /**
- * 开一次录音。
+ * Start recording once.
  *
- * 用 `AudioContext({ sampleRate: 16000 })` 让浏览器自己做重采样（硬件通常是 48k），
- * 拿到的就已是目标采样率的单声道浮点；`ScriptProcessor` 虽已标记废弃，但它不需要
- * 额外的 worklet 模块文件——`file://` 页面加载 worklet 会被源头限制卡住。
+ * Use `AudioContext({ sampleRate: 16000 })` to let the browser do the resampling by itself (the hardware is usually 48
+ * k), and what you get is the mono floating point of the target sampling rate; although `ScriptProcessor` has been
+ * marked as obsolete, it does not require additional worklet module files - `file://` page loading worklet will be
+ * stuck by source restrictions.
  *
- * @returns 录音句柄。
- * @throws {Error} 拿不到麦克风时（没权限、设备被占、非安全上下文）——原文交给调用方展示。
+ * @returns recording handle.
+ * @throws { Error } When the microphone cannot be obtained (no permission, device occupied, non-security context) -
+ * the original text is given to the caller for display.
  */
 export async function startRecording(): Promise<HearRecorder> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } });
@@ -209,13 +216,13 @@ export async function startRecording(): Promise<HearRecorder> {
     const samples = event.inputBuffer.getChannelData(0);
     const room = maxSamples - frames;
     const take = samples.length > room ? samples.subarray(0, room) : samples;
-    // 必须复制：inputBuffer 的底层数组每帧复用，直接存引用会得到一堆相同的数据
+    // Must copy: The underlying array of inputBuffer is reused every frame. Directly storing the reference will result in a bunch of the same data.
     chunks.push(new Float32Array(take));
     frames += take.length;
   };
   source.connect(processor);
   processor.connect(ctx.destination);
-  // 上下文默认可能是 suspended（没有用户手势时）；调用方就在 pointerdown 里，够格恢复
+  // The default context may be suspended (when there is no user gesture); the caller is in pointerdown and is eligible for recovery.
   await ctx.resume();
 
   const teardown = (): void => {
@@ -226,7 +233,7 @@ export async function startRecording(): Promise<HearRecorder> {
       source.disconnect();
       processor.disconnect();
     } catch {
-      /* 已经断开：无所谓 */
+      /* Disconnected: Doesn’t matter */
     }
     for (const track of stream.getTracks()) track.stop();
     void ctx.close();
@@ -235,7 +242,7 @@ export async function startRecording(): Promise<HearRecorder> {
   return {
     elapsedMs: () => (frames / HEAR_SAMPLE_RATE) * 1000,
     async stop() {
-      // 采集比释放晚一块：先让最后一块落袋，否则每次都会砍掉几十毫秒的尾音
+      // The acquisition is one block later than the release: let the last block fall into the bag first, otherwise tens of milliseconds of tail sound will be cut off every time
       await new Promise((resolve) => setTimeout(resolve, TAIL_SETTLE_MS));
       teardown();
       if (frames === 0) return null;

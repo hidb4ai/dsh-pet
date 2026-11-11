@@ -1,20 +1,24 @@
 /**
- * 对话弹窗的样式与尺寸参数：两端注入同一份 CSS。
- * 只放静态字符串与常量，不建 DOM、不读运行时状态。
+ * The style and size parameters of the dialog pop-up window: Inject the same CSS at both ends. Only static character
+ * strings and constants are placed, DOM is not created, and runtime status is not read.
  * @module dsh-pet/src/shared/chat/styles
  */
 
-/** 弹窗样式。
- *  一条自适应输入框（无标题）+ 一行图标按钮（上传 / 截屏 / 按住说话）+ 可选的图片预览；
- *  初始 160px，随输入增宽、封顶 340px 后折行增高；回车发送，Esc 或点外关闭。
- *  宽度由 JS 按文本测量覆盖根元素宽度。 */
+/**
+ * Pop-up window style. An adaptive input box (untitled) + a row of icon buttons (upload/screenshot/press and hold to
+ * talk) + optional picture preview; initial 160 px, widened with input, capped at 340 px, and then folded to increase
+ * height; press Enter to send, Esc or click to close. The width is measured by text JS overwriting the root element
+ * width.
+ */
 export const CHAT_CSS = [
   '.dsh-pet-chat{position:fixed;z-index:2147483001;width:160px;max-width:80vw;',
   'background:rgba(255,255,255,.98);border:1px solid rgba(0,0,0,.12);border-radius:10px;',
   'box-shadow:0 10px 32px rgba(0,0,0,.22);color:#2b2b2b;font-size:14px;line-height:1.5;',
-  // 字体与桌宠气泡同款（上首软糖体，两端均已注入 @font-face），风格一致不显正式。
-  // 字体族走全局配置变量 --dsh-pet-font-family：弹窗挂在 body 下、继承不到宠物根容器，由两端注入在 documentElement。
-  // 字号保持固定 14px：配置里的 font.size 只作用于气泡与悬浮提示。
+  // The font is the same as desktop pet bubble (the top is a soft candy body, and both ends have been injected with
+  // @font - face). The style is consistent and not formal. The font family uses the global configuration variable --
+  // dsh-pet-font-family: The pop-up window is hung under body and cannot be inherited from the pet root container. It
+  // is injected into documentElement from both ends. The font size remains fixed at 14 px: font.size in the
+  // configuration only works on bubbles and floating prompts.
   "font-family:var(--dsh-pet-font-family,'ShangshouSoftCandy','Yuanti SC','YouYuan','幼圆','Comic Sans MS','PingFang SC','Microsoft YaHei',sans-serif);",
   'user-select:none}',
   '.dsh-pet-chat *{box-sizing:border-box}',
@@ -23,7 +27,7 @@ export const CHAT_CSS = [
   'resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}',
   '.dsh-pet-chat-input::placeholder{color:rgba(43,43,43,.45)}',
   '.dsh-pet-chat-input:disabled{opacity:.55}',
-  // 操作行：上传 / 截屏 / 按住说话三枚图标按钮（无边框、悬停才显底）
+  // Operation line: Upload / screenshot / press and hold the three icon buttons to speak (no borders, only displayed when hovering)
   '.dsh-pet-chat-actions{display:flex;align-items:center;gap:6px;padding:0 8px 7px}',
   '.dsh-pet-chat-btn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;',
   'border:none;border-radius:6px;background:transparent;color:rgba(43,43,43,.62);font-size:14px;line-height:1;',
@@ -31,12 +35,12 @@ export const CHAT_CSS = [
   '.dsh-pet-chat-btn:hover{background:rgba(0,0,0,.06);color:rgba(43,43,43,.9)}',
   '.dsh-pet-chat-btn:disabled{opacity:.45;cursor:default}',
   '.dsh-pet-chat-btn svg{display:block}',
-  // 话筒：录音中常亮红底 + 呼吸，告诉用户「正在听」。状态由 dom 写在 data-hear 上。
+  // Microphone: During recording, the red background is always on + breathing, telling the user that it is "listening". Status is written on data-hear by dom.
   '.dsh-pet-chat-btn[data-hear="recording"]{color:#e5484d;background:rgba(229,72,77,.14)}',
   '.dsh-pet-chat-btn[data-hear="recording"]:hover{background:rgba(229,72,77,.2);color:#e5484d}',
   '.dsh-pet-chat-btn[data-hear="recording"] svg{animation:dsh-pet-hear-pulse 1s ease-in-out infinite}',
   '@keyframes dsh-pet-hear-pulse{0%,100%{opacity:1}50%{opacity:.4}}',
-  // 已选图片：跟在两枚按钮右侧的一枚小图，不占额外一行
+  // Selected image: a small image to the right of the two buttons, not occupying an extra line
   '.dsh-pet-chat-attach{display:none;align-items:center;gap:4px;margin-left:2px}',
   '.dsh-pet-chat-attach[data-on="1"]{display:inline-flex}',
   '.dsh-pet-chat-thumb{width:24px;height:24px;object-fit:cover;border-radius:4px;',
@@ -48,15 +52,15 @@ export const CHAT_CSS = [
   '.dsh-pet-chat-err{color:#d94f3d;font-size:12px;padding:0 12px 8px;white-space:pre-wrap;overflow-wrap:anywhere}',
 ].join('');
 
-/** 输入框宽度自适应参数：初始小宽，随文本增宽，封顶后折行增高。 */
+/** Input box width adaptive parameters: initial small width, increases with text, wraps and increases after capping. */
 export const CHAT_MIN_W = 160;
 export const CHAT_MAX_W = 340;
-/** 输入框水平 padding 补偿（11×2） */
+/** Input box horizontal padding compensation (11×2) */
 export const CHAT_H_PAD = 22;
 
 let chatCssInjected = false;
 
-/** 把弹窗样式注入文档一次；重复挂载不会重复插入。 */
+/** Inject the pop-up window style into the document once; repeated mounting will not insert it repeatedly. */
 export function injectChatCss(): void {
   if (chatCssInjected || typeof document === 'undefined') return;
   chatCssInjected = true;

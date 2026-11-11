@@ -1,21 +1,24 @@
 /**
- * 应用级快捷键的注册壳：软取 `shortcuts` 服务、按环境档案展开默认键位、失败只丢快捷键。
+ * Application-level shortcut key register shell: softly retrieve the `shortcuts` service, expand the default key
+ * position according to the environment file, and only lose the shortcut key if it fails.
  *
- * DSH 的快捷键服务在旧宿主上可能不存在，注册也可能被拒（键位不合 Web 白名单、id 或键位冲突），
- * 两种情况都只让这一条命令消失，绝不拖垮插件加载。
- * 键位一律「一条命令一个键」：不按桌面/网页给不同默认值，要换去设置里换。
- * 同一个服务还提供「当前生效键帽」的读面：用户改绑后，展示必须跟着变，不能再念默认值。
+ * The shortcut key service of DSH may not exist on the old host, and the register may also be rejected (the key
+ * position does not match the Web whitelist, id or the key position conflicts). In both cases, only this one command
+ * will disappear and will not slow down the plugin loading. The key positions are always "one command, one key":
+ * instead of giving different default values by desktop/web page, you have to change them in settings. The same
+ * service also provides a reading interface for "currently effective keycaps": after the user changes the binding, the
+ * display must change accordingly, and the default value cannot be read again.
  * @module dsh-pet/src/client/app-shortcut
  */
 
-/** 一条物理键位：`primary` 在 macOS 展开成 Command，其余平台是 Control。 */
+/** A physical key: `primary` expands into Command on macOS, and Control on other platforms. */
 export interface ShortcutBinding {
-  /** 物理键码（`KeyboardEvent.code`），如 `KeyL`。 */
+  /** Physical key code (`KeyboardEvent.code`), such as `KeyL`. */
   readonly code: string;
   readonly modifiers: readonly string[];
 }
 
-/** 修饰键的显示名：`primary` 按平台展开。 */
+/** Display name of modifier key: `primary` Expand by platform. */
 const MODIFIER_LABELS: Readonly<Record<string, string>> = {
   alt: 'Alt',
   control: 'Ctrl',
@@ -24,12 +27,12 @@ const MODIFIER_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
- * 把绑定转成给人看的键帽（如 `Ctrl+Shift+L`）。
+ * Convert bindings into human-readable keycaps (such as `Ctrl+Shift+L` ).
  *
- * 只给菜单与设置页展示用；`primary` 在 macOS 是 Command、其余平台是 Control。
+ * Only for menu and setting page display; `primary` is Command on macOS, and Control on other platforms.
  *
- * @param binding - 已声明的绑定。
- * @returns 以 `+` 连接的键帽文案。
+ * @param binding - Declared binding.
+ * @returns keycap copy connected to `+` .
  */
 export function keycapOf(binding: ShortcutBinding): string {
   const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
@@ -39,22 +42,22 @@ export function keycapOf(binding: ShortcutBinding): string {
   return [...modifiers, binding.code.replace(/^Key/, '')].join('+');
 }
 
-/** 目录里的一行：只取展示要用的两个字段。 */
+/** A row in the directory: only take the two fields needed for display. */
 interface ShortcutCatalogRow {
   readonly id: string;
-  /** 已按平台展开的键帽片段，如 `['Ctrl', '+', 'Shift', '+', 'L']`；macOS 是符号，不带 `+`。 */
+  /** The keycap fragment has been expanded according to the platform, such as `['Ctrl', '+', 'Shift', '+', 'L']`; macOS is the symbol without `+`. */
   readonly keys: readonly string[];
 }
 
-/** 目录的只读面；用户改绑后快照会变。 */
+/** The read-only side of the directory; the snapshot will change after the user changes the binding. */
 interface ShortcutCatalog {
   getSnapshot(): readonly ShortcutCatalogRow[];
   subscribe(listener: () => void): () => void;
 }
 
-/** 快捷键服务的最小形状（按用到的成员声明，不引整包类型）。 */
+/** The minimum shape of the shortcut key service (declared according to the members used, without citing the entire package type). */
 interface ShortcutsService {
-  /** 目录是展示用的附加面，旧宿主可能没有。 */
+  /** The directory is an additional side for display, and the old host may not have it. */
   readonly catalog?: ShortcutCatalog;
   register(command: {
     readonly id: string;
@@ -69,17 +72,18 @@ interface ShortcutsService {
   }): () => void;
 }
 
-/** 注册需要的上下文（只用到软取服务）。 */
+/** register required context (only soft fetch service is used). */
 export interface ShortcutHost {
-  /** Cordis 的软取：拿不到返回 undefined。 */
+  /** Soft retrieval of Cordis: Unable to obtain undefined. */
   get?(name: string): unknown;
 }
 
 /**
- * 给默认键位的环境档案。
+ * Environment file for default key positions.
  *
- * **不含 `web:linux`**：DSH 对 Web 端快捷键有白名单，Linux 只放行几个固定组合，
- * 给它配普通组合会让整条注册被拒。那个环境的用户可以在设置里自己绑。
+ * **Excluding `web:linux` **: DSH has a whitelist for Web side shortcut keys, Linux only allows a few fixed
+ * combinations, and assigning it ordinary combinations will cause the entire register to be rejected. Users of that
+ * environment can bind it themselves in the settings.
  */
 export const SHORTCUT_PROFILES = [
   'desktop:macos',
@@ -89,24 +93,26 @@ export const SHORTCUT_PROFILES = [
   'web:windows',
 ] as const;
 
-/** 一条命令的定义：注册壳只关心这四样。 */
+/** The definition of a command: the register shell only cares about these four things. */
 export interface AppShortcut {
-  /** 命令 id，取 `<域>.<动作>`；重复注册会被服务拒绝。 */
+  /** Command id, take `<domain>.<action>`; repeated register will be rejected by the service. */
   readonly id: string;
-  /** 设置页里显示的标题；惰性求值，切语言后会重算。 */
+  /** Set the title displayed on the page; lazy evaluation, it will be recalculated after switching languages. */
   readonly label: () => string;
   readonly binding: ShortcutBinding;
-  /** 触发时执行的动作。 */
+  /** Action performed when triggered. */
   readonly run: () => void;
 }
 
 /**
- * 注册一条应用级快捷键。
+ * register an application-level shortcut key.
  *
- * @param ctx - 客户端上下文。
- * @param shortcut - 命令定义。
- * @returns `registered` 表示是否真的登记成功；`dispose` 用于注销（失败时是空函数），
- *   拿到 `registered: false` 时调用方不能把 commandId 交给别处——指向不存在的命令会让对方注册抛错。
+ * @param ctx - client context.
+ * @param shortcut - Command definition.
+ * @returns `registered` indicates whether the registration is really successful; `dispose` is used for logout (empty
+ * function when failed),
+ * When getting `registered: false` , the caller cannot give commandId to other places - pointing to a non-existent
+ * command will cause the other party's register to throw an error.
  */
 export function registerAppShortcut(
   ctx: ShortcutHost,
@@ -114,7 +120,7 @@ export function registerAppShortcut(
 ): { registered: boolean; dispose: () => void } {
   const shortcuts = ctx.get?.('shortcuts') as ShortcutsService | undefined;
   if (shortcuts === undefined || typeof shortcuts.register !== 'function') {
-    console.warn('[dsh-pet] 快捷键服务不可用，「' + shortcut.id + '」未注册');
+    console.warn('[dsh-pet] Shortcut service unavailable; "' + shortcut.id + '" was not registered');
     return { registered: false, dispose: () => {} };
   }
   try {
@@ -124,28 +130,32 @@ export function registerAppShortcut(
       label: shortcut.label,
       aliases: [],
       defaults,
-      // 必须含 editable：浮动对话一开就把焦点放进它自己的输入框，之后的按键会被判成 editable。
-      // 只写 page 的话第二次按既关不掉弹窗，也不会 preventDefault——浏览器原生动作照跑。
+      // Must contain editable: As soon as the floating dialogue is opened, the focus is put into its own input box,
+      // and subsequent keystrokes will be judged as editable. If write-only page is pressed for the second time, the
+      // pop-up window will not be closed, nor will preventDefault - the browser's native action will still be
+      // executed.
       regions: ['page', 'editable'],
       modals: [],
       resolve: () => ({ status: 'handled', run: shortcut.run }),
     });
     return { registered: true, dispose: () => dispose() };
   } catch (error) {
-    // 注册被拒（键位不被接受 / id 冲突）：只丢这一条快捷键
-    console.warn('[dsh-pet] 快捷键注册失败：' + (error instanceof Error ? error.message : String(error)));
+    // register rejected (key position not accepted / id conflict): only this shortcut key is lost
+    console.warn('[dsh-pet] Shortcut registration failed:' + (error instanceof Error ? error.message : String(error)));
     return { registered: false, dispose: () => {} };
   }
 }
 
 /**
- * 读一条命令当前生效的键帽。
+ * Read the keycap currently in effect for a command.
  *
- * 用户在「设置 → 快捷键」里改绑后，默认组合就不再是事实，展示必须问服务要。
+ * After the user changes the binding in "Settings → Shortcut Keys", the default combination is no longer true, and the
+ * display must be requested by the service.
  *
- * @param ctx - 客户端上下文。
- * @param id - 命令 id。
- * @returns 键帽（如 `Ctrl+Shift+L`）；没登记、被改到冲突、清空或宿主没有目录时 undefined。
+ * @param ctx - client context.
+ * @param id - command id.
+ * @returns keycap (such as `Ctrl+Shift+L` ); when undefined is not registered, changed to conflict, clear or host has
+ * no directory.
  */
 export function readShortcutKeycap(ctx: ShortcutHost, id: string): string | undefined {
   const catalog = (ctx.get?.('shortcuts') as ShortcutsService | undefined)?.catalog;
@@ -155,11 +165,11 @@ export function readShortcutKeycap(ctx: ShortcutHost, id: string): string | unde
 }
 
 /**
- * 订阅键位变化：改绑、恢复默认、清空都会触发。
+ * Subscribe key position changes: changing binding, restoring to default, and clear will all trigger.
  *
- * @param ctx - 客户端上下文。
- * @param listener - 变化回调；只关心「重新读一遍」，不接收快照。
- * @returns 注销函数；宿主没有目录时是空函数。
+ * @param ctx - client context.
+ * @param listener - change callback; only cares about "re-reading" and does not receive snapshots.
+ * @returns unregister function; it is an empty function when host has no directory.
  */
 export function subscribeShortcutKeycaps(ctx: ShortcutHost, listener: () => void): () => void {
   const catalog = (ctx.get?.('shortcuts') as ShortcutsService | undefined)?.catalog;

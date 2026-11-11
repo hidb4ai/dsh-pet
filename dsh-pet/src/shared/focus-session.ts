@@ -1,36 +1,37 @@
 /**
- * 跳会话指令的解析：把 `sections.focusSession` 的 data 收窄成「该跳」或「跳过」。
+ * Analysis of jump session instructions: Narrow data of `sections.focusSession` into "the jump" or "skip".
  *
- * 这是一次性信号，两条判据缺一不可：`ts` 必须新于本地水位（否则同一条会重复跳），
- * 且不能太旧（页面隔很久才打开时，不该被一条早已过时的点击拽走）。
+ * This is a one-time signal, and two criteria are indispensable: `ts` must be newer than the local water level
+ * (otherwise the same item will jump repeatedly), and it cannot be too old (when the page is opened after a long time,
+ * it should not be dragged away by an outdated click).
  * @module dsh-pet/src/shared/focus-session
  */
 
-/** 重放窗口（ms）：超过这个时长的旧信号不再补跳。 */
+/** Replay window (ms): Old signals that exceed this duration will no longer be supplemented. */
 export const FOCUS_REPLAY_WINDOW_MS = 10_000;
 
-/** 该执行的跳转：目标会话与它的写入时刻。 */
+/** The execution jump: target session and its write time. */
 export interface FocusCue {
-  /** 目标会话 id。 */
+  /** Target session id. */
   readonly sessionId: string;
-  /** 写入时刻（毫秒），作为下一次判重的水位。 */
+  /** Write time (milliseconds) as the water level for the next weight determination. */
   readonly ts: number;
 }
 
 /**
- * 解析一条跳会话信号。
+ * Parsing a hop session signal.
  *
- * @param raw - 叶子的 `data`；形状非法时返回 null。
- * @param now - 当前时刻（ms）；由调用方注入，便于测试。
- * @param lastTs - 本地已处理过的最大 `ts`；小于等于它的一律跳过。
- * @returns 该执行的跳转；不该跳时为 null。
+ * @param raw - `data` for leaves; returns null if the shape is invalid.
+ * @param now - the current moment (ms); injected by caller for easy testing.
+ * @param lastTs - the largest `ts` that has been processed locally; anything less than or equal to it will be skipped.
+ * @returns The jump that should be executed; null when it should not jump.
  */
 export function readFocusSession(raw: unknown, now: number, lastTs: number): FocusCue | null {
   if (!raw || typeof raw !== 'object') return null;
   const { sessionId, ts } = raw as { sessionId?: unknown; ts?: unknown };
   if (typeof sessionId !== 'string' || sessionId === '') return null;
   if (typeof ts !== 'number' || !Number.isFinite(ts)) return null;
-  // 同一条信号只处理一次：页面首拉补跳与随后那一拍增量读到的是同一个 ts。
+  // The same signal is only processed once: the first pull and fill jump of the page and the subsequent increment read are the same ts.
   if (ts <= lastTs) return null;
   if (now - ts > FOCUS_REPLAY_WINDOW_MS) return null;
   return { sessionId, ts };

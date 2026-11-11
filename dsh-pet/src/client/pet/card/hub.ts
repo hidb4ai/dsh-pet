@@ -1,8 +1,9 @@
 /**
- * 宠物卡的共享运行时：状态容器、各驱动与跨关注点动作的取值面。
- * 只声明契约，不构造实现——装配根用当帧闭包拼出来，全部按 getter 取，避免驱动读到旧值。
- * 依赖卡状态、动画链、气泡单槽与三条运动驱动。
- * 不变量：每次渲染重新绑定；消费方不得缓存整个 hub，只能在调用点取值。
+ * Shared runtime of pet cards: state container, value surface of each driver and cross-concern action. Only declare
+ * the contract, do not construct the implementation - the assembly root is spelled out with the frame closure, and all
+ * are taken as getter to prevent the driver from reading the old value. Depends on card state, animation chain, bubble
+ * single slot and three motion drivers. Invariant: rebind for each rendering; the consumer must not cache the entire
+ * hub and can only get the value at the call point.
  * @module dsh-pet/src/client/pet/card/hub
  */
 import type { CardStateApi } from './state.ts';
@@ -12,40 +13,40 @@ import type { PositionFollow } from '../motion/position-follow.ts';
 import type { Animations } from '../../../shared/types.ts';
 import type { RuntimePet } from '../types.ts';
 
-/** 依据名点播：与右键菜单同一套语义（文字类强制朝左、移动类会走位）。 */
+/** Based on the name playback request: the same set of semantics as the right-click menu (text types are forced to move to the left, and mobile types will move). */
 export type PlayByName = (anim: string, playbackId?: string, keepFacing?: boolean) => void;
 
-/** 说一句：文本与配图二选一，时长缺省用气泡默认值。 */
+/** One word: Choose between text and pictures, and use the bubble default value for the duration. */
 export type Speak = (text: string, image?: string, url?: string, duration?: number, anim?: boolean) => void;
 
-/** 卡片运行时：跨关注点共享的那一份。 */
+/** Card runtime: the one shared across concerns. */
 export interface CardHub {
-  /** 成品配置的最新值。 */
+  /** Latest value of resolved configuration. */
   cfg(): RuntimePet;
-  /** 该宠物的动画池（与 `cfg().animations` 同源，单独取出避免每次深取）。 */
+  /** The animation pool of this pet (same origin as `cfg().animations`, taken out separately to avoid deep retrieval each time). */
   anims(): Animations;
-  /** 卡片状态与写入口。 */
+  /** Card status and writing entry point. */
   card: CardStateApi;
-  /** 动画链：换源、冻结、回执都在这里。 */
+  /** Animation chain: source changing, freezing, and receipt are all here. */
   ownAnim: OwnAnimation;
-  /** 三种气泡的单槽。 */
+  /** Single slot for three bubbles. */
   bubbles: BubbleSlots;
-  /** 位置跟随的弹簧。 */
+  /** Position following spring. */
   posFollow: PositionFollow;
-  /** 指针是否按着（抛掷指令要避让）。 */
+  /** Is the pointer pressed (to avoid throwing instructions). */
   isDragging(): boolean;
-  /** 停走位与位置跟随。 */
+  /** Stop-and-go position and position following. */
   stopMotion(): void;
-  /** 抛掷指令：角度（度，0 为正右、逆时针为正）与力度倍率。 */
+  /** Throwing command: angle (degree, 0 is right, counterclockwise is positive) and force multiplier. */
   applyThrow(angleDeg: number, power: number): void;
-  /** 试发起一次自主走位：占用中返回 true，无法移动返回 false，成功返回动作名。 */
+  /** Try to initiate an autonomous movement: true is returned when occupied, false is returned when unable to move, and the action name is returned successfully. */
   tryWalk(): boolean | string;
-  /** 依据名点播。 */
+  /** Based on name playback request. */
   playByName: PlayByName;
-  /** 说一句。 */
+  /** Say something. */
   speak: Speak;
-  /** 此刻是否在睡（含入睡/醒来两段过渡）：自动来源据此闭嘴，显式唤醒走菜单或点击。 */
+  /** Whether you are sleeping at the moment (including the two transitions of falling asleep/waking up): the automatic source will shut up accordingly, and explicitly wake up to go to the menu or click. */
   sleeping(): boolean;
-  /** 此刻是否被占用锁冻结：锁的语义是「把控制权交给第三方」，睡觉闸门对它让路。 */
+  /** Is it frozen by the occupied lock at this moment: The semantics of the lock is "giving control to a third party", and the sleeping gate gives way to it. */
   locked(): boolean;
 }

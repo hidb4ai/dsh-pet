@@ -1,9 +1,11 @@
 /**
- * 路由层的依赖契约：`apply` 在挂载时构造一次，各路由模块只读消费。
+ * The dependency contract of the route layer: `apply` is constructed once when mounting, and each route module is
+ * read-only for consumption.
  *
- * 显式依赖是这一层的全部意义——路由不再从 `apply` 的闭包里"抓"变量，
- * 于是每个领域模块都能单独读、单独改、单独测，改路由不必改装配。
- * 不负责生命周期：store 的创建与销毁归 `apply`，路由只调用。
+ * Explicit dependency is the whole meaning of this layer - route no longer "grabs" variables from the closure of
+ * `apply` , so each domain module can be read, modified, and tested independently, and there is no need to modify the
+ * configuration when changing route. Not responsible for lifecycle: the creation and destruction of store belongs to
+ * `apply` , route is only called.
  * @module dsh-pet/src/host/routes/types
  */
 import type { ChatMemoryMessage } from '../chat.ts';
@@ -23,21 +25,21 @@ import type { HearService } from '../voice/hear.ts';
 import type { VoiceService } from '../voice/speak.ts';
 import type { WorkStatusStore } from '../work-status.ts';
 
-/** 一次路由调用的输入：URL 已解析，`rest` 是去掉前缀并解码后的路径。 */
+/** The input of a route call: URL has been parsed, `rest` is the path after removing the prefix and decoding. */
 export interface RouteInput {
-  /** 完整请求 URL（含查询串）。 */
+  /** Complete request URL (including query string). */
   readonly url: URL;
-  /** 去掉 `/dsh-pet-7340/` 前缀后的剩余路径（已解码）。 */
+  /** Remaining path (decoded) after removing `/dsh-pet-7340/` prefix. */
   readonly rest: string;
-  /** HTTP 方法（大写）。 */
+  /** HTTP method (uppercase). */
   readonly method: string;
-  /** 请求体文本；只有 PUT/POST 才有值。 */
+  /** Request body text; only PUT/POST has a value. */
   readonly body?: string;
-  /** 调用方断开信号：挂起等待的路由据此提前收尾。 */
+  /** caller disconnect signal: the pending route is cleaned up in advance accordingly. */
   readonly signal?: AbortSignal;
 }
 
-/** 碎碎念与对话共用的生成结果。 */
+/** Whisper generation results shared with conversations. */
 export type GeneratedReply =
   | { ok: true; text: string; image?: string }
   | {
@@ -46,7 +48,7 @@ export type GeneratedReply =
       message?: string;
     };
 
-/** 宠物定位结果：命中给出所在层与条目，未命中给出可直接返回的应答。 */
+/** Pet locating result: if hit, the layer and entry will be given; if not hit, a response that can be returned directly will be given. */
 export type PetLookup =
   | {
       ok: true;
@@ -57,17 +59,18 @@ export type PetLookup =
     }
   | { ok: false; res: RouteResult };
 
-/** 单个路由处理函数：未命中返回 undefined，命中返回应答。 */
+/** Single route processing function: undefined is returned on a miss, and a response is returned on a hit. */
 export type RouteHandler = (deps: PetRouteDeps, input: RouteInput) => Promise<RouteResult | undefined>;
 
 /**
- * 路由层需要的全部外部能力。
+ * All external capabilities required by the route layer.
  *
- * 字段分三类：只读路径与配置、进程内 store、`apply` 里已有的动作函数。
- * 唯一有副作用的是 `nextExternalWorkSeq`：它推进外部写入序号并返回新值。
+ * The fields are divided into three categories: read-only path and configuration, and action functions already in the
+ * process store and `apply` . The only one with a side effect is `nextExternalWorkSeq` : it advances the external
+ * write sequence number and returns the new value.
  */
 export interface PetRouteDeps {
-  /** 由 DSH 插件生命周期管理；独立模式使用自己的准备入口。 */
+  /** Managed by the DSH plugin lifecycle; standalone mode uses its own preparation entry point. */
   readonly memorySetup?: import('../../standalone/setup.ts').SetupService;
   /** Optional for older embedding hosts; the shipped host provides both. */
   readonly memoryStatus?: (petId: string) => Promise<unknown>;
@@ -84,99 +87,102 @@ export interface PetRouteDeps {
     petId: string,
     change: import('../../shared/memory-library.ts').MemoryChange,
   ) => Promise<void>;
-  /** 配置路径集（内置默认 + 用户主配置 + 文件宠物目录）。 */
+  /** Configuration paths: bundled defaults, user configuration and pet-pack directory. */
   readonly configPaths: ConfigPaths;
-  /** 第三方右键菜单注册表（进程内存态）。 */
+  /** Third-party right-click menu register table (process memory state). */
   readonly menuRegistry: MenuRegistry;
-  /** 轮询快照（前端 1s 轮询的唯一数据源）。 */
+  /** Polling snapshot (sole data source for frontend 1 s polling). */
   readonly state: PollStateStore;
-  /** 待办清单（单个 JSON 文件，读改写串行）。 */
+  /** Backlog (single JSON file, read-write serial). */
   readonly todos: TodoStore;
-  /** 工作状态联动快照。 */
+  /** Working status linkage snapshot. */
   readonly workStatus: WorkStatusStore;
-  /** 外部写入用的固定会话 id。 */
+  /** Fixed session id for external writing. */
   readonly EXTERNAL_WORK_SESSION: string;
-  /** 占用锁拦截：被别的会话占着时直接给出应答。 */
+  /** Return a lock response immediately when another session owns the pet. */
   readonly surfaceBlocked: (
     cfg: Record<string, Record<string, unknown>>,
     petId: string,
     params: URLSearchParams,
   ) => RouteResult | null;
-  /** 同上，按 petId 判定。 */
+  /** Same as above, judge according to petId. */
   readonly lockBlocked: (petId: string, params: URLSearchParams) => RouteResult | null;
-  /** 用户主配置路径。 */
+  /** User main configuration path. */
   readonly userConfigPath: string;
-  /** 请求重载桌面 Helper：是否真的重启、如何串行与退避由桌面侧决定（调用方只表达意图）。 */
+  /** Request to reload desktop Helper: Whether to really restart, how to serialize and back off is decided by the desktop side (the caller only expresses the intention). */
   readonly requestRestart: () => Promise<void>;
-  /** 按 `?pet=` 定位宠物；缺参/未知宠物给出可直接返回的应答。 */
+  /** Press `?pet=` to locate the pet; missing parameters/unknown pets give a response that can be returned directly. */
   readonly requirePet: (
     params: URLSearchParams,
     cfg: () => Record<string, Record<string, unknown>>,
     opts?: { surface?: boolean },
   ) => PetLookup;
-  /** 播放记录表。 */
+  /** Play record list. */
   readonly playback: PlaybackStore;
-  /** 用户数据根。 */
+  /** User data root. */
   readonly userRoot: string;
-  /** 占用锁。 */
+  /** Lock occupied. */
   readonly lock: LockStore;
-  /** 睡觉状态（进睡 / 醒来由 /sleep 与 /wake 驱动）。 */
+  /** Sleeping state (sleep/wake up driven by /sleep and /wake). */
   readonly sleep: SleepStore;
-  /** 睡觉闸门：在睡且未持锁时拒绝并弹拒绝台词；放行回 null。 */
+  /** Sleep gate: reject and play the reject line when sleeping and not holding the lock; release back to null. */
   readonly sleepBlocked: (petId: string, params: URLSearchParams) => RouteResult | null;
-  /** 插件日志出口（文件 + 终端）。 */
+  /** Plugin log export (file + terminal). */
   readonly log: FileLogger;
-  /** 宿主上下文的最小结构：路由只用到 logger 与 llm 服务。 */
+  /** Minimal structure of host context: route only uses logger and llm services. */
   readonly ctx: { logger?: { warn?(message: string): void }; llm?: unknown };
-  /** 文件宠物目录（`pet/`）。 */
+  /** File pet directory (`pet/`). */
   readonly petConfigDir: string;
-  /** 把最新工作状态写进轮询快照。 */
+  /** Write the latest working status into the polling snapshot. */
   readonly publishWorkStatus: () => void;
-  /** 推进外部写入序号并返回新值（前端据此判断是否新的一拍）。 */
+  /** Advance the external write sequence number and return the new value (the front end determines whether it is a new beat based on this). */
   readonly nextExternalWorkSeq: () => number;
-  /** 表情包目录链（与 /thumb 同一套归属语义）。 */
+  /** Meme directory chain (same set of ownership semantics as / thumb). */
   readonly memeDirsFor: (assetRoot: string) => string[];
-  /** 姿态上报存储。 */
+  /** Attitude report and storage. */
   readonly pose: PoseStore;
-  /** 软取宿主可选服务（缺失返回 undefined）。 */
+  /** Soft retrieval of host optional service (returns undefined if missing). */
   readonly optionalService: (name: string) => unknown;
-  /** 用户动画目录。 */
+  /** User animation directory. */
   readonly thumbUserRoot: string;
-  /** 用户表情包目录。 */
+  /** User meme directory. */
   readonly memesUserRoot: string;
-  /** 刷新余额（manual 表示用户主动触发）。 */
+  /** Refresh balance (manual indicates user active trigger). */
   readonly refreshBalance: (manual?: boolean) => Promise<void>;
-  /** 生成一条碎碎念；image 给了就用这张图（需在池内），缺省 = 按配置随机抽一张或纯文本。
-   *  voiceTo 由带 `?surface=` 的路由传请求面；kind=whisper 时按 voiceWhisperEnabled 决定要不要念。 */
+  /**
+   * Generate a whisper using an explicit pool image when supplied; otherwise choose randomly or use text only
+   * according to configuration.
+   * Routes with `?surface=` pass voiceTo. For kind=whisper, voiceWhisperEnabled controls speech playback.
+   */
   readonly publishWhisper: (
     petId: string,
     image?: string,
     voiceTo?: VoiceTarget,
     kind?: 'whisper' | 'manual',
   ) => Promise<GeneratedReply>;
-  /** 读取对话记忆文件。 */
+  /** Read dialogue memory file. */
   readonly readMemory: () => Promise<Record<string, Record<string, { messages: ChatMemoryMessage[] }>>>;
-  /** 对话记忆文件路径。 */
+  /** Dialogue memory file path. */
   readonly memoryPath: string;
-  /** 单次对话保留的轮数。 */
+  /** The number of rounds reserved for a single conversation. */
   readonly memoryRounds: (conf: Record<string, unknown>) => number;
-  /** 与本机宠物对话；image 缺省 = 纯文本，数据路径与加入图片前一致。 */
+  /** Chat with a local pet. Omitting image keeps the original text-only data path. */
   readonly chatWithPet: (petId: string, text: string, image?: PetImageRef) => Promise<GeneratedReply>;
-  /** 删除该宠物的对话记忆：ts 缺省 = 清空全部，否则只删命中的轮（成对）。 */
+  /** Delete pet chat history: omit ts to clear all rounds, or delete only the matching user/assistant pair. */
   readonly deleteHistory: (
     petId: string,
     ts?: readonly number[],
   ) => Promise<{ ok: true; removed: number } | { ok: false; reason: 'unknown-pet'; message: string }>;
-  /** 已删宠物残留的记忆桶（配置里已没有这只宠物）。 */
+  /** The remaining memory bucket of a deleted pet (this pet is no longer in the configuration). */
   readonly orphanHistory: () => Promise<{ entry: string; petId: string; messages: number; lastTs: number }[]>;
-  /** 清掉所有已删宠物的历史。 */
+  /** Clear the history of all deleted pets. */
   readonly deleteOrphans: () => Promise<{ ok: true; pets: number; messages: number }>;
-  /** 用户动画目录（按扩展名）。 */
+  /** User animation directory (by extension). */
   readonly userRootFor: (ext: string) => string;
-  /** 包内动画目录（按扩展名）。 */
+  /** Animation directory in the package (by extension). */
   readonly assetRootFor: (ext: string) => string;
-  /** 语音合成服务（校验、排队、缓存与上游调用都在里面）。 */
+  /** Speech synthesis service (verification, queuing, caching and upstream calls are all included). */
   readonly voice: VoiceService;
-  /** 语音识别服务（音频转文字；宿主没启用语音输入时由它自己回 unsupported）。 */
+  /** Speech recognition service; the host returns unsupported when voice input is not enabled. */
   readonly speech: HearService;
 }

@@ -1,63 +1,65 @@
 /**
- * 待办的到期时间选择器：一个显示当前值的按钮 + 内嵌日历。
+ * To-do due date picker: a button showing the current value + embedded calendar.
  *
- * 日历区在「日期 / 小时 / 分钟」三种网格之间切换，高度按内容算，不用预留。
- * 内嵌而不是浮层：桌面宠物窗口只比宠物大一圈，浮层会被窗口边缘裁掉；面板向上长，两端一致。
- * 显隐由面板的折叠容器控制（这里不设 hidden，display:none 会让折叠过渡失效），本模块只报告
- * aria-expanded 与 onOpenChange；值写成 `YYYY-MM-DDTHH:mm`，提醒链路不感知这里。
+ * The calendar area switches between three grids of "date/hour/minute". The height is calculated according to the
+ * content and does not need to be reserved. Inline instead of floating layer: The desktop pet window is only one
+ * circle larger than the pet, and the floating layer will be cut off by the edge of the window; the panel is long
+ * upward and consistent at both ends. The visibility is controlled by the folding container of the panel (hidden is
+ * not set here, display:none will invalidate the folding transition). This module only reports aria-expanded and
+ * onOpenChange; the value is written as `YYYY-MM-DDTHH:mm` to remind the link not to sense this.
  * @module dsh-pet/src/shared/todo/due-picker
  */
 import { monthCells } from './calendar.ts';
 import { dueLabel, formatDateTimeLocal } from './format.ts';
 
-/** 周一为一周首日，与国内日历习惯一致。 */
+/** Monday is the first day of the week, which is consistent with domestic calendar customs. */
 const WEEK_HEAD = ['一', '二', '三', '四', '五', '六', '日'] as const;
 
-/** 分钟档位：与提醒的最短间隔一致，避免选出提醒策略分辨不出的时刻。 */
+/** Minute state: It is consistent with the shortest interval of the reminder to avoid selecting a time that cannot be distinguished by the reminder strategy. */
 const MINUTE_STEP = 5;
 
-/** 未选日期时的默认时分：早上九点，比零点更像个「该做事了」的时刻。 */
+/** The default time when no date is selected: nine o'clock in the morning, which is more like "it's time to do something" than zero o'clock. */
 const DEFAULT_HOUR = 9;
 
-/** 日历区的三种网格。 */
+/** Three grids for the calendar area. */
 type PickerMode = 'day' | 'hour' | 'minute';
 
-/** 选择器句柄。 */
+/** Selector handle. */
 export interface DuePicker {
-  /** 表单行里的触发按钮。 */
+  /** Trigger button in form row. */
   readonly el: HTMLButtonElement;
-  /** 日历容器；由面板插进根节点，默认收起。 */
+  /** Calendar container; inserted into the root node from the panel, closed by default. */
   readonly calendar: HTMLElement;
-  /** 当前值，`YYYY-MM-DDTHH:mm`；未选为 `''`。 */
+  /** Current value, `YYYY-MM-DDTHH:mm`; not selected as `''`. */
   value(): string;
-  /** 收起日历，已选的值保持不变。 */
+  /** Collapse the calendar, the selected value remains unchanged. */
   close(): void;
-  /** 回到「无期限」并收起。 */
+  /** Return to "Indefinite" and put it away. */
   reset(): void;
-  /** 摘掉文档监听。 */
+  /** Remove document monitoring. */
   dispose(): void;
 }
 
-/** 选择器的创建参数。 */
+/** Selector creation parameters. */
 export interface DuePickerOptions {
-  /** 展开或收起时回调，面板据此收起清单腾出高度。 */
+  /** callback when expanded or collapsed, the panel will collapse the list accordingly to free up height. */
   onOpenChange?: (open: boolean) => void;
 }
 
-/** 选择器的可变状态；渲染函数只读它，事件处理只写它。 */
+/** Mutable state of selectors; rendering functions read-only it, event handlers write-only it. */
 interface PickerState {
-  /** 选中的日期（时分在下面两个字段），null = 无期限。 */
+  /** The selected date (hours and minutes are in the lower two fields), null = no expiration date. */
   picked: Date | null;
   hour: number;
   minute: number;
-  /** 当前展示的月份（该月 1 号）。 */
+  /** The currently displayed month (1st of the month). */
   view: Date;
-  /** 当前网格。 */
+  /** Current grid. */
   mode: PickerMode;
   open: boolean;
 }
 
-/** 选择器持有的 DOM 引用。 */
+/** Selector holds reference to DOM. */
 interface PickerDom {
   el: HTMLButtonElement;
   calendar: HTMLDivElement;
@@ -69,19 +71,19 @@ interface PickerDom {
   minuteChip: HTMLButtonElement;
 }
 
-/** 两位补零。 */
+/** Two digits are padded with zeros. */
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
 
-/** 造一个带 class 的元素。 */
+/** Create an element with class. */
 function make<K extends 'button' | 'div' | 'span'>(tag: K, className: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   node.className = className;
   return node;
 }
 
-/** 造一个按钮：全部是 `type="button"`，否则在表单里会触发提交。 */
+/** Create a button: all `type="button"`, otherwise submission will be triggered in the form. */
 function makeButton(className: string, text?: string): HTMLButtonElement {
   const button = make('button', className);
   button.type = 'button';
@@ -89,7 +91,7 @@ function makeButton(className: string, text?: string): HTMLButtonElement {
   return button;
 }
 
-/** 建整个选择器的 DOM（尚未挂进文档）。 */
+/** Create the entire selector DOM (not yet attached to the document). */
 function buildPickerDom(): PickerDom {
   const el = makeButton('dsh-pet-todo-due', '无期限');
   el.setAttribute('aria-haspopup', 'dialog');
@@ -140,19 +142,19 @@ function buildPickerDom(): PickerDom {
   return { el, calendar, prev, next, title, grid, hourChip, minuteChip };
 }
 
-/** 同一个自然日（忽略时分）。 */
+/** The same natural day (ignoring time and minutes). */
 function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-/** 选中日期 + 当前时分组成的时刻；未选日期为 null。 */
+/** The time consisting of the selected date + the current hour and minute; the unselected date is null. */
 function dueMs(state: PickerState): number | null {
   if (state.picked === null) return null;
   const { picked } = state;
   return new Date(picked.getFullYear(), picked.getMonth(), picked.getDate(), state.hour, state.minute).getTime();
 }
 
-/** 造一个日历格：选中态同时写进 class 与 aria。 */
+/** Create a calendar grid: write class and aria in the selected state at the same time. */
 function cellButton(text: string, selected: boolean): HTMLButtonElement {
   const button = makeButton('dsh-pet-todo-cal-cell', text);
   button.classList.toggle('is-sel', selected);
@@ -160,7 +162,7 @@ function cellButton(text: string, selected: boolean): HTMLButtonElement {
   return button;
 }
 
-/** 画日期网格。 */
+/** Draw date grid. */
 function renderDays(dom: PickerDom, state: PickerState): void {
   const today = new Date();
   for (const cell of monthCells(state.view.getFullYear(), state.view.getMonth())) {
@@ -174,7 +176,7 @@ function renderDays(dom: PickerDom, state: PickerState): void {
   }
 }
 
-/** 画小时或分钟的网格：一格一个数，当前值高亮。 */
+/** Draw a grid of hours or minutes: one number per grid, and the current value is highlighted. */
 function renderNumbers(dom: PickerDom, state: PickerState): void {
   const isHour = state.mode === 'hour';
   const count = isHour ? 24 : 60;
@@ -187,7 +189,7 @@ function renderNumbers(dom: PickerDom, state: PickerState): void {
   }
 }
 
-/** 同步按钮文案、时分标签与当前网格的标题。 */
+/** Synchronize button copy, time label and title of current grid. */
 function syncPicker(dom: PickerDom, state: PickerState): void {
   const ms = dueMs(state);
   dom.el.textContent = ms === null ? '无期限' : dueLabel(ms, Date.now());
@@ -198,7 +200,7 @@ function syncPicker(dom: PickerDom, state: PickerState): void {
   dom.minuteChip.classList.toggle('is-on', state.mode === 'minute');
 }
 
-/** 整块重画：标题、翻月按钮、网格与文案一次到位。 */
+/** Redraw the whole piece: title, moon button, grid and copy in one go. */
 function renderPicker(dom: PickerDom, state: PickerState): void {
   const day = state.mode === 'day';
   dom.title.textContent = day
@@ -215,7 +217,7 @@ function renderPicker(dom: PickerDom, state: PickerState): void {
   syncPicker(dom, state);
 }
 
-/** 选中某一天：同步展示月份，并回到日期网格。 */
+/** Select a day: display the month simultaneously and return to the date grid. */
 function pickDay(dom: PickerDom, state: PickerState, date: Date): void {
   state.picked = date;
   state.view = new Date(date.getFullYear(), date.getMonth(), 1);
@@ -223,7 +225,7 @@ function pickDay(dom: PickerDom, state: PickerState, date: Date): void {
   renderPicker(dom, state);
 }
 
-/** 点日历里的按钮：翻月、切网格、今天、清除、完成，或选中某一天 / 某个数。 */
+/** Click the buttons in the calendar: turn month, cut grid, today, clear, complete, or select a certain day/number. */
 function onCalendarClick(dom: PickerDom, state: PickerState, button: HTMLButtonElement, close: () => void): void {
   const { ts, num, act } = button.dataset;
   if (ts !== undefined) {
@@ -243,7 +245,7 @@ function onCalendarClick(dom: PickerDom, state: PickerState, button: HTMLButtonE
     return;
   }
   if (act === 'hour' || act === 'minute') {
-    // 再点一次当前网格的标签就退回日期，省一个返回按钮。
+    // Click the label of the current grid again to return to the date, saving a return button.
     state.mode = state.mode === act ? 'day' : act;
     renderPicker(dom, state);
     return;
@@ -255,15 +257,15 @@ function onCalendarClick(dom: PickerDom, state: PickerState, button: HTMLButtonE
   }
   if (act === 'clear') state.picked = null;
   renderPicker(dom, state);
-  // 收起必须走 close：它还要同步 aria 与面板的 is-picking（清单靠它重新露出来）。
+  // close must be used to collapse: it also synchronizes aria with is-picking of the panel (the list relies on it to be re-exposed).
   if (act === 'clear' || act === 'done') close();
 }
 
 /**
- * 造一个到期时间选择器。
+ * Create an expiration time selector.
  *
- * @param options - 展开与收起的回调。
- * @returns 触发按钮、日历容器与读写句柄。
+ * @param options - callback for expansion and collapse.
+ * @returns trigger button, calendar container and read and write handle.
  */
 export function createDuePicker(options: DuePickerOptions = {}): DuePicker {
   const now = new Date();
@@ -285,7 +287,7 @@ export function createDuePicker(options: DuePickerOptions = {}): DuePicker {
   };
 
   dom.el.addEventListener('click', () => {
-    // 打开时落到「已选日期的月份」，没选过就落到当月，并总是从日期网格开始。
+    // When opened, it falls to the "month of the selected date". If it is not selected, it falls to the current month, and always starts from the date grid.
     if (!state.open) {
       const anchor = state.picked ?? new Date();
       state.view = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -298,7 +300,7 @@ export function createDuePicker(options: DuePickerOptions = {}): DuePicker {
     const button = (event.target as HTMLElement).closest('button');
     if (button !== null) onCalendarClick(dom, state, button, () => setOpen(false));
   });
-  // 点面板里别处就收起日历：面板自己也挂了同样的监听，两者互不干扰（各判各的容器）。
+  // Click elsewhere in the panel to close the calendar: the panel itself has the same monitor installed, and the two do not interfere with each other (each has its own container).
   const onDocMouseDown = (event: MouseEvent): void => {
     if (!state.open) return;
     const target = event.target as Node | null;

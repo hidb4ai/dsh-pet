@@ -1,7 +1,9 @@
 /**
- * 设置页的写路径编排：保存、请求同步、以及确认弹窗里那一下「确认」到底做什么。
- * 三个动作都要先过一遍表单校验（同一套规则），再把结果翻译成红字或弹窗——调用方只接状态。
- * 传进来的是回调而不是值：`save` 每次渲染重建，直接捕获状态会拿旧值存盘。
+ * The write path arrangement of the settings page: saving, requesting synchronization, and what exactly does "confirm"
+ * in the confirmation pop-up window do. All three actions must first go through form verification (the same set of
+ * rules), and then translate the results into red text or pop-up windows - the caller only accepts status. The
+ * callback is passed in instead of the value: `save` . Each time the rendering is rebuilt, the old value will be saved
+ * to the disk if the state is captured directly.
  * @module dsh-pet/src/client/settings/config/write-flow
  */
 import type { SaveFields } from './http.ts';
@@ -12,47 +14,47 @@ import { persistSettings, syncSettings } from './persist.ts';
 import type { PackWrite } from './pack-writes.ts';
 import { validateForm } from './validate-form.ts';
 
-/** {@link createWriteFlow} 的依赖。 */
+/** Dependence of {@link createWriteFlow}. */
 export interface WriteFlowDeps {
-  /** 现取要提交的全部字段。 */
+  /** Now get all the fields to be submitted. */
   fields: () => SaveFields;
-  /** 现算有改动的种类层（与加载快照比较，main 不在其中）。 */
+  /** The currently calculated category layer has changed (compared to the loading snapshot, main is not among them). */
   packWrites: () => readonly PackWrite[];
-  /** 当前是否正在保存（重入保护）。 */
+  /** Whether it is currently being saved (re-entry protection). */
   busy: () => boolean;
-  /** 置保存中标志；写盘期间表单整体禁用。 */
+  /** Set the saving flag; the entire form is disabled during disk writing. */
   setBusy: (busy: boolean) => void;
-  /** 就地显示保存 / 同步反馈。 */
+  /** Local display save/sync feedback. */
   setMsg: (feedback: Feedback) => void;
-  /** 打开或关闭弹窗。 */
+  /** Open or close the pop-up window. */
   setDialog: (dialog: DialogState) => void;
-  /** 读当前弹窗，确认时才知道该派发哪个动作。 */
+  /** Read the current pop-up window and only know which action to dispatch when confirming. */
   dialog: () => DialogState;
-  /** 同步成功后刷新表单。 */
+  /** Refresh the form after successful synchronization. */
   applyConfig: (merged: MergedConfig) => void;
-  /** 宿主没回真实写入路径时的兜底（meta 里的用户配置路径）。 */
+  /** Fallback when the host does not return the actual write path (user configuration path in meta). */
   userFile: () => string;
-  /** 文案翻译。 */
+  /** Copy translation. */
   t: (key: string) => string;
-  /** 真的删掉选中的宠物（校验与确认都过了才会调）。 */
+  /** Really delete the selected pet (it will be adjusted after both verification and confirmation). */
   onRemove: () => void;
 }
 
-/** 写路径暴露的三个入口。 */
+/** The three entry points exposed by the write path. */
 export interface WriteFlow {
-  /** 保存全部配置；`force` 严格为 `true` 才允许重建损坏文件。 */
+  /** Save all configurations; `force` is strictly allowed to reconstruct damaged files only as `true`. */
   save: (force?: boolean) => Promise<void>;
-  /** 请求同步：先弹确认（会覆盖用户层，不能点一下就干）。 */
+  /** Request synchronization: confirm first (it will cover the user layer and cannot be done with just one click). */
   requestSync: () => void;
-  /** 弹窗确认后的派发。 */
+  /** Distribution after pop-up window confirmation. */
   confirmDialog: () => void;
 }
 
 /**
- * 造写路径。
+ * Create path.
  *
- * @param deps - 状态读取与写入回调。
- * @returns 保存 / 请求同步 / 确认派发。
+ * @param deps - status reading and writing callback.
+ * @returns Save/Request synchronization/Confirm dispatch.
  */
 export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
   const { setBusy, setMsg, setDialog, t } = deps;
@@ -85,7 +87,7 @@ export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
         setDialog({ kind: 'corrupt', path: result.path });
         return;
       }
-      // main 已落盘、部分种类没写成功：必须如实说，否则用户会以为整包都没保存。
+      // main has persisted to disk, some types were not written successfully: you must tell the truth, otherwise the user will think that the entire package has not been saved.
       if (result.kind === 'partial') {
         setMsg({ kind: 'err', text: t('savePartial').replace('{names}', result.failed.join('、')) });
         return;
@@ -100,13 +102,13 @@ export function createWriteFlow(deps: WriteFlowDeps): WriteFlow {
     setBusy(true);
     setMsg({ kind: '', text: '' });
     try {
-      // 同步用户层：POST 把内置默认配置（原文，含注释）整份写入用户配置，响应体同样是成品聚合。
+      // Synchronize the user layer: POST writes the entire built-in default configuration (original text, including comments) to the user configuration, and the response body is also the resolved configuration.
       const merged = await syncSettings();
       if (merged === null) {
         setMsg({ kind: 'err', text: t('syncError') });
         return;
       }
-      // 同一份成品既刷新表单也交给容器：编辑列表与渲染列表都由成品派生。
+      // The same resolved value both refreshes the form and is handed over to the container: both the editing list and the rendering list are derived from the resolved value.
       deps.applyConfig(merged);
       setMsg({ kind: 'ok', text: t('saved') });
     } finally {

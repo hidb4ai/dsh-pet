@@ -1,18 +1,19 @@
 /**
- * 设置页表单校验：保存前把「宿主一定会 400 的组合」先就地拦下并给红字提示。
- * 规则与宿主一一对应（非法组合宿主回 400，等同于把错误推到一次网络往返之后才发现）。
- * 纯函数：只看传入的值，返回第一个不合格项的文案键，顺序即提示优先级。
+ * Setting page form verification: before saving, block "host must be a combination of 400" and give a red text prompt.
+ * Rules correspond to hosts one-to-one (invalid combination of hosts returns 400, which is equivalent to pushing the
+ * error to a network round trip before discovering it). Pure function: only look at the passed in value, return the
+ * copy key of the first unqualified item, and the order is the prompt priority.
  * @module dsh-pet/src/client/settings/config/validate-form
  */
 import { FONT_PRESETS, FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../../shared/fonts.ts';
 import { isValidSizePercent } from '../../../shared/pet-size.ts';
 import type { FontConfig, ModelSelection, Pet, PhysicsParams } from '../../../shared/types.ts';
 
-/** 校验失败时返回的文案键。 */
+/** The copy key returned when verification fails. */
 export type InvalidKey =
   'invalid' | 'invalidPhysics' | 'invalidModel' | 'invalidChatMemory' | 'invalidChatImageLimit' | 'invalidFont';
 
-/** 保存前要校验的全部表单值。 */
+/** All form values to be verified before saving. */
 export interface FormValues {
   pets: readonly Pet[];
   physics: PhysicsParams;
@@ -23,11 +24,11 @@ export interface FormValues {
   font: FontConfig;
 }
 
-/** 一处「服务商 + 模型」是否合法：要么都留空（跟随当前对话），要么都非空。 */
+/** Is "service provider + model" valid? Either leave both blank (follow the current conversation), or both are not blank. */
 export const modelPairValid = (model: ModelSelection): boolean =>
   (model.provider.trim() === '') === (model.model.trim() === '');
 
-/** 宠物：宽度必须为正数、百分比缺省或是不小于 1 的数字、两个偏移必须是有限数（负数合法，宠物可以压出屏外）。 */
+/** Pet: The width must be a positive number, the percentage defaults or a number not less than 1, and the two offsets must be finite numbers (negative numbers are valid, and the pet can be pushed out of the screen). */
 const petValid = (pet: Pet): boolean =>
   Number.isFinite(pet.size) &&
   pet.size > 0 &&
@@ -35,7 +36,7 @@ const petValid = (pet: Pet): boolean =>
   Number.isFinite(pet.position.marginX) &&
   Number.isFinite(pet.position.marginY);
 
-/** 物理参数：与宿主 `physicsValid` 同名规则，客户端只覆盖数值字段（布尔项由宿主兜底）。 */
+/** Physical parameters: Rules with the same name as host `physicsValid`, the client only overrides numeric fields (Boolean items are provided by host fallback). */
 const physicsValid = (physics: PhysicsParams): boolean =>
   Number.isFinite(physics.gravity) &&
   physics.gravity >= 0 &&
@@ -47,7 +48,7 @@ const physicsValid = (physics: PhysicsParams): boolean =>
   Number.isFinite(physics.throwPower) &&
   physics.throwPower > 0;
 
-/** 字体：种类必须在预设白名单内，字号在闭区间内。 */
+/** Font: The type must be in the default white list, and the font size must be in the closed range. */
 const fontValid = (font: FontConfig): boolean =>
   FONT_PRESETS.some((preset) => preset.id === font.family) &&
   Number.isFinite(font.size) &&
@@ -55,18 +56,18 @@ const fontValid = (font: FontConfig): boolean =>
   font.size <= FONT_SIZE_MAX;
 
 /**
- * 校验整张表单。
+ * Verify the entire form.
  *
- * @param values - 保存前要提交的全部值。
- * @returns 第一个不合格项的文案键；全部合格返回 `null`。
+ * @param values - All values to be submitted before saving.
+ * @returns The copy key of the first unqualified item; all qualified items return `null` .
  */
 export function validateForm(values: FormValues): InvalidKey | null {
   if (!values.pets.every(petValid)) return 'invalid';
   if (!physicsValid(values.physics)) return 'invalidPhysics';
-  // 只填一半（选了服务商没选模型，或反之）非法。
+  // Filling in only half (selecting the service provider but not the model, or vice versa) is invalid.
   if (!modelPairValid(values.whisperModel) || !modelPairValid(values.chatModel)) return 'invalidModel';
   if (!Number.isFinite(values.chatMemory) || values.chatMemory < 0) return 'invalidChatMemory';
-  // 0 = 不限制，合法。
+  // 0 = No limit, valid.
   if (!Number.isFinite(values.chatImageLimit) || values.chatImageLimit < 0) return 'invalidChatImageLimit';
   if (!fontValid(values.font)) return 'invalidFont';
   return null;

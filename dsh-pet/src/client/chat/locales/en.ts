@@ -1,5 +1,5 @@
 /**
- * 对话面板英文文案；键集必须与 zh 一致。
+ * English copy of the dialogue panel; the key set must be consistent with zh.
  */
 import type { Key } from './zh.ts';
 

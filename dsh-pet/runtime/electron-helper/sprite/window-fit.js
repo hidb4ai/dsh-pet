@@ -1,17 +1,20 @@
 /**
- * 窗口落位与上报：把「本体屏幕位置」换算成窗口矩形，把窗口管理器钳掉的那截转成本体偏移，再报给主进程。
+ * Window placement and reporting: Convert the "body screen position" into a window rectangle, convert the section
+ * clipped by the window manager into the body offset, and then report it to the main process.
  *
- * 四边都钳：贴顶时窗口停在 y=0，本体在窗口内下移，窗口上方那截余量正好留给气泡。
- * PetSprite 由 sprite.js 定义，本文件只往原型上挂方法，必须在其后加载。
+ * Clamp all four sides: When sticking to the top, the window stops at y =0, the body moves down in the window, and the
+ * margin above the window is just left for the bubble. PetSprite is defined by sprite.js. This file only adds methods
+ * to the prototype and must be loaded afterwards.
  * @module dsh-pet/runtime/electron-helper/sprite-window-fit
  */
 'use strict';
 
 Object.assign(PetSprite.prototype, {
   /**
-   * 越界允许量：命中区至少留 MIN_REACHABLE_PX 在屏幕内，其余部分可以挂到屏幕外。
-   * 与网页端 clampReachableBox 同一条规则：宠物能挂出去，但右键永远点得到。
-   * 上/下按「命中区的另一条边」留：挂在上方时留的是底边，挂在下方时留的是顶边。
+   * Over-the-border allowance: at least MIN_REACHABLE_PX of the hit area should be left inside the screen, and the
+   * rest can be hung outside the screen. The same rule as the web version clampReachableBox: pets can hang out, but
+   * they will always be available by right-clicking. Press the "other side of the hit area" up/down to leave: when
+   * hanging above, the bottom edge is left, and when hanging below, the top edge is left.
    */
   reachInset() {
     const hit = this.hitRect;
@@ -25,14 +28,16 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 算窗口落位并就地应用本体偏移；所有位移经 sendBounds 逐帧走到这里。
+   * Calculate window placement and apply body offset in place; all displacements go here frame by frame via
+   * sendBounds.
    *
-   * @returns 窗口内容区（屏幕坐标系，CSS 像素）x/y/width/height 与本体在窗口内的偏移 offsetX/offsetY。
+   * @returns Window content area (screen coordinate system, CSS pixels) x/y/width/height and the offset of the body
+   * within the window offsetX/offsetY.
    */
   fitWindow() {
     const width = this.size + this.margin.l + this.margin.r;
     const height = this.winH + this.margin.t + this.margin.b;
-    // 工作区取本体中心所在那块屏：窗口跨屏时按本体所在屏钳，与「窗口被关在单屏工作区内」一致
+    // The workspace takes the screen where the center of the main body is: when the window spans across screens, press the screen where the main body is located, which is consistent with "the window is closed in the single-screen workspace"
     const area = CONFIG.isWindowClampedToWorkArea
       ? S.resolveRect(WORK_AREAS, this.pos.x + this.halfW, this.pos.y + this.halfH)
       : undefined;
@@ -42,7 +47,7 @@ Object.assign(PetSprite.prototype, {
       width,
       height,
       bodyWidth: this.size,
-      // 纵向是「精灵总高」（含脚底透明垫），不是视频高：偏移上限按精灵算才对得上窗口尺寸
+      // The vertical height is the "total sprite height" (including the transparent pads on the soles of the feet), not the video height: the upper limit of the offset is calculated according to the sprite to match the window size.
       bodyHeight: this.winH,
       insetX: this.margin.l,
       insetY: this.margin.t,
@@ -53,7 +58,7 @@ Object.assign(PetSprite.prototype, {
     return { x: fit.x, y: fit.y, width, height, offsetX: fit.offsetX, offsetY: fit.offsetY };
   },
 
-  /** 本体在窗口内的偏移落到 DOM；逐帧调用，值没变就不写样式。 */
+  /** The offset of the body within the window falls to DOM; it is called frame by frame, and the style will not be written if the value does not change. */
   applyWinOffset(x, y) {
     if (this.winOffset.x === x && this.winOffset.y === y) return;
     this.winOffset.x = x;
@@ -64,28 +69,32 @@ Object.assign(PetSprite.prototype, {
   },
 
   /**
-   * 把窗口落位连同宠物状态报给主进程：命中区判定与跨窗碰撞站场都读这一份。
+   * Report the window position and pet status to the main process: this copy is read for both hit zone determination
+   * and cross-window collision sites.
    *
-   * @param fit - fitWindow 的返回值。
+   * @param fit - Return value of fitWindow.
    */
   reportWindow(fit) {
     if (!window.petBridge) return;
-    // 完整状态一次捎带：size/bottomPad 让静止宠物从首帧起就登记进碰撞站场；
-    // vx/vy 带当前速度（飞行中实时值、静止/拖拽 = 0），避免落地后残留旧速度干扰碰撞动量。
+    // The complete state is carried along once: size/bottomPad allows the stationary pet to register into the
+    // collision site from the first frame; vx/vy carries the current speed (real-time value in flight, stationary/drag
+    // = 0) to avoid residual old speed after landing to interfere with the collision momentum.
     const fly = this.throwState;
     window.petBridge.setBounds(
       toScreen(fit.x + VIEW.x),
       toScreen(fit.y + VIEW.y),
       toScreen(fit.width),
       toScreen(fit.height),
-      toScreen(this.pos.x), // 包围盒左上角（碰撞站场用：窗口坐标 ≠ 包围盒坐标）
+      toScreen(this.pos.x), // The upper left corner of the bounding box (for collision sites: window coordinates ≠ bounding box coordinates)
       toScreen(this.pos.y),
       toScreen(this.size),
       toScreen(this.bottomPad),
       fly ? toScreen(fly.vx) : 0,
       fly ? toScreen(fly.vy) : 0,
-      // 窗口原点到本体原点的距离（DIP）：主进程据此算命中区，它不再恒等于余量——窗口被钳后
-      // 偏移变大，只能按上报值算，不能按「窗口宽/4」反推（见 spriteHitRect）。
+      // The distance from the origin of the window to the origin of the body (DIP): The main process calculates the
+      // hit zone based on this. It is no longer equal to the margin - the offset becomes larger after the window is
+      // clamped. It can only be calculated based on the reported value, and cannot be inferred based on "window
+      // width/4" (see spriteHitRect).
       toScreen(fit.offsetX),
       toScreen(fit.offsetY),
     );

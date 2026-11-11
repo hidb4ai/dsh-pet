@@ -1,37 +1,39 @@
 /**
- * 设置页脚本的公共层：令牌、请求封装、共享状态与 DOM 工具。
+ * Common layers of settings page scripts: tokens, request encapsulation, shared state, and DOM tools.
  *
- * 作为整页脚本的第一个片段被拼进同一个 IIFE，后续片段只调用这里导出的名字。
- * 令牌只放内存并随请求头送出，地址栏里的那一份读完即清；刷新后内存里没有令牌时，
- * 由首次访问换来的 HttpOnly cookie 继续认证，所以请求一律按同源凭据发出。
- * 片段里不许出现第二份枚举清单，取值一律由调用方注入。
+ * The first fragment as a full-page script is spelled into the same IIFE, and subsequent fragments only call the name
+ * exported here. The token is only stored in the memory and sent out with the request header, and the copy in the
+ * address bar is cleared after reading it; when there is no token in the memory after the refresh, the HttpOnly cookie
+ * exchanged for the first visit will continue to be authenticated, so the request will always be issued based on the
+ * same source credentials. The second enumeration list is not allowed to appear in the fragment, and the values are
+ * always injected by the caller.
  * @module dsh-pet/src/standalone/settings-page/script/core
  */
 
-/** 脚本片段需要的枚举与默认值，全部由装配入口从源码常量注入。 */
+/** The enumerations and default values required by the script fragment are all injected from source code constants by the assembly entry point. */
 export interface ScriptConsts {
-  /** 音色白名单（来自 host/voice/voices.ts）。 */
+  /** Tone whitelist (from host/voice/voices.ts). */
   readonly voices: readonly { readonly id: string; readonly name: string; readonly tag: string }[];
-  /** 字体预设 id（来自 shared/fonts.ts）。 */
+  /** Font preset id (from shared/fonts.ts). */
   readonly fonts: readonly string[];
-  /** 显示档（来自 shared/config.ts）。 */
+  /** Display file (from shared/config.ts). */
   readonly displays: readonly string[];
-  /** 停靠角落（来自 host/config/constants.ts）。 */
+  /** Dock corner (from host/config/constants.ts). */
   readonly corners: readonly string[];
-  /** 物理默认值（来自 shared/physics）。 */
+  /** Physical default (from shared/physics). */
   readonly physics: unknown;
-  /** 字体默认值（来自 shared/fonts.ts）。 */
+  /** Font default (from shared/fonts.ts). */
   readonly font: unknown;
-  /** 动作频率默认值（来自 shared/weights.ts）。 */
+  /** Default value of action frequency (from shared/weights.ts). */
   readonly weights: unknown;
 }
 
 /**
- * 生成公共层片段。
+ * Generating common layer fragments.
  *
- * @param routePath - 插件 HTTP 前缀，取自 shared/constants 的 ROUTE_SEGMENT。
- * @param consts - 枚举与默认值。
- * @returns 可直接拼进整页脚本的源码。
+ * @param routePath - Plugin HTTP prefix, taken from shared/constants's ROUTE_SEGMENT.
+ * @param consts - Enumerations and default values.
+ * @returns can directly insert the source code of the full page script.
  */
 export function coreScript(routePath: string, consts: ScriptConsts): string {
   return `

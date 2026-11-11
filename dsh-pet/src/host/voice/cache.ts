@@ -1,44 +1,47 @@
 /**
- * 语音缓存：按「音色 + 语速 + 文本」算键，落盘为 mp3，并按总量与条数淘汰最旧的。
+ * Voice cache: Press the "Tone + Speech Speed + Text" arithmetic key, persist to disk is mp3, and eliminate the oldest
+ * one based on the total volume and number of entries.
  *
- * 命中即免合成——同一句话不管是自动播报还是用户点历史，都只合成一次。缓存只是加速，
- * 删掉任意文件都不影响正确性：下一次请求会重新合成。不负责合成与队列。
+ * Hit-and-miss synthesis - the same sentence will only be synthesized once, whether it is an automatic broadcast or a
+ * user's click history. Caching only speeds up, deleting any file will not affect the correctness: the next request
+ * will be synthesized again. Not responsible for synthesis and queues.
  * @module dsh-pet/src/host/voice/cache
  */
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-/** 缓存总量上限（字节）：超过后从最旧的开始删。 */
+/** The upper limit of the total cache size (bytes): after it is exceeded, it will be deleted from the oldest one. */
 export const CACHE_MAX_BYTES = 20 * 1024 * 1024;
-/** 缓存文件条数上限。 */
+/** The upper limit of the number of cached files. */
 export const CACHE_MAX_FILES = 200;
 
-/** 缓存文件的完整路径：`<userRoot>/voice-cache/<key>.mp3`。 */
+/** Full path to cache file: `<userRoot>/voice-cache/<key>.mp3`. */
 export function cachePath(userRoot: string, key: string): string {
   return join(userRoot, 'voice-cache', `${key}.mp3`);
 }
 
 /**
- * 计算缓存键。
+ * Calculating cache keys.
  *
- * 四个输入都影响音频内容。`source` 是合成来源——内置实现的 id 或第三方 provider 的 id：
- * 不含它的话，切换实现后会命中上一家的旧音频，听起来像「注册了没生效」。
- * `text` 不做归一化——同一句话多一个空格就是另一份音频，宁可多存也不冒「听起来不对」的风险。
- * @param source - 合成来源。
- * @param voice - 音色 id；第三方实现没有音色概念，传空串。
- * @param rate - 语速表达式（如 `+0%`）。
- * @param text - 待合成文本。
- * @returns 十六进制 sha1。
+ * All four inputs affect audio content. `source` is the synthesis source - the built-in implementation of id or the
+ * third-party provider's id: without it, the old audio from the previous company will be hit after switching the
+ * implementation, which sounds like "register has not taken effect". `text` does not perform normalization - one more
+ * space in the same sentence is another audio. It is better to save more than to take the risk of "sounding wrong".
+ * @param source - synthesis source.
+ * @param voice - voice id; the third-party implementation has no voice concept and transmits an empty string.
+ * @param rate - speech rate expression (such as `+0%` ).
+ * @param text - text to be synthesized.
+ * @returns hex sha1.
  */
 export function cacheKey(source: string, voice: string, rate: string, text: string): string {
   return createHash('sha1').update(`${source}\n${voice}\n${rate}\n${text}`).digest('hex');
 }
 
 /**
- * 确保缓存目录存在。
- * @param userRoot - 用户数据根。
- * @returns 缓存目录绝对路径。
+ * Make sure the cache directory exists.
+ * @param userRoot - User data root.
+ * @returns Absolute path to the cache directory.
  */
 export async function ensureCacheDir(userRoot: string): Promise<string> {
   const dir = join(userRoot, 'voice-cache');
@@ -47,10 +50,11 @@ export async function ensureCacheDir(userRoot: string): Promise<string> {
 }
 
 /**
- * 按「总量 + 条数」淘汰最旧的文件；两个上限都满足时立刻停手。
- * @param dir - 缓存目录。
- * @param limits - 上限，缺省用模块常量。
- * @returns 实际删除的文件数。
+ * Eliminate the oldest files according to "total amount + number of items"; stop immediately when both upper limits
+ * are met.
+ * @param dir - cache directory.
+ * @param limits - upper limit, module constant is used by default.
+ * @returns The actual number of deleted files.
  */
 export async function pruneCache(dir: string, limits: { maxBytes?: number; maxFiles?: number } = {}): Promise<number> {
   const maxBytes = limits.maxBytes ?? CACHE_MAX_BYTES;
@@ -59,7 +63,7 @@ export async function pruneCache(dir: string, limits: { maxBytes?: number; maxFi
   try {
     names = await readdir(dir);
   } catch {
-    return 0; // 目录还不存在：没有可淘汰的
+    return 0; // The directory does not exist yet: there is nothing to eliminate
   }
   const entries: { file: string; size: number; mtimeMs: number }[] = [];
   for (const name of names) {
@@ -69,7 +73,7 @@ export async function pruneCache(dir: string, limits: { maxBytes?: number; maxFi
       const info = await stat(file);
       entries.push({ file, size: info.size, mtimeMs: info.mtimeMs });
     } catch {
-      /* 这条正被别的请求删掉，跳过 */
+      /* This article is being deleted by another request, skip */
     }
   }
   entries.sort((a, b) => a.mtimeMs - b.mtimeMs);
@@ -84,7 +88,7 @@ export async function pruneCache(dir: string, limits: { maxBytes?: number; maxFi
       totalBytes -= entry.size;
       totalFiles -= 1;
     } catch {
-      /* 删不掉就留着，不影响本次请求 */
+      /* If you cannot delete it, keep it. It will not affect this request. */
     }
   }
   return removed;

@@ -1,16 +1,19 @@
 /**
- * Mock 识别实现：不看音频内容，固定回一句带字节数的文字。
+ * Mock recognition implementation: without looking at the audio content, a fixed text with a number of bytes will be
+ * returned.
  *
- * 存在意义是验证 `petApi7340.speech.register` 这条第三方注册入口——不联网、不加载模型，
- * 开关打开后 `POST /voice/hear` 改走这里；回的字节数与发出去的对得上，
- * 就说明音频真的穿过 base64 与 HTTP 到达了宿主。
- * 默认不注册：开关由本仓库的 `/cordis-probe-speech` 路由控制（见 ./toggle-route.js）。
+ * The purpose of existence is to verify that the third-party registration entry point of `petApi7340.speech.register`
+ * is not connected to the Internet and does not load the model. After the switch is turned on, `POST /voice/hear` will
+ * be redirected here. The number of bytes returned matches the sent one, which means that the audio really passes
+ * through base64 and HTTP and reaches the host. Not registered by default: the switch is controlled by the
+ * `/cordis-probe-speech` route of this warehouse (see ./toggle-route.js ).
  * @module dsh-cordis-probe/mock-speech
  */
 
 /**
- * 造一个 provider：不论文本与语速，一律回同一段假转写。
- * @returns 可直接交给 `speech.register` 的定义。
+ * Make a provider: Regardless of text and speaking speed, the same paragraph will always be returned to
+ * pseudo-transcription.
+ * @returns can be passed directly to the definition of `speech.register` .
  */
 export function createMockSpeechProvider() {
   return {

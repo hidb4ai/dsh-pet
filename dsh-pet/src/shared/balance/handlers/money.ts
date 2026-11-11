@@ -1,7 +1,8 @@
 /**
- * money 形态：账户金额的已用百分比与气泡文案。
+ * money form: used percentage of account amount and bubble text.
  *
- * 不同币种不能相加金额，但比例是无量纲的，所以不需要汇率——各币种按自己的基准算剩余比例后叠加。
+ * The amounts of different currencies cannot be added, but the ratio is dimensionless, so no exchange rate is needed -
+ * each currency calculates the remaining ratio based on its own basis and then adds it.
  *
  * @module dsh-pet/src/shared/balance/handlers/money
  */
@@ -10,9 +11,11 @@ import type { BalanceBubbleRow, BalanceView } from '../types.ts';
 import type { ShapeHandler } from './shape.ts';
 
 /**
- * 各币种按自己的基准算剩余比例，相加后折算成已用百分比。
+ * Each currency calculates the remaining proportion based on its own basis, and then adds it up and converts it into a
+ * used percentage.
  *
- * 没有基准的币种跳过，不替它猜一个；一个带基准的币种都没有则返回 undefined，不播档位动画。
+ * Currencies without a benchmark will be skipped and no one will be guessed for it; if there is no currency with a
+ * benchmark, undefined will be returned and the state animation will not be played.
  */
 function moneyPercent(v: BalanceView): number | undefined {
   let remaining = 0;
@@ -21,7 +24,7 @@ function moneyPercent(v: BalanceView): number | undefined {
     const total = Number(w.total);
     const full = Number(w.fullBalance);
     if (!Number.isFinite(total) || !Number.isFinite(full) || full <= 0) continue;
-    remaining += total / full; // 负数（透支）会拉低剩余量，最终被夹到「已用完」
+    remaining += total / full; // A negative number (overdraft) will lower the remaining amount, and eventually it will be stuck to "used up"
     based++;
   }
   if (based === 0) return undefined;
@@ -29,11 +32,12 @@ function moneyPercent(v: BalanceView): number | undefined {
 }
 
 /**
- * 一行「余额（峰/谷）¥x.xx」。
+ * One line "Balance (Peak/Trough) ¥ x.xx".
  *
- * 只显示 total 非 0 的币种：负数要显示（透支是真的欠钱），正好 0 的不占地方；CNY 优先，
- * 用符号拼接、以「/」分隔；全为 0 时兜底 ¥0.00，否则气泡会空一行。档位装饰只有提供该计价
- * 规则的服务商才有，没有就不加括号那一段。
+ * Only the currencies with total non-0 are displayed: negative numbers should be displayed (overdrafts are real money
+ * owed), and those with exactly 0 do not take up space; CNY takes priority, separated by "/" with the symbol
+ * concatenate; when all are 0, fallback ¥0.00, otherwise the bubble will have an empty line. The stall decoration is
+ * only available to service providers that provide this pricing rule. If not, the brackets will not be added.
  */
 function moneyRows(v: BalanceView): BalanceBubbleRow[] {
   const visible = (v.wallets ?? [])
@@ -49,7 +53,7 @@ function moneyRows(v: BalanceView): BalanceBubbleRow[] {
   ];
 }
 
-/** money 形态的展示规则：百分比按币种基准折算，收成一行业务气泡。 */
+/** Display rules for the money form: The percentage is converted based on the currency, and a business bubble is obtained. */
 export const moneyHandler: ShapeHandler = {
   percent: moneyPercent,
   rows: moneyRows,

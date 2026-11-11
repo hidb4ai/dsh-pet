@@ -22,23 +22,35 @@ Captured from this branch in **DSH 0.2.2-rc.1**, with **PowerContext 1.5.0**, on
 
 ## Start with one pet
 
-Use Node.js **24.9+** for DSH, or **22.12+** for standalone. Node.js 24 works for both. From a terminal:
+The [npm package](https://www.npmjs.com/package/dsh-pet-powercontext) is available on the **beta** channel, currently `0.1.0-beta.1`. Choose one option below; no source checkout or build is needed.
+
+### Already using DSH
+
+With DSH installed and Node.js **24.9+**, run:
 
 ```sh
-git clone --branch master https://github.com/ob-labs/dsh-pet-powercontext.git
-cd dsh-pet-powercontext/dsh-pet
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm build
-pnpm standalone --setup
+dsh plugin --profile web add dsh-pet-powercontext@beta
 ```
 
-Open the local setup page, choose a provider, enter its API key and check the connection. You can start with chat alone, then enable local long-term memory. The setup flow prepares its own Python and PowerContext runtime in the user directory.
+For DSH desktop, replace `--profile web` with `--profile desktop`. Restart DSH, open **Settings → Pet Config**, and chat through **Pet chat** using your DSH model. If the upstream `dsh-pet` plugin is enabled, disable it first and keep its data directory.
 
-For DSH, install the built package with `dsh plugin --profile web add "file:$PWD"` from the inner package directory and restart DSH. Use `--profile desktop` for its desktop app. Disable the upstream `dsh-pet` plugin before enabling this package; keep the shared data directory to retain existing configuration and memories.
+### Windows: download and open
 
-Once published, the package can also be installed with `dsh plugin --profile web add dsh-pet-powercontext@beta` or started with `npx dsh-pet-powercontext@beta --setup`.
+1. [Download the Windows x64 ZIP](https://github.com/ob-labs/dsh-pet-powercontext/releases/download/v0.1.0-beta.1/dsh-pet-win-x64.zip).
+2. Extract the whole ZIP and double-click **dsh-pet.exe**. No Node.js installation is needed.
+3. Choose **Open AI settings** from the pet's menu, select a provider, enter your API key and check the connection.
 
-[First-pet tutorial](docs/en/tutorials/first-pet.md) · [All installation options, including Windows](docs/en/guides/installation.md) · [Model providers](docs/en/guides/models.md)
+### Standalone: one command
+
+With Node.js **22.12+** installed, run:
+
+```sh
+npx --yes dsh-pet-powercontext@beta --setup
+```
+
+Choose a model provider and check the connection in the setup page that opens. Keep the terminal running while using the pet. Start with chat; long-term memory is optional and can be enabled later.
+
+[First-pet tutorial](docs/en/tutorials/first-pet.md) · [Installation details and updates](docs/en/guides/installation.md) · [Model providers](docs/en/guides/models.md)
 
 ## What you can do
 

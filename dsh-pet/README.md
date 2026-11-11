@@ -17,9 +17,27 @@ An animated desktop companion for DeepSeek Harness and standalone use: chat, con
 
 ## Use this package
 
-After publication, install with `dsh plugin --profile web add dsh-pet-powercontext@beta`, or run `npx dsh-pet-powercontext@beta --setup` for standalone mode. The first release is `0.1.0-beta.1`. Disable the upstream `dsh-pet` plugin before enabling this package; both use the existing data directory and routes, so keep your configuration and memories.
+The published **beta** channel currently provides `0.1.0-beta.1`. Choose one option; no source checkout or build is needed.
 
-Requires Node.js 22.12+ for standalone use, or 24.9+ for the DSH 0.2.2-rc.1 CLI. From this directory, run `pnpm install --frozen-lockfile`, `pnpm build`, then `pnpm standalone --setup`. For a graphical desktop, prepare Electron with `pnpm ensure:electron` and run `pnpm start:app`. In DSH, use **Settings → Pet Config → Local long-term memory** to install, configure, pause or resume PowerContext while retaining your DSH chat model. Choose separate chat, extraction and embedding providers, fetch model suggestions or enter IDs manually. DeepSeek, OpenAI, Qwen, SiliconFlow, Ark, Zhipu, Kimi, Ollama and optional LiteLLM gateways are available as presets. See the [project guide](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/README.md) for installation from source or a `.tgz` archive.
+**DSH plugin** — with DSH installed and Node.js 24.9+, run:
+
+```sh
+dsh plugin --profile web add dsh-pet-powercontext@beta
+```
+
+For DSH desktop, replace `--profile web` with `--profile desktop`. Restart DSH, open **Settings → Pet Config**, and use **Pet chat** with your DSH model. Disable the upstream `dsh-pet` plugin first if enabled; keep the shared data directory to retain configuration and memories.
+
+**Windows app** — [download the Windows x64 ZIP](https://github.com/ob-labs/dsh-pet-powercontext/releases/download/v0.1.0-beta.1/dsh-pet-win-x64.zip), extract the whole archive and double-click **dsh-pet.exe**. No Node.js installation is needed. Choose **Open AI settings** from the pet's menu to configure your model.
+
+**Standalone command** — with Node.js 22.12+, run:
+
+```sh
+npx --yes dsh-pet-powercontext@beta --setup
+```
+
+Choose a provider, enter your API key and check the connection in the setup page. Keep the terminal running while using the pet. [Installation details and updates](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/en/guides/installation.md).
+
+Long-term memory is optional. In DSH, use **Settings → Pet Config → Local long-term memory**; standalone users can enable it in the setup page. Chat, extraction and embeddings can use separate providers, including DeepSeek, OpenAI, Qwen, SiliconFlow, Ark, Zhipu, Kimi, Ollama and optional LiteLLM gateways. See [model configuration](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/en/guides/models.md).
 
 <a id="implementation"></a>
 

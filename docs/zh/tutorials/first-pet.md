@@ -9,7 +9,7 @@
 先完成[安装指南](../guides/installation.md)。
 
 - **DSH：**重启后打开「设置 → 桌宠配置」。
-- **独立模式：**在构建后的包目录执行 `pnpm standalone --setup`，或在角色菜单选择「打开 AI 设置」，进入「开始养鱼」。
+- **独立模式：**执行 `npx --yes dsh-pet-powercontext@beta --setup`，或在 Windows 应用的桌宠菜单选择「打开 AI 设置」，进入「开始养鱼」。
 
 ![DSH 中的角色外观与行为设置，英文界面](../../assets/screenshots/dsh-settings.en.png)
 

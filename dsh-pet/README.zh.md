@@ -11,17 +11,33 @@ kind: package-reference
 
 ## 概述
 
-面向 DeepSeek Harness 和独立运行的动画桌宠：聊天、人设、语音、动画、提醒，以及每只宠物独立的 PowerContext 1.5.0 长期记忆。当前分支的记忆功能不一定已包含在上游发布包中。
+面向 DeepSeek Harness 和独立运行的动画桌宠：聊天、人设、语音、动画、提醒，以及每只宠物独立的 PowerContext 1.5.0 长期记忆。本包在上游桌宠的基础上加入可选的 PowerContext 记忆。
 
 <a id="use"></a>
 
 ## 使用本包
 
-发布后的安装方式：`dsh plugin --profile web add dsh-pet-powercontext@beta`；独立模式：`npx dsh-pet-powercontext@beta --setup`。首发版本为 `0.1.0-beta.1`。启用前停用上游 `dsh-pet` 插件，两者共用原来的数据目录与路由；无需删除已有配置和记忆。
+已发布的 **beta** 通道当前提供 `0.1.0-beta.1`。下面任选一种方式，无需下载源码或编译。
 
-独立模式需要 Node.js 22.12+，DSH 0.2.2-rc.1 CLI 需要 24.9+。在本目录执行 `pnpm install --frozen-lockfile`、`pnpm build`、`pnpm standalone --setup`。需要桌面窗口时，先用 `pnpm ensure:electron` 准备 Electron，再运行 `pnpm start:app`。DSH 用户可在「设置 → 桌宠配置 → 本机长期记忆」中安装、配置、暂停和恢复 PowerContext，聊天继续沿用 DSH 模型。源码与 `.tgz` 安装方式见[项目说明](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/README.zh.md)。
+**DSH 插件**：已安装 DSH 和 Node.js 24.9+ 时，执行：
 
-模型设置支持 DeepSeek、OpenAI、通义千问、硅基流动、火山方舟、智谱、Kimi、Ollama 和可选的 LiteLLM 网关预设。聊天、记忆整理和向量服务可以独立配置，支持获取模型列表或手动填写；详见[项目指南](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/zh/guides/models.md)。
+```sh
+dsh plugin --profile web add dsh-pet-powercontext@beta
+```
+
+DSH 桌面版把 `--profile web` 换成 `--profile desktop`。重启 DSH，打开「设置 → 桌宠配置」，通过「Pet chat（桌宠对话）」使用 DSH 模型聊天。若已启用上游 `dsh-pet` 插件，先将其停用；保留共用的数据目录，以继续使用原配置和记忆。
+
+**Windows 应用**：[下载 Windows x64 ZIP](https://github.com/ob-labs/dsh-pet-powercontext/releases/download/v0.1.0-beta.1/dsh-pet-win-x64.zip)，完整解压后双击 **dsh-pet.exe**，无需安装 Node.js。在桌宠菜单选择「打开 AI 设置」配置模型。
+
+**独立模式命令**：已安装 Node.js 22.12+ 时，执行：
+
+```sh
+npx --yes dsh-pet-powercontext@beta --setup
+```
+
+在设置页中选择服务商、填写 API Key 并检查连接，使用期间保持终端运行。详见[安装与更新指南](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/zh/guides/installation.md)。
+
+长期记忆按需开启。DSH 用户进入「设置 → 桌宠配置 → 本机长期记忆」；独立模式用户在设置页开启。聊天、记忆整理和向量服务可分别选择服务商，预设支持 DeepSeek、OpenAI、通义千问、硅基流动、火山方舟、智谱、Kimi、Ollama 和可选 LiteLLM 网关。详见[模型配置](https://github.com/ob-labs/dsh-pet-powercontext/blob/master/docs/zh/guides/models.md)。
 
 <a id="implementation"></a>
 

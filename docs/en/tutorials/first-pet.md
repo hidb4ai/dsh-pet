@@ -9,7 +9,7 @@ By the end, you will have a pet that can chat and, optionally, recall a fact aft
 Follow [installation](../guides/installation.md) first.
 
 - **DSH:** restart DSH, then open **Settings → Pet Config**.
-- **Standalone:** run `pnpm standalone --setup` from the built package, or use the app's **Open AI settings** menu. Its Quick Start page is labeled “开始养鱼” in the Chinese interface.
+- **Standalone:** run `npx --yes dsh-pet-powercontext@beta --setup`, or use **Open AI settings** in the Windows app's pet menu. Its Quick Start page is labeled “开始养鱼” in the Chinese interface.
 
 ![Pet appearance and behavior settings in DSH](../../assets/screenshots/dsh-settings.en.png)
 

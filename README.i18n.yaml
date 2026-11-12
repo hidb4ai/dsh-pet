@@ -14,6 +14,18 @@ headings:
     zh: 先养好一只
     en_sha256: 247a90d2818cf3b16fd59d6ccc04da6d8b4261f7b399d075c1c80a33bf0e8eb2
     zh_sha256: 71ba4df56d75d4af41f1331ba2089f61775dd538f8d257a1e749222ba590e86a
+  - en: Already using DSH
+    zh: 已经在用 DSH
+    en_sha256: c758b595a6f4d56802b01a4e008cb4e119c95a6a1f65d28fbf6d9b08a883b275
+    zh_sha256: d1c74230f6e0b92e80217fa7af173a8f8559d86bdbe122b3f9e18d3c54d08ae3
+  - en: "Windows: download and open"
+    zh: Windows：下载后双击
+    en_sha256: 2bc70383dc781620e9ebbe8a4ad95c5f2ed73237a7592b12b16c25f764506b74
+    zh_sha256: 7c3532bf48b075ed67379f84a84e3d1204187a828ec7be2ef15f8e897234e7d5
+  - en: "Standalone: one command"
+    zh: 独立模式：一条命令启动
+    en_sha256: fb92d0e777f46e3d04d2532c4e3d53701b60f738d23ed8f90e6568b4a8cd8c49
+    zh_sha256: 1e3942f387afa335af90242ab85e0306940ef070d80f6801c892d96e3ecaf5c4
   - en: What you can do
     zh: 桌宠与记忆分别做什么
     en_sha256: f42148c5762e904b9a58eb75bf0058593e9f2684eb44c43723f2348db1ef852e

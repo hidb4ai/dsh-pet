@@ -22,23 +22,35 @@ _后台抽取后，桌宠再次答出项目名 Moonleaf 和“无糖茉莉花茶
 
 ## 先养好一只
 
-DSH CLI 需要 **Node.js 24.9+**，独立模式需要 **22.12+**，可统一使用 Node.js 24。在终端执行：
+[npm 包](https://www.npmjs.com/package/dsh-pet-powercontext)已发布到 **beta** 通道，当前版本为 `0.1.0-beta.1`。下面任选一种方式，无需下载源码或编译。
+
+### 已经在用 DSH
+
+已安装 DSH 和 **Node.js 24.9+** 时，在终端执行：
 
 ```sh
-git clone --branch master https://github.com/ob-labs/dsh-pet-powercontext.git
-cd dsh-pet-powercontext/dsh-pet
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm build
-pnpm standalone --setup
+dsh plugin --profile web add dsh-pet-powercontext@beta
 ```
 
-打开本机设置页，选择服务商、填写 API Key 并检查连接。可以先只聊天，再开启本机长期记忆；程序会在用户目录准备自己的 Python 和 PowerContext 环境。
+DSH 桌面版把 `--profile web` 换成 `--profile desktop`。重启 DSH，打开「设置 → 桌宠配置」，通过「Pet chat（桌宠对话）」聊天，沿用 DSH 模型。如果已启用上游 `dsh-pet` 插件，先将其停用，保留数据目录。
 
-装进 DSH 时，在内层包目录运行 `dsh plugin --profile web add "file:$PWD"` 后重启 DSH。桌面版使用 `--profile desktop`。先停用上游 `dsh-pet` 插件，再启用本包；保留共用的数据目录，以继续使用原配置和记忆。
+### Windows：下载后双击
 
-版本发布后，也可运行 `dsh plugin --profile web add dsh-pet-powercontext@beta` 安装插件，或运行 `npx dsh-pet-powercontext@beta --setup` 启动独立设置。
+1. [下载 Windows x64 ZIP](https://github.com/ob-labs/dsh-pet-powercontext/releases/download/v0.1.0-beta.1/dsh-pet-win-x64.zip)。
+2. 完整解压，双击 **dsh-pet.exe**，无需安装 Node.js。
+3. 在桌宠菜单选择「打开 AI 设置」，选择服务商、填写 API Key 并检查连接。
 
-[小白上手教程](docs/zh/tutorials/first-pet.md) · [完整安装方式，含 Windows](docs/zh/guides/installation.md) · [选择模型服务](docs/zh/guides/models.md)
+### 独立模式：一条命令启动
+
+已安装 **Node.js 22.12+** 时，执行：
+
+```sh
+npx --yes dsh-pet-powercontext@beta --setup
+```
+
+在自动打开的设置页中选择模型服务商并检查连接，使用期间保持终端运行。可以先聊天，长期记忆按需开启。
+
+[小白上手教程](docs/zh/tutorials/first-pet.md) · [安装详情与更新](docs/zh/guides/installation.md) · [选择模型服务](docs/zh/guides/models.md)
 
 ## 桌宠与记忆分别做什么
 

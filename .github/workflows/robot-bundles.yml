@@ -115,6 +115,8 @@ jobs:
             ${{ runner.temp }}/robot-build/*desktop*.zip
             ${{ runner.temp }}/robot-build/sizes-*.json
             ${{ runner.temp }}/robot-build/smoke.json
+            ${{ runner.temp }}/robot-build/desktop-smoke/desktop.png
+            ${{ runner.temp }}/robot-build/desktop-smoke/result.json
       - uses: actions/upload-artifact@v4
         with:
           name: sizes-${{ matrix.platform }}

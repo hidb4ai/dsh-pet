@@ -28,11 +28,11 @@ The supplied SDK metadata declares MIT but contains no separate vendor license/c
 
 After this workflow is on the default branch, select **Run workflow** and choose a branch. The development branch also builds on push. There are no npm credentials or publishing permissions in this workflow.
 
-Each native runner verifies the Python archive and wheel hashes, installs the full dependency closure and runs `pip check`. It imports the actual SDK, OpenCV contrib and NumPy; tests the relocated interpreter with hostile Python environment variables; exercises status, single/group actions, speech and all three stops against a loopback gRPC server; and repeats smoke tests after extracting the compressed archives. The full npm archive must install with an empty npm cache in offline mode.
+Each native runner verifies the Python archive and wheel hashes, installs the full dependency closure and runs `pip check`. It imports the actual SDK, OpenCV contrib and NumPy; tests the relocated interpreter with hostile Python environment variables; exercises status, single/group actions, speech and all three stops against a loopback gRPC server; and repeats smoke tests after extracting the compressed archives. The full npm archive must install with an empty npm cache in offline mode; the installed HTTP host must then select its bundled interpreter and read the loopback controller state.
 
 `robot-size-report` contains `SIZE-REPORT.md` and per-platform JSON reports, including SHA256 checksums, archive sizes, unpacked payload sizes, Python size before SDK installation, Node dependency size, and Python component breakdowns. Values use MiB (1,048,576 bytes). Shared OpenCV files are counted once; filesystem allocation and installation scratch space are not included. Missing platform reports fail the aggregate job.
 
-The Windows desktop ZIP is extracted and its private runtime tested. The executable's GUI and robot integration still require a Windows desktop acceptance test and physical exhibition robot validation. Loopback RPCs do not validate robot firmware, movement, playback or stopping distance.
+The Windows desktop ZIP is extracted and launched with real Electron. CI verifies a window loads and the ASAR host reaches the bundled SDK, then saves a screenshot. Exhibition hardware still requires on-site acceptance and physical robot validation. Loopback RPCs do not validate robot firmware, movement, playback or stopping distance.
 
 For a local native build, first produce the ordinary package with `npm pack --pack-destination /data/codex-tmp/astra-base`, then run from `dsh-pet`:
 

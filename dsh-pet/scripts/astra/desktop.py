@@ -44,10 +44,16 @@ def main():
     restored_runtime = restored / "win-unpacked/resources/astra-runtime"
     run([restored_runtime / "python/python.exe", "-I", "-B", "-c",
          (Path(__file__).parent / "smoke.py").read_text(), str(restored_runtime)])
+    desktop_smoke = output / "desktop-smoke"
+    desktop_smoke.mkdir()
+    run([restored_runtime / "python/python.exe", "-I", "-B", "-c",
+         (Path(__file__).parent / "host_smoke.py").read_text(), str(restored / "win-unpacked/dsh-pet.exe"),
+         str(desktop_smoke), str(Path(__file__).parent / "desktop-smoke.mjs")])
     report_path = output / "sizes-win32-x64.json"
     report = read_json(report_path)
     report["desktop"] = baseline_record
     report["desktopFull"] = artifact(full, size(unpacked))
+    report["desktopValidation"] = read_json(desktop_smoke / "result.json")
     write_json(report_path, report)
 
 

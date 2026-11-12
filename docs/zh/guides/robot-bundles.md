@@ -28,11 +28,11 @@ GitHub Actions 的 **Robot full dependency bundles** 流水线分别生成 Windo
 
 工作流合入默认分支后，可点击 **Run workflow** 并选择要构建的分支。当前开发分支 push 也会触发构建。流水线不使用 npm 凭据，也没有发布权限。
 
-每个平台在原生 runner 上校验 Python 压缩包和 wheel 哈希，安装完整依赖并运行 `pip check`；真实导入 SDK、OpenCV contrib 和 NumPy；移动环境目录后，带着干扰性的 Python 环境变量测试隔离；通过本地模拟 gRPC 服务验证状态、单动作、动作序列、语音和三路停止。压缩包解压后会再运行测试，完整 npm 包必须能在空缓存、离线模式下安装。
+每个平台在原生 runner 上校验 Python 压缩包和 wheel 哈希，安装完整依赖并运行 `pip check`；真实导入 SDK、OpenCV contrib 和 NumPy；移动环境目录后，带着干扰性的 Python 环境变量测试隔离；通过本地模拟 gRPC 服务验证状态、单动作、动作序列、语音和三路停止。压缩包解压后会再运行测试，完整 npm 包必须能在空缓存、离线模式下安装，安装后的 HTTP 宿主还必须能自动选择内置 Python 并读取本地模拟控制器状态。
 
 `robot-size-report` 包含 `SIZE-REPORT.md` 和各平台 JSON，列出 SHA256、压缩体积、解压后的文件体积、安装 SDK 前的 Python 体积、Node 依赖体积以及 Python 组件明细。单位为 MiB（1,048,576 字节）。OpenCV 共用文件只计一次；文件系统分配空间和安装临时空间不计入。缺少任一平台报告都会导致汇总失败。
 
-Windows 桌面 ZIP 会解压并验证其中的独立运行环境。桌面窗口和机器人联动仍需要在 Windows 桌面进行验收，并用展会真机联调。本地模拟服务不能证明固件兼容、实际动作、播报效果或停止距离。
+Windows 桌面 ZIP 会解压并启动真实 Electron 应用，检查窗口加载和 ASAR 内宿主调用内置 SDK 的能力，并保存截图。展会电脑仍需现场验收，并用展会真机联调。本地模拟服务不能证明固件兼容、实际动作、播报效果或停止距离。
 
 本机构建时，先执行 `npm pack --pack-destination /data/codex-tmp/astra-base` 生成普通包，再从 `dsh-pet` 目录运行：
 

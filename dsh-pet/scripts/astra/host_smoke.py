@@ -44,6 +44,13 @@ def main():
         grpc_server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(service.full_name, handlers),))
     port = grpc_server.add_insecure_port("127.0.0.1:0")
     grpc_server.start()
+    if len(sys.argv) > 3:
+        try:
+            subprocess.run([shutil.which("node"), sys.argv[3], str(package), f"127.0.0.1:{port}", str(output)],
+                           check=True, timeout=120)
+        finally:
+            grpc_server.stop(0).wait()
+        return
     home = output / "host-home"
     (home / "dsh-pet").mkdir(parents=True)
     (home / "dsh-pet/main-config.jsonc").write_text(json.dumps({"pets": [{"id": "main", "display": "none"}]}))

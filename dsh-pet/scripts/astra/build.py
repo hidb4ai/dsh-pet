@@ -1,4 +1,4 @@
-"""Build and test a native private Python runtime and a complete npm archive.
+"""Build and test a slim private Python runtime and an offline npm archive.
 
 Run with Python 3.11+ on the target platform. Downloaded archives are verified;
 only pinned wheels are installed. No host Python packages are modified.
@@ -44,22 +44,17 @@ def build_runtime(output, target):
          "--require-hashes", "--only-binary=:all:", "--no-deps", "-r", lock, "-d", wheels])
     run([*pip, "install", "--no-index", "--find-links", wheels, "--no-compile", "--no-cache-dir",
          "--require-hashes", "--no-deps", "-r", lock])
-    # Vendor metadata requires both distributions. The contrib wheel must own cv2.
-    contrib_lock = output / "contrib.lock"
-    contrib_lock.write_text(next(line for line in lock.read_text().splitlines()
-                                 if line.startswith("opencv-contrib-python==")) + "\n")
-    run([*pip, "install", "--no-index", "--find-links", wheels, "--no-compile", "--no-cache-dir",
-         "--require-hashes", "--no-deps", "--force-reinstall", "-r", contrib_lock])
+    run([*pip, "check"])
     sdk = INPUTS / "vendor" / settings["sdkFile"]
     if sha256(sdk) != settings["sdkSha256"]:
         raise ValueError("SDK checksum mismatch")
     run([*pip, "install", "--no-index", "--no-deps", "--no-compile", "--no-cache-dir", sdk])
-    run([*pip, "check"])
+    # Keep vendor metadata intact; smoke tests allow only its two omitted OpenCV requirements.
     shutil.copytree(INPUTS / "vendor", root / "vendor-notices", ignore=shutil.ignore_patterns("*.whl"))
     shutil.copy2(lock, root / "requirements.lock")
     shutil.copy2(INPUTS / "bridge.py", root / "bridge.py")
     clean_bytecode(root)
-    manifest = {"platform": target, "pythonVersion": settings["pythonVersion"],
+    manifest = {"platform": target, "profile": "slim", "pythonVersion": settings["pythonVersion"],
                 "sdkVersion": settings["sdkVersion"], "pythonSource": source,
                 "sdkSha256": settings["sdkSha256"], "requirementsSha256": sha256(lock)}
     write_json(root / "manifest.json", manifest)
@@ -82,7 +77,7 @@ def build_runtime(output, target):
     return root, python_bytes
 
 
-def full_package(base, runtime, output, target):
+def slim_package(base, runtime, output, target):
     stage = output / "npm-stage"
     extract(base, stage)
     package = stage / "package"
@@ -99,7 +94,7 @@ def full_package(base, runtime, output, target):
     # npm installation discards symlinks, including Python's interpreter aliases.
     # Materialize native aliases so installed archives remain self-contained.
     shutil.copytree(runtime, package / "runtime/astra-native", symlinks=False)
-    archive = output / f"dsh-pet-powercontext-{metadata['version']}-{target}-full.tgz"
+    archive = output / f"dsh-pet-powercontext-{metadata['version']}-{target}-slim.tgz"
     # The base tar supplies the publication allowlist; dependencies were installed
     # into this external stage and declared as bundled in the package metadata.
     archive_tree(package, archive, "package")
@@ -125,17 +120,17 @@ def main():
     output = outside_checkout(args.output)
     target = target_platform()
     runtime, python_bytes = build_runtime(output, target)
-    archive = output / f"astra-runtime-{target}.tar.gz"
+    archive = output / f"astra-runtime-{target}-slim.tar.gz"
     archive_tree(runtime, archive, "astra-runtime")
     # Test the actual compressed runtime, not just its pre-archive staging tree.
     extract(archive, output / "archive-check")
     restored = output / "archive-check/astra-runtime"
     python = restored / "python" / ("python.exe" if os.name == "nt" else "bin/python3")
     run([python, "-I", "-B", "-c", (Path(__file__).parent / "smoke.py").read_text(), str(restored)])
-    report = {"platform": target, "pythonBytes": python_bytes, "components": component_sizes(runtime),
+    report = {"platform": target, "profile": "slim", "pythonBytes": python_bytes, "components": component_sizes(runtime),
               "runtime": artifact(archive, size(runtime)), "validation": read_json(output / "smoke.json")}
     if args.base_package:
-        report["fullPackage"], report["nodeDependencyBytes"] = full_package(args.base_package, runtime, output, target)
+        report["plugin"], report["nodeDependencyBytes"] = slim_package(args.base_package, runtime, output, target)
     write_json(output / f"sizes-{target}.json", report)
     print(f"Size report: {output / ('sizes-' + target + '.json')}")
 

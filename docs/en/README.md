@@ -17,7 +17,7 @@ Start with a working pet, then add the memory and controls you need.
 - [Create a pet pack](guides/custom-pets.md): character assets, animation and installation.
 - [Publish a release](guides/releases.md): version tags, npm, GitHub Releases and Windows artifacts.
 - [Astra Pro 2.0 robot](guides/robot.md): SDK setup, taught actions, speech, stops and pet feedback.
-- [Full robot dependency bundles](guides/robot-bundles.md)
+- [Slim robot control bundles](guides/robot-bundles.md)
 
 ## Look up
 

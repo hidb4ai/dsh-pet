@@ -6,32 +6,43 @@ user site-packages and inherited PYTHONPATH cannot satisfy missing dependencies.
 
 from concurrent.futures import ThreadPoolExecutor
 import importlib.metadata
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 
-import astra_grpc_clients
-import cv2
 import grpc
 import grpc_tools.protoc
-import numpy
 from google.protobuf.message_factory import GetMessageClass
 from proto_python import astra_service_pb2 as messages
+from proto_python import astra_service_pb2_grpc as services
+
+
+def check_slim_dependencies():
+    """Reject dependency errors other than the SDK's deliberately omitted vision packages."""
+    for module in ("cv2", "numpy"):
+        assert importlib.util.find_spec(module) is None, f"Unexpected slim dependency: {module}"
+    expected = {f"astra-grpc-clients 2.0.0 requires {name}, which is not installed."
+                for name in ("opencv-python", "opencv-contrib-python")}
+    result = subprocess.run([sys.executable, "-I", "-B", "-m", "pip", "--isolated",
+                             "--disable-pip-version-check", "check"],
+                            text=True, capture_output=True, timeout=30, check=False)
+    assert result.returncode == 1 and set(result.stdout.splitlines()) == expected, (
+        result.returncode, result.stdout, result.stderr)
+    return sorted(expected)
 
 
 def main():
     root = Path(sys.argv[1]).resolve()
     manifest = json.loads((root / "manifest.json").read_text())
+    assert manifest["profile"] == "slim"
     assert sys.version.split()[0] == manifest["pythonVersion"]
     assert Path(sys.prefix).resolve().is_relative_to(root)
-    for module in (astra_grpc_clients, cv2, grpc, numpy):
+    for module in (grpc, grpc_tools.protoc, messages, services):
         assert Path(module.__file__).resolve().is_relative_to(root), module.__name__
-    assert cv2.__version__ == "4.10.0" and hasattr(cv2, "aruco")
     assert importlib.metadata.version("astra-grpc-clients") == "2.0.0"
-    assert numpy.dot([1, 2], [3, 4]) == 11
-    encoded, _ = cv2.imencode(".png", numpy.zeros((2, 2, 3), dtype=numpy.uint8))
-    assert encoded
+    omitted_requirements = check_slim_dependencies()
     calls = []
 
     def handler(method):
@@ -81,7 +92,8 @@ def main():
         server.stop(0).wait()
     versions = {dist.metadata["Name"]: dist.version for dist in importlib.metadata.distributions()}
     distributions = [{"name": name, "version": version} for name, version in sorted(versions.items())]
-    print(json.dumps({"python": sys.version.split()[0], "sdkImport": True, "opencvContrib": True,
+    print(json.dumps({"python": sys.version.split()[0], "profile": "slim", "sdkProtocolImport": True,
+                      "visionDependenciesAbsent": True, "expectedMissingRequirements": omitted_requirements,
                       "loopbackOperations": ["status", "single", "group", "speech", "three-stops"],
                       "isolated": bool(sys.flags.isolated), "distributions": distributions}, indent=2))
 

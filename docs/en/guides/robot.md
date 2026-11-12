@@ -24,7 +24,7 @@ Ask the manufacturer for the exhibition robot's **2.0 gRPC address and port**, v
 
 The Python interpreter runs on the machine hosting DSH or the standalone app, which must reach the robot. For DSH in a container, install Python/SDK inside that environment and configure a path visible there. The manufacturer SDK uses plaintext gRPC; keep it on the controlled robot network. The DSH host access controls apply to robot control as well; standalone uses its existing local session authentication.
 
-For the recommended bundled installation, download the [full dependency package](robot-bundles.md) for your host platform and select **Bundled environment**. It includes Python, the SDK and all its dependencies, without modifying system Python.
+For the recommended bundled installation, download the [slim control package](robot-bundles.md) for your host platform and select **Bundled environment**. It includes private Python and the SDK control dependencies, without OpenCV or NumPy and without modifying system Python.
 
 For an explicit custom environment, install the supplied `astra_grpc_clients-2.0.0-py3-none-any.whl` into a separate Python environment **outside the repository and application directory**. Python 3.11 or 3.12 is a suitable starting point. The generated SDK requires newer dependencies than the wheel's minimum metadata; the following versions were verified together against a local gRPC test service.
 
@@ -47,7 +47,7 @@ py -3.11 -m venv $astraVenv
   "C:\Downloads\astra_grpc_clients-2.0.0-py3-none-any.whl"
 ```
 
-The ordinary plugin ships only the adapter; the full platform artifacts additionally include private Python and the complete SDK dependencies. The adapter imports the generated protocol modules directly and applies deadlines to every call. It only accepts SDK version `2.0.0`; it does not fall back to the 1.0 protocol. Windows commands are setup instructions; this integration has not been validated on a physical Windows-connected robot.
+The ordinary plugin ships only the adapter; the slim platform artifacts additionally include private Python and the SDK control dependencies. Camera and image processing helpers are excluded. The adapter imports the generated protocol modules directly and applies deadlines to every call. It only accepts SDK version `2.0.0`; it does not fall back to the 1.0 protocol. Windows commands are setup instructions; this integration has not been validated on a physical Windows-connected robot.
 
 ## Configure and operate
 

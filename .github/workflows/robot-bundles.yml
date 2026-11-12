@@ -1,4 +1,4 @@
-name: Robot full dependency bundles
+name: Robot slim bundles
 
 on:
   workflow_dispatch:
@@ -86,10 +86,7 @@ jobs:
         with:
           name: ordinary-plugin
           path: ${{ runner.temp }}/base-package
-      - name: Install desktop OS libraries needed by the vendor OpenCV wheels
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
-      - name: Build and validate the complete native plugin
+      - name: Build and validate the slim native plugin
         run: |
           python scripts/astra/build.py --output "$RUNNER_TEMP/robot-build" --base-package "$RUNNER_TEMP"/base-package/*.tgz
       - uses: pnpm/action-setup@v4
@@ -105,12 +102,12 @@ jobs:
           python scripts/astra/desktop.py --output "$RUNNER_TEMP/robot-build"
       - uses: actions/upload-artifact@v4
         with:
-          name: robot-full-${{ matrix.platform }}
+          name: robot-slim-${{ matrix.platform }}
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
           path: |
-            ${{ runner.temp }}/robot-build/*-full.tgz
+            ${{ runner.temp }}/robot-build/*-slim.tgz
             ${{ runner.temp }}/robot-build/astra-runtime-*.tar.gz
             ${{ runner.temp }}/robot-build/*desktop*.zip
             ${{ runner.temp }}/robot-build/sizes-*.json

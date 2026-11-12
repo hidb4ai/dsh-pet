@@ -35,11 +35,11 @@ def main():
     baseline_record = artifact(baseline, size(unpacked))
     # Native Python and DLLs must be real files outside app.asar.
     shutil.copytree(runtime, unpacked / "resources/astra-runtime")
-    full = output / "dsh-pet-win32-x64-desktop-full.zip"
-    zip_tree(unpacked, full)
+    slim = output / "dsh-pet-win32-x64-desktop-slim.zip"
+    zip_tree(unpacked, slim)
     # Validate the distributed archive after extracting it into a different directory.
     restored = output / "desktop-unzip"
-    with zipfile.ZipFile(full) as archive:
+    with zipfile.ZipFile(slim) as archive:
         archive.extractall(restored)
     restored_runtime = restored / "win-unpacked/resources/astra-runtime"
     run([restored_runtime / "python/python.exe", "-I", "-B", "-c",
@@ -52,7 +52,7 @@ def main():
     report_path = output / "sizes-win32-x64.json"
     report = read_json(report_path)
     report["desktop"] = baseline_record
-    report["desktopFull"] = artifact(full, size(unpacked))
+    report["desktopSlim"] = artifact(slim, size(unpacked))
     report["desktopValidation"] = read_json(desktop_smoke / "result.json")
     write_json(report_path, report)
 

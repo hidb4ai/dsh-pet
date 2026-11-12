@@ -96,10 +96,12 @@ def full_package(base, runtime, output, target):
     write_json(package / "package.json", metadata)
     npm("install", "--ignore-scripts", "--omit=dev", "--legacy-peer-deps", "--package-lock=false", cwd=package)
     node_bytes = size(package / "node_modules")
-    shutil.copytree(runtime, package / "runtime/astra-native", symlinks=True)
+    # npm installation discards symlinks, including Python's interpreter aliases.
+    # Materialize native aliases so installed archives remain self-contained.
+    shutil.copytree(runtime, package / "runtime/astra-native", symlinks=False)
     archive = output / f"dsh-pet-powercontext-{metadata['version']}-{target}-full.tgz"
-    # npm pack omits symlinks, including Python's executable/library aliases.
-    # The base tar already supplies the publication allowlist; retain native links.
+    # The base tar supplies the publication allowlist; dependencies were installed
+    # into this external stage and declared as bundled in the package metadata.
     archive_tree(package, archive, "package")
     # Installation must work with an empty cache and no registry/network access.
     installed = output / "offline-install"
@@ -110,6 +112,8 @@ def full_package(base, runtime, output, target):
     executable = restored / "runtime/astra-native/python" / ("python.exe" if os.name == "nt" else "bin/python3")
     run([executable, "-I", "-B", "-c", (Path(__file__).parent / "smoke.py").read_text(),
          str(restored / "runtime/astra-native")], capture_output=True)
+    run([executable, "-I", "-B", "-c", (Path(__file__).parent / "host_smoke.py").read_text(),
+         str(restored), str(output)], capture_output=True, text=True)
     return artifact(archive, size(package)), node_bytes
 
 

@@ -16,6 +16,8 @@
 - [控制 token 用量](guides/token-budget.md)：近期上下文、召回预算与后台功能。
 - [制作宠物包](guides/custom-pets.md)：角色素材、动画与安装。
 - [发布版本](guides/releases.md)：版本标签、npm、GitHub Release 与 Windows 包。
+- [Astra Pro 2.0 机器人](guides/robot.md)：SDK 安装、示教动作、播报、停止与桌宠反馈。
+- [机器人完整依赖包](guides/robot-bundles.md)
 
 ## 查参数和接口
 

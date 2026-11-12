@@ -5,6 +5,7 @@
  * @module dsh-pet/src/host/index
  */
 import { createHostSetup } from './plugin/setup.ts';
+import { registerRobot } from './plugin/robot.ts';
 import { registerManagedMemory } from './plugin/managed-memory.ts';
 import { readAllConfig } from './config.ts';
 import { createHttpRoute, registerHttpRoute } from './plugin/http-route.ts';
@@ -98,6 +99,7 @@ export function apply(ctx: any): void {
   const { startHelper, stopHelper, markDisposed } = desktopHelper;
 
   const deps: PetRouteDeps = {
+    robot: registerRobot(ctx, userRoot, () => httpRoute.handlePetRoute),
     memorySetup: registerManagedMemory(ctx, setup, () => httpRoute.memoryConfig),
     ...setup,
     ...petLookup,

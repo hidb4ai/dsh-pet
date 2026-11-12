@@ -89,3 +89,7 @@ Long polling requires `since` and `timeout` together and caps the wait at ten se
 Standalone serves the plugin contract plus root-level `/`, `/health`, `/shutdown` and `/standalone-ai/` setup/chat routes. The setup URL includes a private capability. These root paths are not under the plugin prefix.
 
 Standalone chat works after its model is configured. Balance and DSH session services remain unavailable when the corresponding host capability is absent; failures must be handled explicitly. The [API tester](../../../tools/api-tester.html) is a development consumer, not an authentication bypass.
+
+## Astra Pro 2.0
+
+`GET /dsh-pet-7340/robot` reads cached state; JSON `POST` submits `configure`, `check`, `arm`, `disarm`, `execute`, `speak` or `stop`. Actions require a current session and explicit confirmation; `execute` also consumes one-shot authorization. Business failures use `ok: false`. Standalone requires session authentication for reads and writes. See the [setup and behavior guide](../guides/robot.md) and the `RobotRequest` / `RobotSnapshot` schemas in OpenAPI.

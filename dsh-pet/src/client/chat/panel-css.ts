@@ -6,9 +6,11 @@
  * @module dsh-pet/src/client/chat/panel-css
  */
 import { px, SIZE } from './metrics.ts';
+import { ROBOT_CSS } from '../robot/styles.ts';
 
 /** Panel style (selector prefix `pet-chat` to avoid name collision with DSH or other plugins). */
 export const PANEL_CSS = `
+${ROBOT_CSS}
 .pet-chat-memory-status { flex: none; padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .pet-chat-memory-status p { margin: 0 0 4px; }
 .pet-chat-memory-status small { font-size: 11px; }

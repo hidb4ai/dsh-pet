@@ -43,6 +43,8 @@ test('encoded private routes still require a capability; invalid encodings fail 
     '/dsh-pet-7340/ch%61t',
     '/dsh-pet-7340/chat%2Fhistory',
     '/dsh-pet-7340/%77hisper',
+    '/dsh-pet-7340/robot',
+    '/dsh-pet-7340/%72obot',
   ]) {
     for (const method of ['GET', 'HEAD']) {
       const res = response();

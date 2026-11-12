@@ -8,6 +8,8 @@ Drag the pet beside your work, give it a personality, and talk to it. Run it ins
 
 Built on [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet).
 
+Development preview: [Astra Pro 2.0 robot controls](docs/en/guides/robot.md) connect taught actions, robot speech and controller-state feedback to pet chat. Available in development builds; not in `0.1.0-beta.1`.
+
 ## See it in use
 
 ![Live conversation with the pet inside DeepSeek Harness](docs/assets/demos/dsh-chat.gif)

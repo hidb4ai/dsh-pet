@@ -66,6 +66,9 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Robot adapter tests (no hardware or SDK required)
+        run: pnpm test:robot
+
       # npm pack runs prepack: build, types, lint, formatting, cycles, desktop runtime and OpenAPI checks.
       - name: Build and pack
         run: |

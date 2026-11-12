@@ -75,7 +75,58 @@ tags:
   - name: Voice
     description: Speech synthesis with host-side validation, queuing and caching; returns MP3 on success
 
+  - name: Robot
+    description: Optional Astra Pro 2.0 operator controls and status
+
 paths:
+  /dsh-pet-7340/robot:
+    get:
+      tags:
+        - Robot
+      operationId: getRobot
+      summary: Read cached Astra Pro 2.0 state and receipts
+      description: >-
+        Requires the standalone session token/cookie or DSH host access. Does not send RPCs. Connection
+        freshness expires after 15 seconds.
+      responses:
+        '200':
+          description: Current state or business failure. Inspect ok; command acceptance is not physical completion.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RobotSnapshot'
+                  - $ref: '#/components/schemas/FailureResponse'
+    post:
+      tags:
+        - Robot
+      operationId: controlRobot
+      summary: Configure, check, authorize or explicitly operate the robot
+      description: >-
+        JSON and same-site browser requests only. The DSH host access policy applies; standalone requires its
+        session token/cookie. Modes are never automatically resumed. A changed configuration starts a new
+        session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotRequest'
+      responses:
+        '200':
+          description: Current state or business failure. Inspect ok; command acceptance is not physical completion.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RobotSnapshot'
+                  - $ref: '#/components/schemas/FailureResponse'
+        '400':
+          description: Invalid URL or JSON syntax
+        '403':
+          description: Standalone authentication or cross-site request rejected
+        '415':
+          description: JSON required or cross-site browser request rejected
   /dsh-pet-7340/state:
     get:
       tags: [State]
@@ -3419,6 +3470,312 @@ components:
             $ref: "#/components/schemas/FailureResponse"
 
   schemas:
+    RobotAction:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - name
+        - actionIds
+        - petAnimation
+      properties:
+        key:
+          type: string
+          pattern: ^[a-zA-Z0-9_-]{1,64}$
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        actionIds:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            type: integer
+            minimum: 0
+            maximum: 2147483647
+        petAnimation:
+          type: string
+          maxLength: 128
+    RobotConfig:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - address
+        - python
+        - timeoutSeconds
+        - petId
+        - actions
+      properties:
+        enabled:
+          type: boolean
+        address:
+          type: string
+          maxLength: 255
+          description: Empty only when disabled; hostname or IPv4 followed by a port from 1 to 65535. IPv6 is not supported.
+        python:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: >-
+            Use bundled (default) for the private packaged runtime, or an explicit Python executable path
+            ending in python, python3, python3.11 or another numeric Python version, optionally .exe.
+            Missing bundled runtimes never fall back to system Python. No shell commands.
+        timeoutSeconds:
+          type: integer
+          minimum: 3
+          maximum: 120
+        petId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        actions:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/RobotAction'
+          description: Unique action keys; only manufacturer-verified taught IDs.
+    RobotTelemetry:
+      type: object
+      required:
+        - actionCode
+        - description
+        - modes
+      properties:
+        actionCode:
+          type: integer
+        description:
+          type: string
+          maxLength: 500
+        modes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: integer
+          description: Body, left arm, right arm. Automatic mode is 1; idle action code is 520000.
+    RobotResult:
+      type: object
+      required:
+        - ok
+        - code
+        - message
+      properties:
+        ok:
+          type: boolean
+        code:
+          type: string
+          maxLength: 80
+        message:
+          type: string
+          maxLength: 1000
+        telemetry:
+          $ref: '#/components/schemas/RobotTelemetry'
+        stops:
+          type: object
+          additionalProperties:
+            type: object
+            required:
+              - ok
+              - message
+            properties:
+              ok:
+                type: boolean
+              message:
+                type: string
+                maxLength: 500
+          description: Individual planner, upperBody and agv acknowledgements; no physical standstill guarantee.
+    RobotCommand:
+      type: object
+      required:
+        - id
+        - kind
+        - key
+        - petId
+        - state
+        - startedAt
+        - message
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - execute
+            - speak
+        key:
+          type: string
+          maxLength: 80
+        petId:
+          type: string
+          maxLength: 128
+        state:
+          type: string
+          enum:
+            - running
+            - reported-success
+            - failed
+            - unknown
+        startedAt:
+          type: integer
+        finishedAt:
+          type: integer
+        message:
+          type: string
+          maxLength: 1000
+    RobotSnapshot:
+      type: object
+      required:
+        - ok
+        - session
+        - config
+        - armed
+        - busy
+        - checking
+        - stopping
+        - connected
+        - checkedAt
+        - error
+        - commands
+      properties:
+        ok:
+          const: true
+        session:
+          type: string
+          format: uuid
+        config:
+          $ref: '#/components/schemas/RobotConfig'
+        armed:
+          type: boolean
+        busy:
+          type: boolean
+        checking:
+          type: boolean
+        stopping:
+          type: boolean
+        connected:
+          type: boolean
+        checkedAt:
+          type: integer
+        telemetry:
+          $ref: '#/components/schemas/RobotTelemetry'
+        error:
+          type: string
+        stopResult:
+          $ref: '#/components/schemas/RobotResult'
+        commands:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/RobotCommand'
+    RobotRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - action
+            - config
+          properties:
+            action:
+              const: configure
+            config:
+              $ref: '#/components/schemas/RobotConfig'
+        - type: object
+          additionalProperties: false
+          required:
+            - action
+          properties:
+            action:
+              const: check
+        - type: object
+          additionalProperties: false
+          required:
+            - action
+          properties:
+            action:
+              const: disarm
+        - type: object
+          additionalProperties: false
+          required:
+            - action
+          properties:
+            action:
+              const: stop
+        - type: object
+          additionalProperties: false
+          required:
+            - action
+            - session
+            - confirmed
+          properties:
+            action:
+              const: arm
+            session:
+              type: string
+              format: uuid
+            confirmed:
+              const: true
+        - type: object
+          additionalProperties: false
+          required:
+            - action
+            - session
+            - id
+            - key
+            - petId
+            - confirmed
+          properties:
+            action:
+              const: execute
+            session:
+              type: string
+              format: uuid
+            id:
+              type: string
+              format: uuid
+            key:
+              type: string
+              pattern: ^[a-zA-Z0-9_-]{1,64}$
+            petId:
+              type: string
+              minLength: 1
+              maxLength: 128
+            confirmed:
+              const: true
+        - type: object
+          additionalProperties: false
+          required:
+            - action
+            - session
+            - id
+            - text
+            - petId
+            - confirmed
+          properties:
+            action:
+              const: speak
+            session:
+              type: string
+              format: uuid
+            id:
+              type: string
+              format: uuid
+            text:
+              type: string
+              minLength: 1
+              maxLength: 500
+            petId:
+              type: string
+              minLength: 1
+              maxLength: 128
+            confirmed:
+              const: true
+      description: >-
+        No automatic retries. execute consumes one-shot motion authorization. Old sessions and conflicting
+        duplicate IDs are rejected. stop is independent of the movement worker and does not require enabled
+        monitoring or authorization.
     PetMemoryPage:
       type: object
       required: [ok, items, nextCursor]

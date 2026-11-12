@@ -1,0 +1,123 @@
+Metadata-Version: 2.4
+Name: astra-grpc-clients
+Version: 2.0.0
+Summary: Astra机器人gRPC客户端库
+Home-page: https://huibo.com/astrarobotics/astra-grpc-api
+Author: Astra Robotics HB-Wtio
+Author-email: astra-robotics@hb.com
+Project-URL: Bug Reports, https://github.com/astrarobotics/astra-grpc-clients/issues
+Project-URL: Source, https://github.com/astrarobotics/astra-grpc-clients
+Keywords: astra robotics grpc client
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+Requires-Dist: grpcio>=1.48.0
+Requires-Dist: protobuf>=3.20.0
+Requires-Dist: grpcio-tools
+Requires-Dist: opencv-python==4.10.0.84
+Requires-Dist: opencv-contrib-python==4.10.0.84
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: project-url
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Astra gRPC Clients
+
+Astra机器人的gRPC客户端库，提供与Astra机器人控制系统通信的Python接口。
+
+## 导出dist
+python3 setup.py sdist bdist_wheel
+
+## 安装
+
+```bash
+pip install -e .
+或
+pip install dist/astra_ros2_client-1.0.0.tar.gz
+或
+pip install dist/my_custom_astra_client.whl
+```
+
+## 使用示例
+
+### 服务客户端
+
+```python
+from astra_grpc_clients import AstraGRPCServiceClient
+
+# 创建客户端
+client = AstraGRPCServiceClient('192.168.30.21:50051')
+
+# 控制左夹爪
+response = client.call_left_gripper_control(is_open=True, position=255)
+
+# 控制AGV移动
+response = client.call_agv_move_by_site(site=1)
+
+# 关闭连接
+client.close()
+```
+
+### 主题客户端
+
+```python
+from astra_grpc_clients import AstraGRPCClient
+
+# 创建客户端
+client = AstraGRPCClient('192.168.30.50:50051')
+
+# 读取身体错误状态
+error_data = client.recv_body_stateerror_control()
+
+# 读取关节状态
+joints_data = client.recv_body_motorstate_control()
+
+# 关闭连接
+client.close()
+```
+
+## API文档
+
+### AstraGRPCServiceClient
+
+- `call_left_gripper_control()` - 控制左夹爪
+- `call_right_gripper_control()` - 控制右夹爪  
+- `call_dual_gripper_control()` - 控制双夹爪
+- `call_agv_move_by_site()` - AGV站点移动
+- `call_action_control()` - 动作控制
+- `call_planner_control()` - 规划器控制
+- `call_img_detect()` - 图像检测
+
+### AstraGRPCClient
+
+- `recv_body_stateerror_control()` - 接收身体错误
+- `recv_left_stateerror_control()` - 接收左臂错误
+- `recv_right_stateerror_control()` - 接收右臂错误
+- `recv_body_motorstate_control()` - 接收身体关节状态
+- `recv_left_motorstate_control()` - 接收左臂关节状态
+- `recv_right_motorstate_control()` - 接收右臂关节状态
+- `recv_body_armmode_control()` - 接收身体状态机状态
+- `recv_left_armmode_control()` - 接收左臂状态机状态
+- `recv_right_armmode_control()` - 接收右臂状态机状态
+
+## 依赖
+
+grpcio>=1.48.0
+protobuf>=3.20.0
+grpcio-tools>=1.48.0

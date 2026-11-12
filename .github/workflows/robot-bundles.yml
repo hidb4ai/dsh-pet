@@ -1,0 +1,144 @@
+name: Robot full dependency bundles
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["codex/astra-v2-robot-bridge"]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: robot-bundles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: dsh-pet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.3
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Test and pack the ordinary plugin
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          pnpm test
+          pnpm test:robot
+          mkdir -p "$RUNNER_TEMP/base-package"
+          npm pack --pack-destination "$RUNNER_TEMP/base-package"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ordinary-plugin
+          path: ${{ runner.temp }}/base-package/*.tgz
+          retention-days: 7
+          if-no-files-found: error
+
+  native:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: win32-x64
+            runner: windows-2022
+          - platform: darwin-x64
+            runner: macos-15-intel
+          - platform: darwin-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      TMPDIR: ${{ runner.temp }}
+      PYTHONDONTWRITEBYTECODE: "1"
+    defaults:
+      run:
+        shell: bash
+        working-directory: dsh-pet
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ordinary-plugin
+          path: ${{ runner.temp }}/base-package
+      - name: Install desktop OS libraries needed by the vendor OpenCV wheels
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
+      - name: Build and validate the complete native plugin
+        run: |
+          python scripts/astra/build.py --output "$RUNNER_TEMP/robot-build" --base-package "$RUNNER_TEMP"/base-package/*.tgz
+      - uses: pnpm/action-setup@v4
+        if: runner.os == 'Windows'
+        with:
+          version: 10.34.3
+      - name: Build Windows desktop variants
+        if: runner.os == 'Windows'
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm run bundle
+          pnpm run build:desktop-core
+          python scripts/astra/desktop.py --output "$RUNNER_TEMP/robot-build"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: robot-full-${{ matrix.platform }}
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/robot-build/*-full.tgz
+            ${{ runner.temp }}/robot-build/astra-runtime-*.tar.gz
+            ${{ runner.temp }}/robot-build/*desktop*.zip
+            ${{ runner.temp }}/robot-build/sizes-*.json
+            ${{ runner.temp }}/robot-build/smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sizes-${{ matrix.platform }}
+          path: ${{ runner.temp }}/robot-build/sizes-*.json
+          retention-days: 7
+          if-no-files-found: error
+
+  sizes:
+    needs: native
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sizes-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/size-reports
+      - name: Compare all requested platforms
+        run: |
+          python dsh-pet/scripts/astra/report.py "$RUNNER_TEMP/size-reports" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: robot-size-report
+          path: ${{ runner.temp }}/size-reports/
+          retention-days: 7
+          if-no-files-found: error

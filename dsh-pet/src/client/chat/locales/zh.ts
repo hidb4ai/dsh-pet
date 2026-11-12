@@ -1,7 +1,10 @@
 /**
  * Chinese text for the dialogue panel; the key set is the true source of the entire collection.
  */
+import { robotZh } from '../../robot/locales.ts';
+
 export const zh = {
+  ...robotZh,
   factsSourceNumber: '来源 {n}',
   factsUser: '你',
   factsPet: '桌宠',

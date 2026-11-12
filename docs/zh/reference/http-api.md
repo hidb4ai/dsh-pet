@@ -187,3 +187,7 @@ dsh-pet 的宿主半侧向 DSH 自己的 Web 服务注册了**一条前缀路由
 - [`openapi.yaml`](../../../openapi.yaml) —— 完整契约（OpenAPI 3.1，可直接导入 Swagger UI / Postman）
 - [`tools/api-tester.html`](../../../tools/api-tester.html) —— 桌宠控制台：扮演第三方消费方的示例页面，
   可直观试用上述接口（用 `node tools/api-tester.cjs` 启动，它会带上本地代理解决跨域）
+
+## Astra Pro 2.0
+
+`GET /dsh-pet-7340/robot` 读取缓存状态；JSON `POST` 提交 `configure`、`check`、`arm`、`disarm`、`execute`、`speak` 或 `stop`。动作需要当前会话和显式确认，`execute` 还会消耗单次授权。业务失败返回 `ok: false`。独立版读写均需要会话认证。安装与行为见[机器人指南](../guides/robot.md)，完整字段见 OpenAPI 的 `RobotRequest` / `RobotSnapshot`。

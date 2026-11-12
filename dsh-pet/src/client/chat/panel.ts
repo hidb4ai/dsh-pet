@@ -9,6 +9,7 @@ import { createPetChatState } from './state.ts';
 import { buildPanel } from './view.ts';
 import type { ChatPanelRuntime } from './runtime.ts';
 import { makeMemoryStatus } from './memory-status.ts';
+import { makeRobotPanel } from '../robot/panel.ts';
 
 export type { ChatPanelRuntime } from './runtime.ts';
 
@@ -21,6 +22,7 @@ export type { ChatPanelRuntime } from './runtime.ts';
 export function makePetChatPanel(rt: ChatPanelRuntime): () => unknown {
   const useChatState = createPetChatState(rt);
   const MemoryStatus = makeMemoryStatus(rt);
+  const RobotPanel = makeRobotPanel(rt);
   return function PetChatPanel(): unknown {
     const state = useChatState();
     return buildPanel(
@@ -30,6 +32,7 @@ export function makePetChatPanel(rt: ChatPanelRuntime): () => unknown {
         petId: state.petId,
         revision: state.messages[state.messages.length - 1]?.ts ?? 0,
       }),
+      rt.h(RobotPanel, { petId: state.petId }),
     );
   };
 }

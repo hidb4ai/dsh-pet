@@ -109,10 +109,17 @@ export function registerHttpRoute(ctx: HostContext, handlePetRoute: HttpRouteHan
         kind: 'prefix',
         path: ROUTE_SEGMENT,
         handler: async (req: IncomingMessage, res: ServerResponse) => {
+          let pathname: string;
+          try {
+            pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+          } catch {
+            sendJson(res, 400, failureBody('bad-request', 'invalid request path'));
+            return;
+          }
           // The management entry point only accepts JSON; cross-site forms cannot trigger downloads, model calls, or process start and stop.
           if (
             req.method === 'POST' &&
-            new URL(req.url ?? '/', 'http://localhost').pathname === ROUTE_SEGMENT + '/powercontext/setup'
+            [ROUTE_SEGMENT + '/powercontext/setup', ROUTE_SEGMENT + '/robot'].includes(pathname)
           ) {
             if (
               req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json' ||

@@ -20,7 +20,7 @@ GitHub Actions 的 **Robot full dependency bundles** 流水线分别生成 Windo
 
 应用使用独立 Python 的绝对路径和隔离模式，不激活虚拟环境、不修改 PATH、不向系统 Python 安装依赖。内置文件缺失时会报错，不会悄悄切到系统 Python。Electron 中的原生文件位于 `resources/astra-runtime`，在 `app.asar` 外；插件中位于 `runtime/astra-native`。只有主动选择 **自定义 Python 环境** 才会使用指定的外部解释器。
 
-安装包包含应用依赖，不包含操作系统。Linux 包面向 glibc，不支持 Alpine/musl；固定的 NumPy wheel 需要 glibc 2.28+，OpenCV 需要系统提供 `libGL.so.1` 和 GLib。流水线在对应架构的 Ubuntu 24.04、Windows Server 2022、macOS 15 上验证。无桌面的 Linux 可能需要执行 `sudo apt-get install libgl1 libglib2.0-0`。容器部署需要在容器内安装包和系统库。macOS 产物不是经过公证的桌面安装器。
+安装包包含应用依赖，不包含操作系统。Linux 包面向 glibc，不支持 Alpine/musl；固定的 NumPy wheel 需要 glibc 2.28+，OpenCV 需要系统提供 `libGL.so.1` 和 GLib。流水线在对应架构的 Ubuntu 24.04、Windows Server 2022、macOS 15 Intel 和 macOS 26 Apple Silicon 上验证。无桌面的 Linux 可能需要执行 `sudo apt-get install libgl1 libglib2.0-0`。容器部署需要在容器内安装包和系统库。macOS 产物不是经过公证的桌面安装器。
 
 厂家 wheel 元数据声明 MIT，但未提供独立的许可证及版权声明文件。每份运行环境保留其原始元数据和来源说明，Python 及其他依赖自带的许可证文件也会保留；后续公开分发时如能取得厂家完整声明，应一并补入。
 

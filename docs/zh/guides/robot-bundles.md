@@ -9,7 +9,8 @@ GitHub Actions 的 **Robot slim bundles** 流水线分别生成 Windows x64、Li
 打开[流水线页面](https://github.com/ob-labs/dsh-pet-powercontext/actions/workflows/robot-bundles.yml)，选择成功的构建，在 **Artifacts** 下载对应的 `robot-slim-<平台>`。下载需要登录 GitHub，产物保留七天。先解压下载的 artifact ZIP。
 
 - **Windows 桌面版：**解压 `dsh-pet-win32-x64-desktop-slim.zip`，保留完整的 `win-unpacked` 目录，运行 `dsh-pet.exe`。其中已经包含 Python、SDK、Electron/Node 和应用依赖。预览版未签名，Windows 可能显示信誉提示。
-- **DSH 插件或 Node 独立版：**选择与**运行 DSH 的电脑**匹配的 `dsh-pet-powercontext-<版本>-<平台>-slim.tgz`，不是按机器人的系统选包。在 DSH profile 的插件包目录执行 `npm install --offline --legacy-peer-deps /安装包的绝对路径.tgz`，再通过现有 profile 配置启用插件。独立版可在空目录执行该安装命令后，运行 `npx --no-install dsh-pet-powercontext`。需要 Node 22.12+；安装包不含 DSH 本身。
+- **DSH 插件：**选择与**运行 DSH 的电脑**匹配的 `dsh-pet-powercontext-<版本>-<平台>-slim.tgz`，执行 `dsh plugin --profile web add "/安装包的绝对路径.tgz"`。DSH 桌面应用改用 `--profile desktop`，先启动一次以初始化 profile，再完全退出后安装。重启 DSH 即可；DSH 自身依赖可能需要联网。[完整图文步骤](../tutorials/astra-first-interaction.md)。
+- **Node 独立版：**在空目录执行 `npm install --offline --legacy-peer-deps "/安装包的绝对路径.tgz"`，再运行 `npx --no-install dsh-pet-powercontext --setup`。需要 Node 22.12+；显示桌面角色时可能另外下载 Electron。安装包不含 DSH 本身。
 - **仅运行环境：**`astra-runtime-<平台>-slim.tar.gz` 便于检查部署内容，精简插件包和桌面包已经包含它，无需重复安装。
 
 在机器人面板选择 **内置环境（推荐）**，无需另装 Python。不要只复制 Python 可执行文件或 `bridge.py`，必须保留整个运行环境目录。升级前保存的自定义 Python 路径会保留；需要手动切换到内置环境。

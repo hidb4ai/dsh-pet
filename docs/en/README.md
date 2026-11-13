@@ -6,6 +6,7 @@ Start with a working pet, then add the memory and controls you need.
 
 ## Learn
 
+- [From installation to Astra Pro 2.0 interaction](tutorials/astra-first-interaction.md): slim packages, chat setup, robot connection, speech, actions and stopping.
 - [Your first pet](tutorials/first-pet.md): install, configure a model, chat and check a remembered fact.
 
 ## Do

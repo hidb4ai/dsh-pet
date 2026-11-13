@@ -2,6 +2,8 @@
 
 [Documentation](../README.md) · [简体中文](../../zh/guides/robot.md)
 
+For a first installation, follow the [complete setup and interaction tutorial](../tutorials/astra-first-interaction.md).
+
 This feature is in the development source and is **not included in the published `0.1.0-beta.1` package**. Use a build containing the robot bridge. The control panel is shared by DSH pet chat and standalone pet chat; PowerContext and a model API key are not required for robot controls.
 
 ## What works

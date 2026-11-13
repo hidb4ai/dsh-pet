@@ -6,6 +6,7 @@
 
 ## 跟着做
 
+- [从安装桌宠到联动 Astra Pro 2.0](tutorials/astra-first-interaction.md)：精简包安装、模型配置、机器人接入、播报、动作与停止。
 - [养好第一只桌宠](tutorials/first-pet.md)：安装、配置模型、开始聊天，再验证一条记忆。
 
 ## 解决具体问题

@@ -70,6 +70,8 @@ export type RouteHandler = (deps: PetRouteDeps, input: RouteInput) => Promise<Ro
  * write sequence number and returns the new value.
  */
 export interface PetRouteDeps {
+  /** Optional physical-robot controller; motion remains disabled until an operator enables it. */
+  readonly robot?: import('../robot/service.ts').RobotService;
   /** Managed by the DSH plugin lifecycle; standalone mode uses its own preparation entry point. */
   readonly memorySetup?: import('../../standalone/setup.ts').SetupService;
   /** Optional for older embedding hosts; the shipped host provides both. */

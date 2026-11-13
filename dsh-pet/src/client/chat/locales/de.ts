@@ -3,7 +3,10 @@
  */
 import type { Key } from './zh.ts';
 
+import { robotEn } from '../../robot/locales.ts';
+
 export const de: Record<Key, string> = {
+  ...robotEn,
   factsSourceNumber: 'Quelle {n}',
   factsUser: 'Du',
   factsPet: 'Tier',

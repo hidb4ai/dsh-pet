@@ -6,6 +6,7 @@
 
 ## 跟着做
 
+- [从安装桌宠到联动 Astra Pro 2.0](tutorials/astra-first-interaction.md)：精简包安装、模型配置、机器人接入、播报、动作与停止。
 - [养好第一只桌宠](tutorials/first-pet.md)：安装、配置模型、开始聊天，再验证一条记忆。
 
 ## 解决具体问题
@@ -16,6 +17,8 @@
 - [控制 token 用量](guides/token-budget.md)：近期上下文、召回预算与后台功能。
 - [制作宠物包](guides/custom-pets.md)：角色素材、动画与安装。
 - [发布版本](guides/releases.md)：版本标签、npm、GitHub Release 与 Windows 包。
+- [Astra Pro 2.0 机器人](guides/robot.md)：SDK 安装、示教动作、播报、停止与桌宠反馈。
+- [机器人控制精简包](guides/robot-bundles.md)
 
 ## 查参数和接口
 

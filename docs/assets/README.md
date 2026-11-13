@@ -30,6 +30,21 @@ GIFs are sampled captures of the actual browser, encoded at 1200 px width with o
 
 GIF 来自真实浏览器画面采样，宽度压缩为 1200 像素，保留实际时间间隔并在末帧停留；PNG 保留原始视口。未替换界面文字、模型回答或记忆状态，保留原有中英文控件。聊天和后续召回分别录制，中间的后台处理与聊天未完整展示。凭据、原始请求、脚本、原始录屏和测试数据都留在仓库外，这里只收录最终文档素材。
 
+## Astra tutorial screenshots / Astra 教程截图
+
+Captured on **2026-11-13** in Linux Chromium with **DSH 0.2.2-rc.1** and the Linux x64 slim package built from commit **`faa9197`**. The package was installed into a fresh DSH web profile using `dsh plugin --profile web add` with the local `.tgz`. The complete DSH interface is shown in Chinese, with a selected workspace, the pet and its chat panel.
+
+以上截图于 2026-11-13 在 Linux Chromium 中实拍，使用 DSH 0.2.2-rc.1 和 `faa9197` 构建的 Linux x64 精简包。通过 DSH CLI 将本地包安装到全新 web profile 后采集，保留完整 DSH、工作区、桌宠与聊天面板。
+
+| Asset | Content / 内容 |
+| --- | --- |
+| `screenshots/dsh-astra-panel.zh.png` | Robot controls expanded, with monitoring disabled / 展开机器人操作区，连接监测未启用 |
+| `screenshots/dsh-astra-settings.zh.png` | Connection fields and bundled-runtime selection / 连接配置与内置运行环境选项 |
+
+No model credentials, robot address or action IDs were configured. No physical robot was connected and no robot commands were sent. Interface text and state were not replaced. Only these final PNGs are committed; the temporary host, browser profile, capture commands and logs remain outside the repository.
+
+未配置模型凭据、机器人地址或动作 ID，未连接实体机器人，也未发送机器人指令。界面文字与状态未替换。仓库只保存两张最终 PNG；临时宿主、浏览器数据、截图命令与日志均保存在仓库外。
+
 ## Supplied report / 用户提供的报告
 
 Source: **教你如何多快好省来养大肥鱼.pdf**, 18 pages, supplied for this documentation task. SHA-256: `94d999e2c1e3d2aa321ba4242e2156a7ee18e93dc6027f5e21e84bd1961d70ef`. The PDF itself is not copied into the repository.

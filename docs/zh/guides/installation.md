@@ -2,6 +2,8 @@
 
 [English](../../en/guides/installation.md) · 简体中文 · [文档首页](../README.md)
 
+**要连接 Astra Pro 2.0？** 请改用[安装与机器人互动教程](../tutorials/astra-first-interaction.md)中的精简预览包。下方已发布的 beta 包尚不包含机器人功能。
+
 已发布的 **beta** 通道当前提供 [0.1.0-beta.1](https://github.com/ob-labs/dsh-pet-powercontext/releases/tag/v0.1.0-beta.1)。下面三种方式任选一种，均使用已发布的安装包，无需下载源码、安装 pnpm 或编译。
 
 ## 把插件装进 DSH

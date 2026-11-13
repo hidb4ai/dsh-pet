@@ -6,6 +6,7 @@ Start with a working pet, then add the memory and controls you need.
 
 ## Learn
 
+- [From installation to Astra Pro 2.0 interaction](tutorials/astra-first-interaction.md): slim packages, chat setup, robot connection, speech, actions and stopping.
 - [Your first pet](tutorials/first-pet.md): install, configure a model, chat and check a remembered fact.
 
 ## Do
@@ -16,6 +17,8 @@ Start with a working pet, then add the memory and controls you need.
 - [Control token usage](guides/token-budget.md): tune recent context, recall and background features.
 - [Create a pet pack](guides/custom-pets.md): character assets, animation and installation.
 - [Publish a release](guides/releases.md): version tags, npm, GitHub Releases and Windows artifacts.
+- [Astra Pro 2.0 robot](guides/robot.md): SDK setup, taught actions, speech, stops and pet feedback.
+- [Slim robot control bundles](guides/robot-bundles.md)
 
 ## Look up
 

@@ -2,6 +2,8 @@
 
 English · [简体中文](../../zh/guides/installation.md) · [Documentation](../README.md)
 
+**Connecting Astra Pro 2.0?** Use the slim preview in the [installation and robot interaction tutorial](../tutorials/astra-first-interaction.md). The published beta packages below do not include robot support.
+
 The published **beta** channel currently provides [0.1.0-beta.1](https://github.com/ob-labs/dsh-pet-powercontext/releases/tag/v0.1.0-beta.1). Choose one of the three options below. All use published packages; no source checkout, pnpm or build step is needed.
 
 ## Add the plugin to DSH

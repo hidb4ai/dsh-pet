@@ -17,6 +17,8 @@ extraMetadata:
 files:
   - lib/**
   - runtime/**
+  - '!runtime/astra/*_test.py'
+  - '!runtime/**/__pycache__/**'
   # Include runtime assets, excluding the README preview GIFs.
   # Keep this allowlist aligned with package.json files when adding asset directories:
   # plugin mode reads ordinary files, while the desktop app reads this asar archive.

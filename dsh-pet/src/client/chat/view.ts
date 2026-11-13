@@ -115,7 +115,12 @@ function previewNode(rt: ChatPanelRuntime, state: ChatPanelState): unknown {
  * @param state - Current status and actions.
  * @returns Panel root element.
  */
-export function buildPanel(rt: ChatPanelRuntime, state: ChatPanelState, memoryStatus?: unknown): unknown {
+export function buildPanel(
+  rt: ChatPanelRuntime,
+  state: ChatPanelState,
+  memoryStatus?: unknown,
+  robotPanel?: unknown,
+): unknown {
   const { h } = rt;
   return h('div', {
     className: 'pet-chat',
@@ -128,6 +133,7 @@ export function buildPanel(rt: ChatPanelRuntime, state: ChatPanelState, memorySt
       orphansNode(h, rt.t, state),
       toolsNode(h, rt.t, state),
       memoryStatus ?? null,
+      robotPanel ?? null,
       personaNode(h, state),
       listNode(rt, state),
       confirmNode(rt, state),

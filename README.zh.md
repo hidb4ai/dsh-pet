@@ -8,6 +8,8 @@
 
 本项目基于 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。
 
+开发预览：[Astra Pro 2.0 机器人联动](docs/zh/guides/robot.md)支持在桌宠聊天中执行示教动作、语音播报和接收状态反馈。请使用 `slim` 预览包，npm 已发布的 `0.1.0-beta.1` 尚不包含机器人功能。[完整安装与互动图文教程](docs/zh/tutorials/astra-first-interaction.md)。
+
 ## 看看用起来的样子
 
 ![在完整 DeepSeek Harness 界面中与桌宠真实聊天](docs/assets/demos/dsh-chat.gif)

@@ -17,6 +17,7 @@ import { handleCharacterRoutes } from './character.ts';
 import { handleChatRoutes } from './chat.ts';
 import { handleMemoryLibraryRoutes } from './memory-library.ts';
 import { handleMemorySetupRoutes } from './memory-setup.ts';
+import { handleRobotRoutes } from './robot.ts';
 import { handleConfigRoutes } from './config/index.ts';
 import { handleDesktopRoutes } from './desktop.ts';
 import { handleInteractionRoutes } from './interaction.ts';
@@ -45,6 +46,7 @@ const HANDLERS: readonly RouteHandler[] = [
   handleChatRoutes,
   handleMemoryLibraryRoutes,
   handleMemorySetupRoutes,
+  handleRobotRoutes,
   handleAttachmentRoutes,
   handleTodoRoutes,
   handleVoiceRoutes,
